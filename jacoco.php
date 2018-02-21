@@ -54,7 +54,24 @@
              <br><br>
           </div>
      </div>
-        <div class="text-center">       
+        <div class="text-center">
+        <form method="post" id =selectForm action="getJacoco.php">
+    <fieldset>
+        <select name="teamName">
+            <option value="QueueX">QueueX</option>
+            <option value="Sustaining">Sustaining</option>
+              <option value="Delphi">Delphi</option>
+              <option value="Firebirds">Firebirds</option>
+        </select>
+        <br>
+        <button type="submit">Get Jacoco'd</button>
+    </fieldset>
+</form>
+            </div>
+        <!--
+        <div class="text-center">
+            
+            
         <form action = "getJacoco.php" method = "post" id=formRun>
           <select name="teamName">
             <option value="queueX">QueueX</option>
@@ -64,8 +81,11 @@
           </select>
               </form>
             <br>
-             <button type="submit" form="formRun" value="Submit">Get Jacoco'd</button>        
+             <button name = submit type="submit" form="formRun" value="Submit">Get Jacoco'd</button>        
         </div>
+        
+        
+        -->
   </section>
   <footer>
     <div class="footer-bottom">
