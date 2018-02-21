@@ -6,16 +6,20 @@
     
 <?php
     
-$apart = $_POST['teamName'];
+$teamName = $_POST['teamName'];
 
-if(empty($apart)) 
+if(empty($teamName)) 
 {
     echo("You didn't select any apartment!.");
 } 
 else{
-    
+
+    if($teamName === 'QueueX'){
+  header( 'Location: https:\\localhost\Coyote\localReports\queuex\index.html' ) ;
+    }
+
 }
-echo("You picked ('$apart')");
+echo("You picked ('$teamName')");
 echo("Come back soon for more jacoco fun!");
     
     

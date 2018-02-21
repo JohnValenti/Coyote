@@ -1,0 +1,1268 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SPQueueDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.campaign.ejb</a> &gt; <span class="el_source">SPQueueDAO.java</span></div><h1>SPQueueDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.campaign.ejb;
+
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  DAO object to serialize SP Queue object
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, Inc
+ *
+ * @author Shirley Sasson
+ * @version 1.0
+ */
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.PaginationPair;
+import com.bluepumpkin.common.jdmo.*;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.base.*;
+import com.bluepumpkin.ejb.bbm.campaign.model.*;
+import com.bluepumpkin.ejb.bbm.config.ejb.DBConfigManager;
+import com.bluepumpkin.ejb.bbm.dao.DAOBaseWithAutoIDMapping;
+import com.bluepumpkin.ejb.bbm.dao.DAOUtil;
+import com.bluepumpkin.ejb.bbm.l10n.BbmEjbBundleKey;
+import com.bluepumpkin.ejb.bbm.skill.model.SkillFieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.DBSortField;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectUtil;
+import com.bluepumpkin.ejb.bbm.workload.model.MediaFieldInfo;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.ejb.bbm.workload.model.Queue;
+import com.bluepumpkin.ejb.bbm.workload.model.QueueFieldInfo;
+import com.bluepumpkin.ejb.bbm.workload.model.QueueType;
+import com.bluepumpkin.ejb.bbm.workresource.model.OrganizationFieldInfo;
+
+import java.rmi.RemoteException;
+import java.util.*;
+
+public class SPQueueDAO extends DAOBaseWithAutoIDMapping&lt;SPQueue&gt; {
+<span class="fc" id="L39">	private static FieldInfo m_fieldInfo = new SPQueueFieldInfo();</span>
+	private static final boolean USE_PATIENCE_IN_UNSKILLED_ASA_CALCS;
+	private static final String PROC_CREATEUPDATESPQUEUE_LIMITED_FIELDS = &quot;BP_BF_CREATEORUPDATESPQUEUES&quot;;
+
+<span class="fc" id="L43">	private static final QueueFieldInfo qfi = new QueueFieldInfo();</span>
+<span class="fc" id="L44">	private static final OrganizationFieldInfo ofi = new OrganizationFieldInfo();</span>
+<span class="fc" id="L45">	private static final MediaFieldInfo mfi = new MediaFieldInfo();</span>
+
+<span class="fc" id="L47">	private final String queueNameSortFieldKey = qfi.getTableName() + &quot;_&quot; + qfi.getFieldName(QueueFieldInfo.QUEUE_NAME);</span>
+<span class="fc" id="L48">	private final String queueDescriptionSortFieldKey = qfi.getTableName() + &quot;_&quot;</span>
+<span class="fc" id="L49">			+ qfi.getFieldName(QueueFieldInfo.QUEUE_DESCRIPTION);</span>
+<span class="fc" id="L50">	private final String organizationSortFieldKey = qfi.getTableName() + &quot;_&quot;</span>
+<span class="fc" id="L51">			+ qfi.getFieldName(QueueFieldInfo.QUEUE_ORGANIZATIONNAME);</span>
+<span class="fc" id="L52">	private final String mediaSortFieldKey = qfi.getTableName() + &quot;_&quot; + qfi.getFieldName(QueueFieldInfo.QUEUE_MEDIANAME);</span>
+<span class="fc" id="L53">	private final String queueTypeSortFieldKey = qfi.getTableName() + &quot;_&quot; + qfi.getFieldName(QueueFieldInfo.QUEUE_TYPE);</span>
+
+	static {
+<span class="fc" id="L56">		boolean usePatience = false;</span>
+		try {
+<span class="fc" id="L58">			DBConfigManager bpConfigManager = BbmManagerFactory.getDBConfigManager();</span>
+<span class="pc bpc" id="L59" title="1 of 2 branches missed.">			usePatience = (bpConfigManager.getIntValue(&quot;IsNewErlangC&quot;) == 1);</span>
+<span class="nc" id="L60">		} catch (BbmEJBCreateException bece) {</span>
+<span class="nc" id="L61">			bece.printStackTrace();</span>
+<span class="nc" id="L62">		} catch (RemoteException re) {</span>
+<span class="nc" id="L63">			re.printStackTrace();</span>
+		} finally {
+<span class="pc" id="L65">			USE_PATIENCE_IN_UNSKILLED_ASA_CALCS = usePatience;</span>
+<span class="pc" id="L66">		}</span>
+<span class="fc" id="L67">	}</span>
+
+	@Override
+	protected FieldInfo getFieldInfo() {
+<span class="fc" id="L71">		return m_fieldInfo;</span>
+	}
+
+	/**
+	 * default constructor
+	 */
+	public SPQueueDAO() {
+<span class="fc" id="L78">		super();</span>
+<span class="fc" id="L79">	}</span>
+
+	public SPQueueDAO(Jdmo dmo) {
+<span class="fc" id="L82">		super(dmo);</span>
+<span class="fc" id="L83">	}</span>
+
+	@Override
+	protected Map&lt;Integer, ? extends FieldInfo&gt; getForeignKeyFieldInfo() {
+<span class="fc" id="L87">		Map&lt;Integer, FieldInfo&gt; retVal = new HashMap&lt;Integer, FieldInfo&gt;();</span>
+<span class="fc" id="L88">		retVal.put(SPQueueFieldInfo.SPQUEUE_SPID, new SchedulingPeriodFieldInfo());</span>
+<span class="fc" id="L89">		retVal.put(SPQueueFieldInfo.SPQUEUE_QUEUEID, new QueueFieldInfo());</span>
+<span class="fc" id="L90">		retVal.put(SPQueueFieldInfo.SPQUEUE_MEDIAID, new MediaFieldInfo());</span>
+<span class="fc" id="L91">		return retVal;</span>
+	}
+
+	@Override
+	protected SPQueue createValueObject() {
+<span class="fc" id="L96">		SPQueue spq = new SPQueue();</span>
+<span class="fc" id="L97">		spq.setIsPatienceUsedinUnskilledASACalcs(USE_PATIENCE_IN_UNSKILLED_ASA_CALCS);</span>
+<span class="fc" id="L98">		return spq;</span>
+	}
+
+	public ID createSPQueue(SPQueue objValue) throws BbmCreateException, BbmTimePeriodOverlapException {
+<span class="fc" id="L102">		Jdmo jdmo = new Jdmo();</span>
+		try {
+			// get the sp de id from sid
+<span class="fc" id="L105">			ID spID = null;</span>
+<span class="pc bpc" id="L106" title="1 of 2 branches missed.">			if (objValue.getSpID() != null) {</span>
+<span class="fc" id="L107">				spID = DAOUtil.mapIDToDEID(objValue.getSpID(), new SchedulingPeriodFieldInfo());</span>
+			}
+
+			// get the queue de id
+<span class="fc" id="L111">			ID queueID = null;</span>
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">			if (objValue.getQueueID() != null) {</span>
+<span class="fc" id="L113">				queueID = DAOUtil.mapIDToDEID(objValue.getQueueID(), new QueueFieldInfo());</span>
+			}
+
+			// Check if this queue is used in another campaign for the same
+			// dates
+<span class="fc" id="L118">			String queueChkStmt = &quot;Select distinct campaign.name from SPQUEUE, SP SP1, SP SP2, CAMPAIGN &quot;</span>
+					+ &quot;where SP1.CAMPAIGNID = CAMPAIGN.ID and SPQUEUE.SPID = SP1.ID and &quot;
+					+ &quot;((SP2.FROMDATE &gt;=  SP1.FROMDATE and SP2.FROMDATE &lt; SP1.TODATE) &quot;
+					+ &quot;or (SP2.TODATE &gt;  SP1.FROMDATE and SP2.TODATE &lt;= SP1.TODATE) &quot;
+					+ &quot;or (SP2.FROMDATE &lt;= SP1.FROMDATE and SP2.TODATE &gt;= SP1.TODATE )) &quot;
+					+ &quot;and spqueue.queueid = ? and sp2.id = ?&quot;;
+<span class="fc" id="L124">			JdmoQuery jq1Chk = jdmo.createQuery(queueChkStmt, Jdmo.PARAM_QUERY);</span>
+<span class="fc" id="L125">			jq1Chk.setParID(1, queueID);</span>
+<span class="fc" id="L126">			jq1Chk.setParID(2, spID);</span>
+<span class="fc" id="L127">			JdmoRowset rsChk = jdmo.createRowset(jq1Chk, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="pc bpc" id="L128" title="1 of 2 branches missed.">			if (rsChk.next()) {</span>
+<span class="nc" id="L129">				String cpName = rsChk.getString(1);</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">				while (rsChk.next()) {</span>
+<span class="nc" id="L131">					cpName = cpName + &quot;, &quot; + rsChk.getString(1);</span>
+				}
+<span class="nc" id="L133">				Object[] args = new Object[1];</span>
+<span class="nc" id="L134">				args[0] = cpName;</span>
+<span class="nc" id="L135">				throw (new BbmTimePeriodOverlapException(BbmEjbBundleKey.BUNDLE_NAME,</span>
+						BbmEjbBundleKey.INVALID_QUEUE_TO_SP_LINKING, args));
+			}
+<span class="fc" id="L138">			rsChk.close();</span>
+
+			// get the media de id of the underlying queue
+<span class="fc" id="L141">			StringBuffer pStmt = new StringBuffer(&quot;select MEDIAID from QUEUE where ID = ?&quot;);</span>
+<span class="fc" id="L142">			JdmoQuery jq1 = jdmo.createQuery(pStmt.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="fc" id="L143">			jq1.setParString(1, queueID.toString());</span>
+<span class="fc" id="L144">			JdmoRowset rs = jdmo.createRowset(jq1, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="fc" id="L145">			ID mediaID = null;</span>
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">			if (rs.next()) {</span>
+<span class="fc" id="L147">				mediaID = rs.getID(1);</span>
+			}
+<span class="fc" id="L149">			rs.close();</span>
+
+<span class="pc bpc" id="L151" title="1 of 2 branches missed.">			if (queueID != null) {</span>
+				// Check if entry for this media in database for this spid
+<span class="fc" id="L153">				String stmt = &quot;select SID from SPQUEUE where SPID= '&quot; + spID.toString() + &quot;' AND MEDIAID = '&quot;</span>
+<span class="fc" id="L154">						+ mediaID.toString() + &quot;'&quot;;</span>
+<span class="fc" id="L155">				JdmoRowset rs2 = jdmo.createRowset(stmt);</span>
+<span class="pc bpc" id="L156" title="1 of 2 branches missed.">				if (!rs2.next()) { // no media entry exists so create one.</span>
+					// Create the first spqueue with a null
+					// media and null queue.
+<span class="fc" id="L159">					SPQueue spqObj = new SPQueue();</span>
+<span class="fc" id="L160">					spqObj.setSpID(spID);</span>
+<span class="fc" id="L161">					spqObj.setQueueID(null);</span>
+<span class="fc" id="L162">					spqObj.setMediaID(mediaID);</span>
+<span class="fc" id="L163">					createSPQueueDB(spqObj, spID, null, mediaID);</span>
+				}
+<span class="fc" id="L165">				rs2.close();</span>
+			}
+<span class="fc" id="L167">			ID spqueueID = (createSPQueueDB(objValue, spID, queueID, mediaID));</span>
+
+			// create parent spqueue if necessary
+			// first check if there is a parent sp
+<span class="fc" id="L171">			SchedulingPeriodDAO spDAO = new SchedulingPeriodDAO();</span>
+<span class="fc" id="L172">			ArrayList&lt;ID&gt; spids = new ArrayList&lt;ID&gt;();</span>
+<span class="fc" id="L173">			spids.add(objValue.getSpID());</span>
+<span class="fc" id="L174">			Collection&lt;SchedulingPeriod&gt; sps = spDAO.getObjectsByIDs(spids);</span>
+<span class="fc" id="L175">			SchedulingPeriod sp = sps.iterator().next();</span>
+<span class="fc" id="L176">			ID parentSPID = sp.getParentSPID();</span>
+<span class="pc bpc" id="L177" title="1 of 2 branches missed.">			if (parentSPID != null) {</span>
+<span class="nc" id="L178">				String parentqueue = &quot;SELECT COUNT(*) NUMQ FROM SPQUEUE &quot; + &quot;WHERE SPID = '&quot; + parentSPID</span>
+						+ &quot;' AND QUEUEID IN (select parentqueueid from queue where id = '&quot; + queueID + &quot;')&quot;;
+<span class="nc" id="L180">				JdmoRowset parentRow = m_dmo.createRowset(parentqueue);</span>
+<span class="nc" id="L181">				int count = 0;</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">				if (parentRow.next()) {</span>
+<span class="nc" id="L183">					count = parentRow.getInt(&quot;NUMQ&quot;);</span>
+				}
+<span class="nc" id="L185">				parentRow.close();</span>
+
+<span class="nc bnc" id="L187" title="All 2 branches missed.">				if (count == 0) {</span>
+					// find the parent queue
+<span class="nc" id="L189">					String parentqueueid = &quot;select parentqueueid from queue where id = '&quot; + queueID + &quot;'&quot;;</span>
+<span class="nc" id="L190">					parentRow = m_dmo.createRowset(parentqueueid);</span>
+<span class="nc" id="L191">					ID parentQueueID = null;</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">					if (parentRow.next()) {</span>
+<span class="nc" id="L193">						parentQueueID = parentRow.getID(&quot;parentqueueid&quot;);</span>
+					}
+<span class="nc" id="L195">					parentRow.close();</span>
+
+<span class="nc" id="L197">					SPQueue spqObj = new SPQueue();</span>
+<span class="nc" id="L198">					spqObj.setSpID(parentSPID);</span>
+<span class="nc" id="L199">					spqObj.setQueueID(parentQueueID);</span>
+<span class="nc" id="L200">					spqObj.setMediaID(mediaID);</span>
+<span class="nc" id="L201">					createSPQueueDB(spqObj, parentSPID, parentQueueID, mediaID);</span>
+
+<span class="nc" id="L203">					String parentstmt = &quot;select SID from SPQUEUE where SPID= '&quot; + parentSPID + &quot;' AND MEDIAID = '&quot;</span>
+<span class="nc" id="L204">							+ mediaID.toString() + &quot;'&quot; + &quot; AND QUEUEID IS NULL&quot;;</span>
+<span class="nc" id="L205">					JdmoRowset parentrs2 = jdmo.createRowset(parentstmt);</span>
+<span class="nc bnc" id="L206" title="All 2 branches missed.">					if (!parentrs2.next()) { // no media entry exists so create</span>
+						// one.
+						// Create the first spqueue with
+						// a null media and null queue.
+<span class="nc" id="L210">						SPQueue spqParentCombined = new SPQueue();</span>
+<span class="nc" id="L211">						spqParentCombined.setSpID(parentSPID);</span>
+<span class="nc" id="L212">						spqParentCombined.setQueueID(null);</span>
+<span class="nc" id="L213">						spqParentCombined.setMediaID(mediaID);</span>
+<span class="nc" id="L214">						createSPQueueDB(spqParentCombined, parentSPID, null, mediaID);</span>
+					}
+<span class="nc" id="L216">					parentrs2.close();</span>
+				}
+			}
+
+<span class="fc" id="L220">			return spqueueID;</span>
+<span class="nc" id="L221">		} catch (BbmTimePeriodOverlapException e) {</span>
+<span class="nc" id="L222">			throw e;</span>
+<span class="nc" id="L223">		} catch (BbmCreateException e) {</span>
+<span class="nc" id="L224">			throw e;</span>
+<span class="nc" id="L225">		} catch (JdmoException e) {</span>
+<span class="nc" id="L226">			throw new BbmCreateException(e);</span>
+<span class="nc" id="L227">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L228">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="pc" id="L230">			jdmo.cleanUp();</span>
+		}
+	}
+
+	public ID createSPQueueDB(SPQueue objValue, ID spID, ID queueID, ID mediaID) throws BbmCreateException {
+<span class="fc" id="L235">		Jdmo jdmo = new Jdmo();</span>
+		try {
+			// get ID from DE
+<span class="fc" id="L238">			String idStr = DAOUtil.getDEID(jdmo);</span>
+
+			String spIDstr, queueIDstr, mediaStr;
+<span class="pc bpc" id="L241" title="1 of 2 branches missed.">			if (spID != null) {</span>
+<span class="fc" id="L242">				spIDstr = JdmoUtil.asSqlLiteral(spID.toString());</span>
+			} else {
+<span class="nc" id="L244">				spIDstr = &quot;null&quot;;</span>
+			}
+<span class="fc bfc" id="L246" title="All 2 branches covered.">			if (queueID != null) {</span>
+<span class="fc" id="L247">				queueIDstr = JdmoUtil.asSqlLiteral(queueID.toString());</span>
+			} else {
+<span class="fc" id="L249">				queueIDstr = &quot;null&quot;;</span>
+			}
+<span class="fc bfc" id="L251" title="All 2 branches covered.">			if (mediaID != null) {</span>
+<span class="fc" id="L252">				mediaStr = JdmoUtil.asSqlLiteral(mediaID.toString());</span>
+			} else {
+<span class="fc" id="L254">				mediaStr = &quot;null&quot;;</span>
+			}
+<span class="fc" id="L256">			String pStmt1 = &quot;insert into SPQUEUE (ID, SPID, QUEUEID, MEDIAID, SERVICELEVELGOALTYPE, PATIENCE, MAXABANDONSPERCENT, SLANSWERWAITINGTIME, STARTINGBACKLOG, ACTUALORWORKINGHOUR, OVERLOADTHRESHOLD1, OVERLOADTHRESHOLD2, INTERIMBACKLOG, QUEUEPRIORITYGROUP, QPGTHRESHOLD, CREATED) values (&quot;</span>
+<span class="fc" id="L257">					+ JdmoUtil.asSqlLiteral(idStr)</span>
+					+ &quot;, &quot;
+					+ spIDstr
+					+ &quot;, &quot;
+					+ queueIDstr
+					+ &quot;, &quot;
+					+ mediaStr
+					+ &quot;, &quot;
+<span class="fc" id="L265">					+ JdmoUtil.formatBool(objValue.getServiceLevelGoalType())</span>
+					+ &quot;, &quot;
+<span class="fc" id="L267">					+ new Integer(objValue.getPatience())</span>
+					+ &quot;, &quot;
+<span class="fc" id="L269">					+ new Float(objValue.getMaxAbandonsPercent())</span>
+					+ &quot;, &quot;
+<span class="fc" id="L271">					+ new Integer(objValue.getSlAnswerWaitingTime())</span>
+					+ &quot;, &quot;
+<span class="fc" id="L273">					+ new Float(objValue.getStartingBacklog())</span>
+					+ &quot;, &quot;
+<span class="fc" id="L275">					+ JdmoUtil.formatBool(objValue.getActualOrWorkingHour())</span>
+					+ &quot;, &quot;
+<span class="fc" id="L277">					+ new Integer(objValue.getOverloadThreshold1())</span>
+					+ &quot;, &quot;
+<span class="fc" id="L279">					+ new Integer(objValue.getOverloadThreshold2())</span>
+					+ &quot;, &quot;
+					+
+
+<span class="fc" id="L283">					new Float(objValue.getInterimBacklog())</span>
+					+ &quot;, &quot;
+<span class="fc" id="L285">					+ new Integer(objValue.getQueuePriorityGroup())</span>
+					+ &quot;, &quot;
+<span class="fc" id="L287">					+ new Integer(objValue.getQPGThreshold()) + &quot;,&quot; + JdmoUtil.asSqlLiteral(new Date()) + &quot;)&quot;;</span>
+<span class="fc" id="L288">			jdmo.executeCommand(pStmt1);</span>
+
+<span class="fc" id="L290">			StringBuffer pStmt = new StringBuffer(&quot;select SID from SPQUEUE where ID=?&quot;);</span>
+<span class="fc" id="L291">			JdmoQuery jq1 = jdmo.createQuery(pStmt.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="fc" id="L292">			jq1.setParString(1, idStr);</span>
+<span class="fc" id="L293">			JdmoRowset rs = jdmo.createRowset(jq1, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+
+<span class="fc" id="L295">			ID spQueueID = null;</span>
+<span class="pc bpc" id="L296" title="1 of 2 branches missed.">			if (rs.next()) {</span>
+<span class="fc" id="L297">				spQueueID = rs.getID(1);</span>
+			}
+<span class="fc" id="L299">			rs.close();</span>
+<span class="pc bpc" id="L300" title="1 of 2 branches missed.">			if (objValue.IsSkillsUpdated()) {</span>
+<span class="nc" id="L301">				linkSkillsToSPQueue(spQueueID, objValue.getSkills());</span>
+			}
+<span class="fc" id="L303">			return spQueueID;</span>
+<span class="nc" id="L304">		} catch (JdmoException e) {</span>
+<span class="nc" id="L305">			throw new BbmCreateException(e);</span>
+<span class="nc" id="L306">		} catch (BbmCreateException e) {</span>
+<span class="nc" id="L307">			throw e;</span>
+		} finally {
+<span class="pc" id="L309">			jdmo.cleanUp();</span>
+		}
+	}
+
+	public void updateSPQueue(SPQueue objValue) throws BbmUpdateException {
+<span class="nc" id="L314">		Jdmo jdmo = new Jdmo();</span>
+		try {
+			String deleteDate, backlogDeleteDate;
+<span class="nc bnc" id="L317" title="All 2 branches missed.">			if (objValue.getDeleteOnDate() != null) {</span>
+<span class="nc" id="L318">				deleteDate = JdmoUtil.asSqlLiteral(objValue.getDeleteOnDate());</span>
+			} else {
+<span class="nc" id="L320">				deleteDate = &quot;null&quot;;</span>
+			}
+
+<span class="nc bnc" id="L323" title="All 2 branches missed.">			if (objValue.getInterimBacklogDate() != null) {</span>
+<span class="nc" id="L324">				backlogDeleteDate = JdmoUtil.asSqlLiteral(objValue.getInterimBacklogDate());</span>
+			} else {
+<span class="nc" id="L326">				backlogDeleteDate = &quot;null&quot;;</span>
+			}
+
+<span class="nc" id="L329">			String pStmt1 = &quot;update SPQUEUE SET SERVICELEVELGOALTYPE = &quot;</span>
+<span class="nc" id="L330">					+ JdmoUtil.formatBool(objValue.getServiceLevelGoalType()) + &quot;, PATIENCE = &quot;</span>
+<span class="nc" id="L331">					+ new Integer(objValue.getPatience()) + &quot;, MAXABANDONSPERCENT = &quot;</span>
+<span class="nc" id="L332">					+ new Float(objValue.getMaxAbandonsPercent()) + &quot;, SLANSWERWAITINGTIME = &quot;</span>
+<span class="nc" id="L333">					+ new Integer(objValue.getSlAnswerWaitingTime()) + &quot;, STARTINGBACKLOG = &quot;</span>
+<span class="nc" id="L334">					+ new Float(objValue.getStartingBacklog()) + &quot;, ACTUALORWORKINGHOUR = &quot;</span>
+<span class="nc" id="L335">					+ JdmoUtil.formatBool(objValue.getActualOrWorkingHour()) + &quot;, DELETEONDATE = &quot; + deleteDate</span>
+<span class="nc" id="L336">					+ &quot;, OVERLOADTHRESHOLD1 = &quot; + new Integer(objValue.getOverloadThreshold1()) + &quot;, OVERLOADTHRESHOLD2 = &quot;</span>
+<span class="nc" id="L337">					+ new Integer(objValue.getOverloadThreshold2()) + &quot;, INTERIMBACKLOG = &quot;</span>
+<span class="nc" id="L338">					+ new Float(objValue.getInterimBacklog()) + &quot;, INTERIMBACKLOGDATE = &quot; + backlogDeleteDate</span>
+<span class="nc" id="L339">					+ &quot;, QUEUEPRIORITYGROUP = &quot; + new Integer(objValue.getQueuePriorityGroup()) + &quot;, QPGTHRESHOLD = &quot;</span>
+<span class="nc" id="L340">					+ new Integer(objValue.getQPGThreshold()) + &quot;, MODIFIED = &quot; + JdmoUtil.asSqlLiteral(new Date())</span>
+<span class="nc" id="L341">					+ &quot;  where SID = &quot; + JdmoUtil.asSqlLiteral(objValue.getID());</span>
+<span class="nc" id="L342">			jdmo.executeCommand(pStmt1);</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">			if (objValue.IsSkillsUpdated()) {</span>
+<span class="nc" id="L344">				linkSkillsToSPQueue(objValue.getID(), objValue.getSkills());</span>
+			}
+<span class="nc" id="L346">		} catch (JdmoException e) {</span>
+<span class="nc" id="L347">			throw new BbmUpdateException(e);</span>
+<span class="nc" id="L348">		} catch (BbmCreateException e) {</span>
+<span class="nc" id="L349">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L351">			jdmo.cleanUp();</span>
+<span class="nc" id="L352">		}</span>
+<span class="nc" id="L353">	}</span>
+
+	/**
+	 * Creates the list of the spqueues. This method is specifically written for
+	 * Branch Forecasting uses cases where only a few fields are updates. Only
+	 * the SPID, QueueID, Media Id, service goal type, patience, sl answering
+	 * time and the first skill are used.
+	 */
+	public SPQueueIDMap createSPQueuesWithLimitedFields(Collection&lt;SPQueue&gt; spqueues) throws JdmoException {
+<span class="nc" id="L362">		Jdmo jdmo = new Jdmo();</span>
+		try {
+<span class="nc" id="L364">			return new SPQueueIDMap(createOrUpdateSPQueuesWithLimitedFields(jdmo, spqueues));</span>
+		} finally {
+<span class="nc" id="L366">			jdmo.cleanUp();</span>
+		}
+	}
+	
+	/**
+	 * Updates the list of the spqueues. This method is specifically written for
+	 * Branch Forecasting uses cases where only a few fields are updates. Only
+	 * the SPID, QueueID, Media Id, service goal type, patience, sl answering
+	 * time and the first skill are used.
+	 */
+	public void updateSPQueuesWithLimitedFields(Collection&lt;SPQueue&gt; spqueues) throws JdmoException {
+<span class="nc" id="L377">		Jdmo jdmo = new Jdmo();</span>
+		try {
+<span class="nc" id="L379">			createOrUpdateSPQueuesWithLimitedFields(jdmo, spqueues);</span>
+		} finally {
+<span class="nc" id="L381">			jdmo.cleanUp();</span>
+<span class="nc" id="L382">		}</span>
+<span class="nc" id="L383">	}</span>
+	
+	private JdmoRowset createOrUpdateSPQueuesWithLimitedFields(Jdmo jdmo, Collection&lt;SPQueue&gt; spqueues) throws JdmoException {
+<span class="nc" id="L386">		JdmoQuery jQuery = jdmo.createQuery(PROC_CREATEUPDATESPQUEUE_LIMITED_FIELDS, Jdmo.STORPROC_QUERY);</span>
+<span class="nc" id="L387">		jQuery.setParString(1, buildSPQueueDataForBulkUpdate(spqueues));</span>
+<span class="nc" id="L388">		return jdmo.createRowset(jQuery, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+	}
+
+	/**
+	 * Builds the String in the format needed to call teh stored procedure to do
+	 * bulk update of limited fields of SPQueue. Only the SPID, QueueID, Media
+	 * Id, service goal type, patience, sl answering time and the first skill
+	 * are used.
+	 */
+	String buildSPQueueDataForBulkUpdate(Collection&lt;SPQueue&gt; spqueues) {
+<span class="nc" id="L398">		Map&lt;ID, String&gt; mediaStringIdbySID = new HashMap&lt;ID, String&gt;();</span>
+<span class="nc" id="L399">		String seperator = &quot;,&quot;;</span>
+<span class="nc" id="L400">		String rootStart = &quot;&lt;SPQ&gt;&quot;;</span>
+<span class="nc" id="L401">		String elementStart = &quot;&lt;S&gt;&quot;;</span>
+<span class="nc" id="L402">		String rootEnd = &quot;&lt;/SPQ&gt;&quot;;</span>
+<span class="nc" id="L403">		String elementEnd = &quot;&lt;/S&gt;&quot;;</span>
+<span class="nc" id="L404">		StringBuilder spqStringBuilder = new StringBuilder();</span>
+<span class="nc" id="L405">		spqStringBuilder.append(rootStart);</span>
+<span class="nc bnc" id="L406" title="All 2 branches missed.">		for (SPQueue spq : spqueues) {</span>
+<span class="nc" id="L407">			spqStringBuilder.append(elementStart);</span>
+<span class="nc" id="L408">			spqStringBuilder.append(spq.getSpID());</span>
+<span class="nc" id="L409">			spqStringBuilder.append(seperator);</span>
+<span class="nc" id="L410">			spqStringBuilder.append(spq.getQueueID());</span>
+<span class="nc" id="L411">			spqStringBuilder.append(seperator);</span>
+<span class="nc" id="L412">			String media = mediaStringIdbySID.get(spq.getMediaID());</span>
+<span class="nc bnc" id="L413" title="All 2 branches missed.">			if (media == null) {</span>
+<span class="nc" id="L414">				media = Media.convertMediaIdToString(spq.getMediaID());</span>
+<span class="nc" id="L415">				mediaStringIdbySID.put(spq.getMediaID(), media);</span>
+			}
+<span class="nc" id="L417">			spqStringBuilder.append(media);</span>
+<span class="nc" id="L418">			spqStringBuilder.append(seperator);</span>
+<span class="nc" id="L419">			spqStringBuilder.append(JdmoUtil.formatBool(spq.getServiceLevelGoalType()));</span>
+<span class="nc" id="L420">			spqStringBuilder.append(seperator);</span>
+<span class="nc" id="L421">			spqStringBuilder.append(spq.getPatience());</span>
+<span class="nc" id="L422">			spqStringBuilder.append(seperator);</span>
+<span class="nc" id="L423">			spqStringBuilder.append(spq.getSlAnswerWaitingTime());</span>
+<span class="nc bnc" id="L424" title="All 2 branches missed.">			if (spq.getSkills().size() &gt; 0) {</span>
+<span class="nc" id="L425">				spqStringBuilder.append(seperator);</span>
+<span class="nc" id="L426">				spqStringBuilder.append(spq.getSkills().iterator().next());</span>
+			}
+<span class="nc" id="L428">			spqStringBuilder.append(elementEnd);</span>
+<span class="nc" id="L429">		}</span>
+<span class="nc" id="L430">		spqStringBuilder.append(rootEnd);</span>
+<span class="nc" id="L431">		return spqStringBuilder.toString();</span>
+	}
+
+	/**
+	 * Returns the SPQueue object
+	 *
+	 * @param spQueueID
+	 * @return
+	 * @throws BbmFinderException
+	 * @throws JdmoException
+	 */
+	public SPQueue getSPQueue(ID spQueueID) throws BbmFinderException, BbmObjectNotFoundException, JdmoException {
+<span class="fc" id="L443">		SPQueueDAO dao = new SPQueueDAO();</span>
+		try {
+<span class="fc" id="L445">			SPQueue spq = dao.getObjectByID(spQueueID);</span>
+<span class="fc" id="L446">			ID sidSPID = DAOUtil.mapIDToSID(spq.getSpID(), new SchedulingPeriodFieldInfo());</span>
+<span class="fc" id="L447">			spq.setSpID(sidSPID);</span>
+<span class="fc" id="L448">			ID sidMediaID = DAOUtil.mapIDToSID(spq.getMediaID(), new MediaFieldInfo());</span>
+<span class="fc" id="L449">			spq.setDEMediaID(spq.getMediaID());</span>
+<span class="fc" id="L450">			spq.setMediaID(sidMediaID);</span>
+<span class="fc" id="L451">			spq.setSkillsFromDB(getSkillIDsForSPQueue(spQueueID));</span>
+<span class="fc" id="L452">			return spq;</span>
+
+<span class="nc" id="L454">		} catch (BbmObjectNotFoundException e) {</span>
+<span class="nc" id="L455">			throw e;</span>
+<span class="nc" id="L456">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L457">			throw e;</span>
+		} finally {
+<span class="pc" id="L459">			dao.cleanUp();</span>
+		}
+	}
+
+	/**
+	 * Returns the SID field of the SPQueue (legacy)
+	 *
+	 * @param spID
+	 * @param queueID
+	 * @return
+	 * @throws JdmoException
+	 */
+	public static ID getSPQueueID(ID spID, ID queueID) throws JdmoException {
+<span class="fc" id="L472">		Jdmo dmo = new Jdmo();</span>
+		try {
+<span class="fc" id="L474">			StringBuffer pStmt = new StringBuffer();</span>
+<span class="fc" id="L475">			pStmt.append(&quot;select SPQUEUE.SID from SPQUEUE, SP, QUEUE &quot;);</span>
+<span class="fc" id="L476">			pStmt.append(&quot;where SPQUEUE.SPID=SP.ID&quot;);</span>
+<span class="fc" id="L477">			pStmt.append(&quot; and  SPQUEUE.QUEUEID=QUEUE.ID&quot;);</span>
+<span class="fc" id="L478">			pStmt.append(&quot; and  QUEUE.SID=?&quot;);</span>
+<span class="fc" id="L479">			pStmt.append(&quot; and  SP.SID=?&quot;);</span>
+
+<span class="fc" id="L481">			JdmoQuery jq = dmo.createQuery(pStmt.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="fc" id="L482">			jq.setParID(1, queueID);</span>
+<span class="fc" id="L483">			jq.setParID(2, spID);</span>
+<span class="fc" id="L484">			JdmoRowset rs = dmo.createRowset(jq, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="fc" id="L485">			ID spQueueID = null;</span>
+<span class="pc bpc" id="L486" title="1 of 2 branches missed.">			if (rs.next()) {</span>
+<span class="fc" id="L487">				spQueueID = new ID(rs.getInt(1));</span>
+			}
+<span class="fc" id="L489">			rs.close();</span>
+<span class="fc" id="L490">			return spQueueID;</span>
+		} finally {
+<span class="pc" id="L492">			dmo.cleanUp();</span>
+		}
+	}
+
+	/*
+	 * Returns the actual ID field of the SPQueue (getSPqueueID was already
+	 * take)
+	 */
+	public static boolean hasSPQueues(ID spID) throws JdmoException {
+<span class="nc" id="L501">		Jdmo dmo = new Jdmo();</span>
+		try {
+<span class="nc" id="L503">			StringBuffer pStmt = new StringBuffer();</span>
+<span class="nc" id="L504">			pStmt.append(&quot;select SPQUEUE.SID from SPQUEUE, SP &quot;);</span>
+<span class="nc" id="L505">			pStmt.append(&quot; where SPQUEUE.SPID=SP.ID &quot;);</span>
+<span class="nc" id="L506">			pStmt.append(&quot; and  SP.SID=?&quot;);</span>
+
+<span class="nc" id="L508">			JdmoQuery jq = dmo.createQuery(pStmt.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="nc" id="L509">			jq.setParID(1, spID);</span>
+<span class="nc" id="L510">			JdmoRowset rs = dmo.createRowset(jq, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="nc" id="L511">			ID spQueueID = null;</span>
+<span class="nc" id="L512">			boolean bHasSpQueue = false;</span>
+<span class="nc bnc" id="L513" title="All 2 branches missed.">			if (rs.next()) {</span>
+<span class="nc" id="L514">				bHasSpQueue = true;</span>
+			}
+<span class="nc" id="L516">			rs.close();</span>
+<span class="nc" id="L517">			return bHasSpQueue;</span>
+		} finally {
+<span class="nc" id="L519">			dmo.cleanUp();</span>
+		}
+	}
+
+	/*
+	 * Returns the actual ID field of the SPQueue (getSPqueueID was already
+	 * take)
+	 */
+	public static ID getSPQueueStringID(ID spID, ID queueID) throws JdmoException {
+<span class="nc" id="L528">		Jdmo dmo = new Jdmo();</span>
+		try {
+<span class="nc" id="L530">			StringBuffer pStmt = new StringBuffer();</span>
+<span class="nc" id="L531">			pStmt.append(&quot;select SPQUEUE.SID from SPQUEUE, SP, QUEUE &quot;);</span>
+<span class="nc" id="L532">			pStmt.append(&quot;where SPQUEUE.SPID=SP.ID&quot;);</span>
+<span class="nc" id="L533">			pStmt.append(&quot; and  SPQUEUE.QUEUEID=QUEUE.ID&quot;);</span>
+<span class="nc" id="L534">			pStmt.append(&quot; and  QUEUE.SID=?&quot;);</span>
+<span class="nc" id="L535">			pStmt.append(&quot; and  SP.SID=?&quot;);</span>
+
+<span class="nc" id="L537">			JdmoQuery jq = dmo.createQuery(pStmt.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="nc" id="L538">			jq.setParID(1, queueID);</span>
+<span class="nc" id="L539">			jq.setParID(2, spID);</span>
+<span class="nc" id="L540">			JdmoRowset rs = dmo.createRowset(jq, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="nc" id="L541">			ID spQueueID = null;</span>
+<span class="nc bnc" id="L542" title="All 2 branches missed.">			if (rs.next()) {</span>
+<span class="nc" id="L543">				spQueueID = new ID(rs.getString(1));</span>
+			}
+<span class="nc" id="L545">			rs.close();</span>
+<span class="nc" id="L546">			return spQueueID;</span>
+		} finally {
+<span class="nc" id="L548">			dmo.cleanUp();</span>
+		}
+	}
+
+	/**
+	 * Returns whether patience is to be used in ASA calculations for unskilled
+	 * SPs instead of abandons.
+	 */
+	public static boolean isPatienceUsedInUnskilledASACalcs() {
+<span class="nc" id="L557">		return USE_PATIENCE_IN_UNSKILLED_ASA_CALCS;</span>
+	}
+
+	/*
+	 * public static void deleteSPQueue(ID spQueueId) throws JdmoException { if
+	 * (spQueueId == null) return; Jdmo jdmo = new Jdmo(); try { Object[] param
+	 * = new Object[1]; param[0] = spQueueId; // remove skills attached to
+	 * spqueue jdmo.executePCommand(
+	 * &quot;delete from SPQUEUESKILL where SPQUEUEID = (SELECT ID FROM SPQUEUE WHERE SID=?)&quot;
+	 * , param); // remove spqueue
+	 * jdmo.executePCommand(&quot;delete from SPQUEUE where SID=?&quot;, param); } finally
+	 * { jdmo.cleanUp(); } }
+	 */
+	// Deletes spqueue and the skills attached to the spqueue
+	public void deleteSPQueue(ID spQueueId) throws BbmRemoveException {
+<span class="nc" id="L572">		Jdmo dmo = new Jdmo();</span>
+		try {
+<span class="nc" id="L574">			String query = &quot;select id, SPID, MEDIAID from SPQUEUE where sid = &quot; + spQueueId.toString();</span>
+<span class="nc" id="L575">			JdmoRowset r = m_dmo.createRowset(query);</span>
+<span class="nc" id="L576">			ID SPID = null;</span>
+<span class="nc" id="L577">			ID MediaID = null;</span>
+<span class="nc bnc" id="L578" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L579">				SPID = r.getID(&quot;SPID&quot;);</span>
+<span class="nc" id="L580">				MediaID = r.getID(&quot;MEDIAID&quot;);</span>
+				break;
+			}
+
+			// delete parent queue in case this is a child queue
+			// first check if there are other child queue has the same parent
+<span class="nc" id="L586">			String subQueues = &quot;select count(*) as count from spqueue, Queue, sp where SPQUEUE.QUEUEID = QUEUE.ID AND SPQUEUE.SPID = SP.ID &quot;</span>
+					+ &quot;AND parentqueueid in (&quot;
+					+ &quot;select parentqueueid from QUEUE, SPQUEUE &quot;
+					+ &quot;where SPQUEUE.QUEUEID = QUEUE.ID AND SPQUEUE.SID = &quot;
+					+ spQueueId
+					+ &quot;) AND SP.PARENTSPID in (&quot;
+					+ &quot; select SP.PARENTSPID from SP, SPQUEUE &quot;
+					+ &quot;where SPQUEUE.SPID = SP.ID AND SPQUEUE.SID = &quot;
+					+ spQueueId + &quot;)&quot;;
+<span class="nc" id="L595">			JdmoRowset subRow = m_dmo.createRowset(subQueues);</span>
+<span class="nc" id="L596">			int count = 0;</span>
+<span class="nc bnc" id="L597" title="All 2 branches missed.">			if (subRow.next()) {</span>
+<span class="nc" id="L598">				count = subRow.getInt(&quot;count&quot;);</span>
+			}
+<span class="nc" id="L600">			subRow.close();</span>
+
+			// there are no other queues, delete the parent
+<span class="nc bnc" id="L603" title="All 2 branches missed.">			if (count == 1) {</span>
+<span class="nc" id="L604">				String whereParent = &quot;select spqueue.ID ID from spqueue, Queue, sp where SPQUEUE.QUEUEID = QUEUE.ID AND SPQUEUE.SPID = SP.ID &quot;</span>
+						+ &quot;AND queueid in (&quot;
+						+ &quot;select parentqueueid from QUEUE, SPQUEUE &quot;
+						+ &quot;where SPQUEUE.QUEUEID = QUEUE.ID AND SPQUEUE.SID = &quot;
+						+ spQueueId
+						+ &quot;) AND SP.ID in (&quot;
+						+ &quot; select SP.PARENTSPID from SP, SPQUEUE &quot;
+						+ &quot;where SPQUEUE.SPID = SP.ID AND SPQUEUE.SID = &quot;
+						+ spQueueId + &quot;)&quot;;
+<span class="nc" id="L613">				DAOUtil.deleteObjects(dmo, &quot;SPQUEUE&quot;, whereParent);</span>
+			}
+
+<span class="nc" id="L616">			String where = &quot;select id from SPQUEUE where sid = &quot; + spQueueId.toString();</span>
+<span class="nc" id="L617">			DAOUtil.deleteObjects(dmo, &quot;SPQUEUE&quot;, where);</span>
+<span class="nc" id="L618">			deleteAllSkillsForSPQueue(spQueueId);</span>
+
+<span class="nc bnc" id="L620" title="All 4 branches missed.">			if (SPID != null &amp;&amp; MediaID != null) {</span>
+<span class="nc" id="L621">				Collection&lt;SPQueue&gt; spQueues = null;</span>
+				try {
+<span class="nc" id="L623">					spQueues = getNonCombinedSPQueuesByMediaAndSP(SPID, MediaID);</span>
+<span class="nc" id="L624">				} catch (BbmFinderException ex) {</span>
+
+<span class="nc" id="L626">				}</span>
+<span class="nc bnc" id="L627" title="All 4 branches missed.">				if (spQueues != null &amp;&amp; spQueues.size() == 0) {</span>
+<span class="nc" id="L628">					where = &quot;select id from SPQUEUE where QUEUEID is NULL AND SPID = '&quot; + SPID.toString()</span>
+<span class="nc" id="L629">							+ &quot;' AND MediaID = '&quot; + MediaID.toString() + &quot;'&quot;;</span>
+<span class="nc" id="L630">					DAOUtil.deleteObjects(dmo, &quot;SPQUEUE&quot;, where);</span>
+				}
+			}
+
+<span class="nc" id="L634">		} catch (JdmoException ex) {</span>
+<span class="nc" id="L635">			throw new BbmRemoveException(ex);</span>
+		} finally {
+<span class="nc" id="L637">			dmo.cleanUp();</span>
+<span class="nc" id="L638">		}</span>
+<span class="nc" id="L639">	}</span>
+
+	public Collection&lt;SPQueue&gt; getSPQueuesBySPID(ID SPSID) throws BbmObjectNotFoundException, BbmFinderException {
+<span class="fc" id="L642">		return getSPQueuesBySPIDsFixed(Arrays.asList(SPSID));</span>
+	}
+
+	/**
+	 * Returns all non-combined SPQueues linked to the given Scheduling Periods.  For combined SPQueues in an SP, please
+	 * use {@link SPQueueDAO#getCombinedSPQueue(ID, ID)}
+	 */
+	public Collection&lt;SPQueue&gt; getSPQueuesBySPIDsFixed(Collection&lt;ID&gt; SpSIDs) throws BbmObjectNotFoundException,
+			BbmFinderException {
+
+		// Use a map to avoid dupes (two objects with the same id are the same)
+<span class="fc" id="L653">		Map&lt;ID, SPQueue&gt; hSPQueues = new HashMap&lt;ID, SPQueue&gt;();</span>
+<span class="fc" id="L654">		JdmoRowset r = null;</span>
+		try {
+<span class="fc" id="L656">			String query = &quot;SELECT spq.ID, spq.SID, spq.SPID, spq.QUEUEID, spq.MEDIAID, spq.SERVICELEVELGOALTYPE, &quot;</span>
+					+ &quot;spq.PATIENCE, spq.MAXABANDONSPERCENT, spq.SLANSWERWAITINGTIME, spq.STARTINGBACKLOG, &quot;
+					+ &quot;spq.ACTUALORWORKINGHOUR, spq.DELETEONDATE, spq.OVERLOADTHRESHOLD1, spq.OVERLOADTHRESHOLD2, &quot;
+					+ &quot;spq.ISQUALITYGOALPERCENTAGE, spq.QUALITYGOALREQUIREMENT, spq.MINIMUMQUALITYSCORE, spq.CONNECTGOAL, &quot;
+					+ &quot;SPQ.FTETHRESHOLDOVER,SPQ.FTETHRESHOLDOVERPERCENT,SPQ.FTETHRESHOLDUNDER,SPQ.FTETHRESHOLDUNDERPERCENT,SPQ.LEASTTIMEINTERVAL, &quot;
+					+ &quot;s.SID SpSID, m.SID MediaSID, q.SID QueueSID from SP s, SPQUEUE spq, MEDIA m, QUEUE q &quot;
+<span class="fc" id="L662">					+ &quot;WHERE s.sid in &quot; + getDMO().createInClause(SpSIDs) + &quot; AND &quot;</span>
+					+ &quot;spq.spid = s.id and spq.mediaid = m.id and spq.queueid = q.id&quot;;
+<span class="fc" id="L664">			r = m_dmo.createRowset(query);</span>
+<span class="fc bfc" id="L665" title="All 2 branches covered.">			while (r.next()) {</span>
+
+<span class="fc" id="L667">				ID DEid = r.getID(&quot;ID&quot;);</span>
+<span class="fc" id="L668">				ID theID = r.getID(&quot;SID&quot;);</span>
+<span class="fc" id="L669">				ID spSID = r.getID(&quot;SpSID&quot;);</span>
+<span class="fc" id="L670">				ID DEMediaID = r.getID(&quot;MEDIAID&quot;);</span>
+<span class="fc" id="L671">				ID theMediaID = r.getID(&quot;MediaSID&quot;);</span>
+<span class="fc" id="L672">				ID DEQueueID = r.getID(&quot;QueueID&quot;);</span>
+<span class="fc" id="L673">				ID theQueueID = r.getID(&quot;QueueSID&quot;);</span>
+<span class="fc" id="L674">				int patience = r.getInt(&quot;PATIENCE&quot;);</span>
+<span class="fc" id="L675">				float maxAbandonsPercent = r.getFloat(&quot;MAXABANDONSPERCENT&quot;);</span>
+<span class="fc" id="L676">				int SLAnswerWaitingTime = r.getInt(&quot;SLANSWERWAITINGTIME&quot;);</span>
+<span class="fc" id="L677">				float startingBackLog = r.getFloat(&quot;STARTINGBACKLOG&quot;);</span>
+<span class="fc" id="L678">				boolean actualOrWorkingHour = r.getBoolean(&quot;ACTUALORWORKINGHOUR&quot;);</span>
+<span class="fc" id="L679">				Date deleteOnDate = r.getTimestamp(&quot;DELETEONDATE&quot;);</span>
+<span class="fc" id="L680">				int overloadThreshold1 = r.getInt(&quot;OVERLOADTHRESHOLD1&quot;);</span>
+<span class="fc" id="L681">				int overloadThreshold2 = r.getInt(&quot;OVERLOADTHRESHOLD2&quot;);</span>
+<span class="fc" id="L682">				boolean isQualityGoalPercentage = r.getBoolean(&quot;ISQUALITYGOALPERCENTAGE&quot;);</span>
+<span class="fc" id="L683">				int qualityGoalRequirement = r.getInt(&quot;QUALITYGOALREQUIREMENT&quot;);</span>
+<span class="fc" id="L684">				int minimumQualityScore = r.getInt(&quot;MINIMUMQUALITYSCORE&quot;);</span>
+<span class="fc" id="L685">				int connectGoal = r.getInt(&quot;CONNECTGOAL&quot;);</span>
+
+<span class="fc" id="L687">				SPQueue pSPQueue = new SPQueue();</span>
+<span class="fc" id="L688">				pSPQueue.setIsPatienceUsedinUnskilledASACalcs(USE_PATIENCE_IN_UNSKILLED_ASA_CALCS);</span>
+<span class="fc" id="L689">				pSPQueue.setID(theID);</span>
+<span class="fc" id="L690">				pSPQueue.setFieldValue(SPQueueFieldInfo.SPQUEUE_ID, DEid);</span>
+<span class="fc" id="L691">				pSPQueue.setSpID(spSID);</span>
+<span class="fc" id="L692">				pSPQueue.setQueueID(theQueueID);</span>
+<span class="fc" id="L693">				pSPQueue.setDEQueueID(DEQueueID);</span>
+<span class="fc" id="L694">				pSPQueue.setMediaID(theMediaID);</span>
+<span class="fc" id="L695">				pSPQueue.setDEMediaID(DEMediaID);</span>
+<span class="fc" id="L696">				pSPQueue.setPatience(patience);</span>
+<span class="fc" id="L697">				pSPQueue.setMaxAbandonsPercent(maxAbandonsPercent);</span>
+<span class="fc" id="L698">				pSPQueue.setServiceLevelGoalType(r.getBoolean(&quot;SERVICELEVELGOALTYPE&quot;));</span>
+<span class="fc" id="L699">				pSPQueue.setSlAnswerWaitingTime(SLAnswerWaitingTime);</span>
+<span class="fc" id="L700">				pSPQueue.setStartingBacklog(startingBackLog);</span>
+<span class="fc" id="L701">				pSPQueue.setActualOrWorkingHour(actualOrWorkingHour);</span>
+<span class="fc" id="L702">				pSPQueue.setDeleteOnDate(deleteOnDate);</span>
+<span class="fc" id="L703">				pSPQueue.setOverloadThreshold1(overloadThreshold1);</span>
+<span class="fc" id="L704">				pSPQueue.setOverloadThreshold2(overloadThreshold2);</span>
+<span class="fc" id="L705">				pSPQueue.setIsQualityGoalPercentage(isQualityGoalPercentage);</span>
+<span class="fc" id="L706">				pSPQueue.setQualityGoalRequirement(qualityGoalRequirement);</span>
+<span class="fc" id="L707">				pSPQueue.setMinimumQualityScore(minimumQualityScore);</span>
+<span class="fc" id="L708">				pSPQueue.setConnectGoal(connectGoal);</span>
+<span class="fc" id="L709">				pSPQueue.setFTEThresholdOver(r.getInt(&quot;FTETHRESHOLDOVER&quot;));</span>
+<span class="fc" id="L710">				pSPQueue.setFTEThresholdOverPercentage(r.getBoolean(&quot;FTETHRESHOLDOVERPERCENT&quot;));</span>
+<span class="fc" id="L711">				pSPQueue.setFTEThresholdUnder(r.getInt(&quot;FTETHRESHOLDUNDER&quot;));</span>
+<span class="fc" id="L712">				pSPQueue.setFTEThresholdUnderPercentage(r.getBoolean(&quot;FTETHRESHOLDUNDERPERCENT&quot;));</span>
+<span class="fc" id="L713">				pSPQueue.setLeastTimeInterval(r.getInt(&quot;LEASTTIMEINTERVAL&quot;));</span>
+<span class="fc" id="L714">				hSPQueues.put(theID, pSPQueue);</span>
+<span class="fc" id="L715">			}</span>
+			//load the skills for all the spqueues together rathen than make a call for each of them. 
+			// This nearly triples the performance of this method for a get of few hundred SPQueues.
+<span class="fc" id="L718">			loadSkillIDsIntoSPQueues(hSPQueues.values());</span>
+			
+<span class="fc" id="L720">			return new ArrayList&lt;SPQueue&gt;(hSPQueues.values());</span>
+
+<span class="nc" id="L722">		} catch (JdmoException e) {</span>
+<span class="nc" id="L723">			e.printStackTrace();</span>
+<span class="nc" id="L724">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L726">			try {</span>
+<span class="pc" id="L727">				r.close();</span>
+<span class="nc" id="L728">			} catch (JdmoException e) {</span>
+<span class="pc" id="L729">			}</span>
+<span class="pc" id="L730">			m_dmo.cleanUp();</span>
+
+		}
+	}
+
+	/**
+	 * Persists the skills of each of the given spqueues (creates records in the
+	 * spqueueskill table).
+	 *
+	 * @param spQueueSkillIDMap SPQueue ID (DEID) -&gt; Colleciton of linked skill IDs associated
+	 *                          to the spqueue (DEIDs)
+	 */
+	protected void linkSkillsToSPQueues(Map&lt;ID, Collection&lt;ID&gt;&gt; spQueueSkillIDMap) throws BbmCreateException {
+		try {
+<span class="nc bnc" id="L744" title="All 4 branches missed.">			if (spQueueSkillIDMap == null || spQueueSkillIDMap.isEmpty()) {</span>
+<span class="nc" id="L745">				return;</span>
+			}
+<span class="nc" id="L747">			deleteAllSkillsForSPQueues(spQueueSkillIDMap.keySet());</span>
+<span class="nc" id="L748">			HashMap&lt;String, ID&gt; columnValueMap = new HashMap&lt;String, ID&gt;();</span>
+<span class="nc bnc" id="L749" title="All 2 branches missed.">			for (ID spQueueID : spQueueSkillIDMap.keySet()) {// TODO: map IDs to</span>
+				// DEIDs?
+<span class="nc bnc" id="L751" title="All 2 branches missed.">				for (ID skillID : spQueueSkillIDMap.get(spQueueID)) {</span>
+<span class="nc" id="L752">					columnValueMap.put(&quot;SKILLID&quot;, skillID);</span>
+<span class="nc" id="L753">					columnValueMap.put(&quot;SPQUEUEID&quot;, spQueueID);</span>
+<span class="nc" id="L754">					getDMO().addBatchInsert(&quot;SPQUEUESKILL&quot;, columnValueMap);</span>
+<span class="nc" id="L755">					columnValueMap.clear();</span>
+<span class="nc" id="L756">				}</span>
+<span class="nc" id="L757">			}</span>
+<span class="nc" id="L758">			getDMO().executeBatch();</span>
+<span class="nc" id="L759">		} catch (JdmoException ex) {</span>
+<span class="nc" id="L760">			throw new BbmCreateException(ex);</span>
+<span class="nc" id="L761">		} catch (BbmRemoveException ex) {</span>
+<span class="nc" id="L762">			throw new BbmCreateException(ex);</span>
+<span class="nc" id="L763">		}</span>
+<span class="nc" id="L764">	}</span>
+
+	public void linkSkillsToSPQueue(ID spQueueID, Collection&lt;ID&gt; colSkillIDs) throws BbmCreateException {
+<span class="fc" id="L767">		Jdmo jdmo = new Jdmo();</span>
+		try {
+<span class="fc" id="L769">			deleteAllSkillsForSPQueue(spQueueID);</span>
+<span class="pc bpc" id="L770" title="1 of 4 branches missed.">			if (colSkillIDs == null || colSkillIDs.size() &lt; 1) {</span>
+<span class="fc" id="L771">				return;</span>
+			}
+<span class="fc bfc" id="L773" title="All 2 branches covered.">			for (ID skillID : colSkillIDs) {</span>
+<span class="fc" id="L774">				linkSkillToSPQueue(spQueueID, skillID);</span>
+<span class="fc" id="L775">			}</span>
+<span class="nc" id="L776">		} catch (BbmCreateException ex) {</span>
+<span class="nc" id="L777">			throw ex;</span>
+<span class="nc" id="L778">		} catch (BbmRemoveException e) {</span>
+<span class="nc" id="L779">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="pc" id="L781">			jdmo.cleanUp();</span>
+<span class="fc" id="L782">		}</span>
+<span class="fc" id="L783">	}</span>
+
+	private void linkSkillToSPQueue(ID spQueueID, ID skillID) throws BbmCreateException {
+<span class="fc" id="L786">		Jdmo jdmo = new Jdmo();</span>
+		try {
+<span class="fc" id="L788">			String idStr = DAOUtil.getDEID(jdmo);</span>
+<span class="fc" id="L789">			ID skillDEID = DAOUtil.mapIDToDEID(skillID, new SkillFieldInfo());</span>
+<span class="fc" id="L790">			ID spqueueDEID = DAOUtil.mapIDToDEID(spQueueID, new SPQueueFieldInfo());</span>
+<span class="fc" id="L791">			ID createdID = new ID(idStr);</span>
+<span class="fc" id="L792">			String strCreate = &quot;INSERT into SPQUEUESKILL (ID, SKILLID, SPQUEUEID) values ('&quot; + createdID + &quot;', '&quot;</span>
+					+ skillDEID + &quot;', '&quot; + spqueueDEID + &quot;')&quot;;
+<span class="fc" id="L794">			jdmo.executeCommand(strCreate);</span>
+<span class="nc" id="L795">		} catch (JdmoException ex) {</span>
+<span class="nc" id="L796">			throw new BbmCreateException(ex);</span>
+<span class="nc" id="L797">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L798">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="pc" id="L800">			jdmo.cleanUp();</span>
+<span class="fc" id="L801">		}</span>
+<span class="fc" id="L802">	}</span>
+
+	/**
+	 * Removes all of the skills associated to each of the given SP Queues.
+	 *
+	 * @param spQueueIDs - The IDs of the spqueues from which we want to clear the
+	 *                   linked skills (DEIDs)
+	 */
+	private void deleteAllSkillsForSPQueues(Collection&lt;ID&gt; spQueueIDs) throws BbmRemoveException {
+<span class="nc" id="L811">		Jdmo dmo = new Jdmo();</span>
+		try {
+<span class="nc" id="L813">			String where = &quot;select ID from SPQUEUESKILL where SPQUEUEID IN &quot; + getDMO().createInClause(spQueueIDs);</span>
+<span class="nc" id="L814">			DAOUtil.deleteObjects(dmo, &quot;SPQUEUESKILL&quot;, where);</span>
+<span class="nc" id="L815">		} catch (JdmoException ex) {</span>
+<span class="nc" id="L816">			throw new BbmRemoveException(ex);</span>
+		} finally {
+<span class="nc" id="L818">			dmo.cleanUp();</span>
+<span class="nc" id="L819">		}</span>
+<span class="nc" id="L820">	}</span>
+
+	private void deleteAllSkillsForSPQueue(ID spQueueID) throws BbmRemoveException {
+<span class="fc" id="L823">		Jdmo dmo = new Jdmo();</span>
+		try {
+<span class="fc" id="L825">			String where = &quot;select ID from SPQUEUESKILL where SPQUEUEID = (SELECT ID from SPQUEUE WHERE SID = &quot; + spQueueID</span>
+					+ &quot;)&quot;;
+<span class="fc" id="L827">			DAOUtil.deleteObjects(dmo, &quot;SPQUEUESKILL&quot;, where);</span>
+<span class="nc" id="L828">		} catch (JdmoException ex) {</span>
+<span class="nc" id="L829">			throw new BbmRemoveException(ex);</span>
+		} finally {
+<span class="pc" id="L831">			dmo.cleanUp();</span>
+<span class="fc" id="L832">		}</span>
+<span class="fc" id="L833">	}</span>
+
+	/**
+	 * Returns a list of combined SPQueues associated to (i.e. having the same
+	 * SP and media ID of) the given list of spQueues.
+	 */
+	public Collection&lt;SPQueue&gt; getCombinedSPQueues(Collection&lt;SPQueue&gt; spQueues) throws BbmFinderException {
+<span class="nc" id="L840">		HashSet&lt;ID&gt; mediaIDs = new HashSet&lt;ID&gt;();</span>
+<span class="nc" id="L841">		HashSet&lt;ID&gt; spIDs = new HashSet&lt;ID&gt;();</span>
+		try {
+<span class="nc bnc" id="L843" title="All 2 branches missed.">			for (SPQueue spQueue : spQueues) {</span>
+<span class="nc bnc" id="L844" title="All 2 branches missed.">				if (spQueue.getSpID() != null) {</span>
+<span class="nc" id="L845">					spIDs.add(spQueue.getSpID());</span>
+				}
+<span class="nc bnc" id="L847" title="All 2 branches missed.">				if (spQueue.getMediaID() != null) {</span>
+<span class="nc" id="L848">					mediaIDs.add(spQueue.getMediaID());</span>
+				}
+<span class="nc" id="L850">			}</span>
+<span class="nc" id="L851">			Map&lt;ID, ID&gt; mediaIDMap = DAOUtil.mapIDsToDEIDs(mediaIDs, new MediaFieldInfo());</span>
+<span class="nc" id="L852">			Map&lt;ID, ID&gt; spIDMap = DAOUtil.mapIDsToDEIDs(spIDs, new SchedulingPeriodFieldInfo());</span>
+<span class="nc" id="L853">			return getObjects(getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_SPID) + &quot; IN &quot;</span>
+<span class="nc" id="L854">					+ getDMO().createInClause(spIDMap.values()) + &quot; AND &quot;</span>
+<span class="nc" id="L855">					+ getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_QUEUEID) + &quot; IS NULL AND &quot;</span>
+<span class="nc" id="L856">					+ getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_MEDIAID) + &quot; IN &quot;</span>
+<span class="nc" id="L857">					+ getDMO().createInClause(mediaIDMap.values()));</span>
+<span class="nc" id="L858">		} catch (JdmoException e) {</span>
+<span class="nc" id="L859">			throw new BbmFinderException(e);</span>
+		}
+	}
+
+	/*
+	 * Returns the combined SPQueue object given a scheduling period ID and a
+	 * media ID
+	 */
+	public SPQueue getCombinedSPQueue(ID spID, ID mediaID) throws BbmFinderException {
+<span class="fc" id="L868">		spID = DAOUtil.mapIDToDEID(spID, new SchedulingPeriodFieldInfo());</span>
+<span class="fc" id="L869">		mediaID = DAOUtil.mapIDToDEID(mediaID, new MediaFieldInfo());</span>
+
+<span class="fc" id="L871">		Collection&lt;SPQueue&gt; spQueues = getObjects(getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_MEDIAID)</span>
+<span class="fc" id="L872">				+ JdmoUtil.getEqualityOperator(mediaID, true) + JdmoUtil.asSqlLiteral(mediaID) + &quot; AND &quot;</span>
+<span class="fc" id="L873">				+ getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_SPID) + &quot; = &quot; + JdmoUtil.asSqlLiteral(spID) + &quot; AND &quot;</span>
+<span class="fc" id="L874">				+ getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_QUEUEID) + &quot; IS NULL&quot;);</span>
+<span class="pc bpc" id="L875" title="1 of 4 branches missed.">		if (spQueues != null &amp;&amp; spQueues.size() &gt; 0) {</span>
+<span class="fc" id="L876">			return spQueues.iterator().next();</span>
+		}
+<span class="fc" id="L878">		return null;</span>
+	}
+
+	/*
+	 * Returns the non-combined SPQueues belonging to the given SP with the
+	 * specified media ID. If a null media ID is specified, it will return all
+	 * non-combined SPQueues in belonging to the SP.
+	 */
+	public Collection&lt;SPQueue&gt; getNonCombinedSPQueuesByMediaAndSP(ID spID, ID mediaID) throws BbmFinderException {
+
+<span class="nc" id="L888">		spID = DAOUtil.mapIDToDEID(spID, new SchedulingPeriodFieldInfo());</span>
+<span class="nc" id="L889">		mediaID = DAOUtil.mapIDToDEID(mediaID, new MediaFieldInfo());</span>
+<span class="nc" id="L890">		StringBuffer query = new StringBuffer();</span>
+<span class="nc bnc" id="L891" title="All 2 branches missed.">		if (mediaID != null) {</span>
+<span class="nc" id="L892">			query.append(getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_MEDIAID)).append(&quot; = &quot;)</span>
+<span class="nc" id="L893">					.append(JdmoUtil.asSqlLiteral(mediaID)).append(&quot; AND &quot;);</span>
+		}
+<span class="nc" id="L895">		query.append(getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_SPID)).append(&quot; = &quot;)</span>
+<span class="nc" id="L896">				.append(JdmoUtil.asSqlLiteral(spID)).append(&quot; AND &quot;)</span>
+<span class="nc" id="L897">				.append(getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_QUEUEID)).append(&quot; IS NOT NULL&quot;);</span>
+<span class="nc" id="L898">		return getObjects(query.toString());</span>
+	}
+
+	// This returns a collection of SP Queues given their sids
+	public Collection&lt;SPQueue&gt; getSPQueuesByIDs(Collection&lt;? extends ID&gt; spQueueIDs) throws BbmFinderException {
+<span class="fc" id="L903">		return getObjectsByIDs(spQueueIDs);</span>
+	}
+
+	/**
+	 * Returns a collection of SPQueues corresponding to the Scheduling Periods
+	 * having the specified SIDs.
+	 *
+	 * @Deprecated this works very differently from getSPQueuesBySPID()and is
+	 * probably no good The main difference that I can see is that
+	 * getSPQueuesBySPID (and consequently getSPQueuesBySPIDsFixed)
+	 * is that these other methods will load the associated skill
+	 * IDs as part of the SPQueue value objects, whereas this method
+	 * does not.
+	 */
+	@Deprecated
+	public Collection&lt;SPQueue&gt; getSPQueuesBySPIDs(Collection&lt;? extends ID&gt; spIDs) throws BbmFinderException {
+<span class="fc" id="L919">		SchedulingPeriodDAO spDAO = new SchedulingPeriodDAO();</span>
+		try {
+			@SuppressWarnings(&quot;unchecked&quot;)
+<span class="fc" id="L922">			Collection&lt;SchedulingPeriod&gt; sps = spDAO.getObjectsByIDs(spIDs);</span>
+			@SuppressWarnings(&quot;unchecked&quot;)
+<span class="fc" id="L924">			Collection&lt;ID&gt; spDEIDs = ValueObjectUtil.getFieldObjectCol(SchedulingPeriodFieldInfo.SP_DEID, sps);</span>
+<span class="fc" id="L925">			return super.getObjects(&quot;SPID IN &quot; + getDMO().createInClause(spDEIDs));</span>
+<span class="nc" id="L926">		} catch (JdmoException e) {</span>
+<span class="nc" id="L927">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="pc" id="L929">			spDAO.cleanUp();</span>
+		}
+	}
+
+	/**
+	 * Returns a map containing the skill IDs linked to the given SPQueue IDs.
+	 * Key - spQueueID, Value - Collection of Skill IDs linked to the SPQueue.
+	 */
+	private HashMap&lt;ID, Collection&lt;ID&gt;&gt; getSkillIDsForSPQueues(Collection&lt;ID&gt; spQueueIDs) throws BbmFinderException {
+<span class="pc bpc" id="L938" title="1 of 2 branches missed.">		if (spQueueIDs == null) {</span>
+<span class="nc" id="L939">			return new HashMap&lt;ID, Collection&lt;ID&gt;&gt;();</span>
+		}
+
+<span class="fc" id="L942">		Jdmo jdmo = new Jdmo();</span>
+<span class="fc" id="L943">		HashMap&lt;ID, Collection&lt;ID&gt;&gt; result = new HashMap&lt;ID, Collection&lt;ID&gt;&gt;();</span>
+<span class="fc" id="L944">		JdmoRowset rs = null;</span>
+		try {
+<span class="fc" id="L946">			StringBuffer pStmt = new StringBuffer();</span>
+<span class="fc" id="L947">			pStmt.append(&quot; select spq.SID SPQUEUEID, s.SID SKILLID from &quot;);</span>
+<span class="fc" id="L948">			pStmt.append(&quot; SPQUEUESKILL q,SKILL s,SPQUEUE spq &quot;);</span>
+<span class="fc" id="L949">			pStmt.append(&quot; where q.SKILLID=s.ID and &quot;);</span>
+<span class="fc" id="L950">			pStmt.append(&quot; q.SPQUEUEID=spq.id and &quot;);</span>
+<span class="fc" id="L951">			pStmt.append(&quot; spq.sid IN &quot;);</span>
+<span class="fc" id="L952">			pStmt.append(jdmo.createInClause(spQueueIDs));</span>
+
+<span class="fc" id="L954">			JdmoQuery jq1 = jdmo.createQuery(pStmt.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="fc" id="L955">			rs = jdmo.createRowset(jq1, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+
+<span class="fc bfc" id="L957" title="All 2 branches covered.">			while (rs.next()) {</span>
+<span class="fc" id="L958">				ID skillID = rs.getID(&quot;SKILLID&quot;);</span>
+<span class="fc" id="L959">				ID spQueueID = rs.getID(&quot;SPQUEUEID&quot;);</span>
+<span class="pc bpc" id="L960" title="1 of 2 branches missed.">				if (result.containsKey(spQueueID) == false) {</span>
+<span class="fc" id="L961">					result.put(spQueueID, new HashSet&lt;ID&gt;());</span>
+				}
+<span class="fc" id="L963">				result.get(spQueueID).add(skillID);</span>
+<span class="fc" id="L964">			}</span>
+<span class="fc" id="L965">			return result;</span>
+<span class="nc" id="L966">		} catch (Exception ex) {</span>
+<span class="nc" id="L967">			throw new BbmFinderException(ex);</span>
+		} finally {
+<span class="nc" id="L969">			try {</span>
+<span class="pc" id="L970">				rs.close();</span>
+<span class="nc" id="L971">			} catch (JdmoException e) {</span>
+<span class="pc" id="L972">			}</span>
+<span class="pc" id="L973">			jdmo.cleanUp();</span>
+		}
+	}
+
+	/**
+	 * Returns a collection of skill IDs linked to the given SPQueue.
+	 */
+	private Collection&lt;ID&gt; getSkillIDsForSPQueue(ID spQueueID) throws BbmFinderException {
+<span class="fc" id="L981">		HashMap&lt;ID, Collection&lt;ID&gt;&gt; result = getSkillIDsForSPQueues(Collections.singleton(spQueueID));</span>
+<span class="pc bpc" id="L982" title="2 of 6 branches missed.">		if (result == null || result.containsKey(spQueueID) == false || result.get(spQueueID) == null) {</span>
+<span class="fc" id="L983">			return Collections.emptyList();</span>
+		}
+<span class="fc" id="L985">		return result.get(spQueueID);</span>
+	}
+
+	/**
+	 * Loads the skill IDs that are linked to the given SPQueues and stores the
+	 * associated skill IDs on the related SPQueue value objects. These can
+	 * later be retrieved from the SPQueue via SPQueue.getSkills()
+	 */
+	private void loadSkillIDsIntoSPQueues(Collection&lt;SPQueue&gt; spQueues) throws BbmFinderException {
+<span class="fc" id="L994">		Collection&lt;ID&gt; spQueueIDs = ValueObjectUtil.getIDFromObjects(spQueues);</span>
+<span class="fc" id="L995">		HashMap&lt;ID, Collection&lt;ID&gt;&gt; spQueueSkillIDMap = getSkillIDsForSPQueues(spQueueIDs);</span>
+<span class="fc bfc" id="L996" title="All 2 branches covered.">		for (SPQueue spQueue : spQueues) {</span>
+<span class="fc" id="L997">			Collection&lt;ID&gt; skillIDs = spQueueSkillIDMap.get(spQueue.getID());</span>
+<span class="fc bfc" id="L998" title="All 2 branches covered.">			if (skillIDs != null) {</span>
+<span class="fc" id="L999">				spQueue.setSkillsFromDB(skillIDs);</span>
+			} else {
+<span class="fc" id="L1001">				spQueue.setSkillsFromDB(new ArrayList&lt;ID&gt;());</span>
+			}
+<span class="fc" id="L1003">		}</span>
+<span class="fc" id="L1004">	}</span>
+
+	public Collection&lt;String&gt; getSkillNamesMappedToQueue(ID idQueue, ID spID) throws BbmFinderException {
+
+<span class="nc bnc" id="L1008" title="All 4 branches missed.">		if (idQueue == null || spID == null) {</span>
+<span class="nc" id="L1009">			return new ArrayList&lt;String&gt;();</span>
+		}
+<span class="nc" id="L1011">		List&lt;String&gt; retVal = new ArrayList&lt;String&gt;();</span>
+
+<span class="nc" id="L1013">		ID deSPID = DAOUtil.mapIDToDEID(spID, new SchedulingPeriodFieldInfo());</span>
+<span class="nc" id="L1014">		ID deIDQueue = DAOUtil.mapIDToDEID(idQueue, new QueueFieldInfo());</span>
+<span class="nc" id="L1015">		JdmoRowset r = null;</span>
+		try {
+<span class="nc" id="L1017">			String query = &quot;Select distinct s.NAME &quot; + &quot;from SKILL s, SPQUEUESKILL sqs, SPQUEUE spq &quot;</span>
+<span class="nc" id="L1018">					+ &quot;where queueid in (select id from queue where parentqueueid = &quot; + JdmoUtil.asSqlLiteral(deIDQueue)</span>
+					+ &quot;)&quot; + &quot; and sqs.SPQUEUEID = spq.ID and sqs.SKILLID = s.ID and s.DELETEONDATE IS NULL&quot;
+<span class="nc" id="L1020">					+ &quot; and spid in (select id from sp where parentspid = &quot; + JdmoUtil.asSqlLiteral(deSPID) + &quot;)&quot;;</span>
+
+<span class="nc" id="L1022">			r = m_dmo.createRowset(query);</span>
+
+<span class="nc bnc" id="L1024" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L1025">				String name = r.getString(&quot;NAME&quot;);</span>
+<span class="nc" id="L1026">				retVal.add(name);</span>
+<span class="nc" id="L1027">			}</span>
+<span class="nc" id="L1028">			return retVal;</span>
+
+<span class="nc" id="L1030">		} catch (JdmoException e) {</span>
+<span class="nc" id="L1031">			e.printStackTrace();</span>
+<span class="nc" id="L1032">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L1034">			try {</span>
+<span class="nc" id="L1035">				r.close();</span>
+<span class="nc" id="L1036">			} catch (JdmoException e) {</span>
+<span class="nc" id="L1037">			}</span>
+<span class="nc" id="L1038">			m_dmo.cleanUp();</span>
+		}
+	}
+
+	/**
+	 * Given an SP ID, return a Map that maps each queue SID to its skill SID.
+	 * If the SP has a queue that is not linked to a skill, then the queue is
+	 * not included in the map. We assume that an SP queue can only be linked to
+	 * a single skill.
+	 *
+	 * @param spID - the SID of the scheduling period.
+	 * @return A Map that maps each queue SID to its skill SID.
+	 * @throws BbmFinderException
+	 */
+	public Map&lt;ID, ID&gt; getQueueIDToSkillMap(ID spID) throws BbmFinderException {
+<span class="pc bpc" id="L1053" title="1 of 2 branches missed.">		if (spID == null) {</span>
+<span class="nc" id="L1054">			return new HashMap&lt;ID, ID&gt;();</span>
+		}
+
+<span class="fc" id="L1057">		Map&lt;ID, ID&gt; result = new HashMap&lt;ID, ID&gt;();</span>
+
+<span class="fc" id="L1059">		String query = &quot;select Q.SID QSID, S.SID SSID &quot; + &quot;from SPQUEUESKILL SPQS &quot;</span>
+				+ &quot;join SPQUEUE SPQ on SPQ.ID = SPQS.SPQUEUEID &quot; + &quot;join QUEUE Q on Q.ID = SPQ.QUEUEID &quot;
+				+ &quot;join SKILL S on S.ID = SPQS.SKILLID &quot; + &quot;join SP on SP.SID=&quot; + spID + &quot; &quot; + &quot;where SPQ.SPID=SP.ID&quot;;
+<span class="fc" id="L1062">		JdmoRowset r = null;</span>
+		try {
+<span class="fc" id="L1064">			r = m_dmo.createRowset(query);</span>
+<span class="fc bfc" id="L1065" title="All 2 branches covered.">			while (r.next()) {</span>
+<span class="fc" id="L1066">				ID queueID = r.getID(&quot;QSID&quot;);</span>
+<span class="fc" id="L1067">				ID skillID = r.getID(&quot;SSID&quot;);</span>
+<span class="fc" id="L1068">				result.put(queueID, skillID);</span>
+<span class="fc" id="L1069">			}</span>
+
+<span class="fc" id="L1071">			r.close();</span>
+<span class="fc" id="L1072">			return result;</span>
+<span class="nc" id="L1073">		} catch (JdmoException e) {</span>
+<span class="nc" id="L1074">			e.printStackTrace();</span>
+<span class="nc" id="L1075">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L1077">			try {</span>
+<span class="pc" id="L1078">				r.close();</span>
+<span class="nc" id="L1079">			} catch (JdmoException e) {</span>
+<span class="pc" id="L1080">			}</span>
+<span class="pc" id="L1081">			m_dmo.cleanUp();</span>
+		}
+	}
+
+	/**
+	 * Returns a collection of SPQueues associated with the given Queues
+	 */
+	@SuppressWarnings(&quot;unchecked&quot;)
+	public Collection&lt;SPQueue&gt; getSPQueuesByQueues(Collection&lt;Queue&gt; queues) throws BbmFinderException {
+<span class="nc" id="L1090">		SchedulingPeriodDAO spDAO = new SchedulingPeriodDAO();</span>
+<span class="nc" id="L1091">		QueueFieldInfo queueFieldInfo = new QueueFieldInfo();</span>
+		try {
+<span class="nc" id="L1093">			Collection&lt;ID&gt; queueSIDs = ValueObjectUtil.getFieldObjectCol(QueueFieldInfo.QUEUE_SID, queues);</span>
+<span class="nc" id="L1094">			Collection&lt;ID&gt; queueDEIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="nc bnc" id="L1095" title="All 2 branches missed.">			for (ID sid : queueSIDs) {</span>
+<span class="nc" id="L1096">				queueDEIDs.add(DAOUtil.mapIDToDEID(sid, queueFieldInfo));</span>
+<span class="nc" id="L1097">			}</span>
+<span class="nc" id="L1098">			return super.getObjects(&quot;QUEUEID IN &quot; + getDMO().createInClause(queueDEIDs));</span>
+<span class="nc" id="L1099">		} catch (JdmoException e) {</span>
+<span class="nc" id="L1100">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L1102">			spDAO.cleanUp();</span>
+		}
+	}
+
+	/**
+	 * Returns a complete list of IDs and the first chunk of data to be
+	 * displayed. Does not return combined SPQueues.
+	 */
+	public PaginationPair&lt;SPQueue&gt; getCompletePaginationDataSetForSchedulingPeriod(ID spID, boolean isAscendingSort,
+			int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs)
+			throws BbmFinderException {
+<span class="fc" id="L1113">		StringBuffer whereClause = new StringBuffer();</span>
+<span class="fc" id="L1114">		whereClause.append(&quot; A.SPID IN (SELECT ID FROM SP WHERE SID = &quot; + spID + &quot;) AND A.QUEUEID IS NOT NULL&quot;);</span>
+<span class="fc" id="L1115">		return super.getCompletePaginationDataSet(whereClause.toString(), isAscendingSort, pageIDSize, pageIndex,</span>
+				sortFieldMap, filteredIDs);
+	}
+
+	@Override
+	protected void buildSortQuery(List&lt;DBSortField&gt; sortFields, StringBuffer selectQuery, StringBuffer fromQuery,
+			StringBuffer whereQuery, StringBuffer groupByQuery, StringBuffer orderByQuery) {
+<span class="fc bfc" id="L1122" title="All 2 branches covered.">		for (DBSortField sortField : sortFields) {</span>
+<span class="pc bpc" id="L1123" title="5 of 7 branches missed.">			switch ((SPQueueSortField) sortField) {</span>
+				case ID:
+<span class="fc" id="L1125">					orderByQuery.append(getFieldInfo().getIDFieldName());</span>
+<span class="fc" id="L1126">					break;</span>
+				case QUEUE_NAME:
+<span class="fc" id="L1128">					selectQuery.append(generateSimpleSortClauseForLinkedForeignTable(qfi, &quot;B&quot;,</span>
+<span class="fc" id="L1129">							qfi.getFieldName(QueueFieldInfo.QUEUE_ID), qfi.getFieldName(QueueFieldInfo.QUEUE_NAME),</span>
+<span class="fc" id="L1130">							getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_QUEUEID)));</span>
+<span class="fc" id="L1131">					orderByQuery.append(queueNameSortFieldKey);</span>
+<span class="fc" id="L1132">					break;</span>
+				case DESCRIPTION:
+<span class="nc" id="L1134">					selectQuery.append(generateSimpleSortClauseForLinkedForeignTable(qfi, &quot;C&quot;,</span>
+<span class="nc" id="L1135">							qfi.getFieldName(QueueFieldInfo.QUEUE_ID), qfi.getFieldName(QueueFieldInfo.QUEUE_DESCRIPTION),</span>
+<span class="nc" id="L1136">							getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_QUEUEID)));</span>
+<span class="nc" id="L1137">					orderByQuery.append(queueDescriptionSortFieldKey);</span>
+<span class="nc" id="L1138">					break;</span>
+				case ORGANIZATION:
+<span class="nc" id="L1140">					selectQuery.append(&quot;, (SELECT D.&quot;).append(ofi.getFieldName(OrganizationFieldInfo.ORGANIZATION_NAME))</span>
+<span class="nc" id="L1141">							.append(&quot; FROM &quot;).append(ofi.getTableName()).append(&quot; D WHERE D.&quot;).append(ofi.getIDFieldName())</span>
+<span class="nc" id="L1142">							.append(&quot; = (SELECT E.&quot;).append(qfi.getFieldName(QueueFieldInfo.QUEUE_ORGANIZATIONID))</span>
+<span class="nc" id="L1143">							.append(&quot; FROM &quot;).append(qfi.getTableName()).append(&quot; E WHERE E.&quot;)</span>
+<span class="nc" id="L1144">							.append(qfi.getFieldName(QueueFieldInfo.QUEUE_ID)).append(&quot; = A.&quot;)</span>
+<span class="nc" id="L1145">							.append(getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_QUEUEID)).append(&quot;)) AS &quot;)</span>
+<span class="nc" id="L1146">							.append(organizationSortFieldKey);</span>
+<span class="nc" id="L1147">					orderByQuery.append(organizationSortFieldKey);</span>
+<span class="nc" id="L1148">					break;</span>
+				case MEDIA:
+<span class="nc" id="L1150">					selectQuery.append(&quot;, (SELECT F.&quot;).append(mfi.getFieldName(MediaFieldInfo.MEDIA_NAME)).append(&quot; FROM &quot;)</span>
+<span class="nc" id="L1151">							.append(mfi.getTableName()).append(&quot; F WHERE F.&quot;)</span>
+<span class="nc" id="L1152">							.append(mfi.getFieldName(MediaFieldInfo.MEDIA_STRID)).append(&quot; = (SELECT G.&quot;)</span>
+<span class="nc" id="L1153">							.append(qfi.getFieldName(QueueFieldInfo.QUEUE_MEDIAID)).append(&quot; FROM &quot;).append(qfi.getTableName())</span>
+<span class="nc" id="L1154">							.append(&quot; G WHERE G.&quot;).append(qfi.getFieldName(QueueFieldInfo.QUEUE_ID)).append(&quot; = A.&quot;)</span>
+<span class="nc" id="L1155">							.append(getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_QUEUEID)).append(&quot;)) AS &quot;)</span>
+<span class="nc" id="L1156">							.append(mediaSortFieldKey);</span>
+<span class="nc" id="L1157">					orderByQuery.append(mediaSortFieldKey);</span>
+<span class="nc" id="L1158">					break;</span>
+				case TYPE:
+<span class="nc" id="L1160">					selectQuery.append(generateSimpleSortClauseForLinkedForeignTable(qfi, &quot;F&quot;,</span>
+<span class="nc" id="L1161">							qfi.getFieldName(QueueFieldInfo.QUEUE_ID), qfi.getFieldName(QueueFieldInfo.QUEUE_TYPE),</span>
+<span class="nc" id="L1162">							getFieldInfo().getFieldName(SPQueueFieldInfo.SPQUEUE_QUEUEID)));</span>
+<span class="nc" id="L1163">					orderByQuery.append(queueTypeSortFieldKey);</span>
+<span class="nc" id="L1164">					break;</span>
+				default:
+					break;
+			}
+<span class="fc" id="L1168">		}</span>
+<span class="fc" id="L1169">	}</span>
+
+	@Override
+	protected Object getPaginationDataFieldValue(JdmoRowset rowData, DBSortField sortField) throws JdmoException {
+<span class="nc" id="L1173">		SPQueueSortField spqSortField = (SPQueueSortField) sortField;</span>
+<span class="nc bnc" id="L1174" title="All 6 branches missed.">		switch (spqSortField) {</span>
+			case QUEUE_NAME:
+<span class="nc" id="L1176">				return rowData.getString(queueNameSortFieldKey);</span>
+			case DESCRIPTION:
+<span class="nc" id="L1178">				return rowData.getString(queueDescriptionSortFieldKey);</span>
+			case ORGANIZATION:
+<span class="nc" id="L1180">				return rowData.getString(organizationSortFieldKey);</span>
+			case MEDIA:
+<span class="nc" id="L1182">				return rowData.getString(mediaSortFieldKey);</span>
+			case TYPE:
+<span class="nc" id="L1184">				return QueueType.fromInt(rowData.getInt(queueTypeSortFieldKey));</span>
+			default:
+<span class="nc" id="L1186">				return null;</span>
+		}
+	}
+
+	/**
+	 * The following object retrieval methods are overriden from
+	 * DAOBaseWithAutoIDMapping: getObjectsByParentID, getObjectsByParentIDs,
+	 * getObjectsByParentIDs, getObjectByID, getObjects, getObjectsByIDs, and
+	 * getObjectsGivenFullSqlQueryStr. These are overridden because a lot of
+	 * client code expects a collection of associated skill IDs to be included
+	 * as part of the SPQueue value object. TODO: The best approach here would
+	 * be to refactor SPQueueDAO to extend from RichObjectDAO, and load the
+	 * skills in automatically (rather than the skill IDs). However, this would
+	 * require changing/testing a lot of client code which was outside the scope
+	 * of this bugfix.
+	 */
+	@Override
+	public Collection&lt;SPQueue&gt; getObjectsByParentID(ID idParent) throws BbmFinderException {
+<span class="nc" id="L1204">		Collection&lt;SPQueue&gt; retVal = super.getObjectsByParentID(idParent);</span>
+<span class="nc" id="L1205">		Collection&lt;ID&gt; spQueueIDs = ValueObjectUtil.getIDFromObjects(retVal);</span>
+<span class="nc" id="L1206">		HashMap&lt;ID, Collection&lt;ID&gt;&gt; spQueueSkillIDMap = getSkillIDsForSPQueues(spQueueIDs);</span>
+<span class="nc bnc" id="L1207" title="All 2 branches missed.">		for (SPQueue spQueue : retVal) {</span>
+<span class="nc" id="L1208">			Collection&lt;ID&gt; skillIDs = spQueueSkillIDMap.get(spQueue.getID());</span>
+<span class="nc bnc" id="L1209" title="All 2 branches missed.">			if (skillIDs != null) {</span>
+<span class="nc" id="L1210">				spQueue.setSkillsFromDB(skillIDs);</span>
+			} else {
+<span class="nc" id="L1212">				spQueue.setSkillsFromDB(new ArrayList&lt;ID&gt;());</span>
+			}
+<span class="nc" id="L1214">		}</span>
+<span class="nc" id="L1215">		return retVal;</span>
+	}
+
+	@Override
+	public Collection&lt;SPQueue&gt; getObjectsByParentIDs(Collection arrParentIDs, String parentIDsInClause)
+			throws BbmFinderException {
+<span class="nc" id="L1221">		Collection&lt;SPQueue&gt; retVal = super.getObjectsByParentIDs(arrParentIDs, parentIDsInClause);</span>
+<span class="nc" id="L1222">		loadSkillIDsIntoSPQueues(retVal);</span>
+<span class="nc" id="L1223">		return retVal;</span>
+	}
+
+	@Override
+	public Collection&lt;SPQueue&gt; getObjectsByParentIDs(Collection arrParentIDs) throws BbmFinderException {
+<span class="nc" id="L1228">		Collection&lt;SPQueue&gt; retVal = super.getObjectsByParentIDs(arrParentIDs);</span>
+<span class="nc" id="L1229">		loadSkillIDsIntoSPQueues(retVal);</span>
+<span class="nc" id="L1230">		return retVal;</span>
+	}
+
+	@Override
+	public SPQueue getObjectByID(ID id) throws BbmObjectNotFoundException, BbmFinderException {
+<span class="fc" id="L1235">		SPQueue spQueue = super.getObjectByID(id);</span>
+<span class="fc" id="L1236">		loadSkillIDsIntoSPQueues(Collections.singleton(spQueue));</span>
+<span class="fc" id="L1237">		return super.getObjectByID(id);</span>
+	}
+
+	@Override
+	public Collection&lt;SPQueue&gt; getObjects(String strWhere, String strAfterWhere) throws BbmFinderException {
+<span class="nc" id="L1242">		Collection&lt;SPQueue&gt; retVal = super.getObjects(strWhere, strAfterWhere);</span>
+<span class="nc" id="L1243">		loadSkillIDsIntoSPQueues(retVal);</span>
+<span class="nc" id="L1244">		return retVal;</span>
+	}
+
+	@Override
+	public Collection&lt;SPQueue&gt; getObjects(String strWhere) throws BbmFinderException {
+<span class="fc" id="L1249">		Collection&lt;SPQueue&gt; retVal = super.getObjects(strWhere);</span>
+<span class="fc" id="L1250">		loadSkillIDsIntoSPQueues(retVal);</span>
+<span class="fc" id="L1251">		return retVal;</span>
+	}
+
+	@Override
+	public Collection&lt;SPQueue&gt; getObjectsByIDs(Collection&lt;? extends ID&gt; arrIDs) throws BbmFinderException {
+<span class="fc" id="L1256">		Collection&lt;SPQueue&gt; retVal = super.getObjectsByIDs(arrIDs);</span>
+<span class="fc" id="L1257">		loadSkillIDsIntoSPQueues(retVal);</span>
+<span class="fc" id="L1258">		return retVal;</span>
+	}
+
+	@Override
+	public Collection&lt;SPQueue&gt; getObjectsGivenFullSqlQueryStr(String fullSqlQuery) throws BbmFinderException {
+<span class="fc" id="L1263">		Collection&lt;SPQueue&gt; retVal = super.getObjectsGivenFullSqlQueryStr(fullSqlQuery);</span>
+<span class="fc" id="L1264">		loadSkillIDsIntoSPQueues(retVal);</span>
+<span class="fc" id="L1265">		return retVal;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,2009 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ActivityManagerEJB.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.activity.ejb</a> &gt; <span class="el_source">ActivityManagerEJB.java</span></div><h1>ActivityManagerEJB.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.activity.ejb;
+
+import com.bluepumpkin.common.cache.Cache;
+import com.bluepumpkin.common.cache.CacheFactory;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.localization.LocalizationManager;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.NumberFactory;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.JNDINames;
+import com.bluepumpkin.ejb.bbm.Log;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityCategory;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityCategoryFilter;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityFilter;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityGroup;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityMedia;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityProperties;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityQueue;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityValidationException;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.config.ConfigCacheUtil;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.bbm.config.ejb.DBConfigManager;
+import com.bluepumpkin.ejb.bbm.dao.DAOEJBUtil;
+import com.bluepumpkin.ejb.bbm.dao.DAOUtil;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil.ObjectType;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil.SystemType;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TimeOffHoursManagerBridge;
+import com.bluepumpkin.ejb.core.CoreManagerFactory;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.bluepumpkin.ejb.core.base.SessionEJBBase;
+import com.witness.ejb.bbm.delete.DeleteException;
+import com.witness.ejb.bbm.delete.ejb.DeleteManager;
+import com.witness.ejb.bbm.delete.model.DeletionResult;
+import com.witness.ejb.core.gcr.ejb.GCRManager;
+import com.witness.ejb.core.gcr.model.GCREntry;
+
+import javax.naming.Context;
+import javax.naming.InitialContext;
+import java.rmi.RemoteException;
+import java.util.*;
+
+<span class="fc" id="L52">public class ActivityManagerEJB extends SessionEJBBase {</span>
+
+	private static final long serialVersionUID = 1L;
+<span class="fc" id="L55">	private static final Category m_cat = Log.initCategory(ActivityManagerEJB.class.getName());</span>
+	private DBConfigManager m_DBConfigManager;
+<span class="fc" id="L57">	private boolean lastCheckStatus = true;</span>
+<span class="fc" id="L58">	private Cache m_ActivityCache = null;</span>
+<span class="fc" id="L59">	private static final String clsName = ActivityManagerEJB.class.getName();</span>
+
+<span class="fc" id="L61">	private boolean WhatIfMode = false;</span>
+<span class="fc" id="L62">	private TimeOffHoursManagerBridge m_timeOffHoursManagerBridge = null;</span>
+
+	private DeleteManager deleteManager;
+
+<span class="fc" id="L66">	private transient ActivityQueueDAOFactory activityQueueDAOFactory = new ActivityQueueDAOFactory();</span>
+
+	/**
+	 * override the base class to provide the appropriate logging category
+	 */
+	@Override
+	protected Category getCategory() {
+<span class="fc" id="L73">		return m_cat;</span>
+	}
+
+	{
+<span class="fc" id="L77">		super.init(clsName);</span>
+<span class="fc" id="L78">	}</span>
+
+	@Override
+	public void onEjbCreate() {
+		try {
+			// First query environment to get WIF setting from DD
+<span class="fc" id="L84">			Context initialContext = new InitialContext();</span>
+<span class="fc" id="L85">			Boolean WIF = (Boolean) initialContext.lookup(&quot;java:comp/env/WIF&quot;);</span>
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">			if (WIF != null) {</span>
+<span class="fc" id="L87">				WhatIfMode = WIF;</span>
+			}
+			// If not in WhatIfMode, then initialize Cache
+<span class="pc bpc" id="L90" title="1 of 2 branches missed.">			if (!WhatIfMode) {</span>
+<span class="fc" id="L91">				m_DBConfigManager = BbmManagerFactory.getDBConfigManager();</span>
+				// If cache is enabled at first, instantiate cache
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">				if (ConfigCacheUtil.isCacheEnabled(m_DBConfigManager, ConfigKey.ACTIVITY_CACHE_USAGE)) {</span>
+<span class="fc" id="L94">					m_ActivityCache = CacheFactory.getCache(JNDINames.BBM_ACTIVITYMANAGER_EJBHOME,</span>
+<span class="fc" id="L95">							ActivityManagerEJB.class.getClassLoader());</span>
+<span class="fc" id="L96">					initCache();</span>
+				} else {
+<span class="nc" id="L98">					lastCheckStatus = false;</span>
+				}
+			}
+<span class="fc" id="L101">			deleteManager = BbmManagerFactory.getDeleteManager(WhatIfMode);</span>
+<span class="nc" id="L102">		} catch (Exception e) {</span>
+<span class="nc" id="L103">			handleException(&quot;onEjbCreate&quot;, e, false);</span>
+<span class="fc" id="L104">		}</span>
+<span class="fc" id="L105">	}</span>
+
+	private void initCache() throws BbmFinderException {
+<span class="fc" id="L108">		Boolean init = (Boolean) m_ActivityCache.get(&quot;INITIALIZED&quot;);</span>
+<span class="pc bpc" id="L109" title="1 of 4 branches missed.">		if (init != null &amp;&amp; init) {</span>
+<span class="fc" id="L110">			return;</span>
+		}
+		// initialize the cache, load all activities
+<span class="fc" id="L113">		ActivityFilter filter = new ActivityFilter(ActivityFilter.FILTER_NONE);</span>
+<span class="fc" id="L114">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="fc bfc" id="L116" title="All 2 branches covered.">			for (Activity element : activityDao.findActivities(filter)) {</span>
+<span class="fc" id="L117">				m_ActivityCache.put(element.getID(), element);</span>
+<span class="fc" id="L118">			}</span>
+<span class="fc" id="L119">			m_ActivityCache.put(&quot;INITIALIZED&quot;, Boolean.TRUE);</span>
+		} finally {
+<span class="pc" id="L121">			activityDao.cleanUp();</span>
+<span class="fc" id="L122">		}</span>
+<span class="fc" id="L123">	}</span>
+
+	/**
+	 * &lt;B&gt;findActivityById&lt;/B&gt;
+	 * &lt;P&gt;
+	 * returns an Activity for a given id
+	 * &lt;P&gt;
+	 *
+	 * @param id
+	 *            : activity id to search
+	 * @return Activity
+	 */
+	public Activity findActivityById(ID id) throws BbmFinderException {
+<span class="fc" id="L136">		methodStart(&quot;findActivityById&quot;, id);</span>
+<span class="fc" id="L137">		ActivityDAO activityDao = null;</span>
+		try {
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">			if (cacheUsed()) {</span>
+<span class="fc" id="L140">				initCache();</span>
+<span class="fc" id="L141">				Activity act = (Activity) m_ActivityCache.get(id);</span>
+<span class="pc bpc" id="L142" title="2 of 4 branches missed.">				if (act != null &amp;&amp; act.getID().equals(id)) {</span>
+<span class="fc" id="L143">					return (Activity)(act.clone());</span>
+				}
+<span class="nc" id="L145">				m_cat.info(&quot;Failed to find Activity &quot; + id + &quot; in the cache.&quot;);</span>
+			}
+<span class="nc" id="L147">			activityDao = new ActivityDAO();</span>
+<span class="nc" id="L148">			Activity act = activityDao.getObjectByID(id);</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">			if (cacheUsed()) {</span>
+<span class="nc" id="L150">				m_ActivityCache.put(id, act);</span>
+<span class="nc" id="L151">				act = (Activity)(act.clone()); //for cache, always return cloned object.</span>
+			}
+<span class="nc" id="L153">			return act;</span>
+<span class="nc" id="L154">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L155">			handleException(e, false);</span>
+<span class="nc" id="L156">			throw e;</span>
+<span class="nc" id="L157">		} catch (CloneNotSupportedException e) {</span>
+<span class="nc" id="L158">			handleException(e, false);</span>
+<span class="nc" id="L159">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="pc bpc" id="L161" title="5 of 6 branches missed.">			if (activityDao != null) {</span>
+<span class="nc" id="L162">				activityDao.cleanUp();</span>
+			}
+<span class="pc" id="L164">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities that meet given ActivityFilter criteria
+	 * &lt;P&gt;
+	 *
+	 * @param activityFilter
+	 *            : search criteria
+	 * @return Collection of activities
+	 */
+	public Collection&lt;Activity&gt; findActivities(ActivityFilter activityFilter) throws BbmFinderException {
+<span class="fc" id="L179">		methodStart(&quot;findActivities&quot;, activityFilter);</span>
+<span class="fc" id="L180">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="fc" id="L182">			return activityDao.findActivities(activityFilter);</span>
+<span class="nc" id="L183">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L184">			handleException(e, false);</span>
+<span class="nc" id="L185">			throw e;</span>
+		} finally {
+<span class="pc" id="L187">			activityDao.cleanUp();</span>
+<span class="pc" id="L188">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findActivitiesIds&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities Ids that meet given ActivityFilter criteria
+	 * &lt;P&gt;
+	 *
+	 * @param activityFilter
+	 *            : search criteria
+	 * @return Collection of activities Ids
+	 */
+	public Collection&lt;ID&gt; findActivitiesIds(ActivityFilter activityFilter) throws BbmFinderException {
+<span class="nc" id="L203">		methodStart(&quot;findActivitiesIds&quot;, activityFilter);</span>
+<span class="nc" id="L204">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="nc" id="L206">			return activityDao.findActivitiesIds(activityFilter);</span>
+<span class="nc" id="L207">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L208">			handleException(e, false);</span>
+<span class="nc" id="L209">			throw e;</span>
+		} finally {
+<span class="nc" id="L211">			activityDao.cleanUp();</span>
+<span class="nc" id="L212">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;getActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 *
+	 * @param organizationIdCol
+	 *            int value of id of employee to search
+	 *            &lt;P&gt;
+	 * @return collection of ActivityGroup objects
+	 * @deprecated see getActivities(ID,boolean);
+	 */
+	@Deprecated
+	public ActivityGroup getActivities(Collection&lt;ID&gt; organizationIdCol) throws BbmFinderException {
+<span class="nc" id="L228">		methodStart(&quot;getActivities&quot;, organizationIdCol);</span>
+		try {
+<span class="nc" id="L230">			ActivityFilter activityFilter = new ActivityFilter();</span>
+<span class="nc" id="L231">			activityFilter.setDeleted(false);</span>
+<span class="nc" id="L232">			ActivityDAO activityDao = new ActivityDAO();</span>
+<span class="nc" id="L233">			Collection activities = activityDao.findOrganizationActivities(organizationIdCol, activityFilter);</span>
+<span class="nc" id="L234">			activityDao.cleanUp();</span>
+<span class="nc" id="L235">			ActivityCategoryDAO activityCategoryDao = new ActivityCategoryDAO();</span>
+<span class="nc" id="L236">			ActivityCategoryFilter activityCategoryFilter = new ActivityCategoryFilter();</span>
+<span class="nc" id="L237">			activityCategoryFilter.setVisibleToToTimeCollection(true);</span>
+<span class="nc" id="L238">			activityCategoryFilter.setDeleted(true);</span>
+<span class="nc" id="L239">			Collection activityCategories = activityCategoryDao.findOrganizationActivityCategories(organizationIdCol,</span>
+					activityCategoryFilter);
+<span class="nc" id="L241">			activityCategoryDao.cleanUp();</span>
+<span class="nc" id="L242">			return new ActivityGroup(activities, activityCategories);</span>
+<span class="nc" id="L243">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L244">			handleException(e, false);</span>
+<span class="nc" id="L245">			throw e;</span>
+		} finally {
+<span class="nc" id="L247">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;getActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 *
+	 * @param organizationIdCol
+	 *            int value of id of employee to search
+	 * @param activityCategoriesToGet Categories to get, use constant in ActivityGroup ActivityGroup.ALL_ACTIVITYCATEGORIES = 0;
+	 *        ActivityGroup.MYTIME_ACTIVITYCATEGORIES = 1;
+	 *        &lt;P&gt;
+	 * @return collection of ActivityGroup objects
+	 */
+	public ActivityGroup getActivities(Collection&lt;ID&gt; organizationIdCol, int activityCategoriesToGet)
+			throws BbmFinderException {
+<span class="nc" id="L264">		methodStart(&quot;getActivities&quot;, organizationIdCol, NumberFactory.newInteger(activityCategoriesToGet));</span>
+		try {
+<span class="nc" id="L266">			ActivityFilter activityFilter = new ActivityFilter();</span>
+<span class="nc" id="L267">			activityFilter.setDeleted(false);</span>
+<span class="nc" id="L268">			ActivityDAO activityDao = new ActivityDAO();</span>
+<span class="nc" id="L269">			Collection activities = activityDao.findOrganizationActivities(organizationIdCol, activityFilter);</span>
+<span class="nc" id="L270">			activityDao.cleanUp();</span>
+<span class="nc" id="L271">			ActivityCategoryFilter activityCategoryFilter = new ActivityCategoryFilter();</span>
+<span class="nc" id="L272">			activityCategoryFilter.setDeleted(false);</span>
+<span class="nc bnc" id="L273" title="All 2 branches missed.">			if (activityCategoriesToGet == ActivityGroup.MYTIME_ACTIVITYCATEGORIES) {</span>
+				// --------------------------------------------------------
+				// just get timecollection activity categories
+				// --------------------------------------------------------
+<span class="nc" id="L277">				activityCategoryFilter.setVisibleToToTimeCollection(true);</span>
+			}
+<span class="nc" id="L279">			ActivityCategoryDAO activityCategoryDao = new ActivityCategoryDAO();</span>
+<span class="nc" id="L280">			Collection activityCategories = activityCategoryDao.findOrganizationActivityCategories(organizationIdCol,</span>
+					activityCategoryFilter);
+<span class="nc" id="L282">			activityCategoryDao.cleanUp();</span>
+<span class="nc" id="L283">			return new ActivityGroup(activities, activityCategories);</span>
+<span class="nc" id="L284">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L285">			handleException(e, false);</span>
+<span class="nc" id="L286">			throw e;</span>
+		} finally {
+<span class="nc" id="L288">			methodFinish();</span>
+		}
+	}
+
+	public ActivityGroup getActivities(Collection&lt;ID&gt; organizationIdCol, ID currentActivityCategoryId)
+			throws BbmFinderException {
+<span class="nc" id="L294">		methodStart(&quot;getActivities&quot;, organizationIdCol, currentActivityCategoryId);</span>
+		try {
+<span class="nc" id="L296">			ActivityFilter activityFilter = new ActivityFilter();</span>
+<span class="nc" id="L297">			activityFilter.setDeleted(false);</span>
+<span class="nc" id="L298">			ActivityDAO activityDao = new ActivityDAO();</span>
+<span class="nc" id="L299">			Collection activities = activityDao.findOrganizationActivitiesByCategory(organizationIdCol,</span>
+					currentActivityCategoryId, activityFilter);
+<span class="nc" id="L301">			activityDao.cleanUp();</span>
+<span class="nc" id="L302">			ActivityCategoryDAO activityCategoryDao = new ActivityCategoryDAO();</span>
+<span class="nc" id="L303">			Collection activityCategories = activityCategoryDao.findActivityCategories(new ActivityCategoryFilter());</span>
+<span class="nc" id="L304">			activityCategoryDao.cleanUp();</span>
+<span class="nc" id="L305">			return new ActivityGroup(currentActivityCategoryId, activities, activityCategories);</span>
+
+<span class="nc" id="L307">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L308">			handleException(e);</span>
+<span class="nc" id="L309">			throw e;</span>
+		} finally {
+<span class="nc" id="L311">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findOrganizationActivitiesIds&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities Ids that meet given ActivityFilter criteria Activities of parent organizations will also be
+	 * returned
+	 * &lt;P&gt;
+	 *
+	 * @param organizationId
+	 *            : id of organization to search for
+	 * @param activityFilter
+	 *            : search criteria
+	 * @return Collection of activities Ids
+	 */
+	public Collection findOrganizationActivitiesIds(ID organizationId, ActivityFilter activityFilter)
+			throws BbmFinderException {
+<span class="nc" id="L330">		methodStart(&quot;findOrganizationActivitiesIds&quot;, organizationId, activityFilter);</span>
+<span class="nc" id="L331">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="nc" id="L333">			return activityDao.findOrganizationActivitiesIds(organizationId, activityFilter);</span>
+<span class="nc" id="L334">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L335">			handleException(e, false);</span>
+<span class="nc" id="L336">			throw e;</span>
+		} finally {
+<span class="nc" id="L338">			activityDao.cleanUp();</span>
+<span class="nc" id="L339">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities for given ids
+	 * &lt;P&gt;
+	 *
+	 * @param ids
+	 *            : Collection of id's to search for
+	 * @return Collection of activities found
+	 */
+	public Collection&lt;Activity&gt; findActivities(Collection&lt;ID&gt; ids) throws BbmFinderException {
+<span class="fc" id="L354">		methodStart(&quot;findActivities&quot;, ids);</span>
+<span class="fc" id="L355">		ActivityDAO activityDao = null;</span>
+		try {
+<span class="pc bpc" id="L357" title="1 of 2 branches missed.">			if (cacheUsed()) {</span>
+<span class="fc" id="L358">				initCache();</span>
+<span class="fc" id="L359">				ArrayList&lt;Activity&gt; actCol = new ArrayList&lt;&gt;(ids.size());</span>
+<span class="fc bfc" id="L360" title="All 2 branches covered.">				for (ID id : ids) {</span>
+<span class="fc" id="L361">					Activity act = findActivityById(id);</span>
+<span class="pc bpc" id="L362" title="1 of 2 branches missed.">					if (act != null) {</span>
+<span class="fc" id="L363">						actCol.add(act);</span>
+					}
+<span class="fc" id="L365">				}</span>
+<span class="fc" id="L366">				return actCol;</span>
+			}
+<span class="nc" id="L368">			activityDao = new ActivityDAO();</span>
+<span class="nc" id="L369">			return activityDao.findActivities(ids);</span>
+<span class="nc" id="L370">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L371">			handleException(e, false);</span>
+<span class="nc" id="L372">			throw e;</span>
+		} finally {
+<span class="pc bpc" id="L374" title="5 of 6 branches missed.">			if (activityDao != null) {</span>
+<span class="nc" id="L375">				activityDao.cleanUp();</span>
+			}
+<span class="pc" id="L377">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findOrganizationActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities for given organization and activityFilter Activities of parent organizations will also be
+	 * returned
+	 * &lt;P&gt;
+	 *
+	 * @param organizationId
+	 *            : id of organization to search for
+	 * @param activityFilter
+	 *            : search criteria
+	 * @return Collection of activities found
+	 */
+	public Collection&lt;Activity&gt; findOrganizationActivities(ID organizationId, ActivityFilter activityFilter)
+			throws BbmFinderException {
+<span class="fc" id="L396">		methodStart(&quot;findOrganizationActivities&quot;, organizationId, activityFilter);</span>
+<span class="fc" id="L397">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="fc" id="L399">			ArrayList&lt;ID&gt; orgCol = new ArrayList&lt;&gt;(1);</span>
+<span class="fc" id="L400">			orgCol.add(organizationId);</span>
+<span class="fc" id="L401">			return activityDao.findOrganizationActivitiesCheckCategory(orgCol, activityFilter,true);</span>
+<span class="nc" id="L402">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L403">			handleException(e, false);</span>
+<span class="nc" id="L404">			throw e;</span>
+		} finally {
+<span class="pc" id="L406">			activityDao.cleanUp();</span>
+<span class="pc" id="L407">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findOrganizationActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities for given organization and activityFilter Activities of parent organizations will also be
+	 * returned
+	 * &lt;P&gt;
+	 *
+	 * @param organizationId
+	 *            : id of organization to search for
+	 * @param activityFilter
+	 *            : search criteria
+	 * @param flexType
+	 *            : TO or Flex Request
+	 * @return Collection of activities found
+	 */
+	public Collection&lt;Activity&gt; findOrganizationActivities(ID organizationId, ActivityFilter activityFilter, int flexType)
+			throws BbmFinderException {
+<span class="nc" id="L428">		methodStart(&quot;findOrganizationActivities&quot;, organizationId, activityFilter, flexType);</span>
+<span class="nc" id="L429">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="nc" id="L431">			List&lt;ID&gt; orgCol = new ArrayList&lt;&gt;(1);</span>
+<span class="nc" id="L432">			orgCol.add(organizationId);</span>
+<span class="nc" id="L433">			return activityDao.findOrganizationActivitiesCheckCategory(orgCol, activityFilter, true, flexType);</span>
+<span class="nc" id="L434">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L435">			handleException(e, false);</span>
+<span class="nc" id="L436">			throw e;</span>
+		} finally {
+<span class="nc" id="L438">			activityDao.cleanUp();</span>
+<span class="nc" id="L439">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findOrganizationActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities for given organizations ids and activityFilter
+	 * &lt;P&gt;
+	 *
+	 * @param orgIds
+	 *            : a collection of organizations ids
+	 * @param activityFilter
+	 *            : search criteria
+	 * @param findParentOrgs
+	 *            : indicates if to find activities from parent orgs
+	 * @return Collection of activities found
+	 */
+	public Collection&lt;Activity&gt; findOrganizationActivities(Collection&lt;ID&gt; orgIds, ActivityFilter activityFilter, boolean findParentOrgs)
+	throws BbmFinderException
+	{
+<span class="fc" id="L460">		methodStart(&quot;findOrganizationActivities&quot;, orgIds, activityFilter, findParentOrgs);</span>
+<span class="fc" id="L461">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="fc" id="L463">			return activityDao.findOrganizationActivities(orgIds, activityFilter, findParentOrgs);</span>
+<span class="nc" id="L464">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L465">			handleException(e, false);</span>
+<span class="nc" id="L466">			throw e;</span>
+		} finally {
+			
+<span class="pc" id="L469">			activityDao.cleanUp();</span>
+<span class="pc" id="L470">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findOrganizationActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities for given organizations ids, activityFilter, and flex type
+	 * &lt;P&gt;
+	 *
+	 * @param orgIds
+	 *            : a collection of organizations ids
+	 * @param activityFilter
+	 *            : search criteria
+	 * @param findParentOrgs
+	 *            : indicates if to find activities from parent orgs
+	 * @return Collection of activities found
+	 */
+	public Collection&lt;Activity&gt; findOrganizationActivities(Collection&lt;ID&gt; orgIds, ActivityFilter activityFilter, boolean findParentOrgs,
+			int flexType) throws BbmFinderException	{
+<span class="nc" id="L490">		methodStart(&quot;findOrganizationActivities&quot;, orgIds, activityFilter, findParentOrgs);</span>
+<span class="nc" id="L491">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="nc" id="L493">			return activityDao.findOrganizationActivities(orgIds, activityFilter, findParentOrgs, flexType);</span>
+<span class="nc" id="L494">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L495">			handleException(e, false);</span>
+<span class="nc" id="L496">			throw e;</span>
+		} finally {
+<span class="nc" id="L498">			activityDao.cleanUp();</span>
+<span class="nc" id="L499">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findOrganizationActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities for given organizations ids
+	 * &lt;P&gt;
+	 *
+	 * @param orgIds
+	 *            : a collection of organizations ids
+	 * @param findParentOrgs
+	 *            : indicates if to find activities from parent orgs
+	 * @return Collection of activities found
+	 */
+	public Collection&lt;Activity&gt; findOrganizationActivities(Collection&lt;ID&gt; orgIds, boolean findParentOrgs) throws BbmFinderException {
+<span class="fc" id="L516">		return findOrganizationActivities(orgIds, null, findParentOrgs);</span>
+	}
+
+	/**
+	 * &lt;B&gt;findOrganizationActivitiesByCategory&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activities for given organization and activityFilter Activities of parent organizations will also be
+	 * returned
+	 * &lt;P&gt;
+	 *
+	 * @param organizationId
+	 *            : id of organization to search for
+	 * @param activityFilter
+	 *            : search criteria
+	 * @return Collection of activities found
+	 */
+	public Collection findOrganizationActivitiesByCategory(ID organizationId, ID activityCategoryId,
+			ActivityFilter activityFilter) throws BbmFinderException {
+<span class="nc" id="L534">		methodStart(&quot;findOrganizationActivitiesByCategory&quot;, organizationId, activityCategoryId, activityFilter);</span>
+<span class="nc" id="L535">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="nc" id="L537">			ArrayList&lt;ID&gt; orgCol = new ArrayList&lt;&gt;(1);</span>
+<span class="nc" id="L538">			orgCol.add(organizationId);</span>
+<span class="nc" id="L539">			return activityDao.findOrganizationActivitiesByCategory(orgCol, activityCategoryId, activityFilter);</span>
+<span class="nc" id="L540">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L541">			handleException(e, false);</span>
+<span class="nc" id="L542">			throw e;</span>
+		} finally {
+<span class="nc" id="L544">			activityDao.cleanUp();</span>
+<span class="nc" id="L545">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findActivityCategoryById&lt;/B&gt;
+	 * &lt;P&gt;
+	 * returns an ActivityCategory for a given id
+	 * &lt;P&gt;
+	 *
+	 * @param id
+	 *            activity id to search
+	 * @return Activity
+	 */
+	public ActivityCategory findActivityCategoryById(ID id) throws BbmFinderException {
+<span class="fc" id="L560">		methodStart(&quot;findActivityById&quot;, id);</span>
+<span class="fc" id="L561">		ActivityCategoryDAO activityCategoryDao = new ActivityCategoryDAO();</span>
+		try {
+<span class="fc" id="L563">			return activityCategoryDao.getObjectByID(id);</span>
+<span class="nc" id="L564">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L565">			handleException(e, false);</span>
+<span class="nc" id="L566">			throw e;</span>
+<span class="nc" id="L567">		} catch (Exception e) {</span>
+<span class="nc" id="L568">			handleException(e, false);</span>
+<span class="nc" id="L569">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="pc" id="L571">			activityCategoryDao.cleanUp();</span>
+<span class="pc" id="L572">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findActivityCategories&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activity categories for given ids
+	 * &lt;P&gt;
+	 *
+	 * @param ids
+	 *            : Collection of id's to search for
+	 * @return Collection of activity categories found
+	 */
+	public Collection findActivityCategories(Collection ids) throws BbmException {
+<span class="fc" id="L587">		methodStart(&quot;findActivityCategories&quot;, ids);</span>
+<span class="fc" id="L588">		ActivityCategoryDAO activityCategoryDao = new ActivityCategoryDAO();</span>
+		try {
+<span class="fc" id="L590">			return activityCategoryDao.findActivityCategories(ids);</span>
+<span class="nc" id="L591">		} catch (BbmException e) {</span>
+<span class="nc" id="L592">			handleException(e, false);</span>
+<span class="nc" id="L593">			throw e;</span>
+		} finally {
+<span class="pc" id="L595">			activityCategoryDao.cleanUp();</span>
+<span class="pc" id="L596">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findActivityCategories&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activityCatgegories that meet given ActivityFilter criteria
+	 * &lt;P&gt;
+	 *
+	 * @param activityCategoryFilter
+	 *            : search criteria
+	 * @return Collection of activityCatgegories
+	 */
+	public Collection findActivityCategories(ActivityCategoryFilter activityCategoryFilter) throws BbmFinderException {
+<span class="nc" id="L611">		methodStart(&quot;findActivityCategories&quot;, activityCategoryFilter);</span>
+<span class="nc" id="L612">		ActivityCategoryDAO activityCategoryDao = new ActivityCategoryDAO();</span>
+		try {
+<span class="nc" id="L614">			return activityCategoryDao.findActivityCategories(activityCategoryFilter);</span>
+<span class="nc" id="L615">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L616">			handleException(e, false);</span>
+<span class="nc" id="L617">			throw e;</span>
+		} finally {
+<span class="nc" id="L619">			activityCategoryDao.cleanUp();</span>
+<span class="nc" id="L620">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findOrganizationActivityCategories&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activityCategories for given organization and activityCategoryFilter Activities of parent organizations will
+	 * also be returned
+	 * &lt;P&gt;
+	 *
+	 * @param organizationId
+	 *            : id of organization to search for
+	 * @param activityCategoryFilter
+	 *            : search criteria
+	 * @return Collection of activityCategories found
+	 */
+	public Collection findOrganizationActivityCategories(ID organizationId,
+			ActivityCategoryFilter activityCategoryFilter) throws BbmFinderException {
+<span class="fc" id="L639">		methodStart(&quot;findOrganizationActivityCategories&quot;, organizationId, activityCategoryFilter);</span>
+<span class="fc" id="L640">		ActivityCategoryDAO activityCategoryDao = new ActivityCategoryDAO();</span>
+		try {
+<span class="fc" id="L642">			ArrayList&lt;ID&gt; orgCol = new ArrayList&lt;&gt;(1);</span>
+<span class="fc" id="L643">			orgCol.add(organizationId);</span>
+<span class="fc" id="L644">			return activityCategoryDao.findOrganizationActivityCategories(orgCol, activityCategoryFilter);</span>
+<span class="nc" id="L645">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L646">			handleException(e, false);</span>
+<span class="nc" id="L647">			throw e;</span>
+		} finally {
+<span class="pc" id="L649">			activityCategoryDao.cleanUp();</span>
+<span class="pc" id="L650">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findOrganizationActivityCategories&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activityCategories for given organization and activityCategoryFilter Activities of parent organizations will
+	 * also be returned
+	 * &lt;P&gt;
+	 *
+	 * @param orgIdCol
+	 *            Collection: id of organization to search for
+	 * @param activityCategoryFilter
+	 *            : search criteria
+	 * @return Collection of activityCategories found
+	 * @param needParent
+	 *            , include parent org or not
+	 */
+	public Collection findOrganizationActivityCategories(Collection&lt;ID&gt; orgIdCol,
+			ActivityCategoryFilter activityCategoryFilter, boolean needParent) throws BbmFinderException {
+<span class="nc bnc" id="L671" title="All 2 branches missed.">		methodStart(&quot;findOrganizationActivityCategories&quot;, orgIdCol, activityCategoryFilter, needParent ? Boolean.TRUE</span>
+				: Boolean.FALSE);
+<span class="nc" id="L673">		Jdmo jdmo = new Jdmo();</span>
+<span class="nc" id="L674">		ActivityCategoryDAO acDao = new ActivityCategoryDAO(jdmo);</span>
+		try {
+<span class="nc bnc" id="L676" title="All 2 branches missed.">			if (needParent) {</span>
+<span class="nc" id="L677">				HashSet&lt;ID&gt; parentOrgs = DAOUtil.getParentOrganizationsCollection(orgIdCol, jdmo);</span>
+<span class="nc" id="L678">				orgIdCol.addAll(parentOrgs);</span>
+			}
+<span class="nc" id="L680">			return acDao.findOrganizationActivityCategories(orgIdCol, activityCategoryFilter);</span>
+<span class="nc" id="L681">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L682">			handleException(e, false);</span>
+<span class="nc" id="L683">			throw e;</span>
+		} finally {
+<span class="nc" id="L685">			acDao.cleanUp();</span>
+<span class="nc" id="L686">			jdmo.cleanUp();</span>
+<span class="nc" id="L687">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findMediaForActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activityMedias for a given activity
+	 * &lt;P&gt;
+	 *
+	 * @param activityId
+	 *            : id of activity
+	 * @return Collection of Media Ids found
+	 */
+	public Collection findMediaForActivity(ID activityId) throws BbmFinderException {
+<span class="nc" id="L702">		methodStart(&quot;findMediaForActivity&quot;, activityId);</span>
+<span class="nc" id="L703">		ActivityMediaDAO activityMediaDao = new ActivityMediaDAO();</span>
+		try {
+<span class="nc" id="L705">			return activityMediaDao.findMediaIdsForActivity(activityId);</span>
+<span class="nc" id="L706">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L707">			handleException(e, false);</span>
+<span class="nc" id="L708">			throw e;</span>
+		} finally {
+<span class="nc" id="L710">			activityMediaDao.cleanUp();</span>
+<span class="nc" id="L711">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findMediaForActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find Media Ids per activity for a given collection of activities
+	 * &lt;P&gt;
+	 *
+	 * @param activityIds
+	 *            : collection of activity Ids
+	 * @return Map of activity ID (key) and collection of Media Ids (value)
+	 */
+	public Map&lt;ID, Collection&lt;ID&gt;&gt; findMediaForActivities(Collection&lt;ID&gt; activityIds) throws BbmFinderException {
+<span class="fc" id="L726">		methodStart(&quot;findAMediaForActivities&quot;, activityIds);</span>
+<span class="fc" id="L727">		ActivityMediaDAO activityMediaDao = new ActivityMediaDAO();</span>
+		try {
+<span class="fc" id="L729">			return activityMediaDao.findMediaForActivities(activityIds);</span>
+<span class="nc" id="L730">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L731">			handleException(e, false);</span>
+<span class="nc" id="L732">			throw e;</span>
+		} finally {
+<span class="pc" id="L734">			activityMediaDao.cleanUp();</span>
+<span class="pc" id="L735">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findActivitiesForMedia&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find Activity Ids per Media for a given collection of mediaIds
+	 * &lt;P&gt;
+	 *
+	 * @param mediaIds: collection of Media Ids
+	 * @return Map of Media ID (key) and collection of Activity Ids (value)
+	 */
+	public Map findActivitiesForMedia(Collection mediaIds)
+	        throws BbmFinderException {
+<span class="nc" id="L750">		methodStart(&quot;findActivitiesForMedia&quot;, mediaIds);</span>
+<span class="nc" id="L751">		ActivityMediaDAO activityMediaDao = new ActivityMediaDAO();</span>
+		try {
+<span class="nc" id="L753">			return activityMediaDao.findActivitiesForMedia(mediaIds);</span>
+<span class="nc" id="L754">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L755">			handleException(e, false);</span>
+<span class="nc" id="L756">			throw e;</span>
+		} finally {
+<span class="nc" id="L758">			activityMediaDao.cleanUp();</span>
+<span class="nc" id="L759">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findActivitiesWithMedia&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find all activities that are linked to at least one media.
+	 * &lt;P&gt;
+	 *
+	 * @return A Collection of all activity ID's that are in the ACTIVITYMEDIA table.
+	 */
+	public Collection findActivitiesWithMedia() throws BbmFinderException {
+<span class="nc" id="L772">		methodStart(&quot;findActivitiesWithMedia&quot;);</span>
+<span class="nc" id="L773">		ActivityMediaDAO activityMediaDao = new ActivityMediaDAO();</span>
+		try {
+<span class="nc" id="L775">			return activityMediaDao.findActivitiesWithMedia();</span>
+<span class="nc" id="L776">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L777">			handleException(e, false);</span>
+<span class="nc" id="L778">			throw e;</span>
+		} finally {
+<span class="nc" id="L780">			activityMediaDao.cleanUp();</span>
+<span class="nc" id="L781">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findQueueForActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find activityQueues for a given activity
+	 * &lt;P&gt;
+	 *
+	 * @param activityId
+	 *            : id of activity
+	 * @return Collection of Queue Ids found
+	 */
+	public Collection findQueueForActivity(ID activityId) throws BbmFinderException {
+<span class="nc" id="L796">		methodStart(&quot;findQueueForActivity&quot;, activityId);</span>
+<span class="nc" id="L797">		ActivityQueueDAO activityQueueDao = activityQueueDAOFactory.createDAO();</span>
+		try {
+<span class="nc" id="L799">			return activityQueueDao.findQueueIdsForActivity(activityId);</span>
+<span class="nc" id="L800">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L801">			handleException(e, false);</span>
+<span class="nc" id="L802">			throw e;</span>
+		} finally {
+<span class="nc" id="L804">			activityQueueDao.cleanUp();</span>
+<span class="nc" id="L805">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;findQueueForActivities&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find Queue Ids per activity for a given collection of activities
+	 * &lt;P&gt;
+	 *
+	 * @param activityIds
+	 *            : collection of activity Ids
+	 * @return Map of activity ID (key) and collection of Queue Ids (value)
+	 */
+	public Map findQueueForActivities(Collection activityIds) throws BbmFinderException {
+<span class="fc" id="L820">		methodStart(&quot;findAQueueForActivities&quot;, activityIds);</span>
+<span class="fc" id="L821">		ActivityQueueDAO activityQueueDao = activityQueueDAOFactory.createDAO();</span>
+		try {
+<span class="fc" id="L823">			return activityQueueDao.findQueueForActivities(activityIds);</span>
+<span class="nc" id="L824">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L825">			handleException(e, false);</span>
+<span class="nc" id="L826">			throw e;</span>
+		} finally {
+<span class="pc" id="L828">			activityQueueDao.cleanUp();</span>
+<span class="pc" id="L829">			methodFinish();</span>
+		}
+	}
+
+
+	/**
+	 * &lt;B&gt;findActivitiesDirectlyMappedToQueuesInDB&lt;/B&gt;
+	 * &lt;P&gt;
+	 * Find Activity Ids that are directly linked to the collection of queue IDs.
+	 * This includes only activities that are directly mapped to the Queues in the
+	 * &quot;Queue Hopping&quot; scenario.
+	 * &lt;P&gt;
+	 *
+	 * @param queueIds: collection of Queue Ids
+	 * @return Map of Queue ID (key) and collection of Activity Ids (value)
+	 */
+	public Map&lt;ID, List&lt;ID&gt;&gt; findActivitiesDirectlyMappedToQueuesInDB(Collection&lt;ID&gt; queueIds)
+	throws BbmFinderException
+	{
+<span class="fc" id="L848">		methodStart(&quot;findActivityForQueues&quot;, queueIds);</span>
+<span class="fc" id="L849">		ActivityQueueDAO activityQueueDao = activityQueueDAOFactory.createDAO();</span>
+		try {
+<span class="fc" id="L851">			return activityQueueDao.findActivityForQueues(queueIds);</span>
+<span class="nc" id="L852">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L853">			handleException(e, false);</span>
+<span class="nc" id="L854">			throw e;</span>
+		} finally {
+<span class="pc" id="L856">			activityQueueDao.cleanUp();</span>
+<span class="pc" id="L857">			methodFinish();</span>
+		}
+	}
+
+
+	/**
+	 * &lt;B&gt;findPropertiesForActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * find properties for a given activity
+	 * &lt;P&gt;
+	 *
+	 * @param activityId
+	 *            : id of activity
+	 * @return ActivityProperties found for ID
+	 */
+	public ActivityProperties findPropertiesForActivity(ID activityId) throws BbmFinderException {
+<span class="nc" id="L873">		methodStart(&quot;findPropertiesForActivity&quot;, activityId);</span>
+<span class="nc" id="L874">		ActivityPropertiesDAO activityPropertiesDAO = new ActivityPropertiesDAO();</span>
+		try {
+<span class="nc" id="L876">			return activityPropertiesDAO.findActivityProperties(activityId);</span>
+<span class="nc" id="L877">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L878">			handleException(e, false);</span>
+<span class="nc" id="L879">			throw e;</span>
+		} finally {
+<span class="nc" id="L881">			activityPropertiesDAO.cleanUp();</span>
+<span class="nc" id="L882">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * find properties of a given list of Activity IDs
+	 * 
+	 * @param activityIds
+	 * @return
+	 * @throws BbmFinderException
+	 */
+	public Collection&lt;ActivityProperties&gt; findPropertiesForActivities(Collection&lt;ID&gt; activityIds)
+			throws BbmFinderException {
+<span class="nc" id="L895">		methodStart(&quot;findPropertiesForActivities&quot;, activityIds);</span>
+<span class="nc" id="L896">		ActivityPropertiesDAO activityPropertiesDAO = new ActivityPropertiesDAO();</span>
+		try {
+<span class="nc" id="L898">			return activityPropertiesDAO.findActivitiesProperties(activityIds);</span>
+<span class="nc" id="L899">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L900">			handleException(e, false);</span>
+<span class="nc" id="L901">			throw e;</span>
+		} finally {
+<span class="nc" id="L903">			activityPropertiesDAO.cleanUp();</span>
+<span class="nc" id="L904">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;createActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * creates given Activity in db, and sets it's id
+	 * &lt;P&gt;
+	 *
+	 * @param activity
+	 *            : activity to create
+	 * @return Activity id
+	 */
+	public ID createActivity(Activity activity) throws BbmCreateException,
+			ActivityValidationException {
+<span class="fc" id="L920">		methodStart(&quot;createActivity&quot;, activity);</span>
+<span class="fc" id="L921">		ActivityDAO activityDao = null;</span>
+		try {
+<span class="fc" id="L923">			activity.validate();</span>
+<span class="fc" id="L924">			activityDao = new ActivityDAO();</span>
+<span class="fc" id="L925">			ID actID = activityDao.createObject(activity);</span>
+<span class="fc" id="L926">			activity.setID(actID);</span>
+<span class="pc bpc" id="L927" title="1 of 2 branches missed.">			if (cacheUsed()) {</span>
+<span class="fc" id="L928">				m_ActivityCache.put(actID, activity);</span>
+			}
+<span class="fc" id="L930">			return actID;</span>
+<span class="nc" id="L931">		} catch (ActivityValidationException | BbmCreateException e) {</span>
+<span class="nc" id="L932">			handleException(e, true);</span>
+<span class="nc" id="L933">			throw e;</span>
+		} finally {
+<span class="pc bpc" id="L935" title="3 of 4 branches missed.">			if (activityDao != null) {</span>
+<span class="pc" id="L936">				activityDao.cleanUp();</span>
+			}
+<span class="pc" id="L938">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;createActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * creates Activity with media
+	 * &lt;P&gt;
+	 *
+	 * @param activity
+	 *            : activity to create
+	 * @param mediasIds
+	 *            : collection of media Ids of type ID to associate to the activity
+	 * @return Activity id
+	 */
+	public ID createActivity(Activity activity, Collection&lt;ID&gt; mediasIds) throws BbmCreateException,
+			ActivityValidationException {
+<span class="nc" id="L956">		methodStart(&quot;createActivity&quot;, activity, mediasIds);</span>
+
+<span class="nc" id="L958">		ActivityMediaDAO activityMediaDao = null;</span>
+
+		try {
+<span class="nc" id="L961">			ID activityId = createActivity(activity);</span>
+
+			try {
+<span class="nc bnc" id="L964" title="All 4 branches missed.">				if (mediasIds != null &amp;&amp; !mediasIds.isEmpty()) {</span>
+<span class="nc" id="L965">					activity.validateWithAssociatedMedia();</span>
+<span class="nc" id="L966">					activityMediaDao = new ActivityMediaDAO();</span>
+<span class="nc" id="L967">					ActivityMedia activityMedia = new ActivityMedia();</span>
+<span class="nc" id="L968">					activityMedia.setActivityId(activityId);</span>
+<span class="nc bnc" id="L969" title="All 2 branches missed.">					for (ID mediaId : mediasIds) {</span>
+<span class="nc" id="L970">						activityMedia.setMediaId(mediaId);</span>
+<span class="nc" id="L971">						activityMediaDao.createObject(activityMedia, false);</span>
+<span class="nc" id="L972">					}</span>
+<span class="nc" id="L973">					activityMediaDao.executeBatch();</span>
+				}
+<span class="nc" id="L975">				return activityId;</span>
+<span class="nc" id="L976">			} catch (ActivityValidationException | BbmCreateException e) {</span>
+<span class="nc" id="L977">				handleException(e, true);</span>
+<span class="nc" id="L978">				throw e;</span>
+<span class="nc" id="L979">			} catch (JdmoException e) {</span>
+<span class="nc" id="L980">				handleException(e, true);</span>
+<span class="nc" id="L981">				throw new BbmCreateException(e);</span>
+			}
+		} finally {
+<span class="nc bnc" id="L984" title="All 4 branches missed.">			if (activityMediaDao != null) {</span>
+<span class="nc" id="L985">				activityMediaDao.cleanUp();</span>
+			}
+<span class="nc" id="L987">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;createActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * creates Activity with media
+	 * &lt;P&gt;
+	 *
+	 * @param activity
+	 *            : activity to create
+	 * @param mediasIds
+	 *            : collection of media Ids of type ID to associate to the activity
+	 * @return Activity id
+	 */
+	public ID createActivity(Activity activity, Collection&lt;ID&gt; mediasIds, ActivityProperties activityProperties) throws BbmCreateException,
+			ActivityValidationException {
+<span class="fc" id="L1005">		methodStart(&quot;createActivity&quot;, activity, mediasIds);</span>
+
+<span class="fc" id="L1007">		ActivityMediaDAO activityMediaDao = null;</span>
+<span class="fc" id="L1008">		ActivityPropertiesDAO activityPropertiesDAO = null;</span>
+
+		try {
+<span class="fc" id="L1011">			ID activityId = createActivity(activity);</span>
+
+			try {
+<span class="pc bpc" id="L1014" title="2 of 4 branches missed.">				if (mediasIds != null &amp;&amp; !mediasIds.isEmpty()) {</span>
+<span class="nc" id="L1015">					activity.validateWithAssociatedMedia();</span>
+<span class="nc" id="L1016">					activityMediaDao = new ActivityMediaDAO();</span>
+<span class="nc" id="L1017">					ActivityMedia activityMedia = new ActivityMedia();</span>
+<span class="nc" id="L1018">					activityMedia.setActivityId(activityId);</span>
+<span class="nc bnc" id="L1019" title="All 2 branches missed.">					for (ID mediaId : mediasIds) {</span>
+<span class="nc" id="L1020">						activityMedia.setMediaId(mediaId);</span>
+<span class="nc" id="L1021">						activityMediaDao.createObject(activityMedia, false);</span>
+<span class="nc" id="L1022">					}</span>
+<span class="nc" id="L1023">					activityMediaDao.executeBatch();</span>
+				}
+
+<span class="fc" id="L1026">				activityProperties.setActivityId(activityId);</span>
+<span class="fc" id="L1027">				activityPropertiesDAO = new ActivityPropertiesDAO();</span>
+<span class="fc" id="L1028">				activityPropertiesDAO.insertActivityProperties(activityProperties);</span>
+<span class="fc" id="L1029">				return activityId;</span>
+<span class="nc" id="L1030">			} catch (ActivityValidationException | BbmCreateException e) {</span>
+<span class="nc" id="L1031">				handleException(e, true);</span>
+<span class="nc" id="L1032">				throw e;</span>
+<span class="nc" id="L1033">			} catch (JdmoException e) {</span>
+<span class="nc" id="L1034">				handleException(e, true);</span>
+<span class="nc" id="L1035">				throw new BbmCreateException(e);</span>
+			}
+		} finally {
+<span class="pc bpc" id="L1038" title="3 of 4 branches missed.">			if (activityMediaDao != null) {</span>
+<span class="nc" id="L1039">				activityMediaDao.cleanUp();</span>
+            }
+<span class="pc bpc" id="L1041" title="3 of 4 branches missed.">            if (activityPropertiesDAO != null) {</span>
+<span class="pc" id="L1042">                activityPropertiesDAO.cleanUp();</span>
+            }
+<span class="pc" id="L1044">			methodFinish();</span>
+		}
+	}
+
+	public ID createActivity(Activity activity, Collection&lt;ID&gt; mediaIds, SystemType externalSystemType)
+	  throws BbmCreateException, ActivityValidationException {
+<span class="nc" id="L1050">		methodStart(&quot;createActivity&quot;, activity, externalSystemType);</span>
+
+		// validate
+<span class="nc bnc" id="L1053" title="All 2 branches missed.">		if (externalSystemType == null) {</span>
+<span class="nc" id="L1054">			throw new BbmCreateException(&quot;externalSystemType is null&quot;);</span>
+		}
+<span class="nc bnc" id="L1056" title="All 2 branches missed.">		if (activity.getExternalID() == null) {</span>
+<span class="nc" id="L1057">			throw new BbmCreateException(&quot;external ID is null&quot;);</span>
+		}
+
+		// create
+		try {
+<span class="nc" id="L1062">			ID activityID = createActivity(activity, mediaIds);</span>
+<span class="nc" id="L1063">			boolean insert = true;</span>
+<span class="nc" id="L1064">			MapUtil.setWfoToExternalID(externalSystemType, ObjectType.Activity, activity.getID(),</span>
+<span class="nc" id="L1065">					activity.getExternalID(), new Jdmo(true), insert);</span>
+<span class="nc" id="L1066">			return activityID;</span>
+<span class="nc" id="L1067">		} catch (JdmoException e) {</span>
+<span class="nc" id="L1068">			handleException(e); // log and rollback transaction</span>
+<span class="nc" id="L1069">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="nc" id="L1071">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;createActivityCategory&lt;/B&gt;
+	 * &lt;P&gt;
+	 * creates given ActivityCategory in db, and sets it's id
+	 * &lt;P&gt;
+	 *
+	 * @param activityCategory
+	 *            activityCategory to create
+	 * @return ActivityCategory id
+	 */
+	public ID createActivityCategory(ActivityCategory activityCategory) throws BbmCreateException {
+<span class="nc" id="L1086">		methodStart(&quot;createActivityCategory&quot;, activityCategory);</span>
+<span class="nc" id="L1087">		ActivityCategoryDAO activityCategoryDao = new ActivityCategoryDAO();</span>
+		try {
+<span class="nc" id="L1089">			return activityCategoryDao.createObject(activityCategory);</span>
+<span class="nc" id="L1090">		} catch (BbmCreateException e) {</span>
+<span class="nc" id="L1091">			handleException(e, true);</span>
+<span class="nc" id="L1092">			throw e;</span>
+		} finally {
+<span class="nc" id="L1094">			activityCategoryDao.cleanUp();</span>
+<span class="nc" id="L1095">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;createActivityMedia&lt;/B&gt;
+	 * &lt;P&gt;
+	 * creates given ActivityMedia in db, and sets it's id
+	 * &lt;P&gt;
+	 *
+	 * @param activityMedia
+	 *            : activityMedia to create
+	 * @return ActivityMedia id
+	 */
+	public ID createActivityMedia(ActivityMedia activityMedia) throws BbmCreateException {
+<span class="nc" id="L1110">		methodStart(&quot;createActivityMedia&quot;, activityMedia);</span>
+
+<span class="nc" id="L1112">		ActivityMediaDAO activityMediaDao = null;</span>
+		try {
+<span class="nc" id="L1114">			Activity activity = findActivityById(activityMedia.getActivityId());</span>
+<span class="nc" id="L1115">			activity.validateWithAssociatedMedia();</span>
+<span class="nc" id="L1116">			activityMediaDao = new ActivityMediaDAO();</span>
+<span class="nc" id="L1117">			return activityMediaDao.createObject(activityMedia);</span>
+<span class="nc" id="L1118">		} catch (BbmFinderException | ActivityValidationException | BbmCreateException e) {</span>
+<span class="nc" id="L1119">			handleException(e, true);</span>
+<span class="nc" id="L1120">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="nc bnc" id="L1122" title="All 4 branches missed.">			if (activityMediaDao != null) {</span>
+<span class="nc" id="L1123">				activityMediaDao.cleanUp();</span>
+			}
+<span class="nc" id="L1125">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;createActivityMedia&lt;/B&gt;
+	 * &lt;P&gt;
+	 * creates association of multiple media to an activity
+	 * &lt;P&gt;
+	 *
+	 * @param activityId
+	 *            : activity Id
+	 * @param mediaIds
+	 *            : collection of media ids to associate with the activity
+	 * @return collection of newly created ActivityMedia ids
+	 */
+	public Collection&lt;ID&gt; createActivityMedia(ID activityId, Collection&lt;ID&gt; mediaIds) throws BbmCreateException, 
+		ActivityValidationException {
+<span class="nc" id="L1143">		methodStart(&quot;createActivityMedia&quot;, activityId, mediaIds);</span>
+
+<span class="nc" id="L1145">		ActivityMediaDAO activityMediaDao = null;</span>
+		try {
+<span class="nc bnc" id="L1147" title="All 6 branches missed.">			if (mediaIds == null || mediaIds.isEmpty() || activityId == null) {</span>
+<span class="nc" id="L1148">				return Collections.emptyList();</span>
+			}
+<span class="nc" id="L1150">			Activity activity = findActivityById(activityId);</span>
+<span class="nc" id="L1151">			activity.validateWithAssociatedMedia();</span>
+
+<span class="nc" id="L1153">			activityMediaDao = new ActivityMediaDAO();</span>
+<span class="nc" id="L1154">			ActivityMedia activityMedia = new ActivityMedia();</span>
+<span class="nc" id="L1155">			activityMedia.setActivityId(activityId);</span>
+<span class="nc" id="L1156">			ArrayList&lt;ID&gt; createdIds = new ArrayList&lt;&gt;(mediaIds.size());</span>
+<span class="nc bnc" id="L1157" title="All 2 branches missed.">			for (ID mediaId : mediaIds) {</span>
+<span class="nc" id="L1158">				activityMedia.setMediaId(mediaId);</span>
+<span class="nc" id="L1159">				createdIds.add(activityMediaDao.createObject(activityMedia, false));</span>
+<span class="nc" id="L1160">			}</span>
+<span class="nc" id="L1161">			activityMediaDao.executeBatch();</span>
+<span class="nc" id="L1162">			return createdIds;</span>
+<span class="nc" id="L1163">		} catch (BbmFinderException | JdmoException e) {</span>
+<span class="nc" id="L1164">			handleException(e, true);</span>
+<span class="nc" id="L1165">			throw new BbmCreateException(e);</span>
+<span class="nc" id="L1166">		} catch (ActivityValidationException | BbmCreateException e) {</span>
+<span class="nc" id="L1167">			handleException(e, true);</span>
+<span class="nc" id="L1168">			throw e;</span>
+		} finally {
+<span class="nc bnc" id="L1170" title="All 6 branches missed.">			if (activityMediaDao != null) {</span>
+<span class="nc" id="L1171">				activityMediaDao.cleanUp();</span>
+			}
+<span class="nc" id="L1173">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;createActivityMedia&lt;/B&gt;
+	 * &lt;P&gt;
+	 * creates given ActivityQueue in db, and sets it's id
+	 * &lt;P&gt;
+	 *
+	 * @param activityQueue
+	 *            : activityQueue to create
+	 * @return ActivityQueue id
+	 */
+	public ID createActivityQueue(ActivityQueue activityQueue) throws BbmCreateException {
+<span class="nc" id="L1188">		methodStart(&quot;createActivityQueue&quot;, activityQueue);</span>
+
+<span class="nc" id="L1190">		ActivityQueueDAO activityQueueDao = null;</span>
+		try {
+<span class="nc" id="L1192">			Activity activity = findActivityById(activityQueue.getActivityId());</span>
+<span class="nc" id="L1193">			activity.validateWithAssociatedQueue();</span>
+<span class="nc" id="L1194">			activityQueueDao = activityQueueDAOFactory.createDAO();</span>
+<span class="nc" id="L1195">			return activityQueueDao.createObject(activityQueue);</span>
+<span class="nc" id="L1196">		} catch (BbmFinderException | ActivityValidationException | BbmCreateException e) {</span>
+<span class="nc" id="L1197">			handleException(e, true);</span>
+<span class="nc" id="L1198">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="nc bnc" id="L1200" title="All 4 branches missed.">			if (activityQueueDao != null) {</span>
+<span class="nc" id="L1201">				activityQueueDao.cleanUp();</span>
+			}
+<span class="nc" id="L1203">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;createActivityQueue&lt;/B&gt;
+	 * &lt;P&gt;
+	 * creates association of multiple queue to an activity
+	 * &lt;P&gt;
+	 *
+	 * @param activityId
+	 *            : activity Id
+	 * @param queueIds
+	 *            : collection of queue ids to associate with the activity
+	 * @return collection of newly created ActivityQueue ids
+	 */
+	public Collection&lt;ID&gt; createActivityQueue(ID activityId, Collection&lt;ID&gt; queueIds) throws BbmCreateException, 
+		ActivityValidationException {
+<span class="fc" id="L1221">		methodStart(&quot;createActivityQueue&quot;, activityId, queueIds);</span>
+
+<span class="fc" id="L1223">		ActivityQueueDAO activityQueueDao = null;</span>
+		try {
+<span class="pc bpc" id="L1225" title="4 of 6 branches missed.">			if (queueIds == null || queueIds.isEmpty() || activityId == null) {</span>
+<span class="fc" id="L1226">				return Collections.emptyList();</span>
+			}
+<span class="nc" id="L1228">			Activity activity = findActivityById(activityId);</span>
+<span class="nc" id="L1229">			activity.validateWithAssociatedQueue();</span>
+
+<span class="nc" id="L1231">			activityQueueDao = activityQueueDAOFactory.createDAO();</span>
+<span class="nc" id="L1232">			ActivityQueue activityQueue = new ActivityQueue();</span>
+<span class="nc" id="L1233">			activityQueue.setActivityId(activityId);</span>
+<span class="nc" id="L1234">			ArrayList&lt;ID&gt; createdIds = new ArrayList&lt;&gt;(queueIds.size());</span>
+<span class="nc bnc" id="L1235" title="All 2 branches missed.">			for (ID queueId : queueIds) {</span>
+<span class="nc" id="L1236">				activityQueue.setQueueId(queueId);</span>
+<span class="nc" id="L1237">				createdIds.add(activityQueueDao.createObject(activityQueue, false));</span>
+<span class="nc" id="L1238">			}</span>
+<span class="nc" id="L1239">			activityQueueDao.executeBatch();</span>
+<span class="nc" id="L1240">			return createdIds;</span>
+<span class="nc" id="L1241">		} catch (BbmFinderException | JdmoException e) {</span>
+<span class="nc" id="L1242">			handleException(e, true);</span>
+<span class="nc" id="L1243">			throw new BbmCreateException(e);</span>
+<span class="nc" id="L1244">		} catch (ActivityValidationException | BbmCreateException e) {</span>
+<span class="nc" id="L1245">			handleException(e, true);</span>
+<span class="nc" id="L1246">			throw e;</span>
+		} finally {
+<span class="pc bpc" id="L1248" title="5 of 6 branches missed.">			if (activityQueueDao != null) {</span>
+<span class="nc" id="L1249">				activityQueueDao.cleanUp();</span>
+			}
+<span class="pc" id="L1251">			methodFinish();</span>
+		}
+	}
+
+	// function is used by RTAAServiceEJB to reset activity last updated date
+	// this will force report dump to do full dump
+	public void updateActivityLastUpdatedDate(Activity activity) throws BbmUpdateException, MultiUserException,
+			ActivityValidationException {
+<span class="nc" id="L1259">		methodStart(&quot;updateActivityLastUpdatedDate&quot;, activity);</span>
+<span class="nc" id="L1260">		ActivityDAO activityDao = null;</span>
+		try {
+<span class="nc" id="L1262">			activity.validate();</span>
+<span class="nc" id="L1263">			activityDao = new ActivityDAO();</span>
+<span class="nc" id="L1264">			activity.setLastModifierName(m_sessionContext.getCallerPrincipal().getName());</span>
+<span class="nc" id="L1265">			activity.setLastModifiedDate(new Date());</span>
+
+<span class="nc" id="L1267">			activityDao.updateObject(activity);</span>
+<span class="nc bnc" id="L1268" title="All 2 branches missed.">			if (cacheUsed()) {</span>
+<span class="nc" id="L1269">				m_ActivityCache.put(activity.getID(), activity);</span>
+			}
+<span class="nc" id="L1271">		} catch (ActivityValidationException | BbmUpdateException | MultiUserException e) {</span>
+<span class="nc" id="L1272">			handleException(e, true);</span>
+<span class="nc" id="L1273">			throw e;</span>
+		} finally {
+<span class="nc bnc" id="L1275" title="All 4 branches missed.">			if (activityDao != null) {</span>
+<span class="nc" id="L1276">				activityDao.cleanUp();</span>
+			}
+<span class="nc" id="L1278">			methodFinish();</span>
+<span class="nc" id="L1279">		}</span>
+<span class="nc" id="L1280">	}</span>
+
+	/**
+	 * &lt;B&gt;updateActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * update given activity to db
+	 * &lt;P&gt;
+	 *
+	 * @param activity
+	 *            : activity to update
+	 */
+	public void updateActivity(Activity activity) throws BbmUpdateException, MultiUserException,
+			ActivityValidationException {
+<span class="nc" id="L1293">		methodStart(&quot;updateActivity&quot;, activity);</span>
+<span class="nc" id="L1294">		ActivityDAO activityDao = null;</span>
+		try {
+<span class="nc" id="L1296">			activity.validate();</span>
+<span class="nc" id="L1297">			activityDao = new ActivityDAO();</span>
+
+			// only update Last Modified Date when the adherence tolerance was changed.
+<span class="nc" id="L1300">			Activity oldActivity = findActivityById(activity.getID());</span>
+
+			// fix QC39049 10SP4+v11: throw exception if an activity is changed from &quot;use in shift&quot; to not and the
+			// activity is used in any shift or shift event
+<span class="nc bnc" id="L1304" title="All 4 branches missed.">			if (oldActivity.isUsedInShift() &amp;&amp; !activity.isUsedInShift()) {</span>
+				// see if the activity is used in shift currently, if yes, throw exception
+<span class="nc" id="L1306">				JdmoRowset rs = activityDao.getDMO().createRowset(&quot;select count(*) from shiftassignment where activityid = &quot; + activity.getID());</span>
+<span class="nc" id="L1307">				rs.next();</span>
+<span class="nc" id="L1308">				int count = rs.getInt(1);</span>
+<span class="nc bnc" id="L1309" title="All 2 branches missed.">				if (count &gt; 0) {</span>
+					// throw exception
+<span class="nc" id="L1311">					throw new ActivityValidationException(</span>
+							ActivityValidationException.ACTIVITY_INVALID_UNCHECK_USEDINSHIFT);
+				}
+			}
+
+<span class="nc bnc" id="L1316" title="All 4 branches missed.">			if (oldActivity.isUsedInShiftEvent() &amp;&amp; !activity.isUsedInShiftEvent()) {</span>
+				// see if the activity is used in shift currently, if yes, throw exception
+<span class="nc" id="L1318">				JdmoRowset rs = activityDao.getDMO().createRowset(&quot;select count(*) from shifteventassignment where activityid = &quot; + activity.getID());</span>
+<span class="nc" id="L1319">				rs.next();</span>
+<span class="nc" id="L1320">				int count = rs.getInt(1);</span>
+<span class="nc bnc" id="L1321" title="All 2 branches missed.">				if (count &gt; 0) {</span>
+					// throw exception
+<span class="nc" id="L1323">					throw new ActivityValidationException(</span>
+							ActivityValidationException.ACTIVITY_INVALID_UNCHECK_USEDINSHIFT);
+				}
+			}
+<span class="nc bnc" id="L1327" title="All 2 branches missed.">			if (activity.getAdherenceTolerance() != oldActivity.getAdherenceTolerance()) {</span>
+<span class="nc" id="L1328">				activity.setLastModifierName(m_sessionContext.getCallerPrincipal().getName());</span>
+<span class="nc" id="L1329">				activity.setLastModifiedDate(new Date());</span>
+			} else {
+<span class="nc" id="L1331">				activity.setLastModifierName(oldActivity.getLastModifierName());</span>
+<span class="nc" id="L1332">				activity.setLastModifiedDate(oldActivity.getLastModifiedDate());</span>
+			}
+
+<span class="nc" id="L1335">			activityDao.updateObject(activity);</span>
+<span class="nc bnc" id="L1336" title="All 2 branches missed.">			if (cacheUsed()) {</span>
+<span class="nc" id="L1337">				m_ActivityCache.put(activity.getID(), activity);</span>
+			}
+<span class="nc" id="L1339">		} catch (BbmFinderException | JdmoException e) {</span>
+<span class="nc" id="L1340">			handleException(e, true);</span>
+<span class="nc" id="L1341">			throw new BbmUpdateException(e);</span>
+<span class="nc" id="L1342">		} catch (ActivityValidationException | BbmUpdateException | MultiUserException e) {</span>
+<span class="nc" id="L1343">			handleException(e, true);</span>
+<span class="nc" id="L1344">			throw e;</span>
+		} finally {
+<span class="nc bnc" id="L1346" title="All 4 branches missed.">			if (activityDao != null) {</span>
+<span class="nc" id="L1347">				activityDao.cleanUp();</span>
+			}
+<span class="nc" id="L1349">			methodFinish();</span>
+<span class="nc" id="L1350">		}</span>
+<span class="nc" id="L1351">	}</span>
+
+	/**
+	 * &lt;B&gt;updateActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * update activity including media types (unlink current media types)
+	 * &lt;P&gt;
+	 *
+	 * @param activity
+	 *            : activity to update
+	 * @param mediaIds
+	 *            : new medias to link to activity
+	 */
+	/**
+	 * @deprecated in 7.7
+	 */
+	@Deprecated
+	public void updateActivity(Activity activity, Collection mediaIds) throws BbmUpdateException, MultiUserException,
+			ActivityValidationException {
+<span class="nc" id="L1370">		methodStart(&quot;updateActivity&quot;, activity, mediaIds);</span>
+
+<span class="nc" id="L1372">		ActivityMediaDAO activityMediaDao = null;</span>
+		try {
+<span class="nc" id="L1374">			updateActivity(activity);</span>
+
+			try {
+<span class="nc" id="L1377">				activityMediaDao = new ActivityMediaDAO();</span>
+				// unlink old media types
+<span class="nc" id="L1379">				activityMediaDao.unlinkAllActivityMedias(activity.getID());</span>
+				// link new media types
+<span class="nc" id="L1381">				createActivityMedia(activity.getID(), mediaIds);</span>
+<span class="nc" id="L1382">			} catch (ActivityValidationException e) {</span>
+<span class="nc" id="L1383">				handleException(e, true);</span>
+<span class="nc" id="L1384">				throw e;</span>
+<span class="nc" id="L1385">			} catch (BbmCreateException | BbmRemoveException e) {</span>
+<span class="nc" id="L1386">				handleException(e, true);</span>
+<span class="nc" id="L1387">				throw new BbmUpdateException(e);</span>
+<span class="nc" id="L1388">			}</span>
+		} finally {
+<span class="nc bnc" id="L1390" title="All 4 branches missed.">			if (activityMediaDao != null) {</span>
+<span class="nc" id="L1391">				activityMediaDao.cleanUp();</span>
+			}
+<span class="nc" id="L1393">			methodFinish();</span>
+<span class="nc" id="L1394">		}</span>
+<span class="nc" id="L1395">	}</span>
+
+	public void updateActivity(Activity activity, Collection mediaIds, Collection queueIds) throws BbmUpdateException,
+			MultiUserException, ActivityValidationException {
+<span class="nc" id="L1399">		methodStart(&quot;updateActivity&quot;, activity, mediaIds, queueIds);</span>
+
+<span class="nc" id="L1401">		ActivityMediaDAO activityMediaDao = null;</span>
+<span class="nc" id="L1402">		ActivityQueueDAO activityQueueDao = null;</span>
+		try {
+<span class="nc" id="L1404">			updateActivity(activity);</span>
+
+			try {
+<span class="nc" id="L1407">				activityMediaDao = new ActivityMediaDAO();</span>
+				// unlink old media types
+<span class="nc" id="L1409">				activityMediaDao.unlinkAllActivityMedias(activity.getID());</span>
+				// link new media types
+<span class="nc" id="L1411">				createActivityMedia(activity.getID(), mediaIds);</span>
+
+<span class="nc" id="L1413">				activityQueueDao = activityQueueDAOFactory.createDAO();</span>
+				// unlink old queues
+<span class="nc" id="L1415">				activityQueueDao.unlinkAllActivityQueues(activity.getID());</span>
+				// link new queues
+<span class="nc" id="L1417">				createActivityQueue(activity.getID(), queueIds);</span>
+
+<span class="nc" id="L1419">			} catch (ActivityValidationException e) {</span>
+<span class="nc" id="L1420">				handleException(e, true);</span>
+<span class="nc" id="L1421">				throw e;</span>
+<span class="nc" id="L1422">			} catch (BbmCreateException | BbmRemoveException e) {</span>
+<span class="nc" id="L1423">				handleException(e, true);</span>
+<span class="nc" id="L1424">				throw new BbmUpdateException(e);</span>
+<span class="nc" id="L1425">			}</span>
+		} finally {
+<span class="nc bnc" id="L1427" title="All 4 branches missed.">			if (activityMediaDao != null) {</span>
+<span class="nc" id="L1428">				activityMediaDao.cleanUp();</span>
+			}
+<span class="nc bnc" id="L1430" title="All 4 branches missed.">			if (activityQueueDao != null) {</span>
+<span class="nc" id="L1431">				activityQueueDao.cleanUp();</span>
+			}
+<span class="nc" id="L1433">			methodFinish();</span>
+<span class="nc" id="L1434">		}</span>
+<span class="nc" id="L1435">	}</span>
+
+	/**
+	 * &lt;B&gt;updateActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * update activity including media types (unlink current media types), queues and activity properties
+	 * &lt;P&gt;
+	 *
+	 * @param activity
+	 *            : activity to update
+	 * @param mediaIds
+	 *            : new medias to link to activity
+	 * @param queueIds
+	 *            : new queues to link to activity
+	 * @param activityProperties
+	 *            : properties to link to activity
+	 */
+	public void updateActivity(Activity activity, Collection mediaIds, Collection queueIds, ActivityProperties activityProperties) throws BbmUpdateException,
+		MultiUserException, ActivityValidationException {
+<span class="nc" id="L1454">		methodStart(&quot;updateActivity&quot;, activity, mediaIds, queueIds, activityProperties);</span>
+
+<span class="nc" id="L1456">		ActivityMediaDAO activityMediaDao = null;</span>
+<span class="nc" id="L1457">		ActivityQueueDAO activityQueueDao = null;</span>
+		try {
+<span class="nc" id="L1459">			updateActivity(activity);</span>
+
+			try {
+<span class="nc" id="L1462">				activityMediaDao = new ActivityMediaDAO();</span>
+				// unlink old media types
+<span class="nc" id="L1464">				activityMediaDao.unlinkAllActivityMedias(activity.getID());</span>
+				// link new media types
+<span class="nc" id="L1466">				createActivityMedia(activity.getID(), mediaIds);</span>
+
+<span class="nc" id="L1468">				activityQueueDao = activityQueueDAOFactory.createDAO();</span>
+				// unlink old queues
+<span class="nc" id="L1470">				activityQueueDao.unlinkAllActivityQueues(activity.getID());</span>
+				// link new queues
+<span class="nc" id="L1472">				createActivityQueue(activity.getID(), queueIds);</span>
+
+				//Update Activity Properties
+<span class="nc" id="L1475">				updateActivityProperties(activityProperties);</span>
+
+<span class="nc" id="L1477">			} catch (ActivityValidationException e) {</span>
+<span class="nc" id="L1478">				handleException(e, true);</span>
+<span class="nc" id="L1479">				throw e;</span>
+<span class="nc" id="L1480">			} catch (BbmCreateException | BbmRemoveException e) {</span>
+<span class="nc" id="L1481">				handleException(e, true);</span>
+<span class="nc" id="L1482">				throw new BbmUpdateException(e);</span>
+<span class="nc" id="L1483">			}</span>
+		} finally {
+<span class="nc bnc" id="L1485" title="All 4 branches missed.">			if (activityMediaDao != null) {</span>
+<span class="nc" id="L1486">				activityMediaDao.cleanUp();</span>
+			}
+<span class="nc bnc" id="L1488" title="All 4 branches missed.">			if (activityQueueDao != null) {</span>
+<span class="nc" id="L1489">				activityQueueDao.cleanUp();</span>
+			}
+<span class="nc" id="L1491">			methodFinish();</span>
+<span class="nc" id="L1492">		}</span>
+<span class="nc" id="L1493">	}</span>
+
+	/**
+	 * &lt;B&gt;updateActivity&lt;/B&gt;
+	 * &lt;P&gt;
+	 * update activity including activity properties
+	 * &lt;P&gt;
+	 *
+	 * @param activity
+	 *            : activity to update
+	 * @param activityProperties
+	 *            : properties to link to activity
+	 */
+	public void updateActivity(Activity activity, ActivityProperties activityProperties) throws BbmUpdateException, BbmCreateException,
+		MultiUserException, ActivityValidationException {
+<span class="nc" id="L1508">		methodStart(&quot;updateActivity&quot;, activity, activityProperties);</span>
+
+		try {
+<span class="nc" id="L1511">			updateActivity(activity);</span>
+
+			try {
+				//Update Activity Properties
+<span class="nc" id="L1515">				updateActivityProperties(activityProperties);</span>
+<span class="nc" id="L1516">			} catch (ActivityValidationException | BbmUpdateException | BbmCreateException e) {</span>
+<span class="nc" id="L1517">				handleException(e, true);</span>
+<span class="nc" id="L1518">				throw e;</span>
+<span class="nc" id="L1519">			}</span>
+		} finally {
+<span class="nc" id="L1521">			methodFinish();</span>
+<span class="nc" id="L1522">		}</span>
+<span class="nc" id="L1523">	}</span>
+
+	/**
+	 * &lt;B&gt;updateActivityProperties&lt;/B&gt;
+	 * &lt;P&gt;
+	 * update activity properties
+	 * &lt;P&gt;
+	 *
+	 * @param activityProperties
+	 *            : properties to link to activity
+	 */
+	public void updateActivityProperties(ActivityProperties activityProperties) throws BbmUpdateException, BbmCreateException,
+		MultiUserException, ActivityValidationException {
+<span class="nc" id="L1536">		methodStart(&quot;updateActivityProperties&quot;, activityProperties);</span>
+
+<span class="nc" id="L1538">		ActivityPropertiesDAO activityPropertiesDAO = null;</span>
+		try {
+<span class="nc" id="L1540">			Activity activity = findActivityById(activityProperties.getActivityId());</span>
+<span class="nc" id="L1541">			activity.validate();</span>
+<span class="nc" id="L1542">			activityPropertiesDAO = new ActivityPropertiesDAO();</span>
+
+<span class="nc" id="L1544">			ActivityProperties testActivityProperties = activityPropertiesDAO.findActivityProperties(activityProperties.getActivityId());</span>
+<span class="nc bnc" id="L1545" title="All 2 branches missed.">			if (testActivityProperties.getActivityId().equals(activityPropertiesDAO.getDontExistID())) {</span>
+<span class="nc" id="L1546">				activityPropertiesDAO.insertActivityProperties(activityProperties);</span>
+			} else {
+<span class="nc" id="L1548">				activityPropertiesDAO.updateObject(activityProperties);</span>
+			}
+<span class="nc" id="L1550">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L1551">			handleException(e, true);</span>
+<span class="nc" id="L1552">			throw new BbmUpdateException(e);</span>
+<span class="nc" id="L1553">		} catch (ActivityValidationException | BbmUpdateException | BbmCreateException e) {</span>
+<span class="nc" id="L1554">			handleException(e, true);</span>
+<span class="nc" id="L1555">			throw e;</span>
+		}finally {
+<span class="nc bnc" id="L1557" title="All 4 branches missed.">			if (activityPropertiesDAO != null) {</span>
+<span class="nc" id="L1558">				activityPropertiesDAO.cleanUp();</span>
+			}
+<span class="nc" id="L1560">			methodFinish();</span>
+<span class="nc" id="L1561">		}</span>
+<span class="nc" id="L1562">	}</span>
+		/**
+	 * &lt;B&gt;matchActivityWithExternalID&lt;/B&gt;
+	 * &lt;P&gt;
+	 * update activitymap to match existing activity id with external id
+	 * &lt;P&gt;
+	 *
+	 * @param objValue
+	 *            : activity to update
+	 * @param externalSystemType
+	 *            : system from which activity is pushed
+	 * @param activityExternalId
+	 *            : External ID of the activity that is pushed
+	 *
+	 */
+	public void matchActivityWithExternalID(Activity objValue, SystemType externalSystemType, ID activityExternalId)
+	  throws BbmUpdateException {
+
+<span class="nc" id="L1580">		methodStart(&quot;matchActivityWithExternalID&quot;, objValue, externalSystemType, activityExternalId);</span>
+
+		// validate
+<span class="nc bnc" id="L1583" title="All 2 branches missed.">		if (externalSystemType == null) {</span>
+<span class="nc" id="L1584">			throw new BbmUpdateException(&quot;externalSystemType is null&quot;);</span>
+		}
+<span class="nc bnc" id="L1586" title="All 2 branches missed.">		if (activityExternalId == null) {</span>
+<span class="nc" id="L1587">			throw new BbmUpdateException(&quot;externalSourceId is null&quot;);</span>
+		}
+<span class="nc bnc" id="L1589" title="All 4 branches missed.">		if ((activityExternalId.isInt() &amp;&amp; !externalSystemType.isExtIdAnInt)) {</span>
+<span class="nc" id="L1590">			throw new BbmUpdateException(&quot;For this external system, externalSourceId must be a string not an integer&quot;);</span>
+		}
+<span class="nc bnc" id="L1592" title="All 4 branches missed.">		if ((!activityExternalId.isInt() &amp;&amp; externalSystemType.isExtIdAnInt)) {</span>
+<span class="nc" id="L1593">			throw new BbmUpdateException(&quot;For this external system, externalSourceId must be an integer not a string&quot;);</span>
+		}
+
+		// match external id for existing activity
+		try {
+<span class="nc" id="L1598">			boolean insert = true;</span>
+<span class="nc" id="L1599">			MapUtil.setWfoToExternalID(externalSystemType, ObjectType.Activity, objValue.getID(), activityExternalId,</span>
+					new Jdmo(true), insert);
+     }
+<span class="nc" id="L1602">      catch (JdmoException e)</span>
+      {
+<span class="nc" id="L1604">          handleException(e);</span>
+<span class="nc" id="L1605">          throw new BbmUpdateException(e);</span>
+      }
+      finally
+      {
+<span class="nc" id="L1609">          methodFinish();</span>
+<span class="nc" id="L1610">      }</span>
+
+<span class="nc" id="L1612">	}</span>
+	/**
+	 * &lt;B&gt;updateActivityCategory&lt;/B&gt;
+	 * &lt;P&gt;
+	 * update given activityCategory to db
+	 * &lt;P&gt;
+	 *
+	 * @param activityCategory
+	 *            : activityCategory to update
+	 */
+	public void updateActivityCategory(ActivityCategory activityCategory) throws BbmUpdateException, MultiUserException {
+<span class="nc" id="L1623">		methodStart(&quot;updateActivityCategory&quot;, activityCategory);</span>
+<span class="nc" id="L1624">		ActivityCategoryDAO activityCategoryDAO = new ActivityCategoryDAO();</span>
+		try {
+<span class="nc" id="L1626">			activityCategoryDAO.updateObject(activityCategory);</span>
+<span class="nc" id="L1627">		} catch (BbmUpdateException | MultiUserException e) {</span>
+<span class="nc" id="L1628">			handleException(e, true);</span>
+<span class="nc" id="L1629">			throw e;</span>
+		} finally {
+<span class="nc" id="L1631">			activityCategoryDAO.cleanUp();</span>
+<span class="nc" id="L1632">			methodFinish();</span>
+<span class="nc" id="L1633">		}</span>
+<span class="nc" id="L1634">	}</span>
+
+	public DeletionResult deleteActivity(ID activityID) throws DeleteException, RemoteException {
+<span class="nc" id="L1637">		methodStart(&quot;deleteActivity&quot;, activityID);</span>
+		try {
+			//TODO: determine if we can get away with a default locale here
+<span class="nc" id="L1640">			DeletionResult result = deleteManager.deleteObject(activityID, Activity.OBJECT_TYPE_ACTIVITY, null,</span>
+<span class="nc" id="L1641">					LocalizationManager.getInstance().getLocaleContext(Locale.US, Locale.US, Locale.US));</span>
+<span class="nc" id="L1642">			deleteActivityFromCache(activityID, false);</span>
+<span class="nc" id="L1643">			return result;</span>
+<span class="nc" id="L1644">		} catch (DeleteException | RemoteException e) {</span>
+<span class="nc" id="L1645">			handleException(e);</span>
+<span class="nc" id="L1646">			throw e;</span>
+		} finally {
+<span class="nc" id="L1648">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * To support deletion from Facade layer, it should refreshed the cache also
+	 *
+	 * @param activityID       
+	 * @param markDeletionOnly remove Activity object or just market it
+	 * @throws RemoteException
+	 */
+	public void deleteActivityFromCache(ID activityID, boolean markDeletionOnly) {
+<span class="nc bnc" id="L1660" title="All 2 branches missed.">		methodStart(&quot;deleteActivityFromCache&quot;, activityID, markDeletionOnly ? Boolean.TRUE : Boolean.FALSE);</span>
+		try {
+<span class="nc bnc" id="L1662" title="All 2 branches missed.">			if (cacheUsed()) {</span>
+<span class="nc bnc" id="L1663" title="All 2 branches missed.">				if (markDeletionOnly) {</span>
+<span class="nc" id="L1664">					Activity activity = (Activity) m_ActivityCache.get(activityID);</span>
+<span class="nc bnc" id="L1665" title="All 2 branches missed.">					if (activity != null) {</span>
+<span class="nc" id="L1666">						activity.setDeleted(true);</span>
+						// the deleted actvity is renamed so new activty can be created with same name.
+<span class="nc" id="L1668">						activity.setName(activity.getName()+&quot;-&quot;+activity.getID());</span>
+<span class="nc" id="L1669">						m_ActivityCache.put(activityID, activity);</span>
+					}
+<span class="nc" id="L1671">				} else {</span>
+<span class="nc" id="L1672">					m_ActivityCache.remove(activityID);</span>
+				}
+			}
+		} finally {
+<span class="nc" id="L1676">			methodFinish();</span>
+<span class="nc" id="L1677">		}</span>
+<span class="nc" id="L1678">	}</span>
+
+	/**
+	 * &lt;B&gt;deleteActivity&lt;/B&gt; deletes given activity from db
+	 * &lt;P&gt;
+	 *
+	 * @param activity
+	 *            activity to delete
+	 *            &lt;P&gt;
+	 * @return boolean if successful
+	 */
+	public void deleteActivityForTestOnly(Activity activity) throws BbmRemoveException {
+<span class="nc" id="L1690">		methodStart(&quot;deleteActivityForTestOnly&quot;, activity);</span>
+<span class="nc bnc" id="L1691" title="All 2 branches missed.">		if (activity == null) {</span>
+<span class="nc" id="L1692">			return;</span>
+		}
+		try {
+<span class="nc" id="L1695">			ArrayList&lt;Activity&gt; activitiesToDelete = new ArrayList&lt;&gt;(1);</span>
+<span class="nc" id="L1696">			activitiesToDelete.add(activity);</span>
+<span class="nc" id="L1697">			deleteActivitiesForTestOnly(activitiesToDelete);</span>
+		} finally {
+<span class="nc" id="L1699">			methodFinish();</span>
+<span class="nc" id="L1700">		}</span>
+<span class="nc" id="L1701">	}</span>
+
+	public void deleteActivitiesForTestOnly(Collection&lt;Activity&gt; activitiesToDelete) throws BbmRemoveException {
+<span class="nc" id="L1704">		methodStart(&quot;deleteActivitiesForTestOnly&quot;, activitiesToDelete);</span>
+<span class="nc bnc" id="L1705" title="All 4 branches missed.">		if (activitiesToDelete == null || activitiesToDelete.isEmpty()) {</span>
+<span class="nc" id="L1706">			return;</span>
+		}
+<span class="nc" id="L1708">		ArrayList&lt;ID&gt; ids = new ArrayList&lt;&gt;(activitiesToDelete.size());</span>
+<span class="nc bnc" id="L1709" title="All 2 branches missed.">		for (Activity activity : activitiesToDelete) {</span>
+<span class="nc" id="L1710">			ids.add(activity.getID());</span>
+<span class="nc" id="L1711">		}</span>
+<span class="nc" id="L1712">		ActivityDAO dao = new ActivityDAO();</span>
+		try {
+<span class="nc" id="L1714">			DAOEJBUtil.deleteObjects(dao, ids, this, &quot;deleteActivitiesForTestOnly&quot;);</span>
+		} finally {
+<span class="nc" id="L1716">			methodFinish();</span>
+<span class="nc" id="L1717">		}</span>
+<span class="nc" id="L1718">	}</span>
+
+	public void deleteActivityCategoryForTestOnly(ActivityCategory activityCategory) throws BbmRemoveException {
+<span class="nc" id="L1721">		methodStart(&quot;deleteActivityCategoryForTestOnly&quot;, activityCategory);</span>
+<span class="nc bnc" id="L1722" title="All 2 branches missed.">		if (activityCategory == null) {</span>
+<span class="nc" id="L1723">			return;</span>
+		}
+		try {
+<span class="nc" id="L1726">			ArrayList&lt;ActivityCategory&gt; activityCategoriesToDelete = new ArrayList&lt;&gt;(1);</span>
+<span class="nc" id="L1727">			activityCategoriesToDelete.add(activityCategory);</span>
+<span class="nc" id="L1728">			deleteActivityCategoriesForTestOnly(activityCategoriesToDelete);</span>
+		} finally {
+<span class="nc" id="L1730">			methodFinish();</span>
+<span class="nc" id="L1731">		}</span>
+<span class="nc" id="L1732">	}</span>
+
+	public void deleteActivityCategoriesForTestOnly(Collection&lt;ActivityCategory&gt; activityCategories) throws BbmRemoveException {
+<span class="nc" id="L1735">		methodStart(&quot;deleteActivityCategoriesForTestOnly&quot;, activityCategories);</span>
+<span class="nc bnc" id="L1736" title="All 4 branches missed.">		if (activityCategories == null || activityCategories.isEmpty()) {</span>
+<span class="nc" id="L1737">			return;</span>
+		}
+<span class="nc" id="L1739">		ActivityCategoryDAO dao = new ActivityCategoryDAO();</span>
+<span class="nc" id="L1740">		ArrayList&lt;ID&gt; ids = new ArrayList&lt;&gt;(activityCategories.size());</span>
+<span class="nc bnc" id="L1741" title="All 2 branches missed.">		for (ActivityCategory activityCategory : activityCategories) {</span>
+<span class="nc" id="L1742">			ids.add(activityCategory.getID());</span>
+<span class="nc" id="L1743">		}</span>
+		try {
+<span class="nc" id="L1745">			DAOEJBUtil.deleteObjects(dao, ids, this, &quot;deleteActivityCategoriesForTestOnly&quot;);</span>
+		} finally {
+<span class="nc" id="L1747">			methodFinish();</span>
+<span class="nc" id="L1748">		}</span>
+<span class="nc" id="L1749">	}</span>
+
+	public void deleteActivityMediaForTestOnly(ActivityMedia activityMedia) throws BbmRemoveException {
+<span class="nc" id="L1752">		methodStart(&quot;deleteActivityMediaForTestOnly&quot;, activityMedia);</span>
+<span class="nc bnc" id="L1753" title="All 2 branches missed.">		if (activityMedia == null) {</span>
+<span class="nc" id="L1754">			return;</span>
+		}
+		try {
+<span class="nc" id="L1757">			ArrayList&lt;ActivityMedia&gt; toDelete = new ArrayList&lt;&gt;(1);</span>
+<span class="nc" id="L1758">			toDelete.add(activityMedia);</span>
+<span class="nc" id="L1759">			deleteActivityMediasForTestOnly(toDelete);</span>
+		} finally {
+<span class="nc" id="L1761">			methodFinish();</span>
+<span class="nc" id="L1762">		}</span>
+<span class="nc" id="L1763">	}</span>
+
+	public void deleteActivityMediasForTestOnly(Collection&lt;ActivityMedia&gt; toDelete) throws BbmRemoveException {
+<span class="nc" id="L1766">		methodStart(&quot;deleteActivityMediasForTestOnly&quot;, toDelete);</span>
+<span class="nc bnc" id="L1767" title="All 4 branches missed.">		if (toDelete == null || toDelete.isEmpty()) {</span>
+<span class="nc" id="L1768">			return;</span>
+		}
+<span class="nc" id="L1770">		ArrayList&lt;ID&gt; ids = new ArrayList&lt;&gt;(toDelete.size());</span>
+<span class="nc bnc" id="L1771" title="All 2 branches missed.">		for (ActivityMedia activityMedia : toDelete) {</span>
+<span class="nc" id="L1772">			ids.add(activityMedia.getID());</span>
+<span class="nc" id="L1773">		}</span>
+<span class="nc" id="L1774">		ActivityMediaDAO dao = new ActivityMediaDAO();</span>
+		try {
+<span class="nc" id="L1776">			DAOEJBUtil.deleteObjects(dao, ids, this, &quot;deleteActivityMediasForTestOnly&quot;);</span>
+		} finally {
+<span class="nc" id="L1778">			methodFinish();</span>
+<span class="nc" id="L1779">		}</span>
+<span class="nc" id="L1780">	}</span>
+
+	private boolean cacheUsed() {
+<span class="pc bpc" id="L1783" title="1 of 2 branches missed.">		if (WhatIfMode) {</span>
+<span class="nc" id="L1784">			return false;</span>
+		}
+
+		// If Cache is null, then cache is not used
+		boolean currentStatus;
+		try {
+			// If cache is never instantiated, give it a chance to get initialized
+			// If ConfigManager is cache aware, then always check it dynamically
+<span class="pc bpc" id="L1792" title="2 of 4 branches missed.">			if (m_ActivityCache == null || m_DBConfigManager.cacheUsed()) {</span>
+				// Access ConfigManager for the cache setting
+<span class="pc bpc" id="L1794" title="1 of 2 branches missed.">				if (ConfigCacheUtil.isCacheEnabled(m_DBConfigManager, ConfigKey.ACTIVITY_CACHE_USAGE)) {</span>
+					// If Cache is null, initialize it
+<span class="pc bpc" id="L1796" title="1 of 2 branches missed.">					if (m_ActivityCache == null) {</span>
+<span class="nc" id="L1797">						m_ActivityCache = CacheFactory.getCache(JNDINames.BBM_ACTIVITYMANAGER_EJBHOME,</span>
+<span class="nc" id="L1798">								ActivityManagerEJB.class.getClassLoader());</span>
+					}
+<span class="fc" id="L1800">					currentStatus = true;</span>
+				} else {
+<span class="nc" id="L1802">					currentStatus = false;</span>
+				}
+			} else {
+				// Or if m_TimeRecordCache is available, we think cache is enabled
+<span class="nc bnc" id="L1806" title="All 2 branches missed.">				currentStatus = (m_ActivityCache != null);</span>
+			}
+<span class="nc" id="L1808">		} catch (Exception e) {</span>
+<span class="nc" id="L1809">			currentStatus = false;</span>
+<span class="fc" id="L1810">		}</span>
+		// If there is state transition, we need flush cache content
+<span class="pc bpc" id="L1812" title="1 of 2 branches missed.">		if (lastCheckStatus != currentStatus) {</span>
+			// If from Cache turn on to off, or vice versa, we will flush cache content
+<span class="nc bnc" id="L1814" title="All 2 branches missed.">			if (m_ActivityCache != null) {</span>
+<span class="nc" id="L1815">				m_ActivityCache.clear();</span>
+				try {
+					// if cache enabled, preload content
+<span class="nc bnc" id="L1818" title="All 2 branches missed.">					if (currentStatus) {</span>
+<span class="nc" id="L1819">						initCache();</span>
+					}
+<span class="nc" id="L1821">				} catch (Exception e) {</span>
+<span class="nc" id="L1822">					m_cat.error(e.getMessage());</span>
+<span class="nc" id="L1823">				}</span>
+			}
+<span class="nc" id="L1825">			lastCheckStatus = currentStatus;</span>
+		}
+<span class="fc" id="L1827">		return currentStatus;</span>
+	}
+
+	/**
+	 * get all activities that are not from seed data
+	 *
+	 * @return
+	 * @throws BbmFinderException
+	 */
+	public Collection getAllNonSeedActivities() throws BbmFinderException {
+<span class="nc" id="L1837">		methodStart(&quot;getAllNonSeedActivities&quot;);</span>
+<span class="nc" id="L1838">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="nc" id="L1840">			return activityDao.getAllNonSeedActivities();</span>
+<span class="nc" id="L1841">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L1842">			handleException(e, false);</span>
+<span class="nc" id="L1843">			throw e;</span>
+<span class="nc" id="L1844">		} catch (Exception e) {</span>
+<span class="nc" id="L1845">			handleException(e, false);</span>
+<span class="nc" id="L1846">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L1848">			activityDao.cleanUp();</span>
+<span class="nc" id="L1849">			methodFinish();</span>
+		}
+	}
+
+	public Collection&lt;Activity&gt; getAllActivities() throws BbmFinderException {
+<span class="fc" id="L1854">		methodStart(&quot;getAllActivities&quot;);</span>
+<span class="fc" id="L1855">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="fc" id="L1857">			return activityDao.getAllObjects();</span>
+<span class="nc" id="L1858">		} catch (BbmFinderException | RuntimeException e) {</span>
+<span class="nc" id="L1859">			handleException(e, false);</span>
+<span class="nc" id="L1860">			throw e;</span>
+		} finally {
+<span class="pc" id="L1862">			activityDao.cleanUp();</span>
+<span class="pc" id="L1863">			methodFinish();</span>
+		}
+	}
+
+	public Collection getTOBalanceForActivities(Collection empIDs, Collection activityIDs, Collection actCatIDs)
+			throws BbmFinderException {
+<span class="nc" id="L1869">		methodStart(&quot;getTOBalanceForActivities&quot;);</span>
+<span class="nc" id="L1870">		ActivityTimeOffBalanceDAO dao = new ActivityTimeOffBalanceDAO();</span>
+		try {
+<span class="nc" id="L1872">			return dao.getTOBalanceForActivities(empIDs, activityIDs, actCatIDs);</span>
+<span class="nc" id="L1873">		} catch (Exception e) {</span>
+<span class="nc" id="L1874">			handleException(e, false);</span>
+<span class="nc" id="L1875">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L1877">			dao.cleanUp();</span>
+<span class="nc" id="L1878">			methodFinish();</span>
+		}
+	}
+
+	public void updateOrInsertActivityTOBalance(Collection activityTOBalCol) throws BbmFinderException {
+<span class="nc" id="L1883">		methodStart(&quot;updateOrInsertActivityTOBalance&quot;);</span>
+<span class="nc" id="L1884">		ActivityTimeOffBalanceDAO dao = new ActivityTimeOffBalanceDAO();</span>
+		try {
+<span class="nc" id="L1886">			dao.updateOrInsertActivityTOBalance(activityTOBalCol);</span>
+<span class="nc" id="L1887">		} catch (Exception e) {</span>
+<span class="nc" id="L1888">			handleException(e, false);</span>
+<span class="nc" id="L1889">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L1891">			dao.cleanUp();</span>
+<span class="nc" id="L1892">			methodFinish();</span>
+<span class="nc" id="L1893">		}</span>
+<span class="nc" id="L1894">	}</span>
+
+	public HashMap getActivityTOBalanceMap(Collection empIDs, Collection actIDs, Collection actCatIDs)
+			throws BbmFinderException {
+<span class="nc" id="L1898">		methodStart(&quot;getActivityTOBalanceMap&quot;);</span>
+<span class="nc" id="L1899">		ActivityTimeOffBalanceDAO dao = null;</span>
+		try {
+<span class="nc" id="L1901">			dao = new ActivityTimeOffBalanceDAO();</span>
+<span class="nc" id="L1902">			return dao.getActivityTOBalanceMap(empIDs, actIDs, actCatIDs);</span>
+<span class="nc" id="L1903">		} catch (Exception e) {</span>
+<span class="nc" id="L1904">			handleException(e, false);</span>
+<span class="nc" id="L1905">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc bnc" id="L1907" title="All 4 branches missed.">			if (dao != null) {</span>
+<span class="nc" id="L1908">				dao.cleanUp();</span>
+			}
+<span class="nc" id="L1910">			methodFinish();</span>
+		}
+	}
+
+	public void deleteActivityTOBalance(Collection ids) throws BbmRemoveException {
+<span class="nc" id="L1915">		methodStart(&quot;deleteActivityTOBalance&quot;);</span>
+<span class="nc" id="L1916">		ActivityTimeOffBalanceDAO dao = new ActivityTimeOffBalanceDAO();</span>
+		try {
+<span class="nc" id="L1918">			dao.deleteObjects(ids);</span>
+		} finally {
+<span class="nc" id="L1920">			dao.cleanUp();</span>
+<span class="nc" id="L1921">			methodFinish();</span>
+<span class="nc" id="L1922">		}</span>
+<span class="nc" id="L1923">	}</span>
+
+	//Special Activities API START
+	private TimeOffHoursManagerBridge getTimeOffHoursManagerBridge() throws Exception
+	{
+<span class="nc bnc" id="L1928" title="All 2 branches missed.">		if (m_timeOffHoursManagerBridge == null)</span>
+		{
+<span class="nc" id="L1930">		    String gcrType = &quot;TIMEOFFHOURSMANAGER_BRIDGE&quot;;</span>
+<span class="nc" id="L1931">		    GCRManager m_gcrManager  = CoreManagerFactory.getGCRManagerRemote(WhatIfMode);</span>
+<span class="nc" id="L1932">		    Collection entries = m_gcrManager.getGCREntryOfType(gcrType);</span>
+<span class="nc" id="L1933">		    Class clazz = Class.forName(((GCREntry) (entries.iterator().next())).getHook());</span>
+<span class="nc" id="L1934">		    m_timeOffHoursManagerBridge = (TimeOffHoursManagerBridge) clazz.newInstance();</span>
+		}
+<span class="nc" id="L1936">	    return m_timeOffHoursManagerBridge;</span>
+	}
+
+	public int getMaxDurationOverride(ID orgID, ID activityID) throws Exception
+	{
+<span class="nc" id="L1941">		TimeOffHoursManagerBridge bridge = getTimeOffHoursManagerBridge();</span>
+<span class="nc" id="L1942">		return bridge.getMaxDurationOverride(orgID, activityID);</span>
+    }
+
+	public void setMaxDurationOverride(ID orgID, ID activityID, int value) throws Exception
+	{
+<span class="nc" id="L1947">		TimeOffHoursManagerBridge bridge = getTimeOffHoursManagerBridge();</span>
+<span class="nc" id="L1948">		bridge.setMaxDurationOverride(orgID, activityID, value);</span>
+<span class="nc" id="L1949">	}</span>
+
+	public int getAdherenceToleranceOverride(ID orgID, ID activityID) throws Exception
+	{
+<span class="nc" id="L1953">		TimeOffHoursManagerBridge bridge = getTimeOffHoursManagerBridge();</span>
+<span class="nc" id="L1954">		return bridge.getAdherenceToleranceOverride(orgID, activityID);</span>
+	}
+
+	public void setAdherenceToleranceOverride(ID orgID, ID activityID, int value) throws Exception
+	{
+<span class="nc" id="L1959">		TimeOffHoursManagerBridge bridge = getTimeOffHoursManagerBridge();</span>
+<span class="nc" id="L1960">		bridge.setAdherenceToleranceOverride(orgID, activityID, value);</span>
+<span class="nc" id="L1961">	}</span>
+
+	public Activity getVacationOverride(ID orgID) throws Exception
+	{
+<span class="nc" id="L1965">		TimeOffHoursManagerBridge bridge = getTimeOffHoursManagerBridge();</span>
+<span class="nc" id="L1966">		return bridge.getVacationOverride(orgID);</span>
+	}
+
+	public void setVacationOverride(ID orgID, ID vacationActivityID) throws Exception
+	{
+<span class="nc" id="L1971">		TimeOffHoursManagerBridge bridge = getTimeOffHoursManagerBridge();</span>
+<span class="nc" id="L1972">		bridge.setVacationOverride(orgID, vacationActivityID);</span>
+<span class="nc" id="L1973">	}</span>
+	//Special Activities API END
+	
+	public Collection&lt;ID&gt; getDailyPoolAllotmentActivityIDs(boolean checkTimeOffWithAllotment) throws BbmFinderException {
+<span class="nc" id="L1977">		methodStart(&quot;getDailyPoolAllotmentActivities&quot;);</span>
+<span class="nc" id="L1978">		ActivityDAO activityDao = new ActivityDAO();</span>
+		try {
+<span class="nc" id="L1980">			return activityDao.getDailyPoolAllotmentActivityIDs(checkTimeOffWithAllotment);</span>
+<span class="nc" id="L1981">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L1982">			handleException(e, false);</span>
+<span class="nc" id="L1983">			throw e;</span>
+		} finally {
+<span class="nc" id="L1985">			activityDao.cleanUp();</span>
+<span class="nc" id="L1986">			methodFinish();</span>
+		}
+	}
+
+	public void unlinkQueueActivities(Collection&lt;ID&gt; queueIds) throws BbmRemoveException {
+<span class="nc" id="L1991">		methodStart(&quot;unlinkQueueActivities&quot;, queueIds);</span>
+
+<span class="nc" id="L1993">		ActivityQueueDAO activityQueueDao = activityQueueDAOFactory.createDAO();</span>
+		try {
+<span class="nc" id="L1995">			activityQueueDao.unlinkQueueActivities(queueIds);</span>
+<span class="nc" id="L1996">		} catch (BbmRemoveException e) {</span>
+<span class="nc" id="L1997">			handleException(e, true);</span>
+<span class="nc" id="L1998">			throw e;</span>
+		} finally {
+<span class="nc" id="L2000">			activityQueueDao.cleanUp();</span>
+<span class="nc" id="L2001">			methodFinish();</span>
+<span class="nc" id="L2002">		}</span>
+<span class="nc" id="L2003">	}</span>
+
+	public void setActivityQueueDAOFactory(ActivityQueueDAOFactory activityQueueDAOFactory) {
+<span class="nc" id="L2006">		this.activityQueueDAOFactory = activityQueueDAOFactory;</span>
+<span class="nc" id="L2007">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>
