@@ -54,39 +54,39 @@
              <br><br>
 <div class="progress">
   <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
-  aria-valuemin="0" aria-valuemax="100" style="width:50%">
+  aria-valuemin="0" aria-valuemax="100" style="width:43%">
     43% ALL TEAMS COMBINED
   </div>
 </div>
 
 <div class="progress">
   <div class="progress-bar progress-bar-warning" role="progressbar" aria-valuenow="69"
-  aria-valuemin="0" aria-valuemax="100" style="width:60%">
+  aria-valuemin="0" aria-valuemax="100" style="width:69%">
     69% DELPHI
   </div>
 </div>
 
 <div class="progress">
   <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="53"
-  aria-valuemin="0" aria-valuemax="100" style="width:70%">
+  aria-valuemin="0" aria-valuemax="100" style="width:53%">
     53% FIS
   </div>
 </div>
      <div class="progress">
   <div class="progress-bar progress-bar-warning" role="progressbar" aria-valuenow="50"
-  aria-valuemin="0" aria-valuemax="100" style="width:70%">
+  aria-valuemin="0" aria-valuemax="100" style="width:50%">
     50% FIREBIRDS
   </div>
 </div>
 <div class="progress">
   <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="67"
-  aria-valuemin="0" aria-valuemax="100" style="width:40%">
+  aria-valuemin="0" aria-valuemax="100" style="width:67%">
     67% QUEUEX
   </div>
 </div>
 <div class="progress">
   <div class="progress-bar progress-bar-warning" role="progressbar" aria-valuenow="99"
-  aria-valuemin="0" aria-valuemax="100" style="width:40%">
+  aria-valuemin="0" aria-valuemax="100" style="width:99%">
     99% SUSTAINING
   </div>
 </div>             
