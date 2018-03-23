@@ -45,27 +45,69 @@
 			<!--/.nav-collapse -->
 		</div>
 	</div>
+    <!-- Progress bars-->
     <?php
-    $combinedProgress = 32;
-    $delphiPorgress = null;
-    $fisProgress = null;
-    $firebirdsProgress = null;
-    $queuexProgress = null;
-    $sustainingProgress = 22;
+    //Combined progress bar
+    $combinedProgress = '58';
+     echo'<section class="main-contents">';
+      echo'<h3 class="text-center sub-texts">Teams Progress Overview</h3>';
+      echo'<div class="container">';
+      echo'<hr>';
+         echo'<div class="item-section col-md-12 col-sm-4 col-xs-12">';
+             echo'<p class="text-center"> <br><br><b>Teams Current Progress</b></p>';
+             echo'<br><br>';
+echo'<div class="progress">';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $combinedProgress .'%">';
+    echo' '. $combinedProgress .' %  ALL TEAMS COMBINED';
+  echo'</div>';
+echo'</div>';
     
-     echo"<section class='main-contents'>";
-      echo"<h3 class='text-center sub-texts'>Teams Progress Overview</h3>";
-      echo"<div class='container'>";
-      echo"<hr>";
-         echo"<div class='item-section col-md-12 col-sm-4 col-xs-12'>";
-             echo"<p class='text-center'> <br><br>Teams Current Progress</p>";
-             echo"<br><br>";
-echo"<div class='progress'>";
-  echo"<div class='progress-bar progress-bar-success' role='progressbar' aria-valuenow='43'
-  aria-valuemin='0' aria-valuemax='100' style='width: . $combinedProgress . %'>";
-    echo". $combinedProgress . % ALL TEAMS COMBINED";
-  echo"</div>";
-echo"</div>";
+    // Delphi progress
+    $delphiProgress = '69';
+    echo'<div class="progress">';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $delphiProgress .'%">';
+    echo' '. $delphiProgress .' %  ALL TEAMS COMBINED';
+  echo'</div>';
+echo'</div>';
+    
+    // QueueX progress
+    $qxProgress = '67';
+    echo'<div class="progress">';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $qxProgress .'%">';
+    echo' '. $qxProgress .' %  ALL TEAMS COMBINED';
+  echo'</div>';
+echo'</div>';
+    
+     // Firebirds progress
+    $fireBirdsProgress = '31';
+    echo'<div class="progress">';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $fireBirdsProgress .'%">';
+    echo' '. $fireBirdsProgress .' %  ALL TEAMS COMBINED';
+  echo'</div>';
+echo'</div>';
+    
+     // FIS progress
+    $fisProgress = '73';
+    echo'<div class="progress">';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $fisProgress .'%">';
+    echo' '. $fisProgress .' %  ALL TEAMS COMBINED';
+  echo'</div>';
+echo'</div>';
+    
+     // Sustaining progress
+    $susProgress = '99';
+    echo'<div class="progress">';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $susProgress .'%">';
+    echo' '. $susProgress .' %  ALL TEAMS COMBINED';
+  echo'</div>';
+echo'</div>';
+    echo'</section>';
          ?>
     <section class="main-contents">
       <h3 class="text-center sub-texts">View Code Coverage Reports</h3>
