@@ -45,54 +45,28 @@
 			<!--/.nav-collapse -->
 		</div>
 	</div>
-     <section class="main-contents">
-      <h3 class="text-center sub-texts">Teams Progress Overview</h3>
-      <div class="container">
-      <hr>
-         <div class="item-section col-md-12 col-sm-4 col-xs-12">
-             <p class="text-center"> <br><br>Teams Current Progress</p>
-             <br><br>
-<div class="progress">
-  <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
-  aria-valuemin="0" aria-valuemax="100" style="width:43%">
-    43% ALL TEAMS COMBINED
-  </div>
-</div>
-
-<div class="progress">
-  <div class="progress-bar progress-bar-warning" role="progressbar" aria-valuenow="69"
-  aria-valuemin="0" aria-valuemax="100" style="width:69%">
-    69% DELPHI
-  </div>
-</div>
-
-<div class="progress">
-  <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="53"
-  aria-valuemin="0" aria-valuemax="100" style="width:53%">
-    53% FIS
-  </div>
-</div>
-     <div class="progress">
-  <div class="progress-bar progress-bar-warning" role="progressbar" aria-valuenow="50"
-  aria-valuemin="0" aria-valuemax="100" style="width:50%">
-    50% FIREBIRDS
-  </div>
-</div>
-<div class="progress">
-  <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="67"
-  aria-valuemin="0" aria-valuemax="100" style="width:67%">
-    67% QUEUEX
-  </div>
-</div>
-<div class="progress">
-  <div class="progress-bar progress-bar-warning" role="progressbar" aria-valuenow="99"
-  aria-valuemin="0" aria-valuemax="100" style="width:99%">
-    99% SUSTAINING
-  </div>
-</div>             
-          </div>
-     </div>
-  </section>
+    <?php
+    $combinedProgress = 32;
+    $delphiPorgress = null;
+    $fisProgress = null;
+    $firebirdsProgress = null;
+    $queuexProgress = null;
+    $sustainingProgress = 22;
+    
+     echo"<section class='main-contents'>";
+      echo"<h3 class='text-center sub-texts'>Teams Progress Overview</h3>";
+      echo"<div class='container'>";
+      echo"<hr>";
+         echo"<div class='item-section col-md-12 col-sm-4 col-xs-12'>";
+             echo"<p class='text-center'> <br><br>Teams Current Progress</p>";
+             echo"<br><br>";
+echo"<div class='progress'>";
+  echo"<div class='progress-bar progress-bar-success' role='progressbar' aria-valuenow='43'
+  aria-valuemin='0' aria-valuemax='100' style='width: . $combinedProgress . %'>";
+    echo". $combinedProgress . % ALL TEAMS COMBINED";
+  echo"</div>";
+echo"</div>";
+         ?>
     <section class="main-contents">
       <h3 class="text-center sub-texts">View Code Coverage Reports</h3>
       <div class="container">
