@@ -45,12 +45,22 @@
 			<!--/.nav-collapse -->
 		</div>
 	</div>
-    <section class="main-contents">
-      <h3 class="text-center sub-texts">Get Code Coverage Results</h3>
+     <section class="main-contents">
+      <h3 class="text-center sub-texts">Teams Progress Overview</h3>
       <div class="container">
       <hr>
          <div class="item-section col-md-12 col-sm-4 col-xs-12">
-             <p class="text-center"> <br><br>In this section will include the form, the user can select which jacoco report they want and the scripts will do the rest</p>
+             <p class="text-center"> <br><br>Display progress bar for each team and a combined progress bar</p>
+             <br><br>
+          </div>
+     </div>
+  </section>
+    <section class="main-contents">
+      <h3 class="text-center sub-texts">View Code Coverage Reports</h3>
+      <div class="container">
+      <hr>
+         <div class="item-section col-md-12 col-sm-4 col-xs-12">
+             <p class="text-center"> <br><br>Select which team report you would like to view</p>
              <br><br>
           </div>
      </div>
@@ -68,24 +78,6 @@
     </fieldset>
 </form>
             </div>
-        <!--
-        <div class="text-center">
-            
-            
-        <form action = "getJacoco.php" method = "post" id=formRun>
-          <select name="teamName">
-            <option value="queueX">QueueX</option>
-            <option value="saab">Sustaining</option>
-              <option value="fiat">Delphi</option>
-              <option value="audi">Firebirds</option>
-          </select>
-              </form>
-            <br>
-             <button name = submit type="submit" form="formRun" value="Submit">Get Jacoco'd</button>        
-        </div>
-        
-        
-        -->
   </section>
   <footer>
     <div class="footer-bottom">
