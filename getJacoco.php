@@ -17,6 +17,12 @@ else{
     if($teamName === 'QueueX'){
   header( 'Location: https:\\localhost\Coyote\localReports\queuex\index.html' ) ;
     }
+    if($teamName === 'Delphi'){
+
+        //pclose(popen("start /B C:\xampp\htdocs\Coyote\Scripts\dltestres.bat", "r")); die();
+        //exec('c:\WINDOWS\system32\cmd.exe /c START C:\xampp\htdocs\Coyote\Scripts\dltestres.bat');
+        exec('cmd /c C:\xampp\htdocs\Coyote\Scripts\dltestres.bat');
+    }
 
 }
 echo("You picked ('$teamName')");
