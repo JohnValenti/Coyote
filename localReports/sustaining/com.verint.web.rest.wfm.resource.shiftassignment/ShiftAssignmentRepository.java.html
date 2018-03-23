@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftAssignmentRepository.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.rest.wfm.resource.shiftassignment</a> &gt; <span class="el_source">ShiftAssignmentRepository.java</span></div><h1>ShiftAssignmentRepository.java</h1><pre class="source lang-java linenums">package com.verint.web.rest.wfm.resource.shiftassignment;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.ejb.bbm.base.*;
+import com.bluepumpkin.ejb.bbm.employeefilter.ejb.EmployeeFilter;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.BbmScheduleConflictException;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.shifts.util.ShiftAssignmentUtil;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.google.common.collect.Sets;
+import com.verint.web.rest.wfm.repository.RepositoryLogger;
+import com.verint.web.rest.wfm.repository.ValidateJsonApiFilterParams;
+import com.verint.web.rest.wfm.repository.WfoResourceRepository;
+import com.verint.web.rest.wfm.resource.DateAndEmployeeIdComboFilterParamHandler;
+import com.verint.web.rest.wfm.util.IdUtil;
+import io.katharsis.queryParams.QueryParams;
+import io.katharsis.repository.annotations.JsonApiResourceRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.inject.Inject;
+import javax.ws.rs.container.ContainerRequestContext;
+import java.rmi.RemoteException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Set;
+
+import static com.verint.web.rest.wfm.filter.DateFilterParamHandler.END_DATE_DEFAULT_FILTER_KEY;
+import static com.verint.web.rest.wfm.filter.DateFilterParamHandler.START_DATE_DEFAULT_FILTER_KEY;
+import static com.verint.web.rest.wfm.filter.EmployeeFilterNameFilterParamHandler.EMPLOYEE_FILTER_NAME_FILTER_KEY;
+import static com.verint.web.rest.wfm.filter.EmployeeIdsFilterParamHandler.EMPLOYEE_IDS_FILTER_KEY;
+
+@JsonApiResourceRepository(ShiftAssignmentEntity.class)
+<span class="nc" id="L37">public class ShiftAssignmentRepository extends WfoResourceRepository&lt;Integer, ShiftAssignmentEntity&gt; {</span>
+
+<span class="nc" id="L39">	private final static Logger log = LoggerFactory.getLogger(ShiftAssignmentRepository.class.getName());</span>
+
+<span class="nc" id="L41">	private final static String ENTITY_NAME = ShiftAssignmentEntity.class.getSimpleName();</span>
+
+	final static String RESOURCE_NAME = &quot;shiftassignments&quot;;
+
+	@Inject
+	private ScheduleAccessManager sam;
+
+	@Inject
+	private EmployeeFilter ef;
+
+	@Override
+	protected Logger logger() {
+<span class="nc" id="L53">		return log;</span>
+	}
+
+	@Override
+	@RepositoryLogger
+	public &lt;T extends ShiftAssignmentEntity&gt; T save(T entity, ContainerRequestContext requestContext) {
+<span class="nc bnc" id="L59" title="All 2 branches missed.">		String entityID = entity.getID() == null ? &quot;&quot; : Integer.toString(entity.getID());</span>
+		try {
+<span class="nc" id="L61">			ShiftAssignment sa = ShiftAssignmentMapper.INSTANCE.saEntityToSa(entity);</span>
+			//Create new shift assignment if ID is null
+<span class="nc bnc" id="L63" title="All 2 branches missed.">			if (sa.getID() == null) {</span>
+<span class="nc" id="L64">				ID saId = sam.createShiftAssignment(sa);</span>
+<span class="nc" id="L65">				entity.setID(saId.toInt());</span>
+				//Otherwise, update existing assignment
+<span class="nc" id="L67">			} else {</span>
+<span class="nc" id="L68">				prepareShiftAssignmentForUpdate(sa);</span>
+<span class="nc" id="L69">				sam.updateShiftAssignment(sa);</span>
+			}
+<span class="nc" id="L71">			return entity;</span>
+<span class="nc" id="L72">		} catch (BbmCreateException e) {</span>
+<span class="nc" id="L73">			throw handleBbmCreateException(entity, e);</span>
+<span class="nc" id="L74">		} catch (RemoteException e) {</span>
+<span class="nc" id="L75">			throw handleRemoteException(ENTITY_NAME, entityID, e);</span>
+<span class="nc" id="L76">		} catch (BbmScheduleConflictException e) {</span>
+<span class="nc" id="L77">			log.error(&quot;ShiftAssignmentRepository.save: failed to save ShiftAssignment&quot;, e);</span>
+<span class="nc" id="L78">			throw new EntityScheduleConflictException(getLocalizer(requestContext), getUserTimeZone(requestContext), e.getConflicts());</span>
+<span class="nc" id="L79">		} catch (MultiUserException e) {</span>
+<span class="nc" id="L80">			throw handleMultiUserException(ENTITY_NAME, entityID, e);</span>
+<span class="nc" id="L81">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L82">			throw handleBbmFinderException(ENTITY_NAME, entityID, e);</span>
+<span class="nc" id="L83">		} catch (BbmUpdateException e) {</span>
+<span class="nc" id="L84">			throw handleBbmUpdateException(entity, e);</span>
+		}
+	}
+
+	@Override
+	@RepositoryLogger
+	@ValidateJsonApiFilterParams
+	public ShiftAssignmentEntity findOne(Integer id, QueryParams requestParams, ContainerRequestContext requestContext) {
+		try {
+<span class="nc" id="L93">			ID idObj = ID.fromInt(id);</span>
+<span class="nc" id="L94">			ShiftAssignment sa = sam.getShiftAssignmentByID(idObj);</span>
+<span class="nc" id="L95">			return ShiftAssignmentMapper.INSTANCE.saToSaEntity(sa);</span>
+<span class="nc" id="L96">		} catch (BbmObjectNotFoundException e) {</span>
+<span class="nc" id="L97">			throw handleBbmObjectNotFoundException(ENTITY_NAME, Integer.toString(id), e);</span>
+<span class="nc" id="L98">		} catch (RemoteException e) {</span>
+<span class="nc" id="L99">			throw handleRemoteException(ENTITY_NAME, Integer.toString(id), e);</span>
+<span class="nc" id="L100">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L101">			throw handleBbmFinderException(ENTITY_NAME, Integer.toString(id), e);</span>
+		}
+	}
+
+	/**
+	 * Performs the following operations on a ShiftAssignment (intended to be invoked prior to an update operation):
+	 * - Moves any child events if the shift assignment itself has been moved.
+	 * - Truncates any child events if the duration of the shift assignment has been shortened enough such that the events
+	 * no longer fit.
+	 */
+	private void prepareShiftAssignmentForUpdate(ShiftAssignment assignmentToUpdate)
+			throws BbmFinderException, RemoteException {
+
+		//Need to pull the original assignment to check if duration or start time was modified, if so, we need to potentially
+		//update the set of child events
+<span class="nc" id="L116">		ShiftAssignment originalShiftAssignment = sam.getShiftAssignmentByID(assignmentToUpdate.getID());</span>
+
+<span class="nc" id="L118">		moveAndTruncateChildEventsIfNeeded(originalShiftAssignment, assignmentToUpdate);</span>
+<span class="nc" id="L119">	}</span>
+
+	/**
+	 * Compares the start/end times and durations of the old and new/recently updated assignments to see if the child
+	 * events in the newly updated assignment need to be moved and or truncated from the shift depending on the new
+	 * duration or start time adjustments made to the updated shift assignment.
+	 */
+	private void moveAndTruncateChildEventsIfNeeded(ShiftAssignment originalAssignment, ShiftAssignment updatedAssignment) {
+
+<span class="nc bnc" id="L128" title="All 2 branches missed.">		boolean durationChanged = originalAssignment.getDuration() != updatedAssignment.getDuration();</span>
+		// If start and end times both have changed, then we consider this a &quot;move&quot; operation and we need to also
+		// move the child events the same amount
+<span class="nc bnc" id="L131" title="All 2 branches missed.">		if (ShiftAssignmentUtil.isMoveOperation(</span>
+<span class="nc" id="L132">				new Pair&lt;&gt;(originalAssignment.getStartTime(), originalAssignment.getEndTime()),</span>
+<span class="nc" id="L133">				new Pair&lt;&gt;(updatedAssignment.getStartTime(), updatedAssignment.getEndTime()))) {</span>
+<span class="nc" id="L134">			long timeDifference = getTimeDifferenceBetweenShiftAssignments(updatedAssignment, originalAssignment);</span>
+			//Adjust the updated assignment's start time back to the original, temporarily.  We do this because the
+			//moveShiftAssignmentAndEventsIfNeeded method below will adjust it back to what it is supposed to be.
+<span class="nc" id="L137">			updatedAssignment.setStartTime(new Date(updatedAssignment.getStartTime().getTime() - timeDifference));</span>
+<span class="nc" id="L138">			ShiftAssignmentUtil.moveShiftAssignmentAndEventsIfNeeded(updatedAssignment.getShiftID(), updatedAssignment,</span>
+					timeDifference, false);
+		}
+
+		// If the duration was changed, we need to truncate the shift events that may no longer fit inside the shift.
+<span class="nc bnc" id="L143" title="All 2 branches missed.">		if (durationChanged) {</span>
+<span class="nc" id="L144">			ShiftAssignmentUtil.adjustShiftEventsIfShiftAssignmentDurationHasChanged(updatedAssignment,</span>
+<span class="nc" id="L145">					new Pair&lt;&gt;(originalAssignment.getStartTime(), originalAssignment.getEndTime()),</span>
+<span class="nc" id="L146">					new Pair&lt;&gt;(updatedAssignment.getStartTime(), updatedAssignment.getEndTime()), false);</span>
+		}
+<span class="nc" id="L148">	}</span>
+
+	private long getTimeDifferenceBetweenShiftAssignments(ShiftAssignment assignmentOne, ShiftAssignment assignmentTwo) {
+<span class="nc" id="L151">		return assignmentOne.getStartTime().getTime() - assignmentTwo.getStartTime().getTime();</span>
+	}
+
+	@Override
+	@RepositoryLogger
+	@ValidateJsonApiFilterParams
+	public Iterable&lt;ShiftAssignmentEntity&gt; findAll(QueryParams queryParams, ContainerRequestContext requestContext) {
+		try {
+<span class="nc" id="L159">			DateAndEmployeeIdComboFilterParamHandler filterParamHandler =</span>
+<span class="nc" id="L160">					new DateAndEmployeeIdComboFilterParamHandler(ef, getCurrentUser(requestContext), getFilterParams(),</span>
+<span class="nc" id="L161">							getValidFilterParamKeys(), RESOURCE_NAME);</span>
+
+<span class="nc bnc" id="L163" title="All 2 branches missed.">			if (filterParamHandler.getEmployeeIds().isEmpty()) {</span>
+<span class="nc" id="L164">				return Collections.emptyList();</span>
+			}
+
+			//TODO: uncomment when porting to 15.2
+<span class="nc" id="L168">			return Collections.emptyList();</span>
+//			return ShiftAssignmentMapper.INSTANCE.sasToSaEntities(
+//					sam.getAllShiftAssignmentsForEmployeesBetweenDates(
+//							filterParamHandler.getEmployeeIds(),
+//							filterParamHandler.getStartDate(), filterParamHandler.getEndDate()));
+<span class="nc" id="L173">		} catch (RemoteException e) {</span>
+<span class="nc" id="L174">			throw handleRemoteException(ENTITY_NAME, null, e);</span>
+<span class="nc" id="L175">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L176">			throw handleBbmFinderException(ENTITY_NAME, null, e);</span>
+		}
+	}
+
+	@Override
+	@RepositoryLogger
+	public Iterable&lt;ShiftAssignmentEntity&gt; findAll(Iterable&lt;Integer&gt; ids, QueryParams queryParams, ContainerRequestContext requestContext) {
+		try {
+<span class="nc" id="L184">			Collection&lt;ShiftAssignment&gt; assignments = sam.getShiftAssignmentsByIDs(IdUtil.fromInt(ids));</span>
+<span class="nc" id="L185">			return ShiftAssignmentMapper.INSTANCE.sasToSaEntities(assignments);</span>
+<span class="nc" id="L186">		} catch (RemoteException e) {</span>
+<span class="nc" id="L187">			throw handleRemoteException(ENTITY_NAME, null, e);</span>
+<span class="nc" id="L188">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L189">			throw handleBbmFinderException(ENTITY_NAME, null, e);</span>
+		}
+	}
+
+	@Override
+	@RepositoryLogger
+	public void delete(Integer id, ContainerRequestContext requestContext) {
+		try {
+<span class="nc" id="L197">			ID idObj = ID.fromInt(id);</span>
+<span class="nc" id="L198">			sam.deleteShiftAssignments(Collections.singleton(idObj));</span>
+<span class="nc" id="L199">		} catch (RemoteException e) {</span>
+<span class="nc" id="L200">			throw handleRemoteException(ENTITY_NAME, Integer.toString(id), e);</span>
+<span class="nc" id="L201">		} catch (MultiUserException e) {</span>
+<span class="nc" id="L202">			throw handleMultiUserException(ENTITY_NAME, Integer.toString(id), e);</span>
+<span class="nc" id="L203">		} catch (BbmRemoveException e) {</span>
+<span class="nc" id="L204">			throw handleBbmRemoveException(ENTITY_NAME, Integer.toString(id), e);</span>
+<span class="nc" id="L205">		}</span>
+<span class="nc" id="L206">	}</span>
+
+	@Override
+	protected Set&lt;String&gt; getValidFilterParamKeys() {
+<span class="nc" id="L210">		return Sets.newHashSet(EMPLOYEE_FILTER_NAME_FILTER_KEY, EMPLOYEE_IDS_FILTER_KEY,</span>
+				START_DATE_DEFAULT_FILTER_KEY, END_DATE_DEFAULT_FILTER_KEY);
+	}
+
+	protected String getResourceName() {
+<span class="nc" id="L215">		return RESOURCE_NAME;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

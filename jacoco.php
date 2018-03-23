@@ -47,8 +47,6 @@
 	</div>
     <!-- Progress bars-->
     <?php
-    //Combined progress bar
-    $combinedProgress = '58';
      echo'<section class="main-contents">';
       echo'<h3 class="text-center sub-texts">Teams Progress Overview</h3>';
       echo'<div class="container">';
@@ -56,59 +54,101 @@
          echo'<div class="item-section col-md-12 col-sm-4 col-xs-12">';
              echo'<p class="text-center"> <br><br><b>Teams Current Progress</b></p>';
              echo'<br><br>';
-echo'<div class="progress">';
-  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
-  aria-valuemin="0" aria-valuemax="100" style="width:'. $combinedProgress .'%">';
-    echo' '. $combinedProgress .' %  ALL TEAMS COMBINED';
+ 
+    //Combined progress bar
+    //Extract the most recent jacoco coverage value from the html report for All of the core teams
+    
+    $alldoc = new DOMDocument();
+    $alldoc->loadHTMLFile('C:\xampp\htdocs\Coyote\localReports\sustaining\index.html');
+    $x= new DOMXpath($alldoc);
+    foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
+    $allProgress = $node->textContent;
+    echo'<div class="progress">';
+    echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $allProgress .'"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $allProgress .'">';
+    echo' '. $allProgress .'   ALL TEAMS COMBINED';
   echo'</div>';
 echo'</div>';
     
     // Delphi progress
-    $delphiProgress = '69';
+     //Extract the most recent jacoco coverage value from the html report for Delphi
+    
+    $delphidoc = new DOMDocument();
+    $delphidoc->loadHTMLFile('C:\xampp\htdocs\Coyote\localReports\delphi\index.html');
+    $x= new DOMXpath($delphidoc);
+    foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
+   $delphiProgress = $node->textContent;
     echo'<div class="progress">';
-  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
-  aria-valuemin="0" aria-valuemax="100" style="width:'. $delphiProgress .'%">';
-    echo' '. $delphiProgress .' %  ALL TEAMS COMBINED';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $delphiProgress .'"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $delphiProgress .'">';
+    echo' '. $delphiProgress .' %  DELPHI';
   echo'</div>';
 echo'</div>';
     
-    // QueueX progress
-    $qxProgress = '67';
+    // QueueX progress 
+     //Extract the most recent jacoco coverage value from the html report for QX
+    
+    $qxdoc = new DOMDocument();
+    $qxdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\localReports\queuex\index.html');
+    $x= new DOMXpath($qxdoc);
+    foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
+   $qxProgress = $node->textContent;
     echo'<div class="progress">';
-  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
-  aria-valuemin="0" aria-valuemax="100" style="width:'. $qxProgress .'%">';
-    echo' '. $qxProgress .' %  ALL TEAMS COMBINED';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $qxProgress .'"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $qxProgress .'">';
+    echo' '. $qxProgress .' %  QUEUEX';
   echo'</div>';
 echo'</div>';
     
      // Firebirds progress
-    $fireBirdsProgress = '31';
+     //Extract the most recent jacoco coverage value from the html report for Firebirds
+    
+    $fbdoc = new DOMDocument();
+    $fbdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\localReports\sustaining\index.html');
+    $x= new DOMXpath($fbdoc);
+    foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
+    
+   $fbProgress = $node->textContent;
     echo'<div class="progress">';
-  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
-  aria-valuemin="0" aria-valuemax="100" style="width:'. $fireBirdsProgress .'%">';
-    echo' '. $fireBirdsProgress .' %  ALL TEAMS COMBINED';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $fbProgress .'"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $fbProgress .'">';
+    echo' '. $fbProgress .' %  FIREBIRDS';
   echo'</div>';
 echo'</div>';
     
-     // FIS progress
-    $fisProgress = '73';
+      // FIS progress
+     //Extract the most recent jacoco coverage value from the html report for FIS
+    
+    $fisdoc = new DOMDocument();
+    $fisdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\localReports\queuex\index.html');
+    $x= new DOMXpath($fisdoc);
+    foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node) //echo $node->textContent;
+    $fisProgress = $node->textContent;
     echo'<div class="progress">';
-  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
-  aria-valuemin="0" aria-valuemax="100" style="width:'. $fisProgress .'%">';
-    echo' '. $fisProgress .' %  ALL TEAMS COMBINED';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $fisProgress .'"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $fisProgress .'">';
+    echo' '. $fisProgress .' %  FIS';
   echo'</div>';
 echo'</div>';
     
-     // Sustaining progress
-    $susProgress = '99';
+      // Sustaining progress
+     //Extract the most recent jacoco coverage value from the html report for sustaining
+    
+    $susdoc = new DOMDocument();
+    $susdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\localReports\sustaining\index.html');
+    $x= new DOMXpath($susdoc);
+    foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
+   $susProgress = $node->textContent;
     echo'<div class="progress">';
-  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
-  aria-valuemin="0" aria-valuemax="100" style="width:'. $susProgress .'%">';
-    echo' '. $susProgress .' %  ALL TEAMS COMBINED';
+  echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $susProgress .'"
+  aria-valuemin="0" aria-valuemax="100" style="width:'. $susProgress .'">';
+    echo' '. $susProgress .' %  SUSTAINING';
   echo'</div>';
 echo'</div>';
     echo'</section>';
          ?>
+    
+    
     <section class="main-contents">
       <h3 class="text-center sub-texts">View Code Coverage Reports</h3>
       <div class="container">
@@ -122,10 +162,12 @@ echo'</div>';
         <form method="post" id =selectForm action="getJacoco.php">
     <fieldset>
         <select name="teamName">
-            <option value="QueueX">QueueX</option>
-            <option value="Sustaining">Sustaining</option>
-              <option value="Delphi">Delphi</option>
-              <option value="Firebirds">Firebirds</option>
+            <option value="AllTeams">ALL TEAMS</option>
+            <option value="Delphi">DELPHI</option>
+              <option value="QueueX">QUEUEX</option>
+              <option value="Firebirds">FIREBIRDS</option>
+            <option value="Fis">FIS</option>
+            <option value="Sustaining">SUSTAINING</option>
         </select>
         <br>
         <button type="submit">Get Jacoco'd</button>

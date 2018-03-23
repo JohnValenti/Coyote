@@ -1,0 +1,470 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeRecordModelHandler.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.am.timerecords</a> &gt; <span class="el_source">TimeRecordModelHandler.java</span></div><h1>TimeRecordModelHandler.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.am.timerecords;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.am.AmEJBCreateException;
+import com.bluepumpkin.ejb.am.AmManagerFactory;
+import com.bluepumpkin.ejb.am.base.AmException;
+import com.bluepumpkin.ejb.am.base.AmRawEndShiftException;
+import com.bluepumpkin.ejb.am.base.AmTimeRecordEndShiftException;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmTimePeriodOverlapException;
+import com.bluepumpkin.ejb.bbm.base.BbmTimeRecordException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.timerecord.ejb.TimeRecordManager;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeEntrySourceCode;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeInterval;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeRecord;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeRecordEntry;
+import com.bluepumpkin.web.am.Log;
+import com.bluepumpkin.web.am.l10n.AmWebLogBundleKey;
+import com.bluepumpkin.web.bbm.helper.AccessRightHelper;
+import com.bluepumpkin.web.core.base.ModelHandler;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.system.RequestContext;
+
+/**
+ * Title:        Blue Pumpkin Software Activity Management
+ * Description:
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, Inc
+ * @author       Swati Tewari
+ * @version 1.0
+ */
+
+<span class="nc" id="L50">public class TimeRecordModelHandler extends ModelHandler{</span>
+<span class="fc" id="L51">	private static Category cat  = Log.initCategory(TimeRecordModelHandler.class.getName());</span>
+	private static TimeRecordManager timeRecordManager;
+
+	/**
+	* getTimeRecordManager()
+	* return TimeRecordManager
+	*/
+	private static TimeRecordManager getTimeRecordManager(){
+<span class="fc bfc" id="L59" title="All 2 branches covered.">		if (timeRecordManager == null){</span>
+			try {
+<span class="fc" id="L61">				timeRecordManager = WfmManagerFactory.getTimeRecordManager();</span>
+<span class="nc" id="L62">			} catch (BbmEJBCreateException cex){</span>
+<span class="nc" id="L63">				cat.l7dError(AmWebLogBundleKey.UNABLE_TO_LOAD_DATA, cex);</span>
+<span class="fc" id="L64">			}</span>
+		}
+<span class="fc" id="L66">		return timeRecordManager;</span>
+	}
+
+	/**
+	* createTimeRecord()
+	* @param trModel
+	* return Collection
+	*/
+	public static void createTimeRecord(AddTimeRecordModel trModel, RequestContext context)
+	throws BbmCreateException, BbmTimeRecordException, Exception{
+
+		//get the time zone for the employee on this day
+<span class="fc" id="L78">		ArrayList empID = new ArrayList();</span>
+<span class="fc" id="L79">		empID.add(trModel.getEmpId());</span>
+
+<span class="fc" id="L81">		TimeRecord aRecord = populateTimeRecordFromModel(trModel);</span>
+<span class="fc" id="L82">		aRecord.setType(TimeRecord.TIMEENTRY);</span>
+<span class="fc" id="L83">		aRecord.setRemarkEmployeeID(context.getUser().getID());</span>
+
+		try {
+			//set the approve status if user has privilege
+<span class="pc bpc" id="L87" title="1 of 2 branches missed.">			if (AccessRightHelper.getAuthorizationCode(context, context.getUser(), PrivilegeKeys.AM_APPROVETIMERECORDS, empID)[0] ==</span>
+				AccessRightHelper.EMP_IS_AUTHORIZED){
+<span class="fc" id="L89">				aRecord.setApprove(true);</span>
+				//aRecord.setApproverName(context.getUserName());
+                //aRecord.setApproveTime(new Date());
+			}
+<span class="nc" id="L93">		} catch (Exception ex){</span>
+<span class="nc" id="L94">			cat.l7dError(ex.getLocalizedMessage(), ex);</span>
+<span class="fc" id="L95">		}</span>
+		//create record from the page model
+<span class="fc" id="L97">		getTimeRecordManager().createTimeRecord(aRecord);</span>
+<span class="fc" id="L98">	}</span>
+
+	/**
+	 * approveTimeRecord()
+	 * @param aRecordID
+	 * @param getApprove
+	 * @param version
+	 */
+	public static void approveTimeRecord(ID aRecordID, boolean getApprove, long version, String approverName)
+	throws BbmUpdateException , BbmTimeRecordException, RemoteException{
+<span class="nc" id="L108">		getTimeRecordManager().approveTimeRecord(aRecordID, approverName, getApprove, version);</span>
+<span class="nc" id="L109">	}</span>
+
+	/**
+	 * approveTimeRecords()
+	 * @param trModel
+	 */
+	public static void approveTimeRecords(TimeRecordModel trModel, RequestContext context)
+	throws BbmUpdateException , BbmTimeRecordException, RemoteException{
+<span class="nc" id="L117">		Calendar aStartCal = Calendar.getInstance(context.getViewingTimeZone());</span>
+<span class="nc" id="L118">		aStartCal.set(trModel.getSelYear(), trModel.getSelMonth(), trModel.getSelDay(),0,0,0);</span>
+<span class="nc" id="L119">		aStartCal.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L120">		Calendar anEndCal = Calendar.getInstance(context.getViewingTimeZone());</span>
+<span class="nc" id="L121">		anEndCal.setTime(aStartCal.getTime());</span>
+<span class="nc" id="L122">		anEndCal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L123">		getTimeRecordManager().approveTimeRecord(new ID(trModel.getEmpId()),</span>
+<span class="nc" id="L124">			context.getUser().getUserName(),</span>
+			new LocalDate(aStartCal),
+			new LocalDate(anEndCal), true);
+<span class="nc" id="L127">	}</span>
+
+	/**
+	* deleteTimeRecord()
+	* @param recordId
+	*/
+	public static void deleteTimeRecord(ID recordId)
+	throws BbmRemoveException, RemoteException{
+<span class="nc" id="L135">		getTimeRecordManager().removeTimeRecord(recordId);</span>
+<span class="nc" id="L136">	}</span>
+
+	/**
+	* getTimeRecordForEmployeePerDay()
+	*/
+	public static Pair getTimeRecordForEmployeePerDay(ID empId, int year, int month, int day)
+	throws BbmFinderException, RemoteException{
+<span class="fc" id="L143">		Pair aColl = null;</span>
+
+		try {
+<span class="fc" id="L146">			aColl = getTimeRecordManager().findTimeRecord(empId,</span>
+				new LocalDate(year,month,day,0,0), new LocalDate(year,month,day+1,0,0));
+<span class="nc" id="L148">		} catch (BbmTimePeriodOverlapException ex){</span>
+<span class="nc" id="L149">			aColl = (Pair)ex.getContent();</span>
+<span class="fc" id="L150">		}</span>
+
+<span class="fc" id="L152">		return aColl;</span>
+	}
+
+	/**
+	* getAggreagatedTimeRecordForEmployeePerDay()
+	*/
+	public static Pair getAggreagatedTimeRecordForEmployeePerDay(ID empId, int year, int month, int day)
+	throws BbmFinderException, BbmTimeRecordException, RemoteException{
+<span class="nc" id="L160">		Pair aColl = null;</span>
+
+		try {
+<span class="nc" id="L163">			aColl = getTimeRecordManager().findAggregatedTimeRecord(empId,</span>
+				new LocalDate(year,month,day,0,0), new LocalDate(year,month,day+1,0,0));
+<span class="nc" id="L165">		} catch (BbmTimePeriodOverlapException ex){</span>
+<span class="nc" id="L166">			aColl = (Pair)ex.getContent();</span>
+<span class="nc" id="L167">		}</span>
+
+<span class="nc" id="L169">		return aColl;</span>
+	}
+
+	/**
+	* getTimeRecordById()
+	* @param recordId
+	* return TimeRecord
+	*/
+	public static TimeRecord getTimeRecordById(ID recordId)
+	throws BbmObjectNotFoundException, BbmFinderException, RemoteException{
+<span class="nc" id="L179">		TimeRecord aRecord = null;</span>
+
+<span class="nc" id="L181">		aRecord = timeRecordManager.getTimeRecordByID(recordId);</span>
+
+<span class="nc" id="L183">		return aRecord;</span>
+	}
+
+	/**
+	* createTempRecord()
+	* @param model
+	* return TimeRecord
+	*/
+	public static TimeRecord createTempRecord(AddTimeRecordModel model, RequestContext context)
+	throws Exception{
+
+<span class="fc" id="L194">		TimeRecord aRecord = new TimeRecord(new ID(model.getEmpId()));</span>
+
+		//create a time record with 4 time entries
+<span class="fc" id="L197">		Calendar aCal = Calendar.getInstance(TimeZone.getTimeZone(model.getTimeZone()));</span>
+<span class="fc" id="L198">		aCal.set(model.getStartYear(), model.getStartMonth(), model.getStartDay(),0,0,0);</span>
+
+<span class="fc" id="L200">		int[] hour = new int[]{8, 12, 13, 17};</span>
+<span class="fc" id="L201">		int[] duration = new int[]{240, 60, 240};</span>
+<span class="fc bfc" id="L202" title="All 2 branches covered.">		for (int i=0; i&lt;3; i++){</span>
+<span class="fc" id="L203">			aCal.set(Calendar.HOUR_OF_DAY, hour[i]);</span>
+<span class="fc" id="L204">			TimeRecordEntry ne = new TimeRecordEntry(new ID(model.getEmpId()),</span>
+<span class="fc" id="L205">				aCal.getTime(), duration[i], TimeEntrySourceCode.MANUAL, true, &quot;&quot;);</span>
+<span class="fc" id="L206">			aRecord.addEntry(ne);</span>
+		}
+<span class="fc" id="L208">		aCal.set(Calendar.HOUR_OF_DAY, hour[3]);</span>
+<span class="fc" id="L209">		aRecord.addEntry(new TimeRecordEntry(new ID(-4001),</span>
+<span class="fc" id="L210">			aCal.getTime(), 0, TimeEntrySourceCode.MANUAL, false, &quot;&quot;));</span>
+<span class="fc" id="L211">		return aRecord;</span>
+	}
+
+	/**
+	* insertTempEntry()
+	* @param trModel
+	* return TimeRecord
+	*/
+	public static TimeRecord insertTempEntry(AddTimeRecordModel trModel, TimeRecord aRecord, RequestContext context)
+	throws BbmTimeRecordException{
+<span class="fc" id="L221">		int position = trModel.getPosition();</span>
+<span class="fc" id="L222">		Calendar aCal = Calendar.getInstance(TimeZone.getTimeZone(trModel.getTimeZone()));</span>
+
+<span class="pc bpc" id="L224" title="1 of 2 branches missed.">		if (position == 0){</span>
+<span class="fc" id="L225">			aCal.setTime((Date)trModel.getDateList().get(0));</span>
+<span class="fc" id="L226">			aCal.add(Calendar.MINUTE, -15);//get right number??</span>
+		} else {
+<span class="nc" id="L228">			aCal.setTime((Date)trModel.getDateList().get(position));</span>
+<span class="nc" id="L229">			Calendar aNextCal = Calendar.getInstance(TimeZone.getTimeZone(trModel.getTimeZone()));</span>
+<span class="nc" id="L230">			aNextCal.setTime((Date)trModel.getDateList().get(position+1));</span>
+<span class="nc" id="L231">			int diff = (int)((aNextCal.getTime().getTime() - aCal.getTime().getTime())/(1000*60))/2;</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">			if (diff &gt;= 1){</span>
+<span class="nc" id="L233">				aCal.add(Calendar.MINUTE, diff);</span>
+			}
+		}
+
+<span class="fc" id="L237">		TimeRecordEntry ne = new TimeRecordEntry(new ID(1), aCal.getTime(), 0, TimeEntrySourceCode.MANUAL, true, &quot;&quot;);</span>
+<span class="fc" id="L238">		aRecord.addEntry(ne, position);</span>
+
+<span class="fc" id="L240">		return aRecord;</span>
+	}
+
+	/**
+	* insertTempEntry()
+	*/
+	public static TimeRecordEntry createTempEntry(EditTimeRecordModel model)
+	throws BbmTimeRecordException{
+<span class="nc" id="L248">		Calendar aCal = Calendar.getInstance(TimeZone.getTimeZone(model.getTimeZone()));</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">		if (model.getCurDate() != null){</span>
+<span class="nc" id="L250">			aCal.setTime(model.getCurDate());</span>
+		}
+
+<span class="nc" id="L253">		TimeRecordEntry ne = new TimeRecordEntry(new ID(0), aCal.getTime(),</span>
+			0, TimeEntrySourceCode.MANUAL, true, &quot;&quot;);
+<span class="nc" id="L255">		return ne;</span>
+	}
+
+	/**
+	* regenerateTempEntry()
+	*/
+	public static TimeRecordEntry regenerateTempEntry(RequestContext context, EditTimeRecordModel model){
+<span class="nc" id="L262">		Calendar aCalendar = Calendar.getInstance(TimeZone.getTimeZone(model.getTimeZone()));</span>
+<span class="nc" id="L263">		aCalendar.setTime(model.getExtractedDate());</span>
+<span class="nc" id="L264">		aCalendar.set(Calendar.MILLISECOND, 0);</span>
+
+		//compare the milliseconds of the 2 times
+<span class="nc" id="L267">		long diff = Math.abs((model.getHiddenMillisecond() - aCalendar.getTime().getTime())/(1000));</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">		if (diff &lt; 60){</span>
+			//preserve second
+<span class="nc" id="L270">			aCalendar.set(Calendar.SECOND, model.getHiddenSecond());</span>
+		}
+<span class="nc" id="L272">		int aDuration = model.getDurationHour()*60 + model.getDurationMinute();</span>
+<span class="nc" id="L273">		TimeRecordEntry anEntry = new TimeRecordEntry(model.getActivityList(),</span>
+<span class="nc" id="L274">				aCalendar.getTime(),aDuration, TimeEntrySourceCode.MANUAL,</span>
+<span class="nc" id="L275">				model.getIsPaid(), model.getComment());</span>
+<span class="nc" id="L276">		anEntry.setRemarkerID(context.getUser().getID());</span>
+<span class="nc" id="L277">		return anEntry;</span>
+	}
+
+	/**
+	* deleteTempEntry()
+	*/
+	public static TimeRecord deleteTempEntry(AddTimeRecordModel trModel)
+	throws BbmTimeRecordException{
+<span class="nc" id="L285">		TimeRecord aRecord = trModel.getTimeRecord();</span>
+
+<span class="nc" id="L287">		int position = trModel.getPosition();</span>
+
+<span class="nc" id="L289">		TimeRecord tempRecord1 = new TimeRecord(new ID(trModel.getEmpId()));</span>
+<span class="nc" id="L290">		TimeRecordEntry tempEntry = null;</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">		for (int i=0; i&lt;aRecord.getChildren().size(); i++){</span>
+<span class="nc" id="L292">			tempEntry = (TimeRecordEntry)((ArrayList)aRecord.getChildren()).get(i);</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">			if ((i+1) != position){</span>
+<span class="nc" id="L294">				tempRecord1.addEntry(tempEntry);</span>
+			}
+		}
+
+<span class="nc" id="L298">		TimeRecord tempRecord = new TimeRecord(new ID(trModel.getEmpId()));</span>
+<span class="nc" id="L299">		TimeRecordEntry tempEntry1 = null;</span>
+		//change duration to be correct
+<span class="nc bnc" id="L301" title="All 2 branches missed.">		for (int j=0; j&lt;tempRecord1.getChildren().size();j++){</span>
+<span class="nc" id="L302">			tempEntry = (TimeRecordEntry)((ArrayList)tempRecord1.getChildren()).get(j);</span>
+<span class="nc bnc" id="L303" title="All 2 branches missed.">			if (j&lt;tempRecord1.getChildren().size()-1){</span>
+<span class="nc" id="L304">				tempEntry1 = (TimeRecordEntry)((ArrayList)tempRecord1.getChildren()).get(j+1);</span>
+				//get duration
+<span class="nc" id="L306">				int duration = (int)(tempEntry1.getStartTime().getTime() - tempEntry.getStartTime().getTime())/(60*1000);</span>
+<span class="nc" id="L307">				tempEntry.setDuration(duration);</span>
+			}
+<span class="nc" id="L309">			tempRecord.addEntry(tempEntry);</span>
+		}
+<span class="nc" id="L311">		return tempRecord;</span>
+	}
+
+	/**
+	 * populateTimeRecordFromModel()
+	 */
+
+	public static TimeRecord populateTimeRecordFromModel(AddTimeRecordModel trModel){
+<span class="fc" id="L319">		TimeRecord aRecord = new TimeRecord(new ID(trModel.getEmpId()));</span>
+<span class="fc" id="L320">		ArrayList aList = new ArrayList();</span>
+<span class="fc" id="L321">		int duration = 0;</span>
+<span class="fc" id="L322">		boolean isPaid = false;</span>
+<span class="fc" id="L323">		ID activityID = null;</span>
+<span class="fc" id="L324">		int recordSize = trModel.getActivityCategory().length +1;</span>
+<span class="fc bfc" id="L325" title="All 2 branches covered.">		for (int i=0; i&lt;recordSize; i++){</span>
+
+<span class="fc" id="L327">			TimeRecordEntry te =  null;</span>
+<span class="fc bfc" id="L328" title="All 2 branches covered.">			if (i &lt; recordSize-1){</span>
+				//duration = ((int)(aCompareCal.getTime().getTime()-aCal.getTime().getTime()))/(1000*60);
+<span class="fc" id="L330">				duration = trModel.getDurationHour()[i]*60 + trModel.getDurationMinute()[i];</span>
+<span class="fc" id="L331">				isPaid = trModel.getIsPaid()[i];</span>
+<span class="fc" id="L332">				activityID = new ID(trModel.getActivityList()[i]);</span>
+<span class="fc" id="L333">				te = new TimeRecordEntry(activityID, (Date)trModel.getDateList().get(i+1), duration,</span>
+<span class="fc" id="L334">					TimeEntrySourceCode.MANUAL, isPaid, trModel.getComment()[i]);</span>
+<span class="pc bpc" id="L335" title="1 of 2 branches missed.">			} else if (i == recordSize-1){</span>
+				//add end shift
+<span class="fc" id="L337">				te = new TimeRecordEntry(new ID(Activity.NO_ACTIVITY),</span>
+<span class="fc" id="L338">								(Date)trModel.getDateList().get(i+1), 0, TimeEntrySourceCode.MANUAL, false, &quot;&quot;);</span>
+			}
+<span class="fc" id="L340">			aRecord.setDescription(trModel.getRemarks());</span>
+<span class="fc" id="L341">			aRecord.addEntry(te);</span>
+		}
+<span class="fc" id="L343">		return aRecord;</span>
+	}
+
+	/**
+	* updateTimeRecordEntry()
+	*/
+	public static TimeRecord updateTimeRecordEntry(RequestContext context, EditTimeRecordModel model)
+	throws BbmTimeRecordException, BbmUpdateException, RemoteException
+	{
+<span class="nc" id="L352">		TimeRecord aRecord = null;</span>
+<span class="nc" id="L353">		aRecord = getTimeRecordManager().updateTimeRecordEntry(model.getRecordID(),</span>
+<span class="nc" id="L354">								model.getPosition(), regenerateTempEntry(context, model), model.getVersion());</span>
+
+<span class="nc" id="L356">		return aRecord;</span>
+	}
+
+	/**
+	* updateTimeRecord()
+	*/
+	public static void updateTimeRecord(TimeRecord aRecord)
+	throws BbmUpdateException, BbmTimeRecordException, RemoteException
+	{
+<span class="nc" id="L365">		getTimeRecordManager().updateTimeRecordOnly(aRecord);</span>
+<span class="nc" id="L366">	}</span>
+
+	/**
+	* createTimeRecordEntry()
+	*/
+	public static TimeRecord createTimeRecordEntry(RequestContext context, EditTimeRecordModel model)
+	throws BbmTimeRecordException, BbmUpdateException, BbmCreateException, RemoteException
+	{
+<span class="nc" id="L374">		TimeRecord aRecord = null;</span>
+<span class="nc" id="L375">		Calendar aCalendar = Calendar.getInstance(TimeZone.getTimeZone(model.getTimeZone()));</span>
+<span class="nc" id="L376">		aCalendar.setTime(model.getExtractedDate());</span>
+		//set millisecond to 0
+<span class="nc" id="L378">		aCalendar.set(Calendar.MILLISECOND, 0);</span>
+
+<span class="nc" id="L380">		Date aStartDate = aCalendar.getTime();</span>
+<span class="nc" id="L381">		int aDuration = model.getDurationHour()*60 + model.getDurationMinute();</span>
+
+<span class="nc" id="L383">		TimeRecordEntry anEntry = new TimeRecordEntry(new ID(model.getActivityList()),</span>
+<span class="nc" id="L384">				aStartDate, aDuration, TimeEntrySourceCode.MANUAL, model.getIsPaid(), model.getComment());</span>
+<span class="nc" id="L385">		anEntry.setRemarkerID(context.getUser().getID());</span>
+
+<span class="nc" id="L387">		aRecord = getTimeRecordManager().createTimeRecordEntry(new ID(model.getRecordID()),</span>
+<span class="nc" id="L388">								model.getPosition(), anEntry, model.getVersion());</span>
+<span class="nc" id="L389">		return aRecord;</span>
+	}
+
+	/**
+	* removeTimeRecordEntry()
+	*/
+	public static void removeTimeRecordEntry(ID recordID, ID remarkerID,
+		int position, boolean direction, long version)
+	throws BbmRemoveException, BbmTimeRecordException, RemoteException{
+<span class="nc" id="L398">		getTimeRecordManager().removeTimeRecordEntry(recordID, remarkerID, position, direction, version);</span>
+<span class="nc" id="L399">	}</span>
+
+	/**
+	* createEndShift()
+	*/
+	public static TimeRecord createEndShift(EditTimeRecordModel model, ID remarkerID)
+	throws AmException, AmRawEndShiftException, AmTimeRecordEndShiftException, RemoteException{
+<span class="nc" id="L406">		TimeRecord aRecord = null;</span>
+<span class="nc" id="L407">		Calendar aCalendar = Calendar.getInstance(TimeZone.getTimeZone(model.getTimeZone()));</span>
+<span class="nc" id="L408">		aCalendar.setTime(model.getExtractedDate());</span>
+<span class="nc" id="L409">		Date aEndDate = aCalendar.getTime();</span>
+		try {
+<span class="nc" id="L411">			AmManagerFactory.getTimeCollectorManager().manualEndShift(model.getRecordID(),</span>
+<span class="nc" id="L412">				model.getEmpId(), remarkerID, aEndDate, &quot;&quot;);</span>
+<span class="nc" id="L413">		} catch (AmEJBCreateException ex){</span>
+<span class="nc" id="L414">			cat.l7dError(AmWebLogBundleKey.UNABLE_TO_LOAD_DATA, ex);</span>
+<span class="nc" id="L415">		}</span>
+<span class="nc" id="L416">		return aRecord;</span>
+	}
+
+	/**
+	 * generateTimeInterval()
+	 */
+	private static TimeInterval generateTimeInterval(DayDetailsTimeIntervalModel model, RequestContext context){
+
+<span class="nc" id="L424">		int duration = model.getEditHour()*60 + model.getEditMinute();</span>
+<span class="nc" id="L425">		TimeInterval timeInterval = new TimeInterval(model.getActivity(), (Date)model.getDateList().get(0),</span>
+<span class="nc" id="L426">			(Date)model.getDateList().get(1), duration, TimeInterval.MANUAL, model.getIsPaid(), model.getNotes());</span>
+<span class="nc" id="L427">		timeInterval.setID(model.getIntervalID());</span>
+<span class="nc" id="L428">		timeInterval.setRemarkerID(context.getUser().getID());</span>
+
+<span class="nc" id="L430">		return timeInterval;</span>
+	}
+
+	/**
+	* updateTimeInterval()
+	*/
+	public static void updateTimeInterval(DayDetailsTimeIntervalModel model, RequestContext context)
+	throws BbmUpdateException, BbmTimeRecordException, RemoteException
+	{
+<span class="nc" id="L439">		getTimeRecordManager().updateTimeInterval(model.getRecordID(),</span>
+<span class="nc" id="L440">			generateTimeInterval(model, context));</span>
+<span class="nc" id="L441">	}</span>
+
+	/**
+	* updateTimeInterval()
+	*/
+	public static void createTimeInterval(DayDetailsTimeIntervalModel model, RequestContext context)
+	throws BbmCreateException, BbmTimeRecordException, RemoteException
+	{
+<span class="nc" id="L449">		TimeRecord aRecord = new TimeRecord(model.getSelectedIDs()[model.getCurIndex()]);</span>
+<span class="nc" id="L450">        TimeInterval interval = generateTimeInterval(model, context);</span>
+<span class="nc" id="L451">		aRecord.addChild(interval);</span>
+<span class="nc" id="L452">		aRecord.setRemarkEmployeeID(context.getUser().getID());</span>
+
+		try {
+<span class="nc" id="L455">			ArrayList empID = new ArrayList();</span>
+<span class="nc" id="L456">			empID.add(model.getSelectedIDs()[model.getCurIndex()]);</span>
+			//set the approve status if user has privilege
+<span class="nc bnc" id="L458" title="All 2 branches missed.">			if (AccessRightHelper.getAuthorizationCode(context, context.getUser(),</span>
+				PrivilegeKeys.AM_APPROVETIMERECORDS, empID)[0] == AccessRightHelper.EMP_IS_AUTHORIZED){
+<span class="nc" id="L460">				aRecord.setApprove(true);</span>
+				//aRecord.setApproverName(context.getUserName());
+                //aRecord.setApproveTime(new Date());
+			}
+<span class="nc" id="L464">		} catch (BbmException ex){</span>
+<span class="nc" id="L465">			cat.l7dError(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L466">		}</span>
+<span class="nc" id="L467">		getTimeRecordManager().createTimeInterval(aRecord);</span>
+<span class="nc" id="L468">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

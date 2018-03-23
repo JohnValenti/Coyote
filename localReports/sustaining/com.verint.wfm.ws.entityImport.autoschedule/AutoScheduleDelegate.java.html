@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AutoScheduleDelegate.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.wfm.ws.entityImport.autoschedule</a> &gt; <span class="el_source">AutoScheduleDelegate.java</span></div><h1>AutoScheduleDelegate.java</h1><pre class="source lang-java linenums">package com.verint.wfm.ws.entityImport.autoschedule;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import javax.annotation.PreDestroy;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil.SystemType;
+import com.bluepumpkin.ejb.core.Log;
+import com.verint.ejb.bbm.schedule.model.WSAutoScheduleRequest;
+import com.verint.ejb.bbm.schedule.model.WSAutoScheduleRequestFieldInfo;
+import com.verint.ejb.bbm.schedule.util.SchedulingRequestUtil;
+import com.verint.ejb.bbm.schedule.util.SchedulingRequestUtil.SchedulingMode;
+import com.verint.ejb.facade.scheduling.ScheduleRequestsMessage;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.wfm.ws.ServiceApplicationException;
+import com.verint.wfm.ws.entityImport.autoschedule.model.SchedulingStatus;
+import com.verint.wfm.ws.entityImport.schedulingPeriod.SchedulingPeriodServiceDelegate;
+import com.verint.wfm.ws.entityImport.schedulingPeriod.model.SchedulingPeriodDTO.SchedulingPeriodExternalNaturalKey;
+import com.verint.wfm.ws.util.SchedulingPeriodExternalNaturalKeyMapJAXBType;
+
+public class AutoScheduleDelegate {
+
+	private CampaignManager m_campaignManager;
+	private SchedulingPeriodServiceDelegate m_schePeriodServiceDelegate;
+<span class="fc" id="L35">	private static final Category CAT = Log</span>
+<span class="fc" id="L36">			.initCategory(AutoScheduleDelegate.class.getName());</span>
+
+<span class="fc" id="L38">	public AutoScheduleDelegate() {</span>
+<span class="fc" id="L39">		init();</span>
+<span class="fc" id="L40">	}</span>
+
+	/**
+	 * Auto Schedules the Scheduling Periods. This method auto schedules only
+	 * those scheduling periods that have not already being scheduled.
+	 * 
+	 * @param schedulingPeriodIDs
+	 * @param systemTypeName
+	 */
+	public List&lt;SchedulingNotTriggeredInfo&gt; autoSchedule(
+			Collection&lt;SchedulingPeriodExternalNaturalKey&gt; schedulingPeriodIDs,
+			boolean overrideSchedules, String systemTypeName)
+			throws ServiceApplicationException {
+<span class="nc" id="L53">		List&lt;SchedulingNotTriggeredInfo&gt; messages = new ArrayList&lt;SchedulingNotTriggeredInfo&gt;();</span>
+<span class="nc bnc" id="L54" title="All 4 branches missed.">		if (schedulingPeriodIDs == null || schedulingPeriodIDs.isEmpty()) {</span>
+<span class="nc" id="L55">			CAT.debug(&quot;No scheduling periods to schedule&quot;);</span>
+<span class="nc" id="L56">			return messages;</span>
+		}
+
+<span class="nc bnc" id="L59" title="All 2 branches missed.">		if (getCampaignManager() != null) {</span>
+<span class="nc" id="L60">			SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L61">			Map&lt;SchedulingPeriodExternalNaturalKey, ID&gt; externalVsLocalId = m_schePeriodServiceDelegate</span>
+<span class="nc" id="L62">					.convertToID(systemType, schedulingPeriodIDs,</span>
+							new HashMap&lt;ID, Campaign&gt;());
+<span class="nc" id="L64">			Map&lt;ID, SchedulingPeriodExternalNaturalKey&gt; localVsExternalID = new HashMap&lt;ID, SchedulingPeriodExternalNaturalKey&gt;();</span>
+
+			// handle if entity does not exist.
+<span class="nc" id="L67">			List&lt;ID&gt; localIds = validateID(schedulingPeriodIDs,</span>
+					externalVsLocalId, localVsExternalID, messages);
+<span class="nc bnc" id="L69" title="All 2 branches missed.">			if (localIds.size() &gt; 0) {</span>
+				Map&lt;ID, SchedulingPeriodExternalNaturalKey&gt; scheduleRequestsVsSPID = ScheduleUtil
+<span class="nc" id="L71">						.getInstance().createSchedulingRequests(localIds,</span>
+								localVsExternalID, messages);
+<span class="nc" id="L73">				ScheduleUtil.getInstance().scheduleRequests(</span>
+<span class="nc" id="L74">						new ArrayList&lt;ID&gt;(scheduleRequestsVsSPID.keySet()),</span>
+						new ArrayList&lt;SchedulingPeriodExternalNaturalKey&gt;(
+<span class="nc" id="L76">								scheduleRequestsVsSPID.values()),overrideSchedules, messages);</span>
+			}
+<span class="nc" id="L78">		} else {</span>
+<span class="nc" id="L79">			CAT.error(&quot;The Campaign Manager is not available. Could not trigger autoschedule&quot;);</span>
+<span class="nc" id="L80">			throw new ServiceApplicationException(</span>
+					&quot;Could not trigger the schedule creation due to system error&quot;);
+		}
+
+<span class="nc" id="L84">		return messages;</span>
+	}
+	
+	
+	public SchedulingPeriodExternalNaturalKeyMapJAXBType doesScheduleExist(
+			Collection&lt;SchedulingPeriodExternalNaturalKey&gt; spIDs,
+			String systemTypeName) throws ServiceApplicationException {
+<span class="nc" id="L91">		Map&lt;SchedulingPeriodExternalNaturalKey, Boolean&gt; spKeyVsResult = new HashMap&lt;SchedulingPeriodExternalNaturalKey, Boolean&gt;();</span>
+		
+<span class="nc bnc" id="L93" title="All 4 branches missed.">		if (spIDs == null || spIDs.isEmpty()) {</span>
+<span class="nc" id="L94">			CAT.debug(&quot;No scheduling periods to check the if schedule exists&quot;);</span>
+<span class="nc" id="L95">			return new SchedulingPeriodExternalNaturalKeyMapJAXBType();</span>
+		}
+	
+<span class="nc bnc" id="L98" title="All 2 branches missed.">		if (getCampaignManager() != null) {</span>
+<span class="nc" id="L99">			SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L100">			Map&lt;SchedulingPeriodExternalNaturalKey, ID&gt; externalVsLocalId = m_schePeriodServiceDelegate</span>
+<span class="nc" id="L101">					.convertToID(systemType, spIDs, new HashMap&lt;ID, Campaign&gt;());</span>
+			
+			// iterate through IDs and check
+<span class="nc" id="L104">			for (Iterator&lt;SchedulingPeriodExternalNaturalKey&gt; it = externalVsLocalId</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">					.keySet().iterator(); it.hasNext();) {</span>
+<span class="nc" id="L106">				SchedulingPeriodExternalNaturalKey externalID = it.next();</span>
+<span class="nc" id="L107">				ID localID = externalVsLocalId.get(externalID);</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">				if (localID != null) {</span>
+<span class="nc" id="L109">					spKeyVsResult.put(externalID, SchedulingRequestUtil.getInstance()</span>
+<span class="nc" id="L110">							.doesScheduleExist(localID.toInt()));</span>
+				} else {
+<span class="nc" id="L112">					spKeyVsResult.put(externalID, false);</span>
+				}
+<span class="nc" id="L114">			}</span>
+
+<span class="nc" id="L116">		} else {</span>
+<span class="nc" id="L117">			CAT.error(&quot;The Campaign Manager is not available. Could not check schedules&quot;);</span>
+<span class="nc" id="L118">			throw new ServiceApplicationException(</span>
+					&quot;Could not check the schedules due to system error&quot;);
+		}
+
+		// Map needs to be wrapped by a custom JAXB type
+<span class="nc" id="L123">		return new SchedulingPeriodExternalNaturalKeyMapJAXBType(spKeyVsResult);</span>
+	}
+	
+	
+
+	/**
+	 * Checks if there is a local ID for every Scheduling period External Id and
+	 * returns the list of all non-null local Ids. This method adds exception
+	 * messages for non-existent ids. This method populated the Map of
+	 * out_localVsExternalID.
+	 * 
+	 * @param schedulingPeriodIDs
+	 * @param externalVsLocalId
+	 * @param out_localVsExternalID
+	 * @param messages
+	 * @return
+	 */
+	private List&lt;ID&gt; validateID(
+			Collection&lt;SchedulingPeriodExternalNaturalKey&gt; schedulingPeriodIDs,
+			Map&lt;SchedulingPeriodExternalNaturalKey, ID&gt; externalVsLocalId,
+			Map&lt;ID, SchedulingPeriodExternalNaturalKey&gt; out_localVsExternalID,
+			List&lt;SchedulingNotTriggeredInfo&gt; messages) {
+<span class="nc" id="L145">		List&lt;ID&gt; localIds = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L146">		for (Iterator&lt;SchedulingPeriodExternalNaturalKey&gt; it = schedulingPeriodIDs</span>
+<span class="nc bnc" id="L147" title="All 2 branches missed.">				.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L148">			SchedulingPeriodExternalNaturalKey key = it.next();</span>
+<span class="nc" id="L149">			ID localId = externalVsLocalId.get(key);</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">			if (localId == null) {</span>
+<span class="nc" id="L151">				SchedulingNotTriggeredInfo message = new SchedulingNotTriggeredInfo(</span>
+						key);
+<span class="nc" id="L153">				message.addNoSuchSPExternalIdMessage();</span>
+<span class="nc" id="L154">				messages.add(message);</span>
+<span class="nc" id="L155">			} else {</span>
+<span class="nc" id="L156">				localIds.add(localId);</span>
+<span class="nc" id="L157">				out_localVsExternalID.put(localId, key);</span>
+			}
+
+<span class="nc" id="L160">		}</span>
+
+<span class="nc" id="L162">		return localIds;</span>
+
+	}
+
+	public List&lt;SchedulingStatus&gt; getSchedulingStatus(
+			Collection&lt;SchedulingPeriodExternalNaturalKey&gt; schedulingPeriodIDs,
+			String systemTypeName) throws ServiceApplicationException {
+<span class="nc" id="L169">		List&lt;SchedulingStatus&gt; statuses = new ArrayList&lt;SchedulingStatus&gt;();</span>
+<span class="nc bnc" id="L170" title="All 4 branches missed.">		if (schedulingPeriodIDs == null || schedulingPeriodIDs.isEmpty()) {</span>
+<span class="nc" id="L171">			CAT.debug(&quot;No Scheduling Periods to check the scheduling status&quot;);</span>
+<span class="nc" id="L172">			return statuses;</span>
+		}
+<span class="nc bnc" id="L174" title="All 2 branches missed.">		if (getCampaignManager() != null) {</span>
+<span class="nc" id="L175">			SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L176">			Map&lt;SchedulingPeriodExternalNaturalKey, ID&gt; externalVsLocalId = m_schePeriodServiceDelegate</span>
+<span class="nc" id="L177">				.convertToID(systemType, schedulingPeriodIDs, new HashMap&lt;ID, Campaign&gt;());</span>
+		
+<span class="nc bnc" id="L179" title="All 2 branches missed.">			for (Iterator&lt;SchedulingPeriodExternalNaturalKey&gt; it = schedulingPeriodIDs.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L180">				SchedulingPeriodExternalNaturalKey key = it.next();</span>
+<span class="nc" id="L181">				SchedulingStatus status = new SchedulingStatus();</span>
+<span class="nc" id="L182">				statuses.add(status);</span>
+<span class="nc" id="L183">				status.setSchedulingPeriodExternalNaturalKey(key);</span>
+		
+<span class="nc" id="L185">				ID localId = externalVsLocalId.get(key);</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">				if (localId != null) {</span>
+<span class="nc" id="L187">					WSAutoScheduleRequest request = SchedulingRequestUtil.getInstance()</span>
+<span class="nc" id="L188">						.getSchedulingRequestWithCurrentStatusBySP(localId);</span>
+		
+<span class="nc bnc" id="L190" title="All 2 branches missed.">					if (request != null) {</span>
+<span class="nc" id="L191">						status.setStatusCode(request.getSchedulingStatus());</span>
+<span class="nc" id="L192">						status.setProgress(request.getProgress());</span>
+						// TODO might have to split to array
+<span class="nc" id="L194">						status.setMessage(request.getStatusMessage());</span>
+<span class="nc" id="L195">						status.setMessageCode((String) request</span>
+<span class="nc" id="L196">								.getFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGETYPE));</span>
+					} else {
+<span class="nc" id="L198">						status.setStatusCode(WSAutoScheduleRequest.SCHEDULE_STATUS_UNKNOWN);</span>
+					}
+<span class="nc" id="L200">				} else {</span>
+<span class="nc" id="L201">					status.setStatusCode(WSAutoScheduleRequest.SCHEDULE_STATUS_UNKNOWN);</span>
+				}
+		
+<span class="nc" id="L204">			}</span>
+		}
+<span class="nc" id="L206">		return statuses;</span>
+	}
+
+	public void stopScheduling(
+			Collection&lt;SchedulingPeriodExternalNaturalKey&gt; schedulingPeriodIDs,
+			String systemTypeName) throws ServiceApplicationException {
+		
+<span class="nc bnc" id="L213" title="All 4 branches missed.">		if (schedulingPeriodIDs == null || schedulingPeriodIDs.isEmpty()) {</span>
+<span class="nc" id="L214">			CAT.debug(&quot;No scheudling periods to stop scheduling&quot;);</span>
+<span class="nc" id="L215">			return;</span>
+		}
+<span class="nc bnc" id="L217" title="All 2 branches missed.">		if (getCampaignManager() != null) {</span>
+<span class="nc" id="L218">			SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L219">			Map&lt;SchedulingPeriodExternalNaturalKey, ID&gt; externalVsLocalId = m_schePeriodServiceDelegate</span>
+<span class="nc" id="L220">					.convertToID(systemType, schedulingPeriodIDs,</span>
+							new HashMap&lt;ID, Campaign&gt;());
+<span class="nc" id="L222">			List&lt;ID&gt; localIds = new ArrayList&lt;ID&gt;();</span>
+			// handle if entity does not exist.
+<span class="nc" id="L224">			for (Iterator&lt;SchedulingPeriodExternalNaturalKey&gt; it = schedulingPeriodIDs</span>
+<span class="nc bnc" id="L225" title="All 2 branches missed.">					.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L226">				SchedulingPeriodExternalNaturalKey key = it.next();</span>
+<span class="nc" id="L227">				ID localId = externalVsLocalId.get(key);</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">				if (localId != null) {</span>
+<span class="nc" id="L229">					localIds.add(localId);</span>
+				} else {
+<span class="nc" id="L231">					CAT.error(&quot;Could not stop scheduling for Scheduling Period of external Id &quot;</span>
+<span class="nc" id="L232">							+ key.toString());</span>
+				}
+
+<span class="nc" id="L235">			}</span>
+<span class="nc" id="L236">			SchedulingRequestUtil.getInstance().stopScheduling(localIds, SchedulingMode.SCHEDULE, false, null);</span>
+		}
+
+<span class="nc" id="L239">	}</span>
+
+	private CampaignManager getCampaignManager() {
+<span class="nc bnc" id="L242" title="All 2 branches missed.">		if (m_campaignManager == null) {</span>
+<span class="nc" id="L243">			createCampaignManager();</span>
+		}
+
+<span class="nc" id="L246">		return m_campaignManager;</span>
+	}
+
+	private void createCampaignManager() {
+		try {
+<span class="fc" id="L251">			m_campaignManager = WfmManagerFactory.getCampaignManager();</span>
+<span class="nc" id="L252">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L253">			CAT.error(&quot;Error getting the CampaignManager&quot;, e);</span>
+<span class="fc" id="L254">		}</span>
+<span class="fc" id="L255">	}</span>
+
+	private void init() {
+<span class="fc" id="L258">		createCampaignManager();</span>
+<span class="fc" id="L259">		m_schePeriodServiceDelegate = new SchedulingPeriodServiceDelegate();</span>
+<span class="fc" id="L260">		m_schePeriodServiceDelegate.postConstruct();</span>
+<span class="fc" id="L261">	}</span>
+
+	@PreDestroy
+	public void preDestroy() {
+<span class="nc" id="L265">		m_campaignManager = null;</span>
+<span class="nc" id="L266">		m_schePeriodServiceDelegate = null;</span>
+<span class="nc" id="L267">	}</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

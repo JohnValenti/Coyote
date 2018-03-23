@@ -1,0 +1,1538 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ForecastServiceDelegate.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.wfm.ws.entityImport.forecast</a> &gt; <span class="el_source">ForecastServiceDelegate.java</span></div><h1>ForecastServiceDelegate.java</h1><pre class="source lang-java linenums">/**
+ * (c) 2011, 2017 by Verint Systems, Inc. All Rights Reserved.
+ * Forecast Manager Web Service This class supports methods to load forecasts into WFO
+ * from an external application
+ */
+package com.verint.wfm.ws.entityImport.forecast;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+
+import com.bluepumpkin.common.datatypes.Duration;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.datatypes.TimeContext;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.DateTimeUtil;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.SPQueue;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil.SystemType;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodUtil;
+import com.bluepumpkin.ejb.bbm.skill.model.Skill;
+import com.bluepumpkin.ejb.bbm.time.TimeContextFactory;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ForecastInstance;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ForecastTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.util.DSTConversionUtil;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.ejb.core.Log;
+import com.verint.common.util.EncodeUtil;
+import com.verint.ejb.bbm.forecast.ejb.ForecastTimeSeriesManager;
+import com.verint.ejb.bbm.forecast.model.ForecastProfile;
+import com.verint.ejb.bbm.forecast.model.ForecastProfileProject;
+import com.verint.ejb.bbm.fterequirements.ejb.FteRequirementsManager;
+import com.verint.ejb.bbm.fterequirements.model.RequiredTimeSeries;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.wfm.ws.ServiceApplicationException;
+import com.verint.wfm.ws.entityImport.ConsecutiveServiceApplicationExceptionMonitor;
+import com.verint.wfm.ws.entityImport.forecast.model.AbstractForecastDTO;
+import com.verint.wfm.ws.entityImport.forecast.model.AbstractForecastDTO.ForecastExternalNaturalKey;
+import com.verint.wfm.ws.entityImport.forecast.model.ProjectForecastDTO;
+import com.verint.wfm.ws.entityImport.forecast.model.ProjectWorkTaskDTO;
+import com.verint.wfm.ws.entityImport.forecast.model.TimeSeriesForecastDTO;
+import com.verint.wfm.ws.entityImport.schedulingPeriod.SchedulingPeriodServiceDelegate;
+import com.verint.wfm.ws.entityImport.schedulingPeriod.SchedulingPeriodServiceDelegate.SPQueueNaturalKey;
+import com.verint.wfm.ws.entityImport.schedulingPeriod.SchedulingPeriodServiceDelegate.SchedPeriodNaturalKey;
+import com.verint.wfm.ws.util.CalendarUtil;
+import com.verint.wfm.ws.util.ExternalIDUtil;
+import com.verint.wfm.ws.util.ForecastExternalNaturalKeyMapJAXBType;
+import com.verint.wfm.ws.wrappers.MapUtilWrapper;
+
+<span class="fc" id="L76">public class ForecastServiceDelegate {</span>
+
+	private static final long serialVersionUID = 1L;
+
+<span class="fc" id="L80">	private static Category CAT = Log.initCategory(ForecastServiceDelegate.class.getName());</span>
+
+	//Number of SPs of data to process per transaction when saving project forecasts
+	private static final int PROJECT_FORECAST_SP_BATCH_SIZE = 5;
+	//Number of SPs of data to process per transaction when saving immediate forecasts
+	private static final int IMMEDIATE_FORECAST_SP_BATCH_SIZE = 100;
+	//Number of SPs of data to process per transaction when saving deferred forecasts
+	private static final int DEFERRED_FORECAST_SP_BATCH_SIZE = 100;
+
+<span class="fc" id="L89">	private ForecastTimeSeriesManager forecastTimeSeriesManager = null;</span>
+<span class="nc" id="L90">	ForecastTimeSeriesManager getForecastTimeSeriesManager() { return forecastTimeSeriesManager; }</span>
+
+<span class="fc" id="L92">	private CampaignManager campaignManager = null;</span>
+<span class="nc" id="L93">	CampaignManager getCampaignManager() { return campaignManager; }</span>
+
+<span class="fc" id="L95">	private FteRequirementsManager fteRequirementsManager = null;</span>
+<span class="nc" id="L96">	FteRequirementsManager getFteRequirementsManager() { return fteRequirementsManager; }</span>
+
+<span class="nc" id="L98">	MapUtilWrapper getMapUtilWrapper() { return MapUtilWrapper.getInstance(); }</span>
+
+	public List&lt;ForecastNotPersistedInfo&gt; createOrUpdateProjectForecasts(
+			Collection&lt;ProjectForecastDTO&gt; projectForecastDTOs,
+			String systemTypeName) throws ServiceApplicationException {
+		
+<span class="nc" id="L104">		SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L105">		CAT.info(&quot;createOrUpdate(): systemType.name(): &quot; + systemType.name());</span>
+
+<span class="nc" id="L107">		List&lt;ForecastNotPersistedInfo&gt; forecastNotPersistedInfos = new ArrayList&lt;ForecastNotPersistedInfo&gt;();</span>
+		
+<span class="nc bnc" id="L109" title="All 4 branches missed.">		if (projectForecastDTOs == null || projectForecastDTOs.isEmpty()) {</span>
+<span class="nc" id="L110">			CAT.debug(&quot;No Project Forecasts to create/update&quot;);</span>
+<span class="nc" id="L111">			return forecastNotPersistedInfos;</span>
+		}
+		// Create collections which convertToEntity() will populate from the
+		// DTOs. The EJB layer can
+		// handle the project forecast collections
+<span class="nc" id="L116">		Map&lt;ID, List&lt;ProjectForecastWrapper&gt;&gt; projectForecastWrappersBySP = new HashMap&lt;ID, List&lt;ProjectForecastWrapper&gt;&gt;();</span>
+<span class="nc" id="L117">		Map&lt;ID, List&lt;ID&gt;&gt; spQueueIDsBySPID = new HashMap&lt;ID, List&lt;ID&gt;&gt;();</span>
+<span class="nc" id="L118">		Map&lt;ID, SchedulingPeriod&gt; spBySPID = new HashMap&lt;ID, SchedulingPeriod&gt;();</span>
+		
+		try {
+<span class="nc" id="L121">			convertProjectForecastDTOToEntity(projectForecastDTOs, systemType, projectForecastWrappersBySP,</span>
+					forecastNotPersistedInfos, spQueueIDsBySPID, spBySPID);
+<span class="nc" id="L123">			CAT.info(&quot;Succeeded to convert DTOs!&quot;);</span>
+<span class="nc" id="L124">		} catch (RuntimeException e) {</span>
+<span class="nc" id="L125">			CAT.error(</span>
+					&quot;Unrecoverable system bug while converting DTO to entity ForecastInstance&quot;,
+					e);
+<span class="nc" id="L128">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L129">		}</span>
+
+		// persist both new and old forecasts the same way, as the manager can vary between insert and update as needed
+		// That is, save() method will do create or update as appropriate
+		try {
+<span class="nc bnc" id="L134" title="All 2 branches missed.">			if (!projectForecastWrappersBySP.isEmpty()) {</span>
+<span class="nc" id="L135">				Map&lt;ForecastProfile, Collection&lt;ForecastProfileProject&gt;&gt; projectsByForecastProfile = </span>
+					new HashMap&lt;ForecastProfile, Collection&lt;ForecastProfileProject&gt;&gt;();
+<span class="nc" id="L137">				int spIDCount = 0;</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">				for (ID spID : projectForecastWrappersBySP.keySet()) {</span>
+<span class="nc" id="L139">					List&lt;ProjectForecastWrapper&gt; projectForecastWrappers = projectForecastWrappersBySP</span>
+<span class="nc" id="L140">							.get(spID);</span>
+<span class="nc bnc" id="L141" title="All 4 branches missed.">					if (projectForecastWrappers != null &amp;&amp; !projectForecastWrappers.isEmpty()) {</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">						for (ProjectForecastWrapper projectForecastWrapper : projectForecastWrappers) {</span>
+<span class="nc" id="L143">							projectsByForecastProfile.put(projectForecastWrapper.getForecastProfile(),</span>
+<span class="nc" id="L144">									projectForecastWrapper.getForecastProfileProjects());</span>
+<span class="nc" id="L145">						}</span>
+					}
+<span class="nc" id="L147">					spIDCount++;</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">					if (spIDCount &gt;= PROJECT_FORECAST_SP_BATCH_SIZE) {</span>
+<span class="nc" id="L149">						getForecastTimeSeriesManager().saveProjectMediaForecastAsActive(projectsByForecastProfile);</span>
+						//Reset the batch size counter
+<span class="nc" id="L151">						projectsByForecastProfile.clear();</span>
+<span class="nc" id="L152">						spIDCount = 0;</span>
+					}
+<span class="nc" id="L154">				}</span>
+				//If there are any leftover forecasts that have not yet been saved (i.e. an incomplete batch), save them.
+<span class="nc bnc" id="L156" title="All 2 branches missed.">				if (!projectsByForecastProfile.isEmpty()) {</span>
+<span class="nc" id="L157">					getForecastTimeSeriesManager().saveProjectMediaForecastAsActive(projectsByForecastProfile);</span>
+				}
+			}
+<span class="nc" id="L160">		} catch (BbmCreateException e) {</span>
+<span class="nc" id="L161">			CAT.error(&quot;Failed to create the forecast!&quot;, e);</span>
+<span class="nc" id="L162">			throw new ServiceApplicationException(</span>
+					&quot;Failed to create the  forecast!&quot;, e);
+<span class="nc" id="L164">		} catch (BbmUpdateException e) {</span>
+<span class="nc" id="L165">			CAT.error(&quot;Failed to update the forecast!&quot;, e);</span>
+<span class="nc" id="L166">			throw new ServiceApplicationException(</span>
+					&quot;Failed to create the  forecast!&quot;, e);
+<span class="nc" id="L168">		} catch (RemoteException e) {</span>
+<span class="nc" id="L169">			CAT.error(</span>
+					&quot;There was a communication fault invoking forecastTimeSeriesManager.saveProjectMediaForecastAsActive()&quot;,
+					e);
+<span class="nc" id="L172">			throw new ServiceApplicationException(</span>
+					&quot;There was a communication fault invoking forecastTimeSeriesManager.saveProjectMediaForecastAsActive()&quot;,
+					e);
+<span class="nc" id="L175">		} catch (RuntimeException e) {</span>
+<span class="nc" id="L176">			CAT.error(&quot;Failed to create the queue due to Runtime Exception&quot;, e);</span>
+<span class="nc" id="L177">			throw new ServiceApplicationException(</span>
+					&quot;Failed to create the queue due to Runtime Exception&quot;, e);
+<span class="nc" id="L179">		} catch (BbmRemoveException e) {</span>
+<span class="nc" id="L180">			CAT.error(</span>
+					&quot;Failed to remove old project forecast before re-adding!&quot;,
+					e);
+<span class="nc" id="L183">			throw new ServiceApplicationException(</span>
+					&quot;Failed to remove old project forecast before re-adding!&quot;,
+					e);
+<span class="nc" id="L186">		}</span>
+<span class="nc" id="L187">		return forecastNotPersistedInfos;</span>
+	}
+
+	//We have very similar logic for Project and TimeSeries Forecasts.
+	//The common logic should be abstractly encapsulated so as to reduce code redundancy.
+	public List&lt;ForecastNotPersistedInfo&gt; createOrUpdateTimeSeriesForecasts(
+			Collection&lt;TimeSeriesForecastDTO&gt; timeSeriesForecastDTOs,
+			String systemTypeName) throws ServiceApplicationException {
+		
+<span class="nc" id="L196">		SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L197">		CAT.info(&quot;createOrUpdate(): systemType.name(): &quot; + systemType.name());</span>
+
+<span class="nc bnc" id="L199" title="All 4 branches missed.">		if (timeSeriesForecastDTOs == null || timeSeriesForecastDTOs.isEmpty()) {</span>
+<span class="nc" id="L200">			CAT.debug(&quot;No timesreies forecasts to create/update&quot;);</span>
+<span class="nc" id="L201">			return new ArrayList&lt;ForecastNotPersistedInfo&gt;();</span>
+		}
+
+		// Create collections which convertToEntity() will populate from the DTOs. 
+		// The EJB layer can handle the project forecast collections
+<span class="nc" id="L206">		TimeSeriesForecastCollections timeSeriesForecastCollections = null;</span>
+		try {
+<span class="nc" id="L208">			timeSeriesForecastCollections = convertTimeSeriesForecastDTOToEntity(timeSeriesForecastDTOs, systemType);</span>
+<span class="nc" id="L209">			CAT.info(&quot;Succeeded to convert DTOs!&quot;);</span>
+<span class="nc" id="L210">		} catch (RuntimeException e) {</span>
+<span class="nc" id="L211">			CAT.error(&quot;Unrecoverable system bug while converting DTO to entity ForecastInstance&quot;, e);</span>
+<span class="nc" id="L212">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L213">		}</span>
+
+<span class="nc" id="L215">		CAT.info(&quot;createOrUpdate(): immediateForecastsBySPQueueID, deferredForecastsBySPQueueID size() resp.: &quot;</span>
+<span class="nc" id="L216">				+ timeSeriesForecastCollections.getImmediateCubeByIDsTimezoneToSPToSPQueue().size()</span>
+				+ &quot;,  &quot;
+<span class="nc" id="L218">				+ timeSeriesForecastCollections.getDeferredCubeByIDsTimezoneToSPToSPQueue().size());</span>
+
+<span class="nc bnc" id="L220" title="All 2 branches missed.">		if (getForecastTimeSeriesManager() == null) {</span>
+<span class="nc" id="L221">			CAT.error(&quot;In createOrUpdate method: ejb manager does not exist&quot;);</span>
+<span class="nc" id="L222">			throw new ServiceApplicationException(&quot;In createOrUpdate() ejb forecastTimeSeriesManager does not exist&quot;);</span>
+		}
+
+		// Persist both new and old forecasts the same way, as the manager can vary between insert and update as needed
+		// That is, save() method will do create or update as appropriate
+		try {
+<span class="nc" id="L228">			saveImmediateForecasts(timeSeriesForecastCollections);</span>
+<span class="nc" id="L229">			saveDeferredForecasts(</span>
+<span class="nc" id="L230">					timeSeriesForecastCollections.getDeferredSPQueuesBySPID(),</span>
+<span class="nc" id="L231">					timeSeriesForecastCollections.getDeferredCubeByIDsTimezoneToSPToSPQueue(),</span>
+<span class="nc" id="L232">					timeSeriesForecastCollections.getDeferredForecastProfilesBySPID());</span>
+
+			//save the forecasts as base
+<span class="nc" id="L235">			saveBaseForecasts(</span>
+<span class="nc" id="L236">					getSPQueueIDsBySP(</span>
+<span class="nc" id="L237">							timeSeriesForecastCollections.getImmediateCubeByIDsTimezoneToSPToSPQueue(),</span>
+<span class="nc" id="L238">							timeSeriesForecastCollections.getDeferredCubeByIDsTimezoneToSPToSPQueue()),</span>
+<span class="nc" id="L239">					timeSeriesForecastCollections.getSpById());</span>
+<span class="nc" id="L240">		} catch (BbmCreateException e) {</span>
+<span class="nc" id="L241">			CAT.error(&quot;Failed to create the forecast!&quot;, e);</span>
+<span class="nc" id="L242">			throw new ServiceApplicationException(</span>
+					&quot;Failed to create the  forecast!&quot;, e);
+<span class="nc" id="L244">		} catch (BbmUpdateException e) {</span>
+<span class="nc" id="L245">			CAT.error(&quot;Failed to update the forecast!&quot;, e);</span>
+<span class="nc" id="L246">			throw new ServiceApplicationException(</span>
+					&quot;Failed to create the  forecast!&quot;, e);
+<span class="nc" id="L248">		} catch (RemoteException e) {</span>
+<span class="nc" id="L249">			CAT.error(</span>
+					&quot;There was a communication fault invoking forecastTimeSeriesManager.saveImmediateMediaForecastAsBase()&quot;,
+					e);
+<span class="nc" id="L252">			throw new ServiceApplicationException(</span>
+					&quot;There was a communication fault invoking forecastTimeSeriesManager.saveImmediateMediaForecastAsBase()&quot;,
+					e);
+<span class="nc" id="L255">		} catch (RuntimeException e) {</span>
+<span class="nc" id="L256">			CAT.error(&quot;Failed to create the queue due to Runtime Exception&quot;, e);</span>
+<span class="nc" id="L257">			throw new ServiceApplicationException(&quot;Failed to create the queue due to Runtime Exception&quot;, e);</span>
+<span class="nc" id="L258">		}</span>
+<span class="nc" id="L259">		return timeSeriesForecastCollections.getForecastNotPersistedInfos();</span>
+	}
+
+	private void saveImmediateForecasts(TimeSeriesForecastCollections timeSeriesForecastCollections)
+			throws BbmCreateException, BbmUpdateException, RemoteException {
+<span class="nc" id="L264">		Map&lt;ID, Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt;&gt; immediateCubeByIDsTimezoneToSPToSPQueue =</span>
+<span class="nc" id="L265">				timeSeriesForecastCollections.getImmediateCubeByIDsTimezoneToSPToSPQueue();</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">		if (!immediateCubeByIDsTimezoneToSPToSPQueue.isEmpty()) {</span>
+<span class="nc bnc" id="L267" title="All 2 branches missed.">			for (ID timeZoneID : immediateCubeByIDsTimezoneToSPToSPQueue.keySet()) {</span>
+<span class="nc" id="L268">				saveImmediateTimeSeriesForTimezone(</span>
+						timeSeriesForecastCollections,
+<span class="nc" id="L270">						immediateCubeByIDsTimezoneToSPToSPQueue.get(timeZoneID));</span>
+<span class="nc" id="L271">			}</span>
+		}
+<span class="nc" id="L273">	}</span>
+
+	private void saveImmediateTimeSeriesForTimezone(
+			TimeSeriesForecastCollections timeSeriesForecastCollections,
+			Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt; immediateCubeByIDsSPToSPQueue)
+					throws BbmCreateException, BbmUpdateException, RemoteException {
+		//collections from parameters used for retrieval
+<span class="nc" id="L280">		Map&lt;ID, List&lt;ForecastProfile&gt;&gt; immediateForecastProfilesBySP =</span>
+<span class="nc" id="L281">				timeSeriesForecastCollections.getImmediateForecastProfilesBySPID();</span>
+<span class="nc" id="L282">		Map&lt;ID, List&lt;TimeSeriesForecastWrapper&gt;&gt; spIDToForecastWrappers =</span>
+<span class="nc" id="L283">				timeSeriesForecastCollections.getCampaignSPForecastWrapperData().getSpVsForecastWrappers();</span>
+
+		//collections containing the next batch to save.
+<span class="nc" id="L286">		Map&lt;ID, ForecastTraceCube&gt; immediateForecastsBySPQueueChunk = new HashMap&lt;ID, ForecastTraceCube&gt;();</span>
+<span class="nc" id="L287">		List&lt;ForecastProfile&gt; immediateForecastProfilesChunk = new ArrayList&lt;ForecastProfile&gt;();</span>
+<span class="nc" id="L288">		List&lt;RequiredTimeSeries&gt; requiredTimeSeriesChunk = new ArrayList&lt;RequiredTimeSeries&gt;();</span>
+
+<span class="nc" id="L290">		int spIDCount = 0;</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">		for (ID spID : immediateCubeByIDsSPToSPQueue.keySet()) {</span>
+<span class="nc" id="L292">			Map&lt;ID, ForecastTraceCube&gt; immediateForecastsBySPQueue = immediateCubeByIDsSPToSPQueue.get(spID);</span>
+<span class="nc bnc" id="L293" title="All 4 branches missed.">			if (immediateForecastsBySPQueue != null &amp;&amp; !immediateForecastsBySPQueue.isEmpty()) {</span>
+<span class="nc" id="L294">				immediateForecastsBySPQueueChunk.putAll(immediateForecastsBySPQueue);</span>
+<span class="nc" id="L295">				List&lt;ForecastProfile&gt; immediateForecastProfiles = immediateForecastProfilesBySP.get(spID);</span>
+<span class="nc bnc" id="L296" title="All 4 branches missed.">				if (immediateForecastProfiles == null || immediateForecastProfiles.isEmpty()) {</span>
+<span class="nc" id="L297">					CAT.error(&quot;There are no Forecast Profiles for scheduling period &quot; + spID);</span>
+				} else {
+<span class="nc" id="L299">					immediateForecastProfilesChunk.addAll(immediateForecastProfiles);</span>
+				}
+<span class="nc" id="L301">				requiredTimeSeriesChunk.addAll(spIDToForecastWrappers</span>
+<span class="nc" id="L302">						.get(spID)</span>
+<span class="nc" id="L303">						.stream()</span>
+<span class="nc" id="L304">						.flatMap(wrapper -&gt; wrapper.getRequiredTimeSeries().stream())</span>
+<span class="nc" id="L305">						.collect(Collectors.toList()));</span>
+<span class="nc" id="L306">				spIDCount++;</span>
+			}
+<span class="nc bnc" id="L308" title="All 2 branches missed.">			if (spIDCount &gt;= IMMEDIATE_FORECAST_SP_BATCH_SIZE) {</span>
+<span class="nc" id="L309">				saveImmediateMediaForecastAsActiveForRFS(</span>
+						immediateForecastsBySPQueueChunk,
+						immediateForecastProfilesChunk,
+						requiredTimeSeriesChunk);
+<span class="nc" id="L313">				spIDCount = 0;</span>
+<span class="nc" id="L314">				immediateForecastProfilesChunk.clear();</span>
+<span class="nc" id="L315">				immediateForecastsBySPQueueChunk.clear();</span>
+<span class="nc" id="L316">				requiredTimeSeriesChunk.clear();</span>
+			}
+<span class="nc" id="L318">		}</span>
+<span class="nc bnc" id="L319" title="All 4 branches missed.">		if (!immediateForecastsBySPQueueChunk.isEmpty() || !immediateForecastProfilesChunk.isEmpty()) {</span>
+<span class="nc" id="L320">			saveImmediateMediaForecastAsActiveForRFS(</span>
+					immediateForecastsBySPQueueChunk,
+					immediateForecastProfilesChunk,
+					requiredTimeSeriesChunk);
+		}
+<span class="nc" id="L325">	}</span>
+
+	private void saveImmediateMediaForecastAsActiveForRFS(
+			Map&lt;ID, ForecastTraceCube&gt; immediateForecastsBySPQueueChunk,
+			List&lt;ForecastProfile&gt; immediateForecastProfilesChunk,
+			List&lt;RequiredTimeSeries&gt; requiredTimeSeries)
+					throws BbmCreateException, BbmUpdateException, RemoteException {
+<span class="nc" id="L332">		getForecastTimeSeriesManager().saveImmediateMediaForecastAsActiveForRFS(</span>
+				immediateForecastProfilesChunk,
+				immediateForecastsBySPQueueChunk);
+<span class="nc" id="L335">		getFteRequirementsManager().createAndUpdateRequiredTimeSeries(requiredTimeSeries);</span>
+<span class="nc" id="L336">	}</span>
+
+	private void saveDeferredForecasts(Map&lt;ID, List&lt;SPQueue&gt;&gt; deferredMediaSPQueuesBySP,
+			Map&lt;ID, Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt;&gt; deferredForecastsBySPQueueIDSPIDTimezoneID,
+			Map&lt;ID, List&lt;ForecastProfile&gt;&gt; deferredForecastProfilesBySP)
+					throws BbmCreateException, BbmUpdateException, RemoteException {
+<span class="nc bnc" id="L342" title="All 2 branches missed.">		if (!deferredForecastsBySPQueueIDSPIDTimezoneID.isEmpty()) {</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">			for (ID timezoneID : deferredForecastsBySPQueueIDSPIDTimezoneID.keySet()) {</span>
+<span class="nc" id="L344">				int spCount = 0;</span>
+<span class="nc" id="L345">				List&lt;ForecastProfile&gt; deferredForecastProfilesChunk = new ArrayList&lt;ForecastProfile&gt;();</span>
+<span class="nc" id="L346">				Map&lt;ID, ForecastTraceCube&gt; deferredForecastsBySPQueueChunk = new HashMap&lt;ID, ForecastTraceCube&gt;();</span>
+<span class="nc" id="L347">				List&lt;SPQueue&gt; deferredMediaSPQueuesChunk = new ArrayList&lt;SPQueue&gt;();</span>
+
+<span class="nc" id="L349">				Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt; spVsDeferredForecastsBySPQueueID = </span>
+<span class="nc" id="L350">						deferredForecastsBySPQueueIDSPIDTimezoneID.get(timezoneID);</span>
+<span class="nc bnc" id="L351" title="All 2 branches missed.">				for (ID spID : spVsDeferredForecastsBySPQueueID.keySet()) {</span>
+<span class="nc" id="L352">					Map&lt;ID, ForecastTraceCube&gt; deferredForecastsBySPQueueID = </span>
+<span class="nc" id="L353">							spVsDeferredForecastsBySPQueueID.get(spID);</span>
+<span class="nc bnc" id="L354" title="All 4 branches missed.">					if (deferredForecastsBySPQueueID != null &amp;&amp; !deferredForecastsBySPQueueID.isEmpty()) {</span>
+<span class="nc" id="L355">						deferredForecastsBySPQueueChunk.putAll(deferredForecastsBySPQueueID);</span>
+<span class="nc" id="L356">						List&lt;SPQueue&gt; deferredMediaSPQueues = deferredMediaSPQueuesBySP.get(spID);</span>
+
+<span class="nc bnc" id="L358" title="All 2 branches missed.">						if (deferredMediaSPQueues == null) {</span>
+<span class="nc" id="L359">							CAT.error(&quot;There are no deferred media spqueues for scheduling period &quot; + spID);</span>
+						} else {
+<span class="nc" id="L361">							deferredMediaSPQueuesChunk.addAll(deferredMediaSPQueues);</span>
+						}
+<span class="nc" id="L363">						List&lt;ForecastProfile&gt; deferredForecastProfiles = deferredForecastProfilesBySP.get(spID);</span>
+<span class="nc bnc" id="L364" title="All 4 branches missed.">						if (deferredForecastProfiles == null || deferredForecastProfiles.isEmpty()) {</span>
+<span class="nc" id="L365">							CAT.error(&quot;There are no Forecast Profiles for scheduling period &quot; + spID + &quot; for deferrefd media&quot;);</span>
+						} else {
+<span class="nc" id="L367">							deferredForecastProfilesChunk.addAll(deferredForecastProfiles);</span>
+						}
+
+<span class="nc" id="L370">						spCount++;</span>
+					}
+<span class="nc bnc" id="L372" title="All 2 branches missed.">					if (spCount &gt;= DEFERRED_FORECAST_SP_BATCH_SIZE) {</span>
+<span class="nc" id="L373">						getForecastTimeSeriesManager().saveDeferredMediaForecastAsActiveForRFS(</span>
+								deferredForecastProfilesChunk,
+								deferredForecastsBySPQueueChunk,
+								deferredMediaSPQueuesChunk);
+					}
+<span class="nc" id="L378">				}</span>
+<span class="nc bnc" id="L379" title="All 2 branches missed.">				if (!deferredForecastsBySPQueueChunk.isEmpty()</span>
+<span class="nc bnc" id="L380" title="All 2 branches missed.">						|| !deferredForecastProfilesChunk.isEmpty()) {</span>
+<span class="nc" id="L381">					getForecastTimeSeriesManager().saveDeferredMediaForecastAsActiveForRFS(</span>
+							deferredForecastProfilesChunk,
+							deferredForecastsBySPQueueChunk,
+							deferredMediaSPQueuesChunk);
+<span class="nc" id="L385">					spCount = 0;</span>
+<span class="nc" id="L386">					deferredForecastProfilesChunk.clear();</span>
+<span class="nc" id="L387">					deferredForecastsBySPQueueChunk.clear();</span>
+<span class="nc" id="L388">					deferredMediaSPQueuesChunk.clear();</span>
+				}
+<span class="nc" id="L390">			}</span>
+
+		}
+<span class="nc" id="L393">	}</span>
+
+	private void saveBaseForecasts(Map&lt;ID, List&lt;ID&gt;&gt; spQueueIDsbySP, Map&lt;ID, SchedulingPeriod&gt; spByID)
+			throws BbmCreateException, BbmUpdateException, RemoteException {
+<span class="nc bnc" id="L397" title="All 2 branches missed.">		for (ID spID : spQueueIDsbySP.keySet()) {</span>
+<span class="nc" id="L398">			SchedulingPeriod sp = spByID.get(spID);</span>
+			// set the forecasts as base
+<span class="nc" id="L400">			getForecastTimeSeriesManager().saveActiveForecastAsBase(</span>
+<span class="nc" id="L401">					&quot;SetByPush_&quot; + sp.getCampaignID() + &quot;_&quot; + sp.getName(),</span>
+<span class="nc" id="L402">					spQueueIDsbySP.get(spID),</span>
+					sp);
+<span class="nc" id="L404">		}</span>
+<span class="nc" id="L405">	}</span>
+
+	public ForecastExternalNaturalKeyMapJAXBType areSaved(
+			Collection&lt;ForecastExternalNaturalKey&gt; forecastExternalNaturalKeys,
+			String systemTypeName) throws ServiceApplicationException {
+		SystemType systemType;
+		try {
+<span class="nc" id="L412">			systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L413">		} catch (RuntimeException e) {</span>
+<span class="nc" id="L414">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L415">		}</span>
+
+<span class="nc bnc" id="L417" title="All 2 branches missed.">		if (forecastExternalNaturalKeys == null</span>
+<span class="nc bnc" id="L418" title="All 2 branches missed.">				|| forecastExternalNaturalKeys.isEmpty()) {</span>
+<span class="nc" id="L419">			CAT.debug(&quot;No forecasts keys to check&quot;);</span>
+<span class="nc" id="L420">			return new ForecastExternalNaturalKeyMapJAXBType();</span>
+		}
+<span class="nc" id="L422">		Map&lt;ForecastExternalNaturalKey, ID&gt; forecastExternalKeySPQueueIDMap =</span>
+<span class="nc" id="L423">				buildForecastExternalKeySPQueueIDMap(systemType, forecastExternalNaturalKeys);</span>
+		Map&lt;ID, Boolean&gt; SPQueueIDIsBaseForecastMap;
+		try {
+<span class="nc" id="L426">			SPQueueIDIsBaseForecastMap =</span>
+<span class="nc" id="L427">					getForecastTimeSeriesManager().isBaseForecastSet(forecastExternalKeySPQueueIDMap.values());</span>
+<span class="nc" id="L428">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L429">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L430">		} catch (RemoteException e) {</span>
+<span class="nc" id="L431">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L432">		}</span>
+<span class="nc" id="L433">		Map&lt;ForecastExternalNaturalKey, Boolean&gt; preResult = new HashMap&lt;ForecastExternalNaturalKey, Boolean&gt;();</span>
+<span class="nc bnc" id="L434" title="All 2 branches missed.">		for (ForecastExternalNaturalKey forecastExternalNaturalKey : forecastExternalNaturalKeys) {</span>
+<span class="nc" id="L435">			ID spQueueID = forecastExternalKeySPQueueIDMap</span>
+<span class="nc" id="L436">					.get(forecastExternalNaturalKey);</span>
+			Boolean isForecastInSystem;
+<span class="nc bnc" id="L438" title="All 2 branches missed.">			if (spQueueID == null) {</span>
+<span class="nc" id="L439">				isForecastInSystem = false;</span>
+			} else {
+<span class="nc" id="L441">				isForecastInSystem = SPQueueIDIsBaseForecastMap.get(spQueueID);</span>
+			}
+<span class="nc" id="L443">			preResult.put(forecastExternalNaturalKey, isForecastInSystem);</span>
+<span class="nc" id="L444">		}</span>
+		// TODO: Error in areSaved() for project forecasts!
+		// Map needs to be wrapped by a custom JAXB type
+<span class="nc" id="L447">		return new ForecastExternalNaturalKeyMapJAXBType(preResult);</span>
+	}
+
+	public String doTheseExist(
+			Collection&lt;ForecastExternalNaturalKey&gt; forecastExternalNaturalKeys,
+			String systemTypeName) throws ServiceApplicationException {
+		SystemType systemType;
+		try {
+<span class="nc" id="L455">			systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L456">		} catch (RuntimeException e) {</span>
+<span class="nc" id="L457">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L458">		}</span>
+
+<span class="nc bnc" id="L460" title="All 4 branches missed.">		if (forecastExternalNaturalKeys == null || forecastExternalNaturalKeys.isEmpty()) {</span>
+<span class="nc" id="L461">			CAT.debug(&quot;No forecasts keys to check&quot;);</span>
+<span class="nc" id="L462">			return &quot;&quot;;</span>
+		}
+<span class="nc" id="L464">		Map&lt;ForecastExternalNaturalKey, ID&gt; forecastExternalKeySPQueueIDMap = buildForecastExternalKeySPQueueIDMap(</span>
+			systemType, forecastExternalNaturalKeys);
+		try {
+<span class="nc" id="L467">			forecastTimeSeriesManager.isBaseForecastSet(forecastExternalKeySPQueueIDMap.values());</span>
+<span class="nc" id="L468">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L469">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L470">		} catch (RemoteException e) {</span>
+<span class="nc" id="L471">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L472">		}</span>
+<span class="nc" id="L473">		StringBuilder preResult = new StringBuilder();</span>
+<span class="nc bnc" id="L474" title="All 2 branches missed.">		for (ForecastExternalNaturalKey forecastExternalNaturalKey : forecastExternalNaturalKeys) {</span>
+<span class="nc" id="L475">			ID spQueueID = forecastExternalKeySPQueueIDMap.get(forecastExternalNaturalKey);</span>
+<span class="nc bnc" id="L476" title="All 2 branches missed.">			if (spQueueID == null) {</span>
+<span class="nc" id="L477">				preResult.append(0);</span>
+			} else {
+<span class="nc" id="L479">				preResult.append(1);</span>
+			}
+<span class="nc" id="L481">		}</span>
+<span class="nc" id="L482">		return preResult.toString();</span>
+	}
+
+	/**
+	 * Build a map from ForecastExernalKey and the local wfo ID of the
+	 * scheduling period it is linked to
+	 */
+	private Map&lt;ForecastExternalNaturalKey, ID&gt; buildForecastExternalKeySPQueueIDMap(
+			SystemType systemType,
+			Collection&lt;ForecastExternalNaturalKey&gt; forecastExternalNaturalKeys)
+			throws ServiceApplicationException {
+
+		// First pass: build maps to local campaign ids and queue ids
+<span class="nc" id="L495">		Collection&lt;ID&gt; campaignExternalSourceIds = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L496">		Collection&lt;ID&gt; queueExternalSourceIds = new ArrayList&lt;ID&gt;();</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">		for (ForecastExternalNaturalKey key : forecastExternalNaturalKeys) {</span>
+<span class="nc" id="L498">			campaignExternalSourceIds.add(ExternalIDUtil.buildExternalID(</span>
+<span class="nc" id="L499">					systemType, key.getCampaignExternalSourceId()));</span>
+<span class="nc" id="L500">			queueExternalSourceIds.add(ExternalIDUtil.buildExternalID(</span>
+<span class="nc" id="L501">					systemType, key.getQueueExternalSourceId()));</span>
+<span class="nc" id="L502">		}</span>
+		Map&lt;ID, ID&gt; campaignExternalWfoIDMap;
+		Map&lt;ID, ID&gt; queueExternalWfoIDMap;
+		try {
+<span class="nc" id="L506">			campaignExternalWfoIDMap = getMapUtilWrapper().getExternalIDMap(</span>
+					systemType,
+					MapUtil.ObjectType.Campaign,
+					campaignExternalSourceIds,
+					true);
+<span class="nc" id="L511">			queueExternalWfoIDMap = getMapUtilWrapper().getExternalIDMap(</span>
+					systemType,
+					MapUtil.ObjectType.Queue,
+					queueExternalSourceIds,
+					true);
+<span class="nc" id="L516">		} catch (JdmoException e) {</span>
+<span class="nc" id="L517">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L518">		}</span>
+
+		// Second pass: Build a map to the Scheduling Period Id
+		// Load from database all campaigns of the scheduling periods: we need
+		// their time zones
+		// Warning: Its crucial that the key as an equals method or else the map
+		// get won't work
+<span class="nc" id="L525">		Map&lt;ID, Campaign&gt; wfoIDCampaignMap = SchedulingPeriodServiceDelegate</span>
+<span class="nc" id="L526">				.getIDCampaignMap(getCampaignManager(),</span>
+<span class="nc" id="L527">						campaignExternalWfoIDMap.values());</span>
+<span class="nc" id="L528">		Map&lt;ForecastExternalNaturalKey, ID&gt; keySPQueueIDMap = new HashMap&lt;ForecastExternalNaturalKey, ID&gt;();</span>
+<span class="nc bnc" id="L529" title="All 2 branches missed.">		for (ForecastExternalNaturalKey key : forecastExternalNaturalKeys) {</span>
+<span class="nc" id="L530">			ID wfoCampaignID = campaignExternalWfoIDMap.get(ExternalIDUtil</span>
+<span class="nc" id="L531">					.buildExternalID(systemType,</span>
+<span class="nc" id="L532">							key.getCampaignExternalSourceId()));</span>
+<span class="nc" id="L533">			ID wfoQueueID = queueExternalWfoIDMap</span>
+<span class="nc" id="L534">					.get(ExternalIDUtil.buildExternalID(systemType,</span>
+<span class="nc" id="L535">							key.getQueueExternalSourceId()));</span>
+<span class="nc bnc" id="L536" title="All 4 branches missed.">			if (wfoCampaignID != null &amp;&amp; wfoQueueID != null) {</span>
+				try {
+<span class="nc" id="L538">					Campaign campaign = wfoIDCampaignMap.get(wfoCampaignID);</span>
+<span class="nc" id="L539">					LocalDate startLocalDate = new LocalDate(key</span>
+<span class="nc" id="L540">							.startCalendarWithZone(campaign.getTimeZone())</span>
+<span class="nc" id="L541">							.getTime(), campaign.getTimeZone());</span>
+
+					// Note: There is a design flaw in the ejb, whereby the
+					// query is based on the GMT time
+<span class="nc" id="L545">					Date startDateGMT = TimePeriodUtil</span>
+<span class="nc" id="L546">							.convertToGMTFromLocalDateTimeInTimeZone(</span>
+<span class="nc" id="L547">									startLocalDate, campaign.getTimeZone()); // bug</span>
+																				// not
+																				// right
+																				// date!!!
+
+					@SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L553">					Collection&lt;SchedulingPeriod&gt; candidateSchedulingPeriods = getCampaignManager()</span>
+<span class="nc" id="L554">							.getSchedulingPeriods(wfoCampaignID, startDateGMT,</span>
+									1, SchedulingPeriod.FutureOnly);
+<span class="nc bnc" id="L556" title="All 2 branches missed.">					if (!candidateSchedulingPeriods.isEmpty()</span>
+<span class="nc" id="L557">							&amp;&amp; candidateSchedulingPeriods.iterator().next()</span>
+<span class="nc bnc" id="L558" title="All 2 branches missed.">									.getStartTime().equals(startDateGMT)) {</span>
+<span class="nc" id="L559">						Collection&lt;SPQueue&gt; desiredWithSiblingsSPQueues = getCampaignManager()</span>
+<span class="nc" id="L560">								.getSPQueuesBySPID(candidateSchedulingPeriods</span>
+<span class="nc" id="L561">										.iterator().next().getID());</span>
+<span class="nc bnc" id="L562" title="All 2 branches missed.">						for (SPQueue spQueue : desiredWithSiblingsSPQueues) {</span>
+<span class="nc bnc" id="L563" title="All 2 branches missed.">							if (spQueue.getQueueID().equals(wfoQueueID)) {</span>
+<span class="nc" id="L564">								keySPQueueIDMap.put(key, spQueue.getID());</span>
+							}
+<span class="nc" id="L566">						}</span>
+					}
+<span class="nc" id="L568">				} catch (BbmFinderException e) {</span>
+<span class="nc" id="L569">					throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L570">				} catch (RemoteException e) {</span>
+<span class="nc" id="L571">					throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L572">				}</span>
+			}
+<span class="nc" id="L574">		}</span>
+<span class="nc" id="L575">		return keySPQueueIDMap;</span>
+	}
+
+	// ----------------------------------------------------------------------
+	// helpers
+	@PostConstruct
+	public void postConstruct() {
+		try {
+<span class="fc" id="L583">			boolean isWhatIf = false;</span>
+<span class="fc" id="L584">			forecastTimeSeriesManager = WfmManagerFactory.getForecastTimeSeriesManager(isWhatIf);</span>
+<span class="fc" id="L585">			campaignManager = WfmManagerFactory.getCampaignManager(isWhatIf);</span>
+<span class="fc" id="L586">			fteRequirementsManager = WfmManagerFactory.getFteRequirementsManager(isWhatIf);</span>
+<span class="fc" id="L587">			CAT.info(&quot;Succeeded to obtain reference to a manager :)&quot;);</span>
+<span class="nc" id="L588">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L589">			CAT.error(&quot;Failed to obtain reference to a manager :(&quot;, e);</span>
+<span class="fc" id="L590">		}</span>
+<span class="fc" id="L591">	}</span>
+
+	@PreDestroy
+	public void preDestroy() {
+<span class="nc" id="L595">		forecastTimeSeriesManager = null;</span>
+<span class="nc" id="L596">		campaignManager = null;</span>
+<span class="nc" id="L597">		fteRequirementsManager = null;</span>
+<span class="nc" id="L598">	}</span>
+
+	/**
+	 * Convert the collection of projectForecastDTOs into a collection of
+	 * (wrapped)
+	 * 
+	 * @param projectForecastWrappers
+	 *            project forecasts are totally different than the forecasts
+	 *            above: they are simply composed of gross hours worked per day
+	 *            or a set of days.
+	 */
+	protected void convertProjectForecastDTOToEntity(Collection&lt;ProjectForecastDTO&gt; projectForecastDTOs,
+			SystemType systemType, Map&lt;ID, List&lt;ProjectForecastWrapper&gt;&gt; projectForecastWrappersBpSP,
+			List&lt;ForecastNotPersistedInfo&gt; forecastNotPersistedInfos, Map&lt;ID, List&lt;ID&gt;&gt; spQueueIDsbySp,
+			Map&lt;ID, SchedulingPeriod&gt; spBySPID) throws ServiceApplicationException {
+
+		// this will remove invalid DTO from DTOs, and record invalid DTO in infos,
+		// and put already persistent entity info in campaignSPForecastWrapperData
+<span class="nc" id="L616">		CampaignSPForecastWrapperData&lt;ProjectForecastWrapper&gt; campaignSPForecastWrapperData = validateForecastDTOs(</span>
+				projectForecastDTOs, 
+				systemType, 
+				forecastNotPersistedInfos,
+				ProjectForecastWrapper.class);
+
+		// We need to associate each Forecast with an SPQueue, based on the SPQueue's natural key
+<span class="nc" id="L623">		Map&lt;SPQueueNaturalKey, SPQueue&gt; spQueueNaturalKeyMap = buildNaturalKeyOldSPQueueMap(</span>
+<span class="nc" id="L624">				campaignSPForecastWrapperData.getWfoSchedulingPeriodIDs());</span>
+<span class="nc bnc" id="L625" title="All 2 branches missed.">		for (ID spID : campaignSPForecastWrapperData.getWfoSchedulingPeriodIDs()) {</span>
+<span class="nc" id="L626">			List&lt;ProjectForecastWrapper&gt; projectForecastWrappersOfSP = campaignSPForecastWrapperData</span>
+<span class="nc" id="L627">					.getSpVsForecastWrappers().get(spID);</span>
+<span class="nc" id="L628">			for (Iterator&lt;ProjectForecastWrapper&gt; iterator = projectForecastWrappersOfSP</span>
+<span class="nc bnc" id="L629" title="All 2 branches missed.">					.iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L630">				ProjectForecastWrapper projectForecastWrapper = iterator.next();</span>
+<span class="nc" id="L631">				ConsecutiveServiceApplicationExceptionMonitor monitor = new ConsecutiveServiceApplicationExceptionMonitor();</span>
+
+				// We know from validation step above that campaign is not null
+<span class="nc" id="L634">				Campaign campaign = campaignSPForecastWrapperData.getIdCampaignMap().get(</span>
+<span class="nc" id="L635">						projectForecastWrapper.getCampaignID());</span>
+				// Note that Queue id, sp id are both SID not DEID
+<span class="nc" id="L637">				SPQueue spQueue = spQueueNaturalKeyMap</span>
+<span class="nc" id="L638">						.get(new SPQueueNaturalKey(projectForecastWrapper</span>
+<span class="nc" id="L639">								.getSchedulingPeriod().getID(),</span>
+<span class="nc" id="L640">								projectForecastWrapper.getQueueID()));</span>
+
+				// there are still some validations we need to do
+<span class="nc" id="L643">				ForecastNotPersistedInfo forecastNotPersistedInfo = new ForecastNotPersistedInfo(</span>
+<span class="nc" id="L644">						projectForecastWrapper.getForecastDTO()</span>
+<span class="nc" id="L645">								.getForecastExternalNaturalKey());</span>
+
+<span class="nc bnc" id="L647" title="All 2 branches missed.">				if (spQueue == null) {</span>
+<span class="nc" id="L648">					forecastNotPersistedInfo</span>
+<span class="nc" id="L649">							.addNoSuchSchedulingPeriodQueueForForecastExternalNaturalKeyMessage();</span>
+				}
+
+				// if its not project media, this is a bug, whether immediate or
+				// deferred media
+<span class="nc bnc" id="L654" title="All 2 branches missed.">				if (!Media.MEDIA_ID_PROJECT.equals(spQueue.getMediaID())) {</span>
+<span class="nc" id="L655">					forecastNotPersistedInfo</span>
+<span class="nc" id="L656">							.addProjectForecastForNonProjectMediumMessage(Skill</span>
+<span class="nc" id="L657">									.convertMediaID2str(spQueue.getMediaID()));</span>
+				}
+
+<span class="nc" id="L660">				ForecastProfile forecastProfile = new ForecastProfile();</span>
+<span class="nc" id="L661">				projectForecastWrapper.setForecastProfile(forecastProfile);</span>
+<span class="nc" id="L662">				forecastProfile.setName(&quot;Import Sync: &quot;</span>
+<span class="nc" id="L663">						+ Calendar.getInstance().getTime());</span>
+<span class="nc" id="L664">				forecastProfile.setDescription(&quot;Import Sync: &quot;</span>
+<span class="nc" id="L665">						+ Calendar.getInstance().getTime());</span>
+<span class="nc" id="L666">				forecastProfile.setSPQueueID(ID</span>
+<span class="nc" id="L667">						.fromInt(spQueue.getID().toInt())); // sid</span>
+<span class="nc" id="L668">				forecastProfile.setStartDate(projectForecastWrapper</span>
+<span class="nc" id="L669">						.getSchedulingPeriod().getStartTimeLocal()</span>
+<span class="nc" id="L670">						.getTime(campaign.getTimeZone()));</span>
+<span class="nc" id="L671">				forecastProfile.setEndDate(projectForecastWrapper</span>
+<span class="nc" id="L672">						.getSchedulingPeriod().getEndTimeLocal()</span>
+<span class="nc" id="L673">						.getTime(campaign.getTimeZone()));</span>
+<span class="nc" id="L674">				forecastProfile.setIsModified(true);</span>
+
+<span class="nc" id="L676">				List&lt;ForecastProfileProject&gt; forecastProfileProjects = new ArrayList&lt;ForecastProfileProject&gt;();</span>
+<span class="nc" id="L677">				projectForecastWrapper</span>
+<span class="nc" id="L678">						.setForecastProfileProjects(forecastProfileProjects);</span>
+<span class="nc" id="L679">				Calendar currentDate = (Calendar) projectForecastWrapper</span>
+<span class="nc" id="L680">						.getSchedulingPeriod().getStartTimeLocal()</span>
+<span class="nc" id="L681">						.getCalendar(campaign.getTimeZone()).clone();</span>
+<span class="nc bnc" id="L682" title="All 2 branches missed.">				if (projectForecastWrapper.getForecastDTO() != null</span>
+<span class="nc" id="L683">						&amp;&amp; projectForecastWrapper.getForecastDTO()</span>
+<span class="nc bnc" id="L684" title="All 2 branches missed.">								.getProjectWorkTaskDTOs() != null) {</span>
+					for (ProjectWorkTaskDTO projectWorkTaskDTO : projectForecastWrapper
+<span class="nc bnc" id="L686" title="All 2 branches missed.">							.getForecastDTO().getProjectWorkTaskDTOs()) {</span>
+<span class="nc" id="L687">						ForecastProfileProject forecastProfileProject = new ForecastProfileProject();</span>
+						// we want SID, not text id (so confusing)
+<span class="nc" id="L689">						forecastProfileProject</span>
+<span class="nc" id="L690">								.setQueueID(projectForecastWrapper.getQueueID());</span>
+						// Total duration refers to the actual work.
+						// The units are peculiar: hundredth of a minute. We
+						// need to convert from seconds to that
+<span class="nc" id="L694">						int weirdUnitProjectWorkOneDay = Math.round(projectWorkTaskDTO.getDuration() * 100.f / 60.f);</span>
+<span class="nc" id="L695">						forecastProfileProject</span>
+<span class="nc" id="L696">								.setTotalDuration(weirdUnitProjectWorkOneDay);</span>
+<span class="nc" id="L697">						forecastProfileProject.setStartTime(projectWorkTaskDTO</span>
+<span class="nc" id="L698">								.startCalendarWithZone(campaign.getTimeZone())</span>
+<span class="nc" id="L699">								.getTime());</span>
+<span class="nc" id="L700">						forecastProfileProject.setEndTime(projectWorkTaskDTO</span>
+<span class="nc" id="L701">								.endCalendarWithZone(campaign.getTimeZone())</span>
+<span class="nc" id="L702">								.getTime());</span>
+<span class="nc" id="L703">						forecastProfileProjects.add(forecastProfileProject);</span>
+<span class="nc" id="L704">					}</span>
+				}
+
+<span class="nc bnc" id="L707" title="All 2 branches missed.">				if (currentDate.after(projectForecastWrapper</span>
+<span class="nc" id="L708">						.getSchedulingPeriod().getEndTimeLocal()</span>
+<span class="nc" id="L709">						.getCalendar(campaign.getTimeZone()))) {</span>
+<span class="nc" id="L710">					forecastNotPersistedInfo</span>
+<span class="nc" id="L711">							.addTimeSeriesLengthExceedsSchedulingPeriodDurationMessage(</span>
+									currentDate,
+									projectForecastWrapper
+<span class="nc" id="L714">											.getSchedulingPeriod()</span>
+<span class="nc" id="L715">											.getEndTimeLocal()</span>
+<span class="nc" id="L716">											.getCalendar(campaign.getTimeZone()));</span>
+				}
+
+<span class="nc bnc" id="L719" title="All 2 branches missed.">				if (!forecastNotPersistedInfo.getMessages().isEmpty()) {</span>
+<span class="nc" id="L720">					forecastNotPersistedInfos.add(forecastNotPersistedInfo);</span>
+<span class="nc" id="L721">					iterator.remove();</span>
+				} else {
+<span class="nc" id="L723">					List&lt;ID&gt; spQueues = spQueueIDsbySp.get(spID);</span>
+<span class="nc bnc" id="L724" title="All 2 branches missed.">					if(spQueues==null){</span>
+<span class="nc" id="L725">						spQueues = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L726">						spQueueIDsbySp.put(spID, spQueues);</span>
+						// set spid vs sp map
+<span class="nc" id="L728">						spBySPID.put(spID, projectForecastWrapper.getSchedulingPeriod());</span>
+					}
+<span class="nc" id="L730">					spQueues.add(spQueue.getID());</span>
+
+					// processing was successful for the pass of this entity
+<span class="nc" id="L733">					List&lt;ProjectForecastWrapper&gt; projectForecastWrappers = projectForecastWrappersBpSP</span>
+<span class="nc" id="L734">							.get(spID);</span>
+<span class="nc bnc" id="L735" title="All 2 branches missed.">					if (projectForecastWrappers == null) {</span>
+<span class="nc" id="L736">						projectForecastWrappers = new ArrayList&lt;ProjectForecastWrapper&gt;();</span>
+<span class="nc" id="L737">						projectForecastWrappersBpSP.put(spID,</span>
+								projectForecastWrappers);
+					}
+					// Note: this is a different style collection
+<span class="nc" id="L741">					projectForecastWrappers.add(projectForecastWrapper);</span>
+<span class="nc" id="L742">					monitor.reset();</span>
+				}
+<span class="nc" id="L744">			}</span>
+<span class="nc" id="L745">		}</span>
+<span class="nc" id="L746">	}</span>
+
+	/**
+	 * Convert the collection of forecastDTOs into several collections of local WFO entities
+	 */
+	protected TimeSeriesForecastCollections convertTimeSeriesForecastDTOToEntity(
+				Collection&lt;TimeSeriesForecastDTO&gt; timeSeriesForecastDTOs,
+				SystemType systemType)
+						throws ServiceApplicationException {
+<span class="nc" id="L755">		TimeSeriesForecastCollections timeSeriesForecastCollections = new TimeSeriesForecastCollections(timeSeriesForecastDTOs);</span>
+
+		// this will remove invalid DTO from DTOs, and add to the infos,
+		// and put IDs of already persistent entities in &quot;stuff&quot;
+<span class="nc" id="L759">		CampaignSPForecastWrapperData&lt;TimeSeriesForecastWrapper&gt; campaignSPForecastWrapperData = validateForecastDTOs(</span>
+<span class="nc" id="L760">				timeSeriesForecastCollections.getTimeSeriesForecastDTOs(),</span>
+				systemType,
+<span class="nc" id="L762">				timeSeriesForecastCollections.getForecastNotPersistedInfos(),</span>
+				TimeSeriesForecastWrapper.class);
+<span class="nc" id="L764">		timeSeriesForecastCollections.setCampaignSPForecastWrapperData(campaignSPForecastWrapperData);</span>
+
+		// third pass over the forecast wrappers: create the map style collection
+		// We need to associate each Forecast with an SPQueue, based on the SPQueue's natural key
+<span class="nc" id="L768">		Map&lt;SPQueueNaturalKey, SPQueue&gt; spQueueNaturalKeyMap = buildNaturalKeyOldSPQueueMap(</span>
+<span class="nc" id="L769">				campaignSPForecastWrapperData.getWfoSchedulingPeriodIDs());</span>
+<span class="nc bnc" id="L770" title="All 2 branches missed.">		for (SchedulingPeriod sp : campaignSPForecastWrapperData.getSchedulingPeriods()) {</span>
+<span class="nc" id="L771">			populateWrappersForSP(timeSeriesForecastCollections, spQueueNaturalKeyMap, sp);</span>
+<span class="nc" id="L772">		}</span>
+<span class="nc" id="L773">		return timeSeriesForecastCollections;</span>
+	}
+
+	private void populateWrappersForSP(TimeSeriesForecastCollections timeSeriesForecastCollections,
+			Map&lt;SPQueueNaturalKey, SPQueue&gt; spQueueNaturalKeyMap, SchedulingPeriod sp)
+			throws ServiceApplicationException {
+<span class="nc" id="L779">		CampaignSPForecastWrapperData&lt;TimeSeriesForecastWrapper&gt; campaignSPForecastWrapperData =</span>
+<span class="nc" id="L780">				timeSeriesForecastCollections.getCampaignSPForecastWrapperData();</span>
+<span class="nc" id="L781">		List&lt;TimeSeriesForecastWrapper&gt; forecastWrappers = campaignSPForecastWrapperData.getSpVsForecastWrappers().get(sp.getID());</span>
+<span class="nc" id="L782">		timeSeriesForecastCollections.getSpById().put(sp.getID(), sp);</span>
+<span class="nc bnc" id="L783" title="All 2 branches missed.">		for (Iterator&lt;TimeSeriesForecastWrapper&gt; iterator = forecastWrappers.iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L784">			TimeSeriesForecastWrapper timeSeriesForecastWrapper = iterator.next();</span>
+<span class="nc" id="L785">			ConsecutiveServiceApplicationExceptionMonitor monitor = new ConsecutiveServiceApplicationExceptionMonitor();</span>
+
+			// We know from validation above that campaign is not null
+<span class="nc" id="L788">			Campaign campaign = campaignSPForecastWrapperData.getIdCampaignMap().get(timeSeriesForecastWrapper.getCampaignID());</span>
+			// Queue id, sp id are both sid,
+<span class="nc" id="L790">			SPQueue spQueue = spQueueNaturalKeyMap.get(new SPQueueNaturalKey(</span>
+<span class="nc" id="L791">					timeSeriesForecastWrapper.getSchedulingPeriod().getID(),</span>
+<span class="nc" id="L792">					timeSeriesForecastWrapper.getQueueID()));</span>
+
+			// there are still some validations we need to do
+<span class="nc" id="L795">			ForecastNotPersistedInfo forecastNotPersistedInfo = new ForecastNotPersistedInfo(</span>
+<span class="nc" id="L796">					timeSeriesForecastWrapper.getForecastDTO().getForecastExternalNaturalKey());</span>
+
+<span class="nc bnc" id="L798" title="All 2 branches missed.">			if (spQueue == null) {</span>
+<span class="nc" id="L799">				forecastNotPersistedInfo.addNoSuchSchedulingPeriodQueueForForecastExternalNaturalKeyMessage();</span>
+				//This will result in a null pointer exception when comparing the media!
+			}
+
+<span class="nc bnc" id="L803" title="All 2 branches missed.">			if (Media.MEDIA_ID_PROJECT.equals(spQueue.getMediaID())) {</span>
+<span class="nc" id="L804">				forecastNotPersistedInfo.addTimeSeriesForecastForProjectMediumMessage();</span>
+			}
+
+			// Validate
+<span class="nc" id="L808">			List&lt;Short&gt; dataTypes = convertTimeSeriesTypes(</span>
+<span class="nc" id="L809">					timeSeriesForecastWrapper.getForecastDTO().getTimeSeriesTypes(),</span>
+					forecastNotPersistedInfo);
+<span class="nc" id="L811">			int daysInPeriod = DateTimeUtil.daysBetween(</span>
+<span class="nc" id="L812">					timeSeriesForecastWrapper.getSchedulingPeriod().getStartTimeLocal().getCalendar(campaign.getTimeZone()),</span>
+<span class="nc" id="L813">					timeSeriesForecastWrapper.getSchedulingPeriod().getEndTimeLocal().getCalendar(campaign.getTimeZone()));</span>
+<span class="nc" id="L814">			addForecastNotPersistedMessagesForEachDataType(</span>
+					timeSeriesForecastWrapper, 
+					forecastNotPersistedInfo,
+<span class="nc" id="L817">					dataTypes.size(), </span>
+					daysInPeriod);
+
+<span class="nc" id="L820">			populateWrapperWithTimeSeriesData(</span>
+					timeSeriesForecastWrapper, 
+					monitor, 
+					campaign, 
+					forecastNotPersistedInfo, 
+					dataTypes,
+					spQueue,
+					daysInPeriod);
+
+<span class="nc" id="L829">			setWeeklyForecastProfiles(timeSeriesForecastWrapper, campaign, spQueue);</span>
+
+<span class="nc bnc" id="L831" title="All 2 branches missed.">			if (!forecastNotPersistedInfo.getMessages().isEmpty()) {</span>
+<span class="nc" id="L832">				timeSeriesForecastCollections.getForecastNotPersistedInfos().add(forecastNotPersistedInfo);</span>
+<span class="nc" id="L833">				iterator.remove();</span>
+			} else {
+				// processing was successful for the pass of this entity
+<span class="nc bnc" id="L836" title="All 2 branches missed.">				if (Media.isMediaImmediate(spQueue.getMediaID())) {</span>
+<span class="nc" id="L837">					updateForecastProfileAndTraceCubeCollections(</span>
+<span class="nc" id="L838">							timeSeriesForecastCollections.getImmediateCubeByIDsTimezoneToSPToSPQueue(),</span>
+<span class="nc" id="L839">							timeSeriesForecastCollections.getImmediateForecastProfilesBySPID(), </span>
+<span class="nc" id="L840">							campaign.getTimeZoneID(),</span>
+							sp, 
+							timeSeriesForecastWrapper, 
+							spQueue);
+<span class="nc bnc" id="L844" title="All 2 branches missed.">				} else if (Media.isMediaDeferred(spQueue.getMediaID())) {</span>
+<span class="nc" id="L845">					List&lt;SPQueue&gt; deferredMediaSPQueues = timeSeriesForecastCollections.getDeferredSPQueuesBySPID().get(sp.getID());</span>
+<span class="nc bnc" id="L846" title="All 2 branches missed.">					if (deferredMediaSPQueues == null) {</span>
+<span class="nc" id="L847">						deferredMediaSPQueues = new ArrayList&lt;SPQueue&gt;();</span>
+<span class="nc" id="L848">						timeSeriesForecastCollections.getDeferredSPQueuesBySPID().put(sp.getID(), deferredMediaSPQueues);</span>
+					}
+<span class="nc" id="L850">					deferredMediaSPQueues.add(spQueue);</span>
+
+<span class="nc" id="L852">					updateForecastProfileAndTraceCubeCollections(</span>
+<span class="nc" id="L853">							timeSeriesForecastCollections.getDeferredCubeByIDsTimezoneToSPToSPQueue(),</span>
+<span class="nc" id="L854">							timeSeriesForecastCollections.getDeferredForecastProfilesBySPID(), </span>
+<span class="nc" id="L855">							campaign.getTimeZoneID(),</span>
+							sp, 
+							timeSeriesForecastWrapper, 
+							spQueue);
+<span class="nc" id="L859">				} else {</span>
+					// This medium is neither immediate, deferred or project. This is a problem.
+<span class="nc" id="L861">					forecastNotPersistedInfo.addUnhandledMediumMessage(Skill.convertMediaID2str(spQueue.getMediaID()));</span>
+				}
+<span class="nc" id="L863">				monitor.reset();</span>
+			}
+<span class="nc" id="L865">		}</span>
+<span class="nc" id="L866">	}</span>
+
+	/**
+	 * WFO Trace entity maintains (arbitrary) short integer values for the
+	 * volume (CV), activity handling time (AHT) and full time equivalent (FTE) data types. We need to
+	 * convert the ForecastDTO versions of these types to local WFO.
+	 */
+	private List&lt;Short&gt; convertTimeSeriesTypes(List&lt;String&gt; timeSeriesTypes, ForecastNotPersistedInfo forecastNotPersistedInfo) {
+<span class="nc" id="L874">		List&lt;Short&gt; returnList = new ArrayList&lt;Short&gt;();</span>
+<span class="nc bnc" id="L875" title="All 2 branches missed.">		for (int i = 0; i &lt; timeSeriesTypes.size(); i++) {</span>
+<span class="nc" id="L876">			String timeSeriesType = timeSeriesTypes.get(i);</span>
+<span class="nc bnc" id="L877" title="All 2 branches missed.">			if (timeSeriesType.equals(TimeSeriesForecastDTO.TIME_SERIES_TYPE_CV)) {</span>
+<span class="nc" id="L878">				returnList.add(Trace.CV);</span>
+<span class="nc bnc" id="L879" title="All 2 branches missed.">			} else if (timeSeriesType.equals(TimeSeriesForecastDTO.TIME_SERIES_TYPE_AHT)) {</span>
+<span class="nc" id="L880">				returnList.add(Trace.AHT);</span>
+<span class="nc bnc" id="L881" title="All 2 branches missed.">			} else if (timeSeriesType.equals(TimeSeriesForecastDTO.TIME_SERIES_TYPE_FTE)) {</span>
+<span class="nc" id="L882">				returnList.add(Trace.FTE);</span>
+			} else {
+<span class="nc" id="L884">				forecastNotPersistedInfo.addTimeSeriesTypeInvalidMessage(timeSeriesType);</span>
+			}
+		}
+<span class="nc" id="L887">		return returnList;</span>
+	}
+
+	private void addForecastNotPersistedMessagesForEachDataType(TimeSeriesForecastWrapper timeSeriesForecastWrapper,
+			ForecastNotPersistedInfo forecastNotPersistedInfo, int numberOfDataTypes, int daysInPeriod) {
+<span class="nc bnc" id="L892" title="All 2 branches missed.">		for (int i = 0; i &lt; numberOfDataTypes; i++) {</span>
+<span class="nc bnc" id="L893" title="All 2 branches missed.">			if (EncodeUtil.base64ToInt(timeSeriesForecastWrapper.getForecastDTO().getTimeSeriesEncoded().get(i)).length &lt;</span>
+					daysInPeriod * CalendarUtil.QUARTER_HOUR_PER_DAY) {
+<span class="nc" id="L895">				forecastNotPersistedInfo.addTimeSeriesLengthFallBehindSchedulingPeriodDurationMessage(</span>
+<span class="nc" id="L896">						EncodeUtil.base64ToInt(timeSeriesForecastWrapper</span>
+<span class="nc" id="L897">								.getForecastDTO()</span>
+<span class="nc" id="L898">								.getTimeSeriesEncoded()</span>
+<span class="nc" id="L899">								.get(i)).length,</span>
+						daysInPeriod);
+			}
+		}
+<span class="nc" id="L903">	}</span>
+
+	private void populateWrapperWithTimeSeriesData(
+			TimeSeriesForecastWrapper timeSeriesForecastWrapper,
+			ConsecutiveServiceApplicationExceptionMonitor monitor,
+			Campaign campaign,
+			ForecastNotPersistedInfo forecastNotPersistedInfo,
+			List&lt;Short&gt; dataTypes,
+			SPQueue spQueue,
+			int daysInPeriod)
+					throws ServiceApplicationException {
+		try {
+<span class="nc" id="L915">			Date startDate = timeSeriesForecastWrapper.getSchedulingPeriod().getStartTimeLocal().getTime(campaign.getTimeZone());</span>
+<span class="nc" id="L916">			TimeContext timeContext = TimeContextFactory.getTimeContext(campaign);</span>
+
+			//compute the end date
+<span class="nc" id="L919">			Calendar timeCursor = Calendar.getInstance(timeContext.getTimeZone());</span>
+<span class="nc" id="L920">			timeCursor.setTime(startDate);</span>
+<span class="nc" id="L921">			DSTConversionUtil.adjustCalendarForDST(timeCursor, timeContext, CalendarUtil.DAYS_IN_WEEK);</span>
+
+<span class="nc" id="L923">			short[] cubeDataTypes = filterToOnlyForecastTraceCubeTypes(dataTypes);</span>
+
+<span class="nc" id="L925">			timeSeriesForecastWrapper.setForecastTraceCube(new ForecastTraceCube(</span>
+<span class="nc" id="L926">					timeSeriesForecastWrapper.getQueueID(),</span>
+					startDate,
+<span class="nc" id="L928">					timeCursor.getTime(),</span>
+					cubeDataTypes));
+
+<span class="nc" id="L931">			setTimesSeriesDataForEachDataType(</span>
+					timeSeriesForecastWrapper,
+					dataTypes,
+					startDate,
+					timeContext,
+					spQueue,
+					daysInPeriod);
+<span class="nc" id="L938">		} catch (BbmException e) {</span>
+<span class="nc" id="L939">			forecastNotPersistedInfo.addServiceExceptionMessage(e, monitor);</span>
+<span class="nc" id="L940">			CAT.error(&quot;System bug creating the ForecastTraceCube!&quot;, e);</span>
+<span class="nc" id="L941">		}</span>
+<span class="nc" id="L942">	}</span>
+
+	private short[] filterToOnlyForecastTraceCubeTypes(List&lt;Short&gt; dataTypes) {
+		//ForecastTraceCube does not support the FTE DataType.
+<span class="nc" id="L946">		Short[] filteredDataTypes = dataTypes</span>
+<span class="nc" id="L947">				.stream()</span>
+<span class="nc bnc" id="L948" title="All 2 branches missed.">				.filter(dataType -&gt; (! dataType.equals(Trace.FTE)))</span>
+<span class="nc" id="L949">				.toArray(Short[]::new);</span>
+<span class="nc" id="L950">		short[] convertedDataTypes = new short[filteredDataTypes.length];</span>
+<span class="nc bnc" id="L951" title="All 2 branches missed.">		for (int i = 0; i &lt; filteredDataTypes.length; i++) {</span>
+<span class="nc" id="L952">			convertedDataTypes[i] = filteredDataTypes[i].shortValue();</span>
+		}
+<span class="nc" id="L954">		return convertedDataTypes;</span>
+	}
+
+	private void setTimesSeriesDataForEachDataType(TimeSeriesForecastWrapper timeSeriesForecastWrapper,
+			List&lt;Short&gt; dataTypes, Date startDate, TimeContext timeContext, SPQueue spQueue, int daysInPeriod)
+					throws BbmCreateException {
+<span class="nc bnc" id="L960" title="All 2 branches missed.">		for (int i = 0; i &lt; dataTypes.size(); i++) {</span>
+<span class="nc" id="L961">			int[] source = EncodeUtil.base64ToInt(timeSeriesForecastWrapper</span>
+<span class="nc" id="L962">					.getForecastDTO()</span>
+<span class="nc" id="L963">					.getTimeSeriesEncoded().get(i));</span>
+			//day list savings adjusted values
+<span class="nc" id="L965">			int[] finalVals = DSTConversionUtil.convertFromIdealTimeToDSTAwareTime(</span>
+					source, 
+					Trace.TRACENA, 
+					startDate, 
+<span class="nc" id="L969">					Duration.fromMinutes(Trace.INTERVAL), </span>
+					timeContext);
+<span class="nc bnc" id="L971" title="All 2 branches missed.">			if (dataTypes.get(i).shortValue() == Trace.FTE) {</span>
+<span class="nc" id="L972">				timeSeriesForecastWrapper.setRequiredTimeSeries(getRequiredTimeSeriesFromIntArray(</span>
+						spQueue, startDate, daysInPeriod, finalVals));
+			} else {
+<span class="nc" id="L975">				timeSeriesForecastWrapper.getForecastTraceCube().setTraceValue(dataTypes.get(i), finalVals);</span>
+			}
+		}
+<span class="nc" id="L978">	}</span>
+
+	private Collection&lt;RequiredTimeSeries&gt; getRequiredTimeSeriesFromIntArray(
+			SPQueue spQueue, Date startDate, int daysInPeriod, int[] source)
+					throws BbmCreateException {
+		//PRE: source length is verified by addForecastNotPersistedMessagesForEachDataType for each day.
+<span class="nc" id="L984">		List&lt;RequiredTimeSeries&gt; listRequiredTimeSeries = new ArrayList&lt;RequiredTimeSeries&gt;();</span>
+<span class="nc" id="L985">		Date currentDate = startDate;</span>
+<span class="nc bnc" id="L986" title="All 2 branches missed.">		for(int dayIndex = 0; dayIndex &lt; daysInPeriod; dayIndex++ ) {</span>
+<span class="nc" id="L987">			currentDate = DateTimeUtil.getDateForDaysAfter(startDate, dayIndex);</span>
+<span class="nc" id="L988">			int dayStartIndex = dayIndex * CalendarUtil.QUARTER_HOUR_PER_DAY;</span>
+<span class="nc" id="L989">			int[] daysValues = Arrays.copyOfRange(source, dayStartIndex, dayStartIndex + CalendarUtil.QUARTER_HOUR_PER_DAY);</span>
+<span class="nc" id="L990">			listRequiredTimeSeries.add(new RequiredTimeSeries(spQueue, currentDate, daysValues));</span>
+		}
+<span class="nc" id="L992">		return listRequiredTimeSeries;</span>
+	}
+
+	private void setWeeklyForecastProfiles(
+			TimeSeriesForecastWrapper timeSeriesForecastWrapper,
+			Campaign campaign,
+			SPQueue spQueue) {
+		// now create a list of forecast profiles for as many weeks
+		// there are in the scheduling period
+<span class="nc" id="L1001">		List&lt;ForecastProfile&gt; oneForecastNumberOfWeekProfiles = new ArrayList&lt;ForecastProfile&gt;();</span>
+
+		// count number of days in scheduling period
+<span class="nc" id="L1004">		Calendar endDate = Calendar.getInstance();</span>
+<span class="nc" id="L1005">		endDate.setTime(timeSeriesForecastWrapper.getSchedulingPeriod().getEndTimeLocal().getTime(campaign.getTimeZone()));</span>
+<span class="nc" id="L1006">		Calendar tempStartDate = Calendar.getInstance();</span>
+<span class="nc" id="L1007">		tempStartDate.setTime(</span>
+<span class="nc" id="L1008">				timeSeriesForecastWrapper.getSchedulingPeriod().getStartTimeLocal().getTime(campaign.getTimeZone()));</span>
+<span class="nc bnc" id="L1009" title="All 2 branches missed.">		while (tempStartDate.before(endDate)) {</span>
+<span class="nc" id="L1010">			Calendar tempEndDate = (Calendar) tempStartDate.clone();</span>
+<span class="nc" id="L1011">			tempEndDate.add(Calendar.DATE, CalendarUtil.DAYS_IN_WEEK);</span>
+
+<span class="nc" id="L1013">			ForecastProfile forecastProfile = new ForecastProfile();</span>
+<span class="nc" id="L1014">			forecastProfile.setSPQueueID(spQueue.getID());</span>
+<span class="nc" id="L1015">			forecastProfile.setStartDate(tempStartDate.getTime());</span>
+<span class="nc" id="L1016">			forecastProfile.setEndDate(tempEndDate.getTime());</span>
+<span class="nc" id="L1017">			forecastProfile.setIsModified(true);</span>
+<span class="nc" id="L1018">			forecastProfile.setCreatedDate(Calendar.getInstance().getTime());</span>
+
+<span class="nc" id="L1020">			oneForecastNumberOfWeekProfiles.add(forecastProfile);</span>
+<span class="nc" id="L1021">			tempStartDate = (Calendar) tempEndDate.clone();</span>
+<span class="nc" id="L1022">		}</span>
+<span class="nc" id="L1023">		timeSeriesForecastWrapper.setForecastProfiles(oneForecastNumberOfWeekProfiles);</span>
+<span class="nc" id="L1024">	}</span>
+
+	private void updateForecastProfileAndTraceCubeCollections (
+			Map&lt;ID, Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt;&gt; forecastTraceCubeByIDsTimezoneToSPToSPQueue,
+			Map&lt;ID, List&lt;ForecastProfile&gt;&gt; forecastProfilesBySPID,
+			ID timeZoneID,
+			SchedulingPeriod sp,
+			TimeSeriesForecastWrapper timeSeriesForecastWrapper,
+			SPQueue spQueue) {
+<span class="nc" id="L1033">		Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt; forecastTraceCubeByIDsSPToSPQueue =</span>
+<span class="nc" id="L1034">				forecastTraceCubeByIDsTimezoneToSPToSPQueue.get(timeZoneID);</span>
+<span class="nc bnc" id="L1035" title="All 2 branches missed.">		if(forecastTraceCubeByIDsSPToSPQueue==null) {</span>
+<span class="nc" id="L1036">			forecastTraceCubeByIDsSPToSPQueue = new HashMap&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt;();</span>
+<span class="nc" id="L1037">			forecastTraceCubeByIDsTimezoneToSPToSPQueue.put(timeZoneID, forecastTraceCubeByIDsSPToSPQueue);</span>
+		}
+<span class="nc" id="L1039">		Map&lt;ID, ForecastTraceCube&gt; forecastTraceCubeBySPQueueID = forecastTraceCubeByIDsSPToSPQueue.get(sp.getID());</span>
+<span class="nc bnc" id="L1040" title="All 2 branches missed.">		if (forecastTraceCubeBySPQueueID == null) {</span>
+<span class="nc" id="L1041">			forecastTraceCubeBySPQueueID = new HashMap&lt;ID, ForecastTraceCube&gt;();</span>
+<span class="nc" id="L1042">			forecastTraceCubeByIDsSPToSPQueue.put(sp.getID(), forecastTraceCubeBySPQueueID);</span>
+		}
+<span class="nc" id="L1044">		forecastTraceCubeBySPQueueID.put(spQueue.getID(), timeSeriesForecastWrapper.getForecastTraceCube());</span>
+<span class="nc" id="L1045">		List&lt;ForecastProfile&gt; forecastProfiles = forecastProfilesBySPID.get(sp.getID());</span>
+<span class="nc bnc" id="L1046" title="All 2 branches missed.">		if (forecastProfiles == null) {</span>
+<span class="nc" id="L1047">			forecastProfiles = new ArrayList&lt;ForecastProfile&gt;();</span>
+<span class="nc" id="L1048">			forecastProfilesBySPID.put(sp.getID(), forecastProfiles);</span>
+		}
+<span class="nc" id="L1050">		forecastProfiles.addAll(timeSeriesForecastWrapper.getForecastProfiles());</span>
+<span class="nc" id="L1051">	}</span>
+
+	protected &lt;T extends AbstractForecastDTO, U extends AbstractForecastWrapper&lt;T&gt;&gt; CampaignSPForecastWrapperData&lt;U&gt; validateForecastDTOs(
+			Collection&lt;T&gt; forecastDTOs,
+			SystemType systemType,
+			List&lt;ForecastNotPersistedInfo&gt; forecastNotPersistedInfos,
+			Class&lt;U&gt; uClazz)
+					throws ServiceApplicationException {
+
+		// Clear the external id cache in case its stale
+<span class="nc" id="L1061">		getMapUtilWrapper().flushMap(systemType);</span>
+
+		// First pass: validate DTOs and collect external IDS of the queues and campaigns
+<span class="nc" id="L1064">		Collection&lt;ID&gt; campaignExternalSourceIds = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L1065">		Collection&lt;ID&gt; queueExternalSourceIds = new ArrayList&lt;ID&gt;();</span>
+<span class="nc bnc" id="L1066" title="All 2 branches missed.">		for (Iterator&lt;T&gt; iterator = forecastDTOs.iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L1067">			validateForecastDTOAndAlterCollections(</span>
+					systemType,
+					forecastNotPersistedInfos,
+					campaignExternalSourceIds,
+					queueExternalSourceIds,
+					iterator);
+		}
+
+		// Query for all the local ids at one
+		Map&lt;ID, ID&gt; campaignExternalWfoIDMap;
+		Map&lt;ID, ID&gt; queueExternalWfoIDMap;
+		try {
+<span class="nc" id="L1079">			campaignExternalWfoIDMap = getMapUtilWrapper().getExternalIDMap(</span>
+					systemType,
+					MapUtil.ObjectType.Campaign,
+					campaignExternalSourceIds,
+					true);
+<span class="nc" id="L1084">			queueExternalWfoIDMap = getMapUtilWrapper().getExternalIDMap(</span>
+					systemType,
+					MapUtil.ObjectType.Queue,
+					queueExternalSourceIds,
+					true);
+<span class="nc" id="L1089">		} catch (JdmoException e) {</span>
+<span class="nc" id="L1090">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L1091">		}</span>
+
+		// Second pass over DTOs: we will need reference to actual campaign entities for their time zones
+<span class="nc" id="L1094">		Map&lt;ID, Campaign&gt; idCampaignMap = buildIDCampaignMap(campaignExternalWfoIDMap.values());</span>
+<span class="nc" id="L1095">		Map&lt;SchedPeriodNaturalKey, SchedulingPeriod&gt; naturalKeySchedulingPeriodMap = buildNaturalKeySchedulingPeriodMap(</span>
+<span class="nc" id="L1096">				idCampaignMap.values());</span>
+<span class="nc" id="L1097">		Map&lt;ID, SchedulingPeriod&gt; idSchedulingPeriodMap = new HashMap&lt;ID, SchedulingPeriod&gt;();</span>
+<span class="nc" id="L1098">		Map&lt;ID, List&lt;U&gt;&gt; spVsForecastWrappers = new HashMap&lt;ID, List&lt;U&gt;&gt;();</span>
+
+<span class="nc bnc" id="L1100" title="All 2 branches missed.">		for (Iterator&lt;T&gt; iterator = forecastDTOs.iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L1101">			wrapForecastDTOAndAlterCollections(</span>
+					iterator,
+					systemType,
+					forecastNotPersistedInfos,
+					campaignExternalWfoIDMap,
+					idCampaignMap,
+					queueExternalWfoIDMap,
+					naturalKeySchedulingPeriodMap,
+					idSchedulingPeriodMap,
+					spVsForecastWrappers,
+					uClazz);
+		}
+<span class="nc" id="L1113">		return new CampaignSPForecastWrapperData&lt;U&gt;(idCampaignMap, idSchedulingPeriodMap, spVsForecastWrappers);</span>
+	}
+
+	private &lt;T extends AbstractForecastDTO&gt; void validateForecastDTOAndAlterCollections(
+			SystemType systemType,
+			List&lt;ForecastNotPersistedInfo&gt; forecastNotPersistedInfos,
+			Collection&lt;ID&gt; campaignExternalSourceIds,
+			Collection&lt;ID&gt; queueExternalSourceIds,
+			Iterator&lt;T&gt; iterator) {
+<span class="nc" id="L1122">		AbstractForecastDTO forecastDTO = iterator.next();</span>
+
+		// Validation
+<span class="nc" id="L1125">		ForecastNotPersistedInfo forecastNotPersistedInfo = new ForecastNotPersistedInfo(</span>
+<span class="nc" id="L1126">				forecastDTO.getForecastExternalNaturalKey());</span>
+<span class="nc bnc" id="L1127" title="All 2 branches missed.">		if (forecastDTO.getForecastExternalNaturalKey() == null) {</span>
+<span class="nc" id="L1128">			forecastNotPersistedInfo.addExternalNaturalKeyMissingMessage(forecastDTO.getDescription());</span>
+		} else {
+<span class="nc bnc" id="L1130" title="All 2 branches missed.">			if (StringUtil.isEmptyOrWhiteSpace(forecastDTO</span>
+<span class="nc" id="L1131">					.getForecastExternalNaturalKey()</span>
+<span class="nc" id="L1132">					.getCampaignExternalSourceId())) {</span>
+<span class="nc" id="L1133">				forecastNotPersistedInfo.addCampaignExternalSourceIdInKeyMissingMessage();</span>
+<span class="nc bnc" id="L1134" title="All 2 branches missed.">			} else if (forecastDTO.getForecastExternalNaturalKey().getStartDate() == null) {</span>
+<span class="nc" id="L1135">				forecastNotPersistedInfo.addStartDateInKeyMissingMessage();</span>
+<span class="nc bnc" id="L1136" title="All 2 branches missed.">			} else if (StringUtil.isEmptyOrWhiteSpace(forecastDTO</span>
+<span class="nc" id="L1137">					.getForecastExternalNaturalKey()</span>
+<span class="nc" id="L1138">					.getQueueExternalSourceId())) {</span>
+<span class="nc" id="L1139">				forecastNotPersistedInfo.addQueueExternalSourceIdInKeyMissingMessage(</span>
+<span class="nc" id="L1140">						forecastDTO.getForecastExternalNaturalKey().getCampaignExternalSourceId());</span>
+			}
+		}
+
+<span class="nc bnc" id="L1144" title="All 2 branches missed.">		if (!forecastNotPersistedInfo.getMessages().isEmpty()) {</span>
+<span class="nc" id="L1145">			forecastNotPersistedInfos.add(forecastNotPersistedInfo);</span>
+<span class="nc" id="L1146">			iterator.remove();</span>
+		} else {
+			// We will need the local queue ids and campaign ids, as well as the Scheduling
+			// Period start date, to know how to persist the forecast by linking it to SpQueue
+			// entity. We collect all queue and campaign external ids, so we can query them once for efficiency
+<span class="nc" id="L1151">			campaignExternalSourceIds.add(ExternalIDUtil.buildExternalID(</span>
+					systemType,
+<span class="nc" id="L1153">					forecastDTO.getForecastExternalNaturalKey().getCampaignExternalSourceId()));</span>
+<span class="nc" id="L1154">			queueExternalSourceIds.add(ExternalIDUtil.buildExternalID(</span>
+					systemType,
+<span class="nc" id="L1156">					forecastDTO.getForecastExternalNaturalKey().getQueueExternalSourceId()));</span>
+		}
+<span class="nc" id="L1158">	}</span>
+
+	private &lt;U extends AbstractForecastWrapper&lt;T&gt;, T extends AbstractForecastDTO&gt; void wrapForecastDTOAndAlterCollections(
+			Iterator&lt;T&gt; iterator,
+			SystemType systemType,
+			List&lt;ForecastNotPersistedInfo&gt; forecastNotPersistedInfos,
+			Map&lt;ID, ID&gt; campaignExternalWfoIDMap,
+			Map&lt;ID, Campaign&gt; idCampaignMap,
+			Map&lt;ID, ID&gt; queueExternalWfoIDMap,
+			Map&lt;SchedPeriodNaturalKey,
+			SchedulingPeriod&gt; naturalKeySchedulingPeriodMap,
+			Map&lt;ID, SchedulingPeriod&gt; idSchedulingPeriodMap,
+			Map&lt;ID, List&lt;U&gt;&gt; spVsForecastWrappers,
+			Class&lt;U&gt; uClazz)
+					throws ServiceApplicationException {
+<span class="nc" id="L1173">		T forecastDTO = iterator.next();</span>
+<span class="nc" id="L1174">		ForecastNotPersistedInfo forecastNotPersistedInfo = new ForecastNotPersistedInfo(</span>
+<span class="nc" id="L1175">				forecastDTO.getForecastExternalNaturalKey());</span>
+<span class="nc" id="L1176">		ConsecutiveServiceApplicationExceptionMonitor monitor = new ConsecutiveServiceApplicationExceptionMonitor();</span>
+<span class="nc" id="L1177">		ID wfoCampaignSID = campaignExternalWfoIDMap.get(ExternalIDUtil.buildExternalID(</span>
+				systemType,
+<span class="nc" id="L1179">				forecastDTO.getForecastExternalNaturalKey().getCampaignExternalSourceId()));</span>
+<span class="nc" id="L1180">		Campaign campaign = null;</span>
+<span class="nc" id="L1181">		SchedulingPeriod schedulingPeriod = null;</span>
+<span class="nc bnc" id="L1182" title="All 2 branches missed.">		if (wfoCampaignSID == null) {</span>
+<span class="nc" id="L1183">			forecastNotPersistedInfo.addNoSuchCampaignExternalIdMessage();</span>
+<span class="nc bnc" id="L1184" title="All 2 branches missed.">		} else if (idCampaignMap.get(wfoCampaignSID) == null) {</span>
+<span class="nc" id="L1185">			forecastNotPersistedInfo.addServiceExceptionMessage(</span>
+					new ServiceApplicationException(&quot;System bug loading the Forecast's associated campaign&quot;),
+					monitor);
+<span class="nc" id="L1188">			CAT.error(&quot;System bug loading the Forecast's associated campaign&quot;);</span>
+		} else {
+<span class="nc" id="L1190">			campaign = idCampaignMap.get(wfoCampaignSID);</span>
+			// We know start date isn't null, because that was checked in the first pass. And
+			// so startCalendarWithZone is not null as well!
+<span class="nc" id="L1193">			LocalDate forecastStartLocalDate = new LocalDate(</span>
+<span class="nc" id="L1194">					forecastDTO.getForecastExternalNaturalKey().startCalendarWithZone(campaign.getTimeZone()).getTime(),</span>
+<span class="nc" id="L1195">					campaign.getTimeZone());</span>
+<span class="nc" id="L1196">			LocalDate forecastEndLocalDate = new LocalDate(</span>
+<span class="nc" id="L1197">				CalendarUtil.convertMidnightDateToCalendarWithZone(</span>
+<span class="nc" id="L1198">					DateTimeUtil.getDateForDaysAfter(</span>
+<span class="nc" id="L1199">							forecastDTO.getForecastExternalNaturalKey().getStartDate(),</span>
+							7),
+<span class="nc" id="L1201">					campaign.getTimeZone()));</span>
+<span class="nc" id="L1202">			schedulingPeriod = naturalKeySchedulingPeriodMap.get(new SchedPeriodNaturalKey(</span>
+					wfoCampaignSID,
+					forecastStartLocalDate,
+					forecastEndLocalDate));
+<span class="nc bnc" id="L1206" title="All 2 branches missed.">			if (schedulingPeriod == null) {</span>
+<span class="nc" id="L1207">				forecastNotPersistedInfo.addNoSuchSchedulingPeriodForForecastExternalNaturalKeyMessage();</span>
+			}
+		}
+
+<span class="nc" id="L1211">		ID wfoQueueSID = queueExternalWfoIDMap.get(ExternalIDUtil.buildExternalID(</span>
+				systemType,
+<span class="nc" id="L1213">				forecastDTO.getForecastExternalNaturalKey().getQueueExternalSourceId()));</span>
+<span class="nc bnc" id="L1214" title="All 2 branches missed.">		if (wfoQueueSID == null) {</span>
+<span class="nc" id="L1215">			forecastNotPersistedInfo.addNoSuchQueueExternalIdMessage();</span>
+		}
+
+<span class="nc bnc" id="L1218" title="All 2 branches missed.">		if (!forecastNotPersistedInfo.getMessages().isEmpty()) {</span>
+<span class="nc" id="L1219">			CAT.error(&quot;User error: Forecast entity will not be persisted&quot;);</span>
+<span class="nc" id="L1220">			forecastNotPersistedInfos.add(forecastNotPersistedInfo);</span>
+<span class="nc" id="L1221">			iterator.remove();</span>
+		} else {
+
+			U forecastWrapper;
+			try {
+<span class="nc" id="L1226">				forecastWrapper = uClazz.newInstance();</span>
+<span class="nc" id="L1227">			} catch (InstantiationException e) {</span>
+<span class="nc" id="L1228">				throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L1229">			} catch (IllegalAccessException e) {</span>
+<span class="nc" id="L1230">				throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L1231">			}</span>
+<span class="nc" id="L1232">			forecastWrapper.setCampaignID(wfoCampaignSID);</span>
+<span class="nc" id="L1233">			forecastWrapper.setQueueID(wfoQueueSID);</span>
+<span class="nc" id="L1234">			forecastWrapper.setForecastDTO(forecastDTO);</span>
+<span class="nc" id="L1235">			forecastWrapper.setSchedulingPeriod(schedulingPeriod);</span>
+
+<span class="nc" id="L1237">			List&lt;U&gt; forecastWrappers = spVsForecastWrappers.get(schedulingPeriod.getID());</span>
+<span class="nc bnc" id="L1238" title="All 2 branches missed.">			if (forecastWrappers == null) {</span>
+<span class="nc" id="L1239">				forecastWrappers = new ArrayList&lt;U&gt;();</span>
+<span class="nc" id="L1240">				spVsForecastWrappers.put(schedulingPeriod.getID(), forecastWrappers);</span>
+			}
+<span class="nc" id="L1242">			forecastWrappers.add(forecastWrapper);</span>
+
+			// scheduling period can't be null by the time we get here
+<span class="nc bnc" id="L1245" title="All 2 branches missed.">			if (!idSchedulingPeriodMap.containsKey(schedulingPeriod.getID())) {</span>
+<span class="nc" id="L1246">				idSchedulingPeriodMap.put(schedulingPeriod.getID(), schedulingPeriod);</span>
+			}
+<span class="nc" id="L1248">			monitor.reset();</span>
+		}
+<span class="nc" id="L1250">	}</span>
+
+	/**
+	 * Create a lookup between campaign id and campaign
+	 */
+	private Map&lt;ID, Campaign&gt; buildIDCampaignMap(Collection&lt;ID&gt; wfoCampaignIDs)
+			throws ServiceApplicationException {
+		// Note: Campaign lookup should never fail if we reach here
+		Collection&lt;Campaign&gt; campaigns;
+
+		try {// Set eliminates dupes
+<span class="nc" id="L1261">			campaigns = new HashSet&lt;Campaign&gt;(getCampaignManager().getCampaignsByIDs(wfoCampaignIDs));</span>
+<span class="nc" id="L1262">		} catch (BbmObjectNotFoundException e) {</span>
+<span class="nc" id="L1263">			CAT.error(&quot;System bug finding the campaign!&quot;, e);</span>
+<span class="nc" id="L1264">			throw new ServiceApplicationException(</span>
+					&quot;System bug finding the campaign!&quot;, e);
+<span class="nc" id="L1266">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L1267">			CAT.error(&quot;System bug finding the campaign!&quot;, e);</span>
+<span class="nc" id="L1268">			throw new ServiceApplicationException(</span>
+					&quot;System bug finding the campaign!&quot;, e);
+<span class="nc" id="L1270">		} catch (RemoteException e) {</span>
+<span class="nc" id="L1271">			CAT.error(</span>
+					&quot;There was a communication fault invoking campaignManager.getCampaignByID()&quot;,
+					e);
+<span class="nc" id="L1274">			throw new ServiceApplicationException(</span>
+					&quot;There was a communication fault invoking campaignManager.getCampaignByID()&quot;,
+					e);
+<span class="nc" id="L1277">		}</span>
+
+<span class="nc" id="L1279">		Map&lt;ID, Campaign&gt; idCampaignMap = new HashMap&lt;ID, Campaign&gt;();</span>
+<span class="nc bnc" id="L1280" title="All 2 branches missed.">		for (Campaign campaign : campaigns) {</span>
+<span class="nc" id="L1281">			idCampaignMap.put(ID.fromInt(campaign.getID().toInt()), campaign);</span>
+<span class="nc" id="L1282">		}</span>
+<span class="nc" id="L1283">		return idCampaignMap;</span>
+	}
+
+	/**
+	 * Create a lookup between scheduling period natural key and scheduling
+	 * period
+	 */
+	private Map&lt;SchedPeriodNaturalKey, SchedulingPeriod&gt; buildNaturalKeySchedulingPeriodMap(
+			Collection&lt;Campaign&gt; campaigns) throws ServiceApplicationException {
+		Collection&lt;SchedulingPeriod&gt; schedulingPeriods;
+		try {
+<span class="nc" id="L1294">			schedulingPeriods = getCampaignManager().getSchedulingPeriods(campaigns);</span>
+<span class="nc" id="L1295">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L1296">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L1297">		} catch (RemoteException e) {</span>
+<span class="nc" id="L1298">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L1299">		}</span>
+<span class="nc" id="L1300">		Map&lt;SchedPeriodNaturalKey, SchedulingPeriod&gt; naturalKeySchedulingPeriodMap =</span>
+				new HashMap&lt;SchedPeriodNaturalKey, SchedulingPeriod&gt;();
+<span class="nc bnc" id="L1302" title="All 2 branches missed.">		for (SchedulingPeriod schedulingPeriod : schedulingPeriods) {</span>
+<span class="nc" id="L1303">			naturalKeySchedulingPeriodMap.put(</span>
+					new SchedPeriodNaturalKey(
+<span class="nc" id="L1305">						schedulingPeriod.getCampaignID(),</span>
+<span class="nc" id="L1306">						schedulingPeriod.getStartTimeLocal(),</span>
+<span class="nc" id="L1307">						schedulingPeriod.getEndTimeLocal()),</span>
+					schedulingPeriod);
+<span class="nc" id="L1309">		}</span>
+<span class="nc" id="L1310">		return naturalKeySchedulingPeriodMap;</span>
+	}
+
+	/**
+	 * Create a lookup between scheduling period queue natural key and scheduling period queue
+	 */
+	private Map&lt;SPQueueNaturalKey, SPQueue&gt; buildNaturalKeyOldSPQueueMap(Collection&lt;ID&gt; spIDs) 
+			throws ServiceApplicationException {
+		try {
+<span class="nc" id="L1319">			Collection&lt;SPQueue&gt; oldSPQueuesFromDatabase = getCampaignManager().getSPQueuesBySPIDsFixed(spIDs);</span>
+<span class="nc" id="L1320">			Map&lt;SPQueueNaturalKey, SPQueue&gt; naturalKeyOldSPQueueMap = new HashMap&lt;SPQueueNaturalKey, SPQueue&gt;();</span>
+<span class="nc bnc" id="L1321" title="All 2 branches missed.">			for (SPQueue oldSpQueue : oldSPQueuesFromDatabase) {</span>
+<span class="nc" id="L1322">				naturalKeyOldSPQueueMap.put(</span>
+<span class="nc" id="L1323">						new SPQueueNaturalKey(oldSpQueue.getSpID(), oldSpQueue.getQueueID()),</span>
+						oldSpQueue);
+<span class="nc" id="L1325">			}</span>
+<span class="nc" id="L1326">			return naturalKeyOldSPQueueMap;</span>
+<span class="nc" id="L1327">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L1328">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L1329">		} catch (RemoteException e) {</span>
+<span class="nc" id="L1330">			throw new ServiceApplicationException(e);</span>
+		}
+	}
+
+	private Map&lt;ID, List&lt;ID&gt;&gt; getSPQueueIDsBySP(
+			Map&lt;ID, Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt;&gt; immediateForecastsBySPQueueSPIDTimezoneID,
+			Map&lt;ID, Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt;&gt; deferredForecastsBySPQueueSPIDTimezoneID) {
+<span class="nc" id="L1337">		Map&lt;ID, List&lt;ID&gt;&gt; spQueueIDsbySp = new HashMap&lt;ID, List&lt;ID&gt;&gt;();</span>
+<span class="nc bnc" id="L1338" title="All 2 branches missed.">		for (ID timeZoneID : immediateForecastsBySPQueueSPIDTimezoneID.keySet()) {</span>
+<span class="nc" id="L1339">			Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt; forecastsBySpQueueIDBySPId =</span>
+<span class="nc" id="L1340">					immediateForecastsBySPQueueSPIDTimezoneID.get(timeZoneID);</span>
+<span class="nc bnc" id="L1341" title="All 2 branches missed.">			for (ID spID : forecastsBySpQueueIDBySPId.keySet()) {</span>
+<span class="nc" id="L1342">				List&lt;ID&gt; spQueueIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L1343">				spQueueIDsbySp.put(spID, spQueueIDs);</span>
+<span class="nc" id="L1344">				Map&lt;ID, ForecastTraceCube&gt; forecastsBySPQueueID = forecastsBySpQueueIDBySPId.get(spID);</span>
+<span class="nc" id="L1345">				spQueueIDs.addAll(forecastsBySPQueueID.keySet());</span>
+<span class="nc" id="L1346">			}</span>
+<span class="nc" id="L1347">		}</span>
+
+<span class="nc bnc" id="L1349" title="All 2 branches missed.">		for (ID timeZoneID : deferredForecastsBySPQueueSPIDTimezoneID.keySet()) {</span>
+<span class="nc" id="L1350">			Map&lt;ID, Map&lt;ID, ForecastTraceCube&gt;&gt; forecastsBySpQueueIDBySPId =</span>
+<span class="nc" id="L1351">					deferredForecastsBySPQueueSPIDTimezoneID.get(timeZoneID);</span>
+<span class="nc bnc" id="L1352" title="All 2 branches missed.">			for (ID spID : forecastsBySpQueueIDBySPId.keySet()) {</span>
+<span class="nc" id="L1353">				List&lt;ID&gt; spQueueIDs = spQueueIDsbySp.get(spID);</span>
+<span class="nc bnc" id="L1354" title="All 2 branches missed.">				if (spQueueIDs == null) {</span>
+<span class="nc" id="L1355">					spQueueIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L1356">					spQueueIDsbySp.put(spID, spQueueIDs);</span>
+				}
+<span class="nc" id="L1358">				Map&lt;ID, ForecastTraceCube&gt; forecastsBySPQueueID = forecastsBySpQueueIDBySPId.get(spID);</span>
+<span class="nc" id="L1359">				spQueueIDs.addAll(forecastsBySPQueueID.keySet());</span>
+<span class="nc" id="L1360">			}</span>
+<span class="nc" id="L1361">		}</span>
+<span class="nc" id="L1362">		return spQueueIDsbySp;</span>
+	}
+
+	static class CampaignSPForecastWrapperData&lt;T extends AbstractForecastWrapper&lt;? extends AbstractForecastDTO&gt;&gt; {
+		final Map&lt;ID, Campaign&gt; m_idCampaignMap;
+		final Map&lt;ID, SchedulingPeriod&gt; m_idSchedulingPeriodMap;
+		final Map&lt;ID, List&lt;T&gt;&gt; m_spVsForecastWrappers;
+
+		public CampaignSPForecastWrapperData(Map&lt;ID, Campaign&gt; idCampaignMap,
+				Map&lt;ID, SchedulingPeriod&gt; idSchedulingPeriodMap,
+<span class="nc" id="L1372">				Map&lt;ID, List&lt;T&gt;&gt; spVsForecastWrappers) {</span>
+<span class="nc" id="L1373">			m_idCampaignMap = idCampaignMap;</span>
+<span class="nc" id="L1374">			m_idSchedulingPeriodMap = idSchedulingPeriodMap;</span>
+<span class="nc" id="L1375">			m_spVsForecastWrappers = spVsForecastWrappers;</span>
+<span class="nc" id="L1376">		}</span>
+
+		public Map&lt;ID, Campaign&gt; getIdCampaignMap() {
+<span class="nc" id="L1379">			return m_idCampaignMap;</span>
+		}
+
+		public Collection&lt;ID&gt; getWfoSchedulingPeriodIDs() {
+<span class="nc" id="L1383">			return m_idSchedulingPeriodMap.keySet();</span>
+		}
+
+		public Collection&lt;SchedulingPeriod&gt; getSchedulingPeriods() {
+<span class="nc" id="L1387">			return m_idSchedulingPeriodMap.values();</span>
+		}
+
+		public Map&lt;ID, List&lt;T&gt;&gt; getSpVsForecastWrappers() {
+<span class="nc" id="L1391">			return m_spVsForecastWrappers;</span>
+		}
+	}
+
+<span class="nc" id="L1395">	protected static abstract class AbstractForecastWrapper&lt;T extends AbstractForecastDTO&gt; {</span>
+
+		// need it around for error messages
+		private ID m_campaignID;
+		private SchedulingPeriod m_schedulingPeriod;
+		private ID m_queueID;
+		private T m_forecastDTO;
+
+		public ID getCampaignID() {
+<span class="nc" id="L1404">			return m_campaignID;</span>
+		}
+
+		public void setCampaignID(ID campaignID) {
+<span class="nc" id="L1408">			m_campaignID = campaignID;</span>
+<span class="nc" id="L1409">		}</span>
+
+		public SchedulingPeriod getSchedulingPeriod() {
+<span class="nc" id="L1412">			return m_schedulingPeriod;</span>
+		}
+
+		public void setSchedulingPeriod(SchedulingPeriod schedulingPeriod) {
+<span class="nc" id="L1416">			m_schedulingPeriod = schedulingPeriod;</span>
+<span class="nc" id="L1417">		}</span>
+
+		public ID getQueueID() {
+<span class="nc" id="L1420">			return m_queueID;</span>
+		}
+
+		public void setQueueID(ID queueID) {
+<span class="nc" id="L1424">			m_queueID = queueID;</span>
+<span class="nc" id="L1425">		}</span>
+
+		public T getForecastDTO() {
+<span class="nc" id="L1428">			return m_forecastDTO;</span>
+		}
+
+		public void setForecastDTO(T forecastDTO) {
+<span class="nc" id="L1432">			m_forecastDTO = forecastDTO;</span>
+<span class="nc" id="L1433">		}</span>
+	}
+
+	/**
+	 * We need to keep each Forecast instance directly associated with its
+	 * TraceCube. Its only meant to be used here, and that's why its not a top
+	 * level class.
+	 * 
+	 * WARNING: We use this in lieu of a Map, because ForecastInstance as key
+	 * doesn't work properly when its id is not yet assigned
+	 * 
+	 */
+<span class="nc" id="L1445">	protected static class TimeSeriesForecastWrapper extends</span>
+			AbstractForecastWrapper&lt;TimeSeriesForecastDTO&gt; {
+
+		// For non - project queue forecasts
+		private ForecastInstance m_forecastInstance;
+		private ForecastTraceCube m_forecastTraceCube;
+		private Collection&lt;RequiredTimeSeries&gt; requiredTimeSeries;
+
+		// For immediate queue forecasts only
+		private List&lt;ForecastProfile&gt; m_ForecastProfiles;
+
+		public ForecastInstance getForecastInstance() {
+<span class="nc" id="L1457">			return m_forecastInstance;</span>
+		}
+
+		public void setForecastInstance(ForecastInstance forecastInstance) {
+<span class="nc" id="L1461">			m_forecastInstance = forecastInstance;</span>
+<span class="nc" id="L1462">		}</span>
+
+		public ForecastTraceCube getForecastTraceCube() {
+<span class="nc" id="L1465">			return m_forecastTraceCube;</span>
+		}
+
+		public void setForecastTraceCube(ForecastTraceCube forecastTraceCube) {
+<span class="nc" id="L1469">			m_forecastTraceCube = forecastTraceCube;</span>
+<span class="nc" id="L1470">		}</span>
+
+		public Collection&lt;RequiredTimeSeries&gt; getRequiredTimeSeries() {
+<span class="nc" id="L1473">			return requiredTimeSeries;</span>
+		}
+
+		public void setRequiredTimeSeries(Collection&lt;RequiredTimeSeries&gt; pRequiredTimeSeries) {
+<span class="nc" id="L1477">			requiredTimeSeries = pRequiredTimeSeries;</span>
+<span class="nc" id="L1478">		}</span>
+
+		public List&lt;ForecastProfile&gt; getForecastProfiles() {
+<span class="nc" id="L1481">			return m_ForecastProfiles;</span>
+		}
+
+		public void setForecastProfiles(List&lt;ForecastProfile&gt; forecastProfiles) {
+<span class="nc" id="L1485">			this.m_ForecastProfiles = forecastProfiles;</span>
+<span class="nc" id="L1486">		}</span>
+
+		static public Collection&lt;ForecastInstance&gt; convertToForecastInstances(
+				Collection&lt;TimeSeriesForecastWrapper&gt; wrappers) {
+<span class="nc" id="L1490">			Collection&lt;ForecastInstance&gt; result = new ArrayList&lt;ForecastInstance&gt;();</span>
+<span class="nc bnc" id="L1491" title="All 2 branches missed.">			for (TimeSeriesForecastWrapper wrapper : wrappers) {</span>
+<span class="nc" id="L1492">				result.add(wrapper.getForecastInstance());</span>
+<span class="nc" id="L1493">			}</span>
+<span class="nc" id="L1494">			return result;</span>
+		}
+	}
+
+	/**
+	 * For each project forecast, we need one ForecastProfile plus a collection
+	 * of forecastProfileProjects entities with start and end dates that
+	 * collectively cover from the start date to end date of the scheduling
+	 * period.
+	 * 
+	 * Typically, there could be one forecastProfileProject per day of the
+	 * forecast / scheduling period, predicting the number of person hours of
+	 * work for that day
+	 */
+<span class="pc" id="L1508">	protected static class ProjectForecastWrapper extends</span>
+			AbstractForecastWrapper&lt;ProjectForecastDTO&gt; {
+
+		private ForecastProfile forecastProfile;
+		private List&lt;ForecastProfileProject&gt; forecastProfileProjects;
+
+		public ForecastProfile getForecastProfile() {
+<span class="nc" id="L1515">			return forecastProfile;</span>
+		}
+
+		public void setForecastProfile(ForecastProfile forecastProfile) {
+<span class="nc" id="L1519">			this.forecastProfile = forecastProfile;</span>
+<span class="nc" id="L1520">		}</span>
+
+		public List&lt;ForecastProfileProject&gt; getForecastProfileProjects() {
+<span class="nc" id="L1523">			return forecastProfileProjects;</span>
+		}
+
+		public void setForecastProfileProjects(
+				List&lt;ForecastProfileProject&gt; forecastProfileProjects) {
+<span class="nc" id="L1528">			this.forecastProfileProjects = forecastProfileProjects;</span>
+<span class="nc" id="L1529">		}</span>
+
+		public void setforecastProfileIdInCollection(ID forecastProfileId) {
+<span class="nc bnc" id="L1532" title="All 2 branches missed.">			for (ForecastProfileProject forecastProfileProject : forecastProfileProjects) {</span>
+<span class="nc" id="L1533">				forecastProfileProject.setForecastProfileID(forecastProfileId);</span>
+<span class="nc" id="L1534">			}</span>
+<span class="nc" id="L1535">		}</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

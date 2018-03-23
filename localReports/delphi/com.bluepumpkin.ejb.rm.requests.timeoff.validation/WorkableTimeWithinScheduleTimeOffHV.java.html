@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>WorkableTimeWithinScheduleTimeOffHV.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.timeoff.validation</a> &gt; <span class="el_source">WorkableTimeWithinScheduleTimeOffHV.java</span></div><h1>WorkableTimeWithinScheduleTimeOffHV.java</h1><pre class="source lang-java linenums">/*
+ * WorkableTimeWithinScheduleTimeOffHV.java
+ * Copyright (c) 2002, Blue Pumpkin Software, Inc
+ * All rights reserved.
+ */
+package com.bluepumpkin.ejb.rm.requests.timeoff.validation;
+
+import java.util.Iterator;
+
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TimeMap;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+
+/**
+ * Rule to validate that agent only requests time off when they could be
+ * working.  The conflicts checked are:
+ * &lt;p/&gt;
+ * &lt;li&gt;&lt;b&gt;scheduled time off&lt;/b&gt; -- none of the TOChoices are completely
+ * contained within scheduled TOEvents &lt;/li&gt;
+ * &lt;p/&gt;
+ * &lt;b&gt;debit, debit-if and dont-debit type handling: &lt;/b&gt;&lt;br&gt;
+ * &lt;li&gt;Scheduled time off events validation: applies for debit, debit-if and dont-debit. &lt;br&gt;
+ * &lt;p/&gt;
+ * &lt;b&gt;Tentative request handling: &lt;/b&gt;&lt;br&gt;
+ * &lt;li&gt; Scheduled TO events validation - skipped, as event for request already created in un-published schedule and this
+ * validation is intended to be performed before event creation.
+ */
+<span class="nc" id="L36">public class WorkableTimeWithinScheduleTimeOffHV implements Validator {</span>
+
+<span class="nc" id="L38">	public static final String CLASS_NAME = WorkableTimeWithinScheduleTimeOffHV.class.getName();</span>
+
+<span class="nc" id="L40">	private static Category m_cat = Log.initCategory(CLASS_NAME);</span>
+
+	/**
+	 * Validate a time off request.  Ensure that the request is for time off
+	 * when the employee might be working.
+	 */
+	@Override
+	public ValidationResult validate(Validatable validatable) throws Exception {
+<span class="nc" id="L48">		String methodName = &quot;validate&quot;;</span>
+<span class="nc bnc" id="L49" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L50">			m_cat.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
+		}
+
+<span class="nc" id="L53">		TORequest tor = (TORequest) validatable;</span>
+<span class="nc" id="L54">		TOChoice validationChoice = tor.getTOChoiceForValidation();</span>
+		// Check against the hours of operation for the employee's organization
+		// in the date range
+<span class="nc" id="L57">		ValidationResult result = null;</span>
+
+		// Check that the request includes time that is not already scheduled
+		// as time off
+<span class="nc bnc" id="L61" title="All 4 branches missed.">		if (result == null &amp;&amp; !tor.isTentative()) {</span>
+<span class="nc" id="L62">			result = checkScheduledTimeOff(tor, validationChoice);</span>
+		}
+
+<span class="nc bnc" id="L65" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L66">			m_cat.debug(RmUtil.dumpExitMethod(methodName, result));</span>
+		}
+
+<span class="nc" id="L69">		return result;</span>
+	}
+
+	/**
+	 * Check the choices in the time off request against the calendar events that
+	 * represent scheduled time off.
+	 */
+	protected ValidationResult checkScheduledTimeOff(TORequest tor, TOChoice validationChoice) throws Exception {
+<span class="nc" id="L77">		ValidationResult result = null;</span>
+
+<span class="nc" id="L79">		TimeMap toTimeMap = getTimeOffEventsPubAndUnpubTimeMap(tor);</span>
+
+		// Loop through the choices and check that each one contains time that
+		// is not already scheduled as time off
+
+<span class="nc bnc" id="L84" title="All 2 branches missed.">		for (Iterator&lt;TOChoice&gt; it = tor.getRequestChoiceList().iterator(); it.hasNext();) {</span>
+<span class="nc" id="L85">			TOChoice c = (TOChoice) it.next();</span>
+<span class="nc bnc" id="L86" title="All 4 branches missed.">			if (validationChoice != null &amp;&amp; !validationChoice.equals(c)) {</span>
+<span class="nc" id="L87">				continue; //Validator should validate the Validation Choice only and skip all other choices.</span>
+			}
+<span class="nc bnc" id="L89" title="All 2 branches missed.">			if (toTimeMap.onBitsContainRange(c.getStartDate(), c.getEndDate())) {</span>
+				// The given range is completely contained witin a block of scheduled time off.  Validation fails
+<span class="nc" id="L91">				result = ValidationUtil.setHardValidationResult(c, RmEjbBundleKey.TO_CONTAINED_IN_SCHEDTO,</span>
+<span class="nc" id="L92">						getEmployeeNameByID(tor), c.getStartDate(), c.getEndDate(), CLASS_NAME);</span>
+<span class="nc" id="L93">				return result;</span>
+			}
+<span class="nc" id="L95">		} // end while (it.hasNext())</span>
+
+<span class="nc" id="L97">		return result;</span>
+	}
+
+	protected TimeMap getTimeOffEventsPubAndUnpubTimeMap(TORequest tor) throws Exception {
+<span class="nc" id="L101">    	return tor.getCache().getTimeOffEventsPubAndUnpubTimeMap();</span>
+    }
+    
+	protected String getEmployeeNameByID(TORequest tor) throws Exception {
+<span class="nc" id="L105">		return tor.getCache().getEmployeeNameByID();</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

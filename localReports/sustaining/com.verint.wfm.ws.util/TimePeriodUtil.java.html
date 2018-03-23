@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimePeriodUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.wfm.ws.util</a> &gt; <span class="el_source">TimePeriodUtil.java</span></div><h1>TimePeriodUtil.java</h1><pre class="source lang-java linenums">package com.verint.wfm.ws.util;
+
+import java.util.Calendar;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+
+import com.bluepumpkin.common.util.DateTimeUtil;
+import com.verint.wfm.ws.entityImport.model.HoursOfOperationDTO;
+
+/**
+ * TODO: merge with the other TimePeriodUtil
+ * 
+ * @author EClingman
+ * 
+ */
+<span class="nc" id="L17">public class TimePeriodUtil {</span>
+
+	private static final int HOUR_IN_DAY = 24;
+
+	/**
+	 * We assume that the startDate is the first day of the week as far as
+	 * HoursOfOperationDTO is concerned
+	 * 
+	 * @param startDate
+	 * @param endDate
+	 * @param hoursOfOperationDTO
+	 * @return
+	 */
+	public static LinkedHashMap&lt;Calendar, Boolean&gt; buildOnOffHoursMap(Calendar startDate, Calendar endDate,
+			List&lt;HoursOfOperationDTO&gt; hoursOfOperationDTOs) {
+
+<span class="nc bnc" id="L33" title="All 2 branches missed.">		if (startDate.after(endDate)) {</span>
+<span class="nc" id="L34">			throw new IllegalArgumentException(&quot;startDate must be before endDate&quot;);</span>
+		}
+
+		// We will get next() below as we need them
+<span class="nc" id="L38">		Iterator&lt;HoursOfOperationDTO&gt; iterator = hoursOfOperationDTOs.iterator();</span>
+<span class="nc" id="L39">		HoursOfOperationDTO hoursOfOperationDTO = iterator.next();</span>
+
+		// We can't rely on the currentTime's opinion of the hour, because it
+		// might be GMT rather than local time say
+		// We rely that start date is always midnight local time
+<span class="nc" id="L44">		int hoursOffSet = startDate.get(Calendar.HOUR_OF_DAY);</span>
+
+		// We will loop from startDate to endDate in one hour increments,
+		// creating a date map
+<span class="nc" id="L48">		Calendar currentTime = (Calendar) startDate.clone();</span>
+<span class="nc" id="L49">		LinkedHashMap&lt;Calendar, Boolean&gt; onOffHoursMap = new LinkedHashMap&lt;Calendar, Boolean&gt;();</span>
+<span class="nc" id="L50">		int dayOfWeekCount = 1; // Must start at one not zero!</span>
+<span class="nc bnc" id="L51" title="All 2 branches missed.">		while (currentTime.before(endDate)) {</span>
+
+<span class="nc bnc" id="L53" title="All 2 branches missed.">			if (dayOfWeekCount == 8) {</span>
+<span class="nc" id="L54">				hoursOfOperationDTO = iterator.next();</span>
+<span class="nc" id="L55">				dayOfWeekCount = 1;</span>
+			}
+
+			Boolean openPartOfHour;
+			// is it closed all day
+<span class="nc bnc" id="L60" title="All 2 branches missed.">			if (hoursOfOperationDTO.getDayOpen()[dayOfWeekCount] == -1) {</span>
+<span class="nc" id="L61">				openPartOfHour = Boolean.FALSE;</span>
+			} else {
+<span class="nc" id="L63">				int dayOpenHour = (int) Math.floor((hoursOfOperationDTO.getDayOpen()[dayOfWeekCount] / 60.d));</span>
+<span class="nc" id="L64">				int dayCloseHour = (int) Math</span>
+<span class="nc" id="L65">						.ceil((hoursOfOperationDTO.getDayClose()[dayOfWeekCount] / 60.d));</span>
+				// TODO Warning this will be slightly off for the cross-over to
+				// daylight savings time.... Ask Tyler for advice! And perhaps
+				// verify that (start - end date) equals 7 time size of
+				// collection?
+<span class="nc" id="L70">				int currentHourLocalTime = (currentTime.get(Calendar.HOUR_OF_DAY) - hoursOffSet + HOUR_IN_DAY)</span>
+						% HOUR_IN_DAY;
+
+<span class="nc bnc" id="L73" title="All 4 branches missed.">				if (currentHourLocalTime &gt;= dayOpenHour &amp;&amp; currentHourLocalTime &lt; dayCloseHour) {</span>
+<span class="nc" id="L74">					openPartOfHour = Boolean.TRUE;</span>
+				} else {
+<span class="nc" id="L76">					openPartOfHour = Boolean.FALSE;</span>
+				}
+			}
+
+			// get ready for next iteration
+<span class="nc" id="L81">			Calendar lastTime = (Calendar) currentTime.clone();</span>
+<span class="nc" id="L82">			onOffHoursMap.put(lastTime, openPartOfHour);</span>
+<span class="nc" id="L83">			currentTime.add(Calendar.HOUR, 1);</span>
+
+			// If the original hour:minutes have come back we are at a new day
+			// local time
+<span class="nc bnc" id="L87" title="All 2 branches missed.">			if (DateTimeUtil.equalModuloDay(startDate, currentTime)) {</span>
+<span class="nc" id="L88">				dayOfWeekCount++;</span>
+			}
+<span class="nc" id="L90">		}</span>
+<span class="nc" id="L91">		return onOffHoursMap;</span>
+	}
+	
+	/**
+	 * Converts the minute offset from 12:00am Sunday to the 'format Day hh:mm' and returns it.
+	 * @param offset
+	 * @return
+	 */
+	public static String formatToDayAndTime(int offset) {
+<span class="nc" id="L100">		String[] days = { &quot;Sunday&quot;, &quot;Monday&quot;, &quot;Tuesday&quot;, &quot;Wednesday&quot;,</span>
+				&quot;Thursday&quot;, &quot;Friday&quot;, &quot;Saturday&quot;, &quot;Sunday&quot; };
+<span class="nc" id="L102">		StringBuffer timeBuffer = new StringBuffer();</span>
+		// offset is minute offset from sunday
+<span class="nc" id="L104">		int hourOffset = offset / 60;</span>
+<span class="nc" id="L105">		int mins = offset % 60;</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">		if (hourOffset &gt;= 24) {</span>
+<span class="nc" id="L107">			int dayOffset = hourOffset / 24;</span>
+<span class="nc" id="L108">			timeBuffer.append(days[dayOffset % 7]);</span>
+<span class="nc" id="L109">			hourOffset = hourOffset % 24;</span>
+<span class="nc" id="L110">		} else {</span>
+<span class="nc" id="L111">			timeBuffer.append(days[0]);</span>
+		}
+<span class="nc bnc" id="L113" title="All 2 branches missed.">		if(hourOffset&lt;10)</span>
+		{
+<span class="nc" id="L115">			timeBuffer.append(&quot; 0&quot; + hourOffset);</span>
+		} else {
+<span class="nc" id="L117">			timeBuffer.append(&quot; &quot;+hourOffset);</span>
+		}
+		// append mins offset
+<span class="nc bnc" id="L120" title="All 2 branches missed.">		if(mins&lt;10){			</span>
+<span class="nc" id="L121">			timeBuffer.append(&quot; 0&quot; + mins);</span>
+		} else {
+<span class="nc" id="L123">			timeBuffer.append(&quot; &quot;+mins);</span>
+		}
+<span class="nc" id="L125">		return timeBuffer.toString();</span>
+	}	
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

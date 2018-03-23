@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>NetStaffingValidationRule.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.custshift.validation</a> &gt; <span class="el_source">NetStaffingValidationRule.java</span></div><h1>NetStaffingValidationRule.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.custshift.validation;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.ResourceBundle;
+import java.util.Set;
+import java.util.TreeSet;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.campaign.model.SPQueue;
+import com.bluepumpkin.ejb.bbm.campaign.model.SPQueueFieldInfo;
+import com.bluepumpkin.ejb.bbm.l10n.BbmEjbBundleKey;
+import com.bluepumpkin.ejb.bbm.localization.DefaultLocalizationManager;
+import com.bluepumpkin.ejb.bbm.timeseries.ejb.TimeSeriesManager;
+import com.bluepumpkin.ejb.bbm.timeseries.model.NetStaffingCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.rm.RmManagerFactory;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
+import com.bluepumpkin.ejb.rm.requests.timeoff.hoursperday.ejb.TOHoursPerDayUtil;
+import com.bluepumpkin.ejb.rm.setup.validation.ejb.ValidationRuleManager;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+
+
+/**
+ * &lt;p&gt; Rule from UI: Minimum duration of request with a net staffing shortage: X (percent).
+ * Will flag any cust shift requests that do not satisfy the minimum required net-staffing shortage in percent
+ * Formula:
+ * (#periods where net staffing is improved / (#periods where net staffing is improved + #periods where net staffing is worsened) )*100
+ * Periods will be calculated based on 15-minute intervals, regardless of LTI. However, the 15-minute values take LTI into account.
+ * We do not care about intervals where the net staffing is not changed. But we do take threshold into account. So if net staffing
+ * for an interval before the request is -2, and after approval, net staffing is -1, and the threshold is 2, then this interval is
+ * considered to be unchanged rather than improved, since both values fall under the threshold and are considered equivalent to 0.
+ * Default value = 100%
+ * Sample Error Message Shown:
+ * Request violates the net staffing requirements for the requested time frame:
+ * Queue(s) q1,q2 and q3:
+ * From 10/10/2011 2:00 am PDT to 10/10/2011 4:00 am PDT
+ * From 10/10/2011 8:00 am PDT to 10/10/2011 10:00 am PDT
+ */
+public class NetStaffingValidationRule implements Validator {
+<span class="nc" id="L59">	private static final String m_className = NetStaffingValidationRule.class.getName();</span>
+
+	public static final String CS_MIN_SHORTAGE_DURATION_VALUE = &quot;CS_MIN_SHORTAGE_DURATION_VALUE&quot;;
+<span class="nc" id="L62">	public static final ID RULE_ID = new ID(-194047);</span>
+
+<span class="nc" id="L64">	public NetStaffingValidationRule() {</span>
+<span class="nc" id="L65">	}</span>
+
+	protected static TimeSeriesManager getTimeSeriesManager() throws Exception {
+<span class="nc" id="L68">		return WfmManagerFactory.getTimeSeriesManager(false);</span>
+	}
+
+	@Override
+	public ValidationResult validate(Validatable validatable) throws Exception {
+<span class="nc" id="L73">		ValidationResult result = null;</span>
+<span class="nc" id="L74">		CustShiftReq csr = (CustShiftReq) validatable;</span>
+<span class="nc" id="L75">		CustShiftValidationCache cache = csr.getCache();</span>
+<span class="nc" id="L76">		boolean stafingExists = cache.doesStaffingExistForPeriod(csr);</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">		if (!stafingExists) {</span>
+<span class="nc" id="L78">			result = ValidationUtil.setSoftValidationResult(csr, RmEjbBundleKey.CS_NETSTAFF_NOT_AVAILABLE, m_className);</span>
+<span class="nc" id="L79">			return result;</span>
+		}
+
+		//Need to consider only requested periods for net-staffing;
+		// existing periods that are already published, we do not care.
+		//Over / under should be calculated for requested range only.
+		//Need to special handle the scenario where only extn before and extn after are requested.
+		// need to calculate over / under seperately for extn before and after and then merge them.
+<span class="nc" id="L87">		ArrayList&lt;TimeRange&gt; trCol = new ArrayList();</span>
+<span class="nc" id="L88">		Calendar cal = Calendar.getInstance(csr.getCache().getOrg().getTimeZone());</span>
+		//add Time Range for Extn Before
+<span class="nc bnc" id="L90" title="All 2 branches missed.">		if (csr.getExtBeforeID() != null) {</span>
+<span class="nc" id="L91">			cal.setTime(csr.getStartTime());</span>
+<span class="nc" id="L92">			cal.add(Calendar.MINUTE, csr.getExtBeforeDuration());</span>
+<span class="nc" id="L93">			trCol.add(new TimeRange(csr.getStartTime(), cal.getTime()));</span>
+		}
+<span class="nc bnc" id="L95" title="All 2 branches missed.">		if (csr.getShiftID() != null) {</span>
+<span class="nc" id="L96">			ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc" id="L97">			addShiftTimesToTRCol(csr, trCol, sam);</span>
+		}
+		//add Time Range for Extn After
+<span class="nc bnc" id="L100" title="All 2 branches missed.">		if (csr.getExtAfterID() != null) {</span>
+<span class="nc" id="L101">			cal.setTime(csr.getEndTime());</span>
+<span class="nc" id="L102">			cal.add(Calendar.MINUTE, -1*csr.getExtAfterDuration());</span>
+<span class="nc" id="L103">			trCol.add(new TimeRange(cal.getTime(), csr.getEndTime()));</span>
+		}
+
+<span class="nc" id="L106">		NetStaffingCube preNsCube = cache.getPreCSApprovalNetStaffingCube(csr, false); //the Tracecubes as they would look before approval of the request.</span>
+<span class="nc" id="L107">		NetStaffingCube postNsCube = cache.getPostCSApprovalNetStaffingCube(csr); //the Tracecubes as they would look after approval of the request.</span>
+		//Only continue to validate when Queues Found that match the skill set of EMP (preNsCube!=null &amp;&amp; postNsCube !=null ) )
+<span class="nc bnc" id="L109" title="All 4 branches missed.">		if(preNsCube!=null &amp;&amp; postNsCube!=null){ </span>
+<span class="nc" id="L110">			HashMap&lt;ID, SPQueue&gt; spQueueMap = postNsCube.getSPQueueMap();</span>
+	
+<span class="nc" id="L112">			ArrayList&lt;TimeRange&gt; intervalsWorsened = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="nc" id="L113">			int numIntervalsImproved = getNumIntervalsImproved(intervalsWorsened, trCol, preNsCube, postNsCube, cache);</span>
+<span class="nc" id="L114">			int numIntervalsWorsened = intervalsWorsened.size();</span>
+<span class="nc" id="L115">			int numIntervalsChanged = numIntervalsImproved + numIntervalsWorsened;</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">			double percentOfIntervalsImproved = (numIntervalsChanged==0) ? 0.0d :</span>
+					(((double)(numIntervalsImproved)) / ((double)numIntervalsChanged) * 100.0d); //we don't care about the unchanged intervals
+	
+<span class="nc" id="L119">			ValidationRuleManager valMan = RmManagerFactory.getInstance().getValidationRuleManager();</span>
+<span class="nc" id="L120">			Map&lt;String, Integer&gt; ruleParams = valMan.getValidationRuleParams(csr.getCache().getOrg().getID(), RULE_ID);</span>
+<span class="nc" id="L121">			int minReqdNetStaffShortagePercent = ruleParams.get(CS_MIN_SHORTAGE_DURATION_VALUE).intValue();</span>
+	
+<span class="nc bnc" id="L123" title="All 2 branches missed.">			if (percentOfIntervalsImproved &lt; minReqdNetStaffShortagePercent)</span>
+			{
+<span class="nc" id="L125">				StringBuffer value = new StringBuffer();</span>
+<span class="nc" id="L126">				Localizer localizer = DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
+<span class="nc" id="L127">				ResourceBundle bundle = localizer.getBundle(RmEjbBundleKey.BUNDLE_NAME);</span>
+	
+<span class="nc" id="L129">				TreeSet violationTreeSet = TimeRange.mergeAdjacentTimeRanges(intervalsWorsened, 60000);</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">				for (Iterator iterator = violationTreeSet.iterator(); iterator.hasNext();)</span>
+				{
+<span class="nc" id="L132">					TimeRange tr = (TimeRange) iterator.next();</span>
+<span class="nc" id="L133">					String formatStDateTime = localizer.formatDateTime(tr.getStartDate(), cache.getOrg().getTimeZone());</span>
+<span class="nc" id="L134">					String formatEnDateTime = localizer.formatDateTime(tr.getEndDate(), cache.getOrg().getTimeZone());</span>
+<span class="nc" id="L135">					value.append(localizer.i18n(bundle, RmEjbBundleKey.TimePeriodFromToData, new Object[]{formatStDateTime, formatEnDateTime}));</span>
+<span class="nc" id="L136">					value.append(&quot;&lt;BR&gt;&quot;);</span>
+<span class="nc" id="L137">				}</span>
+	
+<span class="nc" id="L139">				Set qIDSet = TOHoursPerDayUtil.extractFieldSet(SPQueueFieldInfo.SPQUEUE_QUEUEID, spQueueMap.values());</span>
+<span class="nc" id="L140">				String qNameSB= getQueueNameDetails(qIDSet, localizer, bundle);</span>
+<span class="nc" id="L141">				result = ValidationUtil.setSoftValidationResult(csr,</span>
+<span class="nc" id="L142">				        RmEjbBundleKey.CS_NETSTAFF_SHORTAGE, qNameSB, value.toString(), m_className);</span>
+			}
+		}
+<span class="nc" id="L145">		return result;</span>
+	}
+
+	protected void addShiftTimesToTRCol(CustShiftReq csr, ArrayList&lt;TimeRange&gt; trCol, ScheduleAccessManager sam)
+			throws BbmEJBCreateException, BbmObjectNotFoundException, BbmFinderException, RemoteException {
+<span class="nc" id="L150">		Date csrShiftStartTime = csr.getShiftStartTime();</span>
+<span class="nc" id="L151">		Date csrShiftEndTime = csr.getShiftEndTime();</span>
+
+<span class="nc" id="L153">		Date oldShiftStartTime = null;</span>
+<span class="nc" id="L154">		Date oldShiftEndTime = null;</span>
+<span class="nc" id="L155">		ID shiftAssignmentID = csr.getShiftAssignmentID();		</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">		if (shiftAssignmentID != null) {</span>
+<span class="nc" id="L157">			ShiftAssignment sa = sam.getShiftAssignmentByID(shiftAssignmentID);</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">			if (sa != null) {</span>
+<span class="nc" id="L159">				oldShiftStartTime = sa.getStartTime();</span>
+<span class="nc" id="L160">				oldShiftEndTime = sa.getEndTime();</span>
+			}
+		}
+			
+<span class="nc bnc" id="L164" title="All 4 branches missed.">		if (oldShiftStartTime != null &amp;&amp; oldShiftEndTime != null) {</span>
+			// shift change/ot extension request
+<span class="nc bnc" id="L166" title="All 4 branches missed.">			if (csrShiftEndTime.before(oldShiftStartTime) || csrShiftStartTime.after(oldShiftEndTime)) {</span>
+<span class="nc" id="L167">				trCol.add(new TimeRange(csrShiftStartTime, csrShiftEndTime));</span>
+<span class="nc" id="L168">				trCol.add(new TimeRange(oldShiftStartTime, oldShiftEndTime));</span>
+			} else {
+<span class="nc bnc" id="L170" title="All 2 branches missed.">				Date startTime = oldShiftStartTime.before(csrShiftStartTime) ? oldShiftStartTime : csrShiftStartTime;</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">				Date endTime = oldShiftEndTime.after(csrShiftEndTime) ? oldShiftEndTime : csrShiftEndTime;</span>
+<span class="nc" id="L172">				trCol.add(new TimeRange(startTime, endTime));</span>
+<span class="nc" id="L173">			}</span>
+		} else {
+			// new shift request
+<span class="nc" id="L176">			trCol.add(new TimeRange(csrShiftStartTime, csrShiftEndTime));</span>
+		}
+<span class="nc" id="L178">	}</span>
+
+	/**
+	 * Determines the number of 15-minute intervals in the requested date range in which the net staffing
+	 * would be improved if the request is approved. We also keep track of the intervals that would see net staffing
+	 * worsen. We need this information in order to compare the percentage of improvement versus the goal percentage
+	 * for the validation rule.
+	 * @param intervalsWorsened - In this array, we will store the 15-minute intervals in which net staffing would get
+	 *                            worse if the request is approved.
+	 * @param trCol - List of timeRanges for the request, in chronological order.
+	 * @param preNsCube - the NetStaffingCube prior to approving the request.
+	 * @param postNsCube - the NetStaffingCube that would exist after approving the request.
+	 * @param cache - the cache to use when getting the necessary aggregations, or any other cacheable items.
+	 * @return - The number of 15-minute intervals in the requested date range that would see a net staffing improvement
+	 *           were the request to be approved.
+	 */
+	private int getNumIntervalsImproved(ArrayList&lt;TimeRange&gt; intervalsWorsened, List&lt;TimeRange&gt; trCol, NetStaffingCube preNsCube,
+										NetStaffingCube postNsCube, CustShiftValidationCache cache)
+	{
+<span class="nc" id="L197">		int numIntervalsImproved = 0;</span>
+
+<span class="nc bnc" id="L199" title="All 4 branches missed.">		if (trCol != null &amp;&amp;  trCol.size()&gt;0)</span>
+		{
+<span class="nc" id="L201">			TimeRange requestDateRange = ValidationUtil.getRequestDateRange(trCol);</span>
+<span class="nc" id="L202">			Date curIntervalStart = requestDateRange.getStartDate();</span>
+<span class="nc" id="L203">			Date curIntervalEnd = new Date(curIntervalStart.getTime() + Trace.INTERVAL_IN_MILLIS);</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">			while (!curIntervalEnd.after(requestDateRange.getEndDate())) //(for each interval of the request range)</span>
+			{
+<span class="nc bnc" id="L206" title="All 2 branches missed.">				if (ValidationUtil.isValidInterval(curIntervalStart, trCol))</span>
+				{
+<span class="nc" id="L208">					boolean anyQueueImprovedInCurInterval = false;</span>
+<span class="nc" id="L209">					boolean anyQueueWorsenedInCurInterval = false;</span>
+
+					//For Shift Requests:
+					//If ANY queue in this interval has a net staffing improvement, then this interval is considered an improvement.
+					//Otherwise, if ANY queue in this interval has a net staffing worsening, then this interval is considered a worsening.
+					//Otherwise, this interval is considered unchanged.
+<span class="nc" id="L215">					HashMap&lt;SPQueue, Double&gt; spqIDToNSBeforeMap = ValidationUtil.getFTEDPastThreshold(preNsCube, curIntervalStart, curIntervalEnd, &quot;PRE&quot;, cache);</span>
+<span class="nc" id="L216">					HashMap&lt;SPQueue, Double&gt; spqIDToNSAfterMap = ValidationUtil.getFTEDPastThreshold(postNsCube, curIntervalStart, curIntervalEnd, &quot;POST&quot;, cache);</span>
+
+<span class="nc bnc" id="L218" title="All 2 branches missed.">					for (Iterator it = spqIDToNSBeforeMap.keySet().iterator(); it.hasNext();)</span>
+					{
+<span class="nc" id="L220">						SPQueue spQueue = (SPQueue)it.next();</span>
+
+<span class="nc" id="L222">						double netStaffBefore = Math.abs(spqIDToNSBeforeMap.get(spQueue));</span>
+<span class="nc" id="L223">						double netStaffAfter = Math.abs(spqIDToNSAfterMap.get(spQueue));</span>
+
+<span class="nc bnc" id="L225" title="All 2 branches missed.">						if (netStaffAfter &lt; netStaffBefore)</span>
+						{
+<span class="nc" id="L227">							numIntervalsImproved++;</span>
+<span class="nc" id="L228">							anyQueueImprovedInCurInterval = true;</span>
+<span class="nc" id="L229">							break;</span>
+						}
+<span class="nc bnc" id="L231" title="All 2 branches missed.">						else if (netStaffAfter &gt; netStaffBefore)</span>
+						{
+<span class="nc" id="L233">							anyQueueWorsenedInCurInterval = true;</span>
+						}
+<span class="nc" id="L235">					}</span>
+
+<span class="nc bnc" id="L237" title="All 4 branches missed.">					if (!anyQueueImprovedInCurInterval &amp;&amp; anyQueueWorsenedInCurInterval)</span>
+					{
+<span class="nc" id="L239">						intervalsWorsened.add(new TimeRange(curIntervalStart, curIntervalEnd));</span>
+					}
+
+				}
+<span class="nc" id="L243">				curIntervalStart = curIntervalEnd;</span>
+<span class="nc" id="L244">				curIntervalEnd = new Date(curIntervalEnd.getTime() + Trace.INTERVAL_IN_MILLIS);</span>
+			}
+		}
+<span class="nc" id="L247">		return numIntervalsImproved;</span>
+	}
+	
+	private String getQueueNameDetails(Set qIDSet, Localizer localizer,ResourceBundle bundle) throws BbmFinderException, BbmEJBCreateException, RemoteException{
+<span class="nc" id="L251">		StringBuilder qNameSB = new StringBuilder();</span>
+<span class="nc bnc" id="L252" title="All 4 branches missed.">		if (qIDSet!=null &amp;&amp; !qIDSet.isEmpty()) </span>
+		{
+<span class="nc" id="L254">			Map queIDNameMap = WfmManagerFactory.getWorkloadManager().getQueueNamesByIDs(qIDSet);</span>
+			
+<span class="nc" id="L256">			int count = 0;</span>
+
+<span class="nc bnc" id="L258" title="All 2 branches missed.">			for (Iterator iterator = queIDNameMap.values().iterator(); iterator.hasNext();)</span>
+			{
+<span class="nc" id="L260">				qNameSB.append(iterator.next());</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">				if (count == queIDNameMap.size() - 2)</span>
+				{
+<span class="nc" id="L263">					qNameSB.append(&quot; &quot;).append(localizer.i18n(bundle, RmEjbBundleKey.OperatorAnd)).append(&quot; &quot;);</span>
+				}
+<span class="nc bnc" id="L265" title="All 2 branches missed.">				else if (count &lt; queIDNameMap.size() - 2)</span>
+				{
+<span class="nc" id="L267">					qNameSB.append(&quot;, &quot;);</span>
+				}
+<span class="nc" id="L269">				count++;</span>
+			} 
+<span class="nc" id="L271">		} else {</span>
+<span class="nc" id="L272">			 bundle = localizer.getBundle(BbmEjbBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L273">			 qNameSB.append(localizer.i18n(bundle,BbmEjbBundleKey.QUEUE_FILTER_COMBINED)); </span>
+		}
+<span class="nc" id="L275">		return qNameSB.toString();</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

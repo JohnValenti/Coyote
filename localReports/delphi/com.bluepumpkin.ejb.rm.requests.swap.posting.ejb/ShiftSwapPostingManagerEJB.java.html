@@ -1,0 +1,1169 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftSwapPostingManagerEJB.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.posting.ejb</a> &gt; <span class="el_source">ShiftSwapPostingManagerEJB.java</span></div><h1>ShiftSwapPostingManagerEJB.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.swap.posting.ejb;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
+
+import org.apache.log4j.Priority;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.dao.DAOBase;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.workresource.model.WorkResourceAssignment;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.bluepumpkin.ejb.core.base.SessionEJBBase;
+import com.bluepumpkin.ejb.core.base.SupportNavigation;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.base.RmException;
+import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbLogBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.model.SSPostingCollection;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.model.ShiftSwapPosting;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.model.ShiftSwapPostingFieldInfo;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.validation.AgentGoodStandingValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.validation.SameShiftNotAlreadyPostedHV;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.validation.ShiftExistValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.bluepumpkin.ejb.rm.util.ShiftSwapRequestUtil;
+
+
+/**
+ * Title:        ShiftSwapPostingManagerEJB
+ * Description:  EJB for ShiftSwapPosting
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, Inc.
+ * @author       Zhibo Wang
+ * @version 1.0
+ */
+<span class="nc" id="L54">public class ShiftSwapPostingManagerEJB extends SessionEJBBase implements IShiftSwapPostingManager //OUTSIDE_CONTAINER</span>
+//public class ShiftSwapPostingManagerEJB extends SessionEjbBaseForTest implements ShiftSwapPostingManager //OUTSIDE_CONTAINER
+{
+<span class="nc" id="L57">    private static Category m_cat = Log.initCategory(ShiftSwapPostingManagerEJB.class.getName());</span>
+
+    protected static final int FETCHMODE_ALLPOSTINGS = 1;
+    protected static final int FETCHMODE_MYORGPOSTINGS = 2;
+
+<span class="nc" id="L62">    private final Validator m_agentGoodStandingValidationRule = new AgentGoodStandingValidationRule();</span>
+<span class="nc" id="L63">    private final Validator m_shiftExistValidationRule = new ShiftExistValidationRule();</span>
+<span class="nc" id="L64">    private final Validator m_sameShiftNotAlreadyPostedHV = new SameShiftNotAlreadyPostedHV();</span>
+
+    /**
+     * validators run on a call to {@link #validateShiftSwapPosting(Collection, boolean) validateShiftSwapPosting}
+     * method.
+     */
+<span class="nc" id="L70">    private final Validator[] m_validatorsForPickup = new Validator[] {</span>
+            m_agentGoodStandingValidationRule, m_shiftExistValidationRule };
+
+<span class="nc" id="L73">    private final Validator[] m_validatorsForUpdate = new Validator[] {</span>
+        m_agentGoodStandingValidationRule, m_shiftExistValidationRule};
+
+<span class="nc" id="L76">    private final Validator[] m_validatorsForCreate = new Validator[] {</span>
+        m_agentGoodStandingValidationRule, m_shiftExistValidationRule, m_sameShiftNotAlreadyPostedHV};
+
+    {
+<span class="nc" id="L80">        super.init(ShiftSwapPostingManagerEJB.class.getName());</span>
+<span class="nc" id="L81">    }</span>
+
+    /** override the base class to provide the appropriate logging category */
+    protected Category getCategory() {
+<span class="nc" id="L85">        return m_cat;</span>
+    }
+
+    /**
+     * Creates a persistent ShiftSwapPosting in the DB, with a child ShiftSwapItem.
+     * @param objValue  A ShiftSwapPosting object
+     * @return the ID of the created object
+     * @throws BbmCreateException
+     */
+    public ID createShiftSwapPosting(ShiftSwapPosting ssPosting)
+        throws BbmCreateException, RmHardValidationException {
+<span class="nc" id="L96">        String _method_ = &quot;createShiftSwapPosting&quot;;</span>
+<span class="nc" id="L97">        methodStart(_method_, ssPosting);</span>
+
+        ID postingId;
+
+        // make sure the posting contains a ShiftSwapItem
+<span class="nc" id="L102">        ShiftSwapItem item = ssPosting.getShiftSwapItem();</span>
+
+<span class="nc bnc" id="L104" title="All 2 branches missed.">        if (item == null) {</span>
+<span class="nc" id="L105">            throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.SSP_NO_ITEM, m_cat);</span>
+        }
+
+<span class="nc" id="L108">        ShiftSwapPostingDAO sspDAO = null;</span>
+        try {
+            //Hard Validation for posting creation
+<span class="nc" id="L111">            runHardValidatorsRaiseException(ssPosting, m_validatorsForCreate );</span>
+            
+            //Get ShiftID and add to ShiftSwapItem
+<span class="nc" id="L114">    		ScheduleAccessManager sam = RequestUtil.getScheduleAccessManager();</span>
+<span class="nc" id="L115">    		ShiftSwapItem ssi = ssPosting.getShiftSwapItem();</span>
+<span class="nc" id="L116">    		Collection shiftAssign = sam.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT, ssi.getEmployeeID(),</span>
+<span class="nc" id="L117">    				                                                             ssi.getStartDate(), ssi.getEndDate());</span>
+<span class="nc" id="L118">    		Iterator it = shiftAssign.iterator();</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">    		if (it.hasNext()) {</span>
+<span class="nc" id="L120">    			ShiftAssignment sa = (ShiftAssignment)it.next();</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    			if (sa.getShiftID() != null) {</span>
+<span class="nc" id="L122">    				ssi.setShiftID(sa.getShiftID());</span>
+    			}
+    		}
+
+            //create ShiftSwapPosting object in DB
+<span class="nc" id="L127">            sspDAO = new ShiftSwapPostingDAO(ShiftSwapPosting.DL_BASIC);</span>
+<span class="nc" id="L128">            postingId = sspDAO.createObject(ssPosting, false);</span>
+<span class="nc" id="L129">        } catch (BbmCreateException e) {</span>
+<span class="nc" id="L130">            m_cat.l7dError(RmEjbLogBundleKey.CREATE_FAILURE, new String[] { &quot;SHIFTSWAPPOSTING&quot; });</span>
+<span class="nc" id="L131">            handleException(e);</span>
+<span class="nc" id="L132">            throw e;</span>
+<span class="nc" id="L133">        } catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.l7dError(RmEjbLogBundleKey.CREATE_FAILURE, new String[] { &quot;SHIFTSWAPPOSTING&quot; });
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L140">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L141">			throw e;</span>
+<span class="nc" id="L142">		} catch (Exception e) {</span>
+<span class="nc" id="L143">        	handleException(_method_, e, true);</span>
+<span class="nc" id="L144">        	throw RequestUtil.createBbmCreateExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L146" title="All 4 branches missed.">            if (sspDAO != null) sspDAO.cleanUp();</span>
+<span class="nc" id="L147">            methodFinish();</span>
+<span class="nc" id="L148">        }</span>
+
+<span class="nc" id="L150">        return postingId;</span>
+    }
+
+    private void runHardValidatorsRaiseException(ShiftSwapPosting ssPosting, Validator[] validators)
+        throws Exception {
+
+<span class="nc" id="L156">        ValidationResult vr = runHardValidators(ssPosting, validators);</span>
+
+<span class="nc bnc" id="L158" title="All 2 branches missed.">        if (vr != null) {</span>
+<span class="nc" id="L159">            throw RequestUtil.createRmHardValidationException(vr, m_cat);</span>
+        }
+<span class="nc" id="L161">    }</span>
+
+    /**
+     * @param ssPosting
+     * @param validators
+     */
+    private ValidationResult runHardValidators(ShiftSwapPosting ssPosting, Validator[] validators) throws Exception {
+<span class="nc" id="L168">        ValidationResult vr = null;</span>
+
+        // for each validator
+<span class="nc bnc" id="L171" title="All 2 branches missed.">        for (int i = 0; i &lt; validators.length; i++) {</span>
+            // run validation
+<span class="nc" id="L173">            vr = validators[i].validate(ssPosting);</span>
+
+            // stop on first validation error.
+<span class="nc bnc" id="L176" title="All 2 branches missed.">            if (vr != null) {</span>
+<span class="nc" id="L177">                break;</span>
+            }
+        }
+
+<span class="nc" id="L181">        return vr;</span>
+    }
+
+
+    /**
+     * Updates a ShiftSwapPosting object including its child ShiftSwapItem object
+     * in the database.
+     *
+     * @param objValue  the object to be updated
+     * @throws MultiUserException
+     * @throws BbmUpdateException
+     */
+    public void updateShiftSwapPosting(ShiftSwapPosting ssPosting)
+        throws MultiUserException, BbmUpdateException, RmHardValidationException {
+<span class="nc" id="L195">        String _method_ = &quot;updateShiftSwapPosting&quot;;</span>
+<span class="nc" id="L196">        methodStart(_method_, ssPosting);</span>
+
+<span class="nc" id="L198">        ShiftSwapPostingDAO sspDAO = null;</span>
+        try {
+            //Hard Validation for posting update
+<span class="nc" id="L201">            runHardValidatorsRaiseException(ssPosting, m_validatorsForUpdate );</span>
+
+<span class="nc" id="L203">            sspDAO = new ShiftSwapPostingDAO(ShiftSwapPosting.DL_BASIC);</span>
+<span class="nc" id="L204">            sspDAO.updateSSPosting(ssPosting);</span>
+<span class="nc" id="L205">        } catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.l7dError(RmEjbLogBundleKey.CREATE_FAILURE, new String[] { &quot;SHIFTSWAPPOSTING&quot; });
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L212">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L213">			throw e;</span>
+<span class="nc" id="L214">		} catch (BbmUpdateException e) {</span>
+<span class="nc" id="L215">            m_cat.l7dError(RmEjbLogBundleKey.UPDATE_FAILURE, new String[] { &quot;SHIFTSWAPPOSTING&quot; });</span>
+<span class="nc" id="L216">            handleException(e);</span>
+<span class="nc" id="L217">            throw e;</span>
+<span class="nc" id="L218">        } catch (MultiUserException e) {</span>
+<span class="nc" id="L219">            m_cat.l7dError(RmEjbLogBundleKey.UPDATE_FAILURE, new String[] { &quot;SHIFTSWAPPOSTING&quot; });</span>
+<span class="nc" id="L220">            handleException(e);</span>
+<span class="nc" id="L221">            throw e;</span>
+<span class="nc" id="L222">        } catch (Exception e) {</span>
+<span class="nc" id="L223">        	handleException(e);</span>
+<span class="nc" id="L224">        	throw RequestUtil.createBbmUpdateExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L226" title="All 4 branches missed.">            if (sspDAO != null) sspDAO.cleanUp();</span>
+<span class="nc" id="L227">            methodFinish();</span>
+<span class="nc" id="L228">        }</span>
+<span class="nc" id="L229">    }</span>
+
+    /**
+     * Deletes ShiftSwapPosting objects including child ShiftSwapItems
+     * from the database.
+     *
+     * @param colIDs collection of IDs representing ShiftSwapPosting objects
+     * in the database
+     * @throws BbmRemoveException
+     * @throws BbmFinderException
+     */
+    public void deleteShiftSwapPostings(Collection colIDs)
+        throws BbmRemoveException, BbmFinderException, RmHardValidationException {
+<span class="nc" id="L242">        String _method_ = &quot;deleteShiftSwapPostings&quot;;</span>
+<span class="nc" id="L243">        methodStart(_method_, colIDs);</span>
+
+<span class="nc" id="L245">        Collection itemIds = new ArrayList(colIDs.size());</span>
+<span class="nc" id="L246">        Collection postings = new ArrayList(colIDs.size());</span>
+<span class="nc" id="L247">        ShiftSwapPostingDAO sspDAO = null;</span>
+<span class="nc" id="L248">        DAOBase ssItemDAO = null;</span>
+        try {
+            // method getObjectsByIDs is in DAOBase.
+            // consequently it shallow reads the objects without retrieving
+            // children. this is fine, since we only want to access the
+            // ShiftSwapItemId field.
+<span class="nc" id="L254">            long detailLevel = ShiftSwapPosting.DL_BASIC | ShiftSwapPosting.DL_SHIFTSWAP_ITEMS;</span>
+<span class="nc" id="L255">            sspDAO = new ShiftSwapPostingDAO(detailLevel);</span>
+<span class="nc" id="L256">            postings = sspDAO.findSSPostingsByIDs(colIDs, detailLevel);</span>
+
+<span class="nc" id="L258">            Iterator itr = postings.iterator();</span>
+<span class="nc bnc" id="L259" title="All 2 branches missed.">            while (itr.hasNext()) {</span>
+<span class="nc" id="L260">                itemIds.add(((ShiftSwapPosting) itr.next()).getFieldValue(</span>
+                        ShiftSwapPostingFieldInfo.SHIFTSWAPPOSTING_I_SHIFTSWAPITEMID));
+            }
+
+            // delete the child ShiftSwapItem objects which will
+            // cascade delete the parent ShiftSwapPosting objects
+<span class="nc" id="L266">            ssItemDAO = sspDAO.createChildDAO(ShiftSwapPostingFieldInfo.ITEM_CHILD_TYPE);</span>
+<span class="nc" id="L267">            ssItemDAO.deleteObjects(itemIds);</span>
+<span class="nc" id="L268">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L275">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L276">			throw e;</span>
+<span class="nc" id="L277">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L278">            m_cat.error(e, e);</span>
+<span class="nc" id="L279">        	handleException(e);</span>
+<span class="nc" id="L280">            throw e;</span>
+<span class="nc" id="L281">        } catch (BbmRemoveException e) {</span>
+<span class="nc" id="L282">        	m_cat.error(e,e);</span>
+<span class="nc" id="L283">        	handleException(e);</span>
+<span class="nc" id="L284">        	throw e;</span>
+<span class="nc" id="L285">        } catch (Exception e) {</span>
+<span class="nc" id="L286">        	handleException(e);</span>
+<span class="nc" id="L287">        	throw RequestUtil.createBbmRemoveExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L289" title="All 4 branches missed.">            if (sspDAO != null) sspDAO.cleanUp();</span>
+<span class="nc bnc" id="L290" title="All 4 branches missed.">            if (ssItemDAO != null) ssItemDAO.cleanUp();</span>
+<span class="nc" id="L291">            methodFinish();</span>
+<span class="nc" id="L292">        }</span>
+<span class="nc" id="L293">    }</span>
+
+    /**
+     * Deletes ShiftSwapPosting object from database.
+     *
+     * @param id the ID representing the ShiftSwapPosting object in the database.
+     * @throws BbmRemoveException
+     * @throws BbmFinderException
+     */
+    public void deleteShiftSwapPosting(ID id)
+    	throws BbmRemoveException, BbmFinderException, RmHardValidationException {
+<span class="nc" id="L304">        String _method_ = &quot;deleteShiftSwapPosting&quot;;</span>
+<span class="nc" id="L305">        methodStart(_method_, id);</span>
+
+<span class="nc" id="L307">        ShiftSwapPostingDAO dao = null;</span>
+
+        try {
+<span class="nc" id="L310">            dao = new ShiftSwapPostingDAO(ShiftSwapPosting.DL_BASIC);</span>
+<span class="nc" id="L311">            dao.deleteSSPosting(id);</span>
+<span class="nc" id="L312">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L319">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L320">			throw e;</span>
+<span class="nc" id="L321">        } catch (BbmRemoveException e) {</span>
+<span class="nc" id="L322">        	m_cat.error(e,e);</span>
+<span class="nc" id="L323">        	handleException(e);</span>
+<span class="nc" id="L324">        	throw e;</span>
+<span class="nc" id="L325">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L326">        	m_cat.error(e,e);</span>
+<span class="nc" id="L327">        	handleException(e);</span>
+<span class="nc" id="L328">        	throw e;</span>
+<span class="nc" id="L329">        } catch (Exception e) {</span>
+<span class="nc" id="L330">            handleException(e);</span>
+<span class="nc" id="L331">            throw RequestUtil.createBbmRemoveExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L333" title="All 4 branches missed.">            if (dao != null) dao.cleanUp();</span>
+<span class="nc" id="L334">            methodFinish();</span>
+<span class="nc" id="L335">        }</span>
+<span class="nc" id="L336">    }</span>
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.swap.posting.ejb.IShiftSwapPostingManager#validateShiftSwapPosting(java.util.Collection, boolean)
+     */
+    public Collection validateShiftSwapPostings(Collection ssPostings, boolean deleteIfHardValFails)
+        throws RmHardValidationException, RmException {
+
+<span class="nc" id="L344">        String _method_ = &quot;validateShiftSwapPostings&quot;;</span>
+<span class="nc" id="L345">        methodStart(_method_, RmUtil.dumpIDsFromVOCollection(ssPostings));</span>
+
+        try {
+<span class="nc" id="L348">            return _validateShiftSwapPostings(ssPostings, deleteIfHardValFails, null);</span>
+<span class="nc" id="L349">        } catch (RmHardValidationException e) {</span>
+            //RM exceptions are always logged at the point where they are thrown.
+            //m_cat.error(e, e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L356">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L357">            throw e;</span>
+<span class="nc" id="L358">        } catch (RmException e) {</span>
+<span class="nc" id="L359">            m_cat.error(e, e);</span>
+<span class="nc" id="L360">            handleException(e);</span>
+<span class="nc" id="L361">            throw e;</span>
+<span class="nc" id="L362">        } catch (Exception e) {</span>
+<span class="nc" id="L363">            handleException(e);</span>
+<span class="nc" id="L364">            throw RequestUtil.createRmExceptionWrapper(e, m_cat);</span>
+        }
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.swap.posting.ejb.IShiftSwapPostingManager#validateShiftSwapPostingsByIDs(java.util.Collection, boolean)
+     */
+    public Collection validateShiftSwapPostingsByIDs(Collection ssPostingIDs, boolean deleteIfHardValFails)
+        throws RmHardValidationException, RmException {
+
+<span class="nc" id="L374">            String _method_ = &quot;validateShiftSwapPostingsByIDs&quot;;</span>
+<span class="nc" id="L375">            methodStart(_method_, RmUtil.dumpCommaSeparated(ssPostingIDs, new Boolean(deleteIfHardValFails)));</span>
+
+<span class="nc" id="L377">            ShiftSwapPostingDAO sspDAO = null;</span>
+            try {
+<span class="nc" id="L379">                long detailLevel = ShiftSwapPosting.DL_BASIC | ShiftSwapPosting.DL_SHIFTSWAP_ITEMS;</span>
+<span class="nc" id="L380">                sspDAO = new ShiftSwapPostingDAO(detailLevel);</span>
+<span class="nc" id="L381">                Collection ssPostings = sspDAO.findSSPostingsByIDs(ssPostingIDs, detailLevel);</span>
+
+<span class="nc" id="L383">                return _validateShiftSwapPostings(ssPostings, deleteIfHardValFails, sspDAO);</span>
+<span class="nc" id="L384">            } catch (RmHardValidationException e) {</span>
+                //RM exceptions are always logged at the point where they are thrown.
+                //m_cat.error(e, e);
+
+                // Logged with priority 'debug' since this exception is generated by RM during validations or
+                // workflow processing and happens often during normal operation.  If logged with a different
+                // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L391">                handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L392">                throw e;</span>
+<span class="nc" id="L393">            } catch (RmException e) {</span>
+<span class="nc" id="L394">                m_cat.error(e, e);</span>
+<span class="nc" id="L395">                handleException(e);</span>
+<span class="nc" id="L396">                throw e;</span>
+<span class="nc" id="L397">            } catch (Exception e) {</span>
+<span class="nc" id="L398">                handleException(e);</span>
+<span class="nc" id="L399">                throw RequestUtil.createRmExceptionWrapper(e, m_cat);</span>
+            }
+    }
+
+    private Collection _validateShiftSwapPostings(Collection ssPostings, boolean deleteIfHardValFails,
+        ShiftSwapPostingDAO sspDAO) throws Exception {
+
+<span class="nc bnc" id="L406" title="All 2 branches missed.">        boolean sspDAONeedsCreate = (sspDAO == null);</span>
+        try {
+<span class="nc" id="L408">            Collection ssPostingIDsForDel = new ArrayList(ssPostings.size());</span>
+<span class="nc bnc" id="L409" title="All 2 branches missed.">            for (Iterator iter = ssPostings.iterator(); iter.hasNext();) {</span>
+<span class="nc" id="L410">                ShiftSwapPosting ssPosting = (ShiftSwapPosting) iter.next();</span>
+
+                // run hard validators.  Stops at the first hard validation failure.
+<span class="nc" id="L413">                ValidationResult hardValResult = runHardValidators(ssPosting, m_validatorsForPickup);</span>
+
+                // if hard validatoin fails, posting is a candidate for deletion.
+<span class="nc bnc" id="L416" title="All 2 branches missed.">                if (hardValResult != null ) {</span>
+<span class="nc" id="L417">                    ssPostingIDsForDel.add(ssPosting.getID());</span>
+                }
+<span class="nc" id="L419">            }</span>
+
+            // if ssPostings need to be deleted and a 'delete' operation is requested.
+<span class="nc bnc" id="L422" title="All 4 branches missed.">            if ( !ssPostingIDsForDel.isEmpty() &amp;&amp; deleteIfHardValFails ) {</span>
+                // instantiate DAO only if necessary.
+<span class="nc bnc" id="L424" title="All 2 branches missed.">                sspDAO = (sspDAO == null)?new ShiftSwapPostingDAO(ShiftSwapPosting.DL_BASIC):sspDAO;</span>
+<span class="nc" id="L425">                sspDAO.deleteObjects(ssPostingIDsForDel);</span>
+            }
+
+            // these might have validation results attached.
+<span class="nc" id="L429">            return ssPostings;</span>
+        } finally {
+<span class="nc bnc" id="L431" title="All 8 branches missed.">            if (sspDAONeedsCreate &amp;&amp; sspDAO != null) sspDAO.cleanUp();</span>
+        }
+
+    }
+    /**
+     * &lt;B&gt;findShiftSwapPostingByID&lt;/B&gt;
+     * &lt;P&gt;Params  ID
+     * returns ShiftSwapPosting Object
+     * &lt;P&gt;
+     *  @return   ShiftSwapPosting Object
+     *
+     */
+    public ShiftSwapPosting findShiftSwapPostingById(ID postingID, long detailLevel)
+        throws BbmFinderException, RmHardValidationException {
+<span class="nc" id="L445">        String _method_ = &quot;findShiftSwapPostingById&quot;;</span>
+<span class="nc" id="L446">        methodStart(_method_, postingID);</span>
+
+<span class="nc" id="L448">        ShiftSwapPostingDAO dao = null;</span>
+
+        try {
+<span class="nc" id="L451">            dao = new ShiftSwapPostingDAO(detailLevel);</span>
+<span class="nc" id="L452">            ShiftSwapPosting posting = (ShiftSwapPosting) dao.getObjectByID(postingID);</span>
+
+<span class="nc" id="L454">            return posting;</span>
+<span class="nc" id="L455">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L462">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L463">			throw e;</span>
+<span class="nc" id="L464">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L465">        	m_cat.error(e,e);</span>
+<span class="nc" id="L466">        	handleException(e);</span>
+<span class="nc" id="L467">        	throw e;</span>
+<span class="nc" id="L468">        } catch (Exception e) {</span>
+<span class="nc" id="L469">            handleException(e);</span>
+<span class="nc" id="L470">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L472" title="All 4 branches missed.">            if (dao != null) dao.cleanUp();</span>
+<span class="nc" id="L473">            methodFinish();</span>
+        }
+    }
+
+    /**
+     * &lt;B&gt;findShiftSwapPostingsByEmployee&lt;/B&gt;
+     * &lt;P&gt;Params  ID
+     * returns ShiftSwapPosting Object
+     * &lt;P&gt;
+     *  @return   ShiftSwapPosting Object
+     *
+     */
+    public SSPostingCollection findShiftSwapPostingsByEmployee(ID empId, long detailLevel, int chunkSize, boolean fetchPartial)
+        throws BbmFinderException, RmHardValidationException
+    {
+<span class="nc" id="L488">        String _method_ = &quot;findShiftSwapPostingsByEmployee&quot;;</span>
+<span class="nc" id="L489">        methodStart(_method_, empId, new Integer(chunkSize));</span>
+
+<span class="nc" id="L491">        ShiftSwapPostingDAO ssPostingDAO = null;</span>
+
+        try {
+<span class="nc" id="L494">            List postingIDs = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L495">            Collection postings = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L496">            ssPostingDAO = new ShiftSwapPostingDAO(detailLevel);</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">            boolean paginationEnabled = chunkSize != SupportNavigation.CHUNKSIZE_ALL;</span>
+<span class="nc bnc" id="L498" title="All 2 branches missed.">			if (paginationEnabled) {</span>
+                // first fetch posting IDs
+<span class="nc" id="L500">                postingIDs = ssPostingDAO.findSSPostingIDsByEmployee(empId, fetchPartial);</span>
+<span class="nc bnc" id="L501" title="All 2 branches missed.">                if (!postingIDs.isEmpty()) {</span>
+					// fetch minimum(postingIDs.size(), chunkSize);
+<span class="nc bnc" id="L503" title="All 2 branches missed.">					int numOfPostings = (postingIDs.size() &lt; chunkSize)?postingIDs.size():chunkSize;</span>
+					// fetch the chunk of requested postings
+<span class="nc" id="L505">	                postings = ssPostingDAO.findSSPostingsByIDs(postingIDs.subList(0, numOfPostings), detailLevel);</span>
+<span class="nc" id="L506">                }</span>
+            } else {
+				// pagination not enabled, so fetch all postings (bypass fetching of posting IDs).
+<span class="nc" id="L509">                postings = ssPostingDAO.findSSPostingsByEmployee(empId, detailLevel, fetchPartial);</span>
+            }
+
+<span class="nc" id="L512">            return new SSPostingCollection(postingIDs, postings, chunkSize);</span>
+<span class="nc" id="L513">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L520">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L521">			throw e;</span>
+<span class="nc" id="L522">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L523">        	m_cat.error(e,e);</span>
+<span class="nc" id="L524">        	handleException(e);</span>
+<span class="nc" id="L525">        	throw e;</span>
+<span class="nc" id="L526">        } catch (Exception e) {</span>
+<span class="nc" id="L527">            handleException(e);</span>
+<span class="nc" id="L528">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L530" title="All 4 branches missed.">            if (ssPostingDAO != null) ssPostingDAO.cleanUp();</span>
+<span class="nc" id="L531">            methodFinish();</span>
+        }
+    }
+
+    /**
+     * &lt;B&gt;findShiftSwapPostingIDsByEmployee&lt;/B&gt;
+     * &lt;P&gt;Params  ID
+     * returns ShiftSwapPosting Object
+     * &lt;P&gt;
+     *  @return   ShiftSwapPosting Object
+     *
+     */
+    public Collection findShiftSwapPostingIDsByEmployee(ID empId, boolean fetchPartial)
+        throws BbmFinderException, RmHardValidationException {
+<span class="nc" id="L545">        String _method_ = &quot;findShiftSwapPostingIDsByEmployee&quot;;</span>
+<span class="nc" id="L546">        methodStart(_method_, empId);</span>
+
+<span class="nc" id="L548">        ShiftSwapPostingDAO sspDAO = null;</span>
+
+        try {
+<span class="nc" id="L551">            sspDAO = new ShiftSwapPostingDAO(ShiftSwapPosting.DL_BASIC);</span>
+<span class="nc" id="L552">            Collection postingIDs = sspDAO.findSSPostingIDsByEmployee(empId, fetchPartial);</span>
+
+<span class="nc" id="L554">            return postingIDs;</span>
+<span class="nc" id="L555">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L562">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L563">			throw e;</span>
+<span class="nc" id="L564">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L565">        	m_cat.error(e,e);</span>
+<span class="nc" id="L566">        	handleException(e);</span>
+<span class="nc" id="L567">        	throw e;</span>
+<span class="nc" id="L568">        } catch (Exception e) {</span>
+<span class="nc" id="L569">            handleException(e);</span>
+<span class="nc" id="L570">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L572" title="All 4 branches missed.">            if (sspDAO != null) sspDAO.cleanUp();</span>
+<span class="nc" id="L573">            methodFinish();</span>
+        }
+    }
+
+    /**
+     * &lt;B&gt;findShiftSwapPostingsByOrg&lt;/B&gt;
+     * &lt;P&gt;Params  ID
+     * returns ShiftSwapPosting Object
+     * &lt;P&gt;
+     *  @return   ShiftSwapPosting Object
+     *
+     */
+    public SSPostingCollection findShiftSwapPostingsByOrg(ID orgId, long detailLevel, int chunkSize)
+        throws BbmFinderException, RmHardValidationException {
+<span class="nc" id="L587">        String _method_ = &quot;findShiftSwapPostingsByOrg&quot;;</span>
+<span class="nc" id="L588">        methodStart(_method_, orgId, new Integer(chunkSize));</span>
+
+<span class="nc" id="L590">        ShiftSwapPostingDAO sspDAO = null;</span>
+
+        try {
+<span class="nc" id="L593">            List postingIDs = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L594">            Collection postings = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L595">            sspDAO = new ShiftSwapPostingDAO(detailLevel);</span>
+
+            // if pagination is enabled
+<span class="nc bnc" id="L598" title="All 2 branches missed.">            if (chunkSize != SupportNavigation.CHUNKSIZE_ALL) {</span>
+                // first fetch posting ids
+<span class="nc" id="L600">                postingIDs = sspDAO.findSSPostingIDsByOrg(orgId);</span>
+<span class="nc bnc" id="L601" title="All 2 branches missed.">				if (!postingIDs.isEmpty()) {</span>
+					// fetch minimum(postingIDs.size(), chunkSize);
+<span class="nc bnc" id="L603" title="All 2 branches missed.">					int numOfPostings = (postingIDs.size() &lt; chunkSize)?postingIDs.size():chunkSize;</span>
+					// fetch the chunk of requested postings
+<span class="nc" id="L605">                	postings = sspDAO.findSSPostingsByIDs(postingIDs.subList(0, numOfPostings), detailLevel);</span>
+<span class="nc" id="L606">				}</span>
+            } else {
+				// pagination not enabled, so fetch all postings (bypass fetching of posting IDs).
+<span class="nc" id="L609">                postings = sspDAO.findSSPostingsByOrg(orgId, detailLevel);</span>
+            }
+
+<span class="nc" id="L612">            return new SSPostingCollection(postingIDs, postings, chunkSize);</span>
+<span class="nc" id="L613">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L620">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L621">			throw e;</span>
+<span class="nc" id="L622">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L623">        	m_cat.error(e,e);</span>
+<span class="nc" id="L624">        	handleException(e);</span>
+<span class="nc" id="L625">        	throw e;</span>
+<span class="nc" id="L626">        } catch (Exception e) {</span>
+<span class="nc" id="L627">            handleException(e);</span>
+<span class="nc" id="L628">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L630" title="All 4 branches missed.">            if (sspDAO != null) sspDAO.cleanUp();</span>
+<span class="nc" id="L631">            methodFinish();</span>
+        }
+    }
+
+    /**
+     * &lt;B&gt;findShiftSwapPostingIDsByOrg&lt;/B&gt;
+     * &lt;P&gt;Params  ID
+     * returns ShiftSwapPosting Object
+     * &lt;P&gt;
+     *  @return   ShiftSwapPosting Object
+     *
+     */
+    public Collection findShiftSwapPostingIDsByOrg(ID orgID)
+        throws BbmFinderException, RmHardValidationException {
+<span class="nc" id="L645">        String _method_ = &quot;findShiftSwapPostingIDsByOrg&quot;;</span>
+<span class="nc" id="L646">        methodStart(_method_, orgID);</span>
+
+<span class="nc" id="L648">        ShiftSwapPostingDAO sspDAO = null;</span>
+
+        try {
+<span class="nc" id="L651">            sspDAO = new ShiftSwapPostingDAO(ShiftSwapPosting.DL_BASIC);</span>
+<span class="nc" id="L652">            Collection postings = sspDAO.findSSPostingIDsByOrg(orgID);</span>
+
+<span class="nc" id="L654">            return postings;</span>
+<span class="nc" id="L655">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L662">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L663">			throw e;</span>
+<span class="nc" id="L664">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L665">        	m_cat.error(e,e);</span>
+<span class="nc" id="L666">        	handleException(e);</span>
+<span class="nc" id="L667">        	throw e;</span>
+<span class="nc" id="L668">        } catch (Exception e) {</span>
+<span class="nc" id="L669">            handleException(e);</span>
+<span class="nc" id="L670">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L672" title="All 4 branches missed.">            if (sspDAO != null) sspDAO.cleanUp();</span>
+<span class="nc" id="L673">            methodFinish();</span>
+        }
+    }
+
+    /**
+     * &lt;B&gt;findShiftSwapPostingsByCampaign&lt;/B&gt;
+     * &lt;P&gt;Params  ID
+     * returns ShiftSwapPosting Object
+     * &lt;P&gt;
+     *  @return   ShiftSwapPosting Object
+     *
+     */
+    public SSPostingCollection findShiftSwapPostingsByCampaign(ID campaignID, long detailLevel, int chunkSize)
+        throws BbmFinderException, RmHardValidationException {
+<span class="nc" id="L687">        String _method_ = &quot;findShiftSwapPostingsByCampaign&quot;;</span>
+<span class="nc" id="L688">        methodStart(_method_, campaignID, new Integer(chunkSize));</span>
+
+<span class="nc" id="L690">        ShiftSwapPostingDAO sspDAO = null;</span>
+
+        try {
+<span class="nc" id="L693">            List postingIDs = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L694">            Collection postings = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L695">            sspDAO = new ShiftSwapPostingDAO(detailLevel);</span>
+
+			// if pagination is enabled
+<span class="nc bnc" id="L698" title="All 2 branches missed.">            if (chunkSize != SupportNavigation.CHUNKSIZE_ALL) {</span>
+				// first fetch posting IDs
+<span class="nc" id="L700">                postingIDs = sspDAO.findSSPostingIDsByCampaign(campaignID);</span>
+<span class="nc bnc" id="L701" title="All 2 branches missed.">				if (!postingIDs.isEmpty()) {</span>
+					// fetch minimum(postingIDs.size(), chunkSize);
+<span class="nc bnc" id="L703" title="All 2 branches missed.">					int numOfPostings = (postingIDs.size() &lt; chunkSize)?postingIDs.size():chunkSize;</span>
+					// fetch the chunk of requested postings
+<span class="nc" id="L705">	                postings = sspDAO.findSSPostingsByIDs(postingIDs.subList(0, numOfPostings), detailLevel);</span>
+<span class="nc" id="L706">				}</span>
+            } else {
+				// pagination not enabled, so fetch all postings (bypass fetching of posting IDs).
+<span class="nc" id="L709">                postings = sspDAO.findSSPostingsByCampaign(campaignID, detailLevel);</span>
+            }
+
+<span class="nc" id="L712">            return new SSPostingCollection(postingIDs, postings, chunkSize);</span>
+<span class="nc" id="L713">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L720">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L721">			throw e;</span>
+<span class="nc" id="L722">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L723">        	m_cat.error(e,e);</span>
+<span class="nc" id="L724">        	handleException(e);</span>
+<span class="nc" id="L725">        	throw e;</span>
+<span class="nc" id="L726">        } catch (Exception e) {</span>
+<span class="nc" id="L727">            handleException(e);</span>
+<span class="nc" id="L728">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L730" title="All 4 branches missed.">            if (sspDAO != null) sspDAO.cleanUp();</span>
+<span class="nc" id="L731">            methodFinish();</span>
+        }
+    }
+
+    /**
+     * &lt;B&gt;findShiftSwapPostingIDsByCampaign&lt;/B&gt;
+     * &lt;P&gt;Params  ID
+     * returns ShiftSwapPosting Object
+     * &lt;P&gt;
+     *  @return   ShiftSwapPosting Object
+     *
+     */
+    public Collection findShiftSwapPostingIDsByCampaign(ID campaignID)
+        throws BbmFinderException, RmHardValidationException {
+<span class="nc" id="L745">        String _method_ = &quot;findShiftSwapPostingIDsByCampaign&quot;;</span>
+<span class="nc" id="L746">        methodStart(_method_, campaignID);</span>
+
+<span class="nc" id="L748">        ShiftSwapPostingDAO sspDAO = null;</span>
+
+        try {
+<span class="nc" id="L751">            sspDAO = new ShiftSwapPostingDAO(ShiftSwapPosting.DL_BASIC);</span>
+<span class="nc" id="L752">            Collection postings = sspDAO.findSSPostingIDsByCampaign(campaignID);</span>
+
+<span class="nc" id="L754">            return postings;</span>
+<span class="nc" id="L755">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L762">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L763">			throw e;</span>
+<span class="nc" id="L764">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L765">        	m_cat.error(e,e);</span>
+<span class="nc" id="L766">        	handleException(e);</span>
+<span class="nc" id="L767">        	throw e;</span>
+<span class="nc" id="L768">        } catch (Exception e) {</span>
+<span class="nc" id="L769">            handleException(e);</span>
+<span class="nc" id="L770">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L772" title="All 4 branches missed.">            if (sspDAO != null) sspDAO.cleanUp();</span>
+<span class="nc" id="L773">            methodFinish();</span>
+        }
+    }
+
+    /**
+     * Finds postings which belong to the specified employee's org between now and into the future.
+     * Note that the employee's organization association may change with time.
+     * Postings are fetched from employees in each org that the specified employee belongs to.
+     *
+     * @param empID
+     * @param detailLevel
+     * @param chunkSize
+     * @param fetchMode {@link #FETCHMODE_ALLPOSTINGS FETCHMODE_ALLPOSTINGS} or {@link #FETCHMODE_MYORGPOSTINGS FETCHMODE_MYORGPOSTINGS}
+     * @return
+     * @throws Exception
+     */
+    protected SSPostingCollection findShiftSwapPostingsForEmpOrgByMode(ID empID, long detailLevel,
+        int chunkSize, int fetchMode, boolean fetchPartial) throws Exception {
+
+<span class="nc" id="L792">        ShiftSwapPostingDAO ssPostingDAO = null;</span>
+
+        try {
+<span class="nc" id="L795">            List postingIDs = new ArrayList();</span>
+<span class="nc" id="L796">            Collection postings = new ArrayList();</span>
+
+            // Get employee-organization associations for this employee for the time interval 'now' to max time.
+//            WorkResourceManager wrm = BbmManagerFactory.getWorkResourceManager();
+//            Collection wrAssignments = wrm.getWorkResourceAssignments(empID, new Date(), null, false);
+<span class="nc" id="L801">            Collection wrAssignments = ValidationUtil.getWorkResAssnWithTZForWRID(empID, new Date(), null);</span>
+
+<span class="nc" id="L803">            ssPostingDAO = new ShiftSwapPostingDAO(detailLevel);</span>
+			// if pagination is enabled
+<span class="nc bnc" id="L805" title="All 2 branches missed.">            boolean paginationEnabled = chunkSize != SupportNavigation.CHUNKSIZE_ALL;</span>
+            // for each workresource assignment.
+<span class="nc bnc" id="L807" title="All 2 branches missed.">			for (Iterator wrAssnsIter = wrAssignments.iterator(); wrAssnsIter.hasNext();) {</span>
+<span class="nc" id="L808">                WorkResourceAssignment wrAssn = (WorkResourceAssignment) wrAssnsIter.next();</span>
+
+                // get orgID for employee.
+<span class="nc" id="L811">                ID empOrgID = wrAssn.getOrganizationID();</span>
+
+<span class="nc" id="L813">                Collection swappableOrgIDs = null;</span>
+<span class="nc bnc" id="L814" title="All 2 branches missed.">                if ( fetchMode == FETCHMODE_ALLPOSTINGS ) {</span>
+					// get orgs this org can swap with.
+<span class="nc" id="L816">                    swappableOrgIDs = ShiftSwapRequestUtil.getSwappableOrgIDsForOrg(empOrgID);</span>
+
+                    // if this org cannot swap with any org, then continue with next emp-org association
+<span class="nc bnc" id="L819" title="All 2 branches missed.">                    if ( swappableOrgIDs.isEmpty() ) continue;</span>
+<span class="nc bnc" id="L820" title="All 2 branches missed.">                } else if (fetchMode == FETCHMODE_MYORGPOSTINGS) {</span>
+                    // check if the organization can swap with self (fetching postings for myorg).
+<span class="nc bnc" id="L822" title="All 2 branches missed.">                    if (!ShiftSwapRequestUtil.canOrg1SwapWithOrg2(empOrgID, empOrgID, null))</span>
+<span class="nc" id="L823">                        continue;</span>
+                } else {
+<span class="nc" id="L825">                    throw new IllegalArgumentException(&quot;fetchMode = &quot;  + fetchMode);</span>
+                }
+
+                // if pagination enabled, then first fetch posting IDs
+<span class="nc bnc" id="L829" title="All 2 branches missed.">                if (paginationEnabled) {</span>
+<span class="nc bnc" id="L830" title="All 2 branches missed.">                    if (fetchMode == FETCHMODE_ALLPOSTINGS) {</span>
+						// first fetch posting IDs
+<span class="nc" id="L832">                        postingIDs.addAll(ssPostingDAO.findAllSSPostingIDsForEmp(empID, swappableOrgIDs,</span>
+<span class="nc" id="L833">                            wrAssn.getStartTime(), wrAssn.getEndTime(), fetchPartial));</span>
+<span class="nc bnc" id="L834" title="All 2 branches missed.">                    } else if (fetchMode == FETCHMODE_MYORGPOSTINGS) {</span>
+						// first fetch posting IDs
+<span class="nc" id="L836">                        postingIDs.addAll(ssPostingDAO.findSSPostingIDsForMyOrg(empID,</span>
+<span class="nc" id="L837">                            empOrgID, wrAssn.getStartTime(), wrAssn.getEndTime(), fetchPartial));</span>
+                    }
+                } else { // if pagination not enabled, then fetch the postings (do not have to fetch the IDs).
+<span class="nc bnc" id="L840" title="All 2 branches missed.">                    if (fetchMode == FETCHMODE_ALLPOSTINGS) {</span>
+						// pagination not enabled, so fetch all postings (bypass fetching of posting IDs).
+<span class="nc" id="L842">                        postings.addAll(ssPostingDAO.findAllSSPostingsForEmp(empID, swappableOrgIDs,</span>
+<span class="nc" id="L843">                            wrAssn.getStartTime(), wrAssn.getEndTime(), detailLevel, fetchPartial));</span>
+<span class="nc bnc" id="L844" title="All 2 branches missed.">                    } else if (fetchMode == FETCHMODE_MYORGPOSTINGS) {</span>
+						// pagination not enabled, so fetch all postings (bypass fetching of posting IDs).
+<span class="nc" id="L846">                        postings.addAll(ssPostingDAO.findSSPostingsForMyOrg(empID,</span>
+<span class="nc" id="L847">                            empOrgID, wrAssn.getStartTime(), wrAssn.getEndTime(), detailLevel, fetchPartial));</span>
+                    }
+                }
+<span class="nc" id="L850">            }</span>
+
+            // if pagination is enabled, then fetch the specified chunk of requests using the IDs fetched earlier.
+<span class="nc bnc" id="L853" title="All 4 branches missed.">            if (paginationEnabled &amp;&amp; !postingIDs.isEmpty()) {</span>
+<span class="nc bnc" id="L854" title="All 4 branches missed.">                if (fetchMode == FETCHMODE_ALLPOSTINGS || fetchMode == FETCHMODE_MYORGPOSTINGS) {</span>
+<span class="nc bnc" id="L855" title="All 2 branches missed.">					if (!postingIDs.isEmpty()) {</span>
+						// fetch minimum(postingIDs.size(), chunkSize);
+<span class="nc bnc" id="L857" title="All 2 branches missed.">						int numOfPostings = (postingIDs.size() &lt; chunkSize)?postingIDs.size():chunkSize;</span>
+						// fetch the chunk of requested postings
+<span class="nc" id="L859">	                    postings = ssPostingDAO.findSSPostingsByIDs(postingIDs.subList(0, numOfPostings), detailLevel);</span>
+					}
+                }
+            }
+
+<span class="nc" id="L864">            return new SSPostingCollection(postingIDs, postings, chunkSize);</span>
+        } finally {
+<span class="nc bnc" id="L866" title="All 4 branches missed.">            if (ssPostingDAO != null) ssPostingDAO.cleanUp();</span>
+        }
+    }
+
+    /*
+     * See {@link ShiftSwapPostingManager#findAllShiftSwapPostings(ID, int) findAllShiftSwapPostings(ID, int)}
+     *
+     * @param empID
+     * @param chunkSize
+     * @return
+     * @throws BbmFinderException
+     * @throws
+     */
+    public SSPostingCollection findAllShiftSwapPostings(ID empID, long detailLevel, int chunkSize, boolean fetchPartial)
+        throws BbmFinderException, RmHardValidationException
+    {
+<span class="nc" id="L882">        String _method_ = &quot;findAllShiftSwapPostings&quot;;</span>
+<span class="nc" id="L883">        methodStart(_method_, empID, new Integer(chunkSize));</span>
+
+        try {
+<span class="nc" id="L886">            return findShiftSwapPostingsForEmpOrgByMode(empID, detailLevel, chunkSize, FETCHMODE_ALLPOSTINGS, fetchPartial);</span>
+<span class="nc" id="L887">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L894">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L895">			throw e;</span>
+<span class="nc" id="L896">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L897">        	m_cat.error(e,e);</span>
+<span class="nc" id="L898">        	handleException(e);</span>
+<span class="nc" id="L899">        	throw e;</span>
+<span class="nc" id="L900">        } catch (Exception e) {</span>
+<span class="nc" id="L901">            handleException(e);</span>
+<span class="nc" id="L902">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc" id="L904">            methodFinish();</span>
+        }
+    }
+
+    /*public Collection findShiftSwapPostingsForMyCampaign(ID empID) throws Exception
+    {
+    	Date now = new Date();
+
+    	// get all campaign work resource assignments (and their effectivity periods) for the
+    	// given employee starting now
+    	Collection campWorkResAssnsForEmp = RequestUtil.getCampaignAssnsForWorkResDuringPeriod(
+    		empID, now, null);
+
+    	// Note: CA == campaign assocication; WR == Work resource.
+    	// for each campaign
+    	//    get my CA time range.
+    	//    get all WRs if their CA time range overlaps my CA time range
+    	//
+		//    get all shift swap postings by the WRs during my CA time range.
+    	//
+		//    for each posting
+		//       if posting time range falls within WR's CA time range, posting accepted.
+		//    end for
+    	// end
+		for (Iterator itr = campWorkResAssnsForEmp.iterator(); itr.hasNext(); ) {
+			CampaignWorkResource myCampWorkResAssn = (CampaignWorkResource) itr.next();
+
+			TimeRange myCampAssocTR = new TimeRange(myCampWorkResAssn.getStartTime(),
+				myCampWorkResAssn.getEndTime());
+
+			Collection campWorkResAssns = getCampWorkResAssnsForCampaignDuringInterval(
+				myCampWorkResAssn.getCampaignID(), myCampAssocTR);
+
+			Collection orgWorkResAssns = getOrgWorkResAssnsForWorkResesDuringInterval(
+				campWorkResAssns, myCampAssocTR);
+
+			Collection SSPostings = findShiftSwapPostingsForEmpsDuringPeriod(
+				campWorkResAssns, myCampAssocTR);
+		}
+
+
+
+    	/*
+    	Set swappableEmpIDSet = (Set) RequestUtil.getEmployeesOneCanSwapWith(empID).getFirst();
+
+    	// for ( each campaign )
+    	//    get employees associated with the campaign
+    	//    obtain employees which belong to both the campaign and list of employees this agent can swap with (using shift swap org setting).
+    	//    obtain postings for these employees during the campaign assignment period.
+    	// end for
+    	for (Iterator itr = campWorkResAssnsForEmp.iterator(); itr.hasNext(); ) {
+    		CampaignWorkResource campWorkRes = (CampaignWorkResource) itr.next();
+    		Date campAssnStart = campWorkRes.getStartTime();
+    		Date campAssnEnd = campWorkRes.getEndTime();
+
+    		Date start = campAssnStart.after(now)?campAssnStart:now;
+    		Date end = campAssnEnd.before(start)?start:campAssnEnd;
+
+    		Collection campWorkResAssnsForCamp = RequestUtil.geWorkResAssnsForCampaignDuringPeriod(
+    			campWorkRes.getCampaignID(), start, end );
+
+			HashSet empSet = new HashSet(10);
+			for (Iterator iter = campWorkResAssnsForCamp.iterator(); iter.hasNext(); ) {
+                CampaignWorkResource campWorkResAssn = (CampaignWorkResource) iter.next();
+				empSet.add(campWorkResAssn.getWorkResourceID());
+            }
+
+			empSet.retainAll(swappableEmpIDSet);
+
+			findShiftSwapPostingsForEmpsDuringPeriod(empSet, start, end);
+    	}* /
+    }*/
+
+	public SSPostingCollection findShiftSwapPostingsForMyOrg(ID workResID, long detailLevel, int chunkSize, boolean fetchPartial)
+        throws BbmFinderException, RmHardValidationException
+	{
+<span class="nc" id="L980">        String _method_ = &quot;findShiftSwapPostingsForMyOrg&quot;;</span>
+<span class="nc" id="L981">        methodStart(_method_, workResID, new Integer(chunkSize));</span>
+
+        try {
+<span class="nc" id="L984">            return findShiftSwapPostingsForEmpOrgByMode(workResID, detailLevel, chunkSize, FETCHMODE_MYORGPOSTINGS, fetchPartial);</span>
+<span class="nc" id="L985">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L992">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L993">			throw e;</span>
+<span class="nc" id="L994">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L995">        	m_cat.error(e,e);</span>
+<span class="nc" id="L996">        	handleException(_method_, e);</span>
+<span class="nc" id="L997">        	throw e;</span>
+<span class="nc" id="L998">        } catch (Exception e) {</span>
+<span class="nc" id="L999">            handleException(e);</span>
+<span class="nc" id="L1000">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc" id="L1002">            methodFinish();</span>
+        }
+	}
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.swap.posting.ejb.IShiftSwapPostingManager#findShiftSwapPostingsForMyCampaign(com.bluepumpkin.common.datatypes.ID, long, int)
+     */
+    public SSPostingCollection findShiftSwapPostingsForMyCampaign(ID workResID, long detailLevel, int chunkSize, boolean fetchPartial)
+        throws BbmFinderException, RmHardValidationException
+    {
+<span class="nc" id="L1012">        String _method_ = &quot;findShiftSwapPostingsForMyCampaign&quot;;</span>
+<span class="nc" id="L1013">        methodStart(_method_, workResID, new Integer(chunkSize));</span>
+
+<span class="nc" id="L1015">        ShiftSwapPostingDAO ssPostingDAO = null;</span>
+        try {
+<span class="nc" id="L1017">            Date currDate = new Date();</span>
+
+//            WorkResourceManager wrm = BbmManagerFactory.getWorkResourceManager();
+//            Collection wrAssns = wrm.getWorkResourceAssignments(workResID, currDate, null, false);
+            //QC-94774 fix : passed current date to fetch the workResourceAss on current date only .
+<span class="nc" id="L1022">            Collection wrAssns = ValidationUtil.getWorkResAssnWithTZForWRID(workResID, currDate, currDate);</span>
+
+            // In London, an employee must have exactly one work resource assignment.  This code relies
+            // on this fact.
+<span class="nc bnc" id="L1026" title="All 2 branches missed.">            if (wrAssns.size() != 1) {</span>
+<span class="nc" id="L1027">                throw new IllegalStateException(&quot;wrAssns.size() != 1 for workRes.  size, workResID = : &quot; +</span>
+<span class="nc" id="L1028">                    wrAssns.size() + ',' + workResID);</span>
+            }
+
+<span class="nc" id="L1031">            ID empOrgID = ((WorkResourceAssignment)wrAssns.iterator().next()).getOrganizationID();</span>
+<span class="nc" id="L1032">            Collection swappableOrgIDs = ShiftSwapRequestUtil.getSwappableOrgIDsForOrg(empOrgID);</span>
+
+<span class="nc bnc" id="L1034" title="All 2 branches missed.">            if ( swappableOrgIDs.isEmpty() )</span>
+<span class="nc" id="L1035">                return new SSPostingCollection(Collections.EMPTY_LIST, Collections.EMPTY_LIST, chunkSize);</span>
+
+<span class="nc" id="L1037">            ssPostingDAO = new ShiftSwapPostingDAO(detailLevel);</span>
+
+<span class="nc" id="L1039">            List postingIDs = new ArrayList(32);</span>
+<span class="nc" id="L1040">            Collection postings = new ArrayList(32);</span>
+
+            // if pagination enabled
+<span class="nc bnc" id="L1043" title="All 2 branches missed.">            if (chunkSize != SupportNavigation.CHUNKSIZE_ALL) {</span>
+                // first get all the posting IDs.
+<span class="nc" id="L1045">                postingIDs.addAll(ssPostingDAO.findSSPostingIDsForMyCampaign(workResID,</span>
+                    currDate, null, swappableOrgIDs, fetchPartial));
+
+                // then retrieve the chunk of posting asked for.
+<span class="nc bnc" id="L1049" title="All 2 branches missed.">                if (!postingIDs.isEmpty()) {</span>
+                    // fetch minimum(postingIDs.size(), chunkSize);
+<span class="nc bnc" id="L1051" title="All 2 branches missed.">                    int numOfPostings = (postingIDs.size() &lt; chunkSize)?postingIDs.size():chunkSize;</span>
+					// fetch the chunk of requested postings
+<span class="nc" id="L1053">                    postings = ssPostingDAO.findSSPostingsByIDs(postingIDs.subList(0, numOfPostings), detailLevel);</span>
+<span class="nc" id="L1054">                }</span>
+            } else { // if pagination not enabled.
+                // pagination not enabled, so fetch all postings (bypass fetching of posting IDs).
+<span class="nc" id="L1057">                postings.addAll(ssPostingDAO.findSSPostingsForMyCampaign(workResID,</span>
+                    currDate, null, swappableOrgIDs, detailLevel, fetchPartial));
+            }
+
+<span class="nc" id="L1061">            return new SSPostingCollection(postingIDs, postings, chunkSize);</span>
+<span class="nc" id="L1062">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L1069">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L1070">			throw e;</span>
+<span class="nc" id="L1071">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L1072">        	m_cat.error(e,e);</span>
+<span class="nc" id="L1073">        	handleException(e);</span>
+<span class="nc" id="L1074">        	throw e;</span>
+<span class="nc" id="L1075">        } catch (Exception e) {</span>
+<span class="nc" id="L1076">            handleException(e);</span>
+<span class="nc" id="L1077">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L1079" title="All 6 branches missed.">            if (ssPostingDAO != null) ssPostingDAO.cleanUp();</span>
+<span class="nc" id="L1080">            methodFinish();</span>
+        }
+    }
+
+    public List findShiftSwapPostingIDsFromEmps(ID empID, Collection postingsFromEmpIDs,
+        Date start, Date end) throws BbmFinderException, RmHardValidationException
+    {
+<span class="nc" id="L1087">        String _method_ = &quot;findShiftSwapPostingIDsFromEmps&quot;;</span>
+<span class="nc" id="L1088">        methodStart(_method_, empID, postingsFromEmpIDs, start, end);</span>
+
+<span class="nc" id="L1090">        ShiftSwapPostingDAO sspDAO = null;</span>
+        try {
+<span class="nc" id="L1092">            sspDAO = new ShiftSwapPostingDAO(ShiftSwapPosting.DL_BASIC);</span>
+
+//            WorkResourceManager wrm = BbmManagerFactory.getWorkResourceManager();
+//            Collection wrAssns = wrm.getWorkResourcePayPolicies(empID, start, end, false);
+<span class="nc" id="L1096">            Collection wrAssns = ValidationUtil.getWorkResAssnWithTZForWRID(empID, start, end);</span>
+
+<span class="nc" id="L1098">            List sspIDs = new ArrayList();</span>
+<span class="nc bnc" id="L1099" title="All 2 branches missed.">            for (Iterator wrAssnsIter = wrAssns.iterator(); wrAssnsIter.hasNext();) {</span>
+<span class="nc" id="L1100">                WorkResourceAssignment wrAssn = (WorkResourceAssignment) wrAssnsIter.next();</span>
+
+<span class="nc" id="L1102">                Collection swappableOrgIDs =</span>
+<span class="nc" id="L1103">                    ShiftSwapRequestUtil.getSwappableOrgIDsForOrg(wrAssn.getOrganizationID());</span>
+
+<span class="nc bnc" id="L1105" title="All 2 branches missed.">                if (swappableOrgIDs.size() == 0) continue;</span>
+
+<span class="nc" id="L1107">                Date effectStart = wrAssn.getStartTime();</span>
+<span class="nc" id="L1108">                Date effectEnd = wrAssn.getEndTime();</span>
+<span class="nc" id="L1109">                sspIDs.addAll(sspDAO.findSSPostingIDsFromSwappableEmps(empID, swappableOrgIDs,</span>
+<span class="nc bnc" id="L1110" title="All 2 branches missed.">                    postingsFromEmpIDs, effectStart.after(start)?effectStart:start,</span>
+<span class="nc bnc" id="L1111" title="All 2 branches missed.">                    effectEnd.before(end)?effectEnd:end));</span>
+<span class="nc" id="L1112">            }</span>
+
+<span class="nc" id="L1114">            return sspIDs;</span>
+<span class="nc" id="L1115">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L1122">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L1123">			throw e;</span>
+<span class="nc" id="L1124">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L1125">        	m_cat.error(e,e);</span>
+<span class="nc" id="L1126">        	handleException(e);</span>
+<span class="nc" id="L1127">        	throw e;</span>
+<span class="nc" id="L1128">        } catch (Exception e) {</span>
+<span class="nc" id="L1129">            handleException(e);</span>
+<span class="nc" id="L1130">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L1132" title="All 4 branches missed.">            if (sspDAO != null) sspDAO.cleanUp();</span>
+<span class="nc" id="L1133">            methodFinish();</span>
+        }
+    }
+
+    public Collection findNextShiftSwapPostings(List ssPostingIDs, long detailLevel)
+        throws BbmFinderException, RmHardValidationException
+    {
+<span class="nc" id="L1140">        String _method_ = &quot;findNextShiftSwapPosting&quot;;</span>
+<span class="nc" id="L1141">        methodStart(_method_, ssPostingIDs);</span>
+
+<span class="nc" id="L1143">        ShiftSwapPostingDAO ssPostingDAO = null;</span>
+        try {
+<span class="nc" id="L1145">            ssPostingDAO = new ShiftSwapPostingDAO(detailLevel);</span>
+<span class="nc" id="L1146">            return ssPostingDAO.findSSPostingsByIDs(ssPostingIDs, detailLevel);</span>
+<span class="nc" id="L1147">		} catch (RmHardValidationException e) {</span>
+			// RM exceptions are always logged before they are thrown.
+			//m_cat.error(e,e);
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L1154">            handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L1155">			throw e;</span>
+<span class="nc" id="L1156">        }  catch (BbmFinderException e) {</span>
+<span class="nc" id="L1157">        	m_cat.error(e,e);</span>
+<span class="nc" id="L1158">        	handleException(e);</span>
+<span class="nc" id="L1159">        	throw e;</span>
+<span class="nc" id="L1160">        } catch (Exception e) {</span>
+<span class="nc" id="L1161">            handleException(e);</span>
+<span class="nc" id="L1162">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L1164" title="All 4 branches missed.">            if (ssPostingDAO != null) ssPostingDAO.cleanUp();</span>
+<span class="nc" id="L1165">            methodFinish();</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

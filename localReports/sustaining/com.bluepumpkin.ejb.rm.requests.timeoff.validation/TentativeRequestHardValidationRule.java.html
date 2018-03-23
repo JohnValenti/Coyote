@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TentativeRequestHardValidationRule.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.timeoff.validation</a> &gt; <span class="el_source">TentativeRequestHardValidationRule.java</span></div><h1>TentativeRequestHardValidationRule.java</h1><pre class="source lang-java linenums">/*
+ * Created on Mar 27, 2003
+ *
+ * To change this generated comment go to
+ * Window&gt;Preferences&gt;Java&gt;Code Generation&gt;Code and Comments
+ */
+package com.bluepumpkin.ejb.rm.requests.timeoff.validation;
+
+import java.rmi.RemoteException;
+import java.util.Collection;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.CalendarEventAssignment;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+/**
+ * &lt;b&gt;Hard validation Rule (applies only to tentatively approved requests).&lt;/b&gt;
+ *
+ * &lt;p&gt;
+ * Ensures that created calendarEventAssignment in the unpublished schedule
+ * &lt;li&gt;still exists
+ * &lt;li&gt;hasn't been modified
+ * &lt;li&gt;hasn't been published
+ *
+ * &lt;p&gt;
+ * Applies equally for debit, debit-if and dont-debit TORequests
+ *
+ * &lt;p&gt;
+ * Applies only for tentative requests.
+ */
+<span class="fc" id="L49">public class TentativeRequestHardValidationRule implements Validator {</span>
+<span class="fc" id="L50">	private static final String CLASS_NAME = TentativeRequestHardValidationRule.class.getName();</span>
+<span class="fc" id="L51">	private static final Category logger = Log.initCategory(CLASS_NAME);</span>
+
+	/**
+	 * 
+	 */
+	public ValidationResult validate(Validatable validatable) throws Exception {
+<span class="fc" id="L57">		String methodName = &quot;validate&quot;;</span>
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">		if (logger.isDebugEnabled()) {</span>
+<span class="fc" id="L59">			logger.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
+		}
+
+<span class="fc" id="L62">		ValidationResult result = null;</span>
+
+		// only process tentative time off requests.
+<span class="fc" id="L65">		TORequest toReq = (TORequest) validatable;</span>
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">		if (toReq.isTentative()) {</span>
+<span class="nc" id="L67">			TOChoice apprChoice = toReq.getTOChoice(toReq.getApprovedChoiceID());</span>
+<span class="nc" id="L68">			ScheduleAccessManager sam = getScheduleAccessManager();</span>
+
+<span class="nc bnc" id="L70" title="All 2 branches missed.">			if (!checkIfCalEventAssignPublished(toReq, apprChoice, sam)) {</span>
+<span class="nc" id="L71">				result = checkIfCalEventAssignExistsInUnpub(toReq, apprChoice, sam);</span>
+			}
+		}
+
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">		if (logger.isDebugEnabled()) {</span>
+<span class="fc" id="L76">			logger.debug(RmUtil.dumpExitMethod(&quot;validate&quot;, result));</span>
+		}
+<span class="fc" id="L78">		return result;</span>
+	}
+
+	protected ValidationResult checkIfCalEventAssignExistsInUnpub(TORequest toReq, TOChoice apprChoice,
+			ScheduleAccessManager sam) throws Exception {
+		// verify if calendar event still exists in unpublished schedule
+		// TODO: if event not found, exception thrown. Instead we need to add a
+		// meaningful validation result
+<span class="nc" id="L86">		CalendarEventAssignment event = getCalEventAssignForTOChoiceAligned(toReq, apprChoice, false, sam);</span>
+
+		// if event not found
+<span class="nc bnc" id="L89" title="All 2 branches missed.">		if (event == null) {</span>
+<span class="nc" id="L90">			ValidationResult result = ValidationUtil.setHardValidationResult(toReq,</span>
+<span class="nc" id="L91">					RmEjbBundleKey.TO_CAL_EVENT_ASSN_NOT_FOUND_FOR_CHOICE, apprChoice.getStartDate(),</span>
+<span class="nc" id="L92">					apprChoice.getEndDate(), getEmployeeID(toReq), apprChoice.getID(), CLASS_NAME);</span>
+
+<span class="nc" id="L94">			return result;</span>
+		}
+
+		// verify that it hasn't been modified. The position and duration has
+		// already been
+		// verified by the call getCal....Aligned() call.
+<span class="nc bnc" id="L100" title="All 2 branches missed.">		if (!toReq.getTimeOffType().equals(event.getActivityID())) {</span>
+			// Calendar event (ID = {0}) found (startTime = {1,date}, endTime =
+			// {2,date}) for the tentatively approved timeoff request (ID = {3})
+			// choice (ID={4}) has been modified&quot;
+<span class="nc" id="L104">			ValidationResult result = ValidationUtil.setHardValidationResult(toReq,</span>
+<span class="nc" id="L105">					RmEjbBundleKey.TO_CALEVENT_NOT_IN_SYNC_WITH_CHOICE, event.getID(), event.getStartTime(),</span>
+<span class="nc" id="L106">					event.getEndTime(), apprChoice.getTimeOffRequestID(), apprChoice.getID(), CLASS_NAME);</span>
+
+<span class="nc" id="L108">			return result;</span>
+		}
+
+<span class="nc" id="L111">		return null;</span>
+	}
+
+	// verify that it hasn't been published yet.
+	protected boolean checkIfCalEventAssignPublished(TORequest toReq, TOChoice apprChoice, ScheduleAccessManager sam)
+			throws Exception {
+<span class="nc" id="L117">		Collection events = getCalEventAssignsForTOChoiceOverlapped(toReq, apprChoice, true, sam);</span>
+
+<span class="nc bnc" id="L119" title="All 2 branches missed.">		if (events.size() != 0) {</span>
+<span class="nc" id="L120">			String dispName = getDisplayEmployeeName(toReq);</span>
+<span class="nc" id="L121">			ValidationResult result = ValidationUtil.setHardValidationResult(toReq,</span>
+<span class="nc" id="L122">					RmEjbBundleKey.TO_TENT_APPR_REQ_HAS_PUBLISHED_CALEVENTS, dispName, apprChoice.getStartDate(),</span>
+<span class="nc" id="L123">					apprChoice.getEndDate(), CLASS_NAME);</span>
+<span class="nc" id="L124">			result.setApprove(true);</span>
+
+<span class="nc" id="L126">			return true;</span>
+		}
+
+<span class="nc" id="L129">		return false;</span>
+	}
+	
+	protected ScheduleAccessManager getScheduleAccessManager() throws BbmEJBCreateException {
+<span class="nc" id="L133">		return WfmManagerFactory.getScheduleAccessManager();</span>
+	}
+
+	protected CalendarEventAssignment getCalEventAssignForTOChoiceAligned(TORequest toReq,
+            TOChoice apprChoice, boolean published, ScheduleAccessManager sam) throws Exception {
+<span class="nc" id="L138">    	return toReq.getCache().getCalEventAssignForTOChoiceAligned(toReq, apprChoice, false,</span>
+    			sam);
+    }
+
+	protected Collection getCalEventAssignsForTOChoiceOverlapped(TORequest toReq,
+            TOChoice apprChoice, boolean published, ScheduleAccessManager sam) throws Exception {
+<span class="nc" id="L144">    	return toReq.getCache().getCalEventAssignsForTOChoiceOverlapped(toReq, apprChoice, true, sam);</span>
+    }
+	
+	protected ID getEmployeeID(TORequest toReq) {
+<span class="nc" id="L148">		return toReq.getEmployeeID();</span>
+    }
+
+	protected String getDisplayEmployeeName(TORequest toReq) throws BbmEJBCreateException, BbmObjectNotFoundException, BbmFinderException, RemoteException {
+<span class="nc" id="L152">		WorkResourceManager wrm = BbmManagerFactory.getWorkResourceManager();</span>
+<span class="nc" id="L153">		EmployeeName empName = wrm.getEmployeeNameByID(toReq.getEmployeeID());</span>
+<span class="nc" id="L154">		return empName.getDisplayName(RequestUtil.getLocalizerForAppDefLocale());		</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

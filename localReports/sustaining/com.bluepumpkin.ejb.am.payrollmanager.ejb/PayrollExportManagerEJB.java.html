@@ -1,0 +1,649 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PayrollExportManagerEJB.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.am.payrollmanager.ejb</a> &gt; <span class="el_source">PayrollExportManagerEJB.java</span></div><h1>PayrollExportManagerEJB.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.am.payrollmanager.ejb;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Set;
+
+import javax.jms.ObjectMessage;
+import javax.jms.Queue;
+import javax.jms.QueueConnection;
+import javax.jms.QueueConnectionFactory;
+import javax.jms.QueueSender;
+import javax.jms.QueueSession;
+import javax.naming.InitialContext;
+
+import com.bluepumpkin.bpxCommon.common.MessageQue.EventTypes.PayRollExportField;
+import com.bluepumpkin.bpxCommon.common.MessageQue.EventTypes.PayRollExportRequestMessage;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoParam;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.logging.Priority;
+import com.bluepumpkin.common.util.NumberFactory;
+import com.bluepumpkin.ejb.am.AmManagerFactory;
+import com.bluepumpkin.ejb.am.Log;
+import com.bluepumpkin.ejb.am.base.AmEmployeeInRequestException;
+import com.bluepumpkin.ejb.am.base.AmException;
+import com.bluepumpkin.ejb.am.l10n.AmEjbBundleKey;
+import com.bluepumpkin.ejb.am.payrollmanager.model.PayrollExportConfig;
+import com.bluepumpkin.ejb.am.payrollmanager.model.PayrollStatus;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.payroll.ejb.PayrollLockManager;
+import com.bluepumpkin.ejb.bbm.payroll.ejb.PayrollSummaryAdjSync;
+import com.bluepumpkin.ejb.bbm.payroll.ejb.PayrollSummaryManager;
+import com.bluepumpkin.ejb.bbm.payroll.ejb.PayrollSummarySync;
+import com.bluepumpkin.ejb.bbm.payroll.model.PayrollSummary;
+import com.bluepumpkin.ejb.bbm.timerecord.ejb.TimeRecordExportManager;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
+import com.bluepumpkin.ejb.core.base.SessionEJBBase;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+/**
+ * Title:        Blue Pumpkin Software Activity Management
+ * Description:  EJB Implementation for PayrollProviderManager
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, Inc
+ * @author       Sheng Song
+ * @version 1.0
+ */
+
+<span class="nc" id="L52">public class PayrollExportManagerEJB extends SessionEJBBase {</span>
+
+	private PayrollSummaryAdjSync m_PayrollAdj;
+	private TimeRecordExportManager m_TimerecordExport;
+	private PayrollSummarySync m_PayrollSummary;
+	private PayrollStatusManager m_PayrollStatus;
+	private PayrollLockManager m_PayrollLockManager;
+	private WorkResourceManager m_WorkResourceManager;
+	
+	public final static String JMS_FACTORY=&quot;com.bluepumpkin.jms.queueconnectionfactory.am&quot;;
+	public final static String QUEUE=&quot;bluepumpkin/mp&quot;;
+
+<span class="nc" id="L64">	private static Category m_cat = Log.initCategory(PayrollExportManagerEJB.class.getName());</span>
+	  /** override the base class to provide the appropriate logging category */
+<span class="nc" id="L66">	protected Category getCategory() { return m_cat; }</span>
+
+	{
+<span class="nc" id="L69">		super.init(PayrollExportManagerEJB.class.getName());</span>
+<span class="nc" id="L70">	}</span>
+
+	public void onEjbCreate() {
+		try {
+<span class="nc" id="L74">			m_PayrollAdj = BbmManagerFactory.getPayrollSummaryAdjSync();</span>
+<span class="nc" id="L75">			m_PayrollSummary = BbmManagerFactory.getPayrollSummarySync();</span>
+<span class="nc" id="L76">			m_TimerecordExport = WfmManagerFactory.getTimeRecordExportManager();</span>
+<span class="nc" id="L77">			m_PayrollLockManager = BbmManagerFactory.getPayrollLockManager();</span>
+<span class="nc" id="L78">			m_WorkResourceManager = BbmManagerFactory.getWorkResourceManager();</span>
+<span class="nc" id="L79">			m_PayrollStatus =  AmManagerFactory.getPayrollStatusManager();</span>
+<span class="nc" id="L80">		} catch (Exception e) {</span>
+<span class="nc" id="L81">			handleException(&quot;onEjbCreate&quot;, e, false);</span>
+<span class="nc" id="L82">		}</span>
+
+<span class="nc" id="L84">	}</span>
+	/**
+	 * process for the Post Request, which will send message to BPX
+	 * @param Collection, employeeid
+	 * @param ID, payPeriodID
+	 * @param Collection, PayrollExportConfig
+	 * @param String, targetLocation
+	 * @throw AmEmployeeInRequestException, if employees are post/export in a pending request
+	 * @return ID, the Status ID of this Post process
+	 */
+	public ID postPayroll(ID reqEmpID,
+							Collection empID,
+							ID payPeriodID,
+							Collection payRollExportConfig,
+							String targetLocation)
+							throws AmException	{
+<span class="nc" id="L100">		return postPayroll(reqEmpID, empID, payPeriodID, payRollExportConfig, targetLocation, true);</span>
+							}
+	/**
+	 * process for the Post Request, which will send message to BPX
+	 * @param Collection, employeeid
+	 * @param ID, payPeriodID
+	 * @param Collection, PayrollExportConfig
+	 * @param String, targetLocation
+	 * @param boolean, only post Approved TimeRecord or not
+	 * @throw AmEmployeeInRequestException, if employees are post/export in a pending request
+	 * @return ID, the Status ID of this Post process
+	 */
+	public ID postPayroll(ID reqEmpID,
+							Collection empIDCol,
+							ID payPeriodID,
+							Collection payRollExportConfig,
+							String targetLocation,
+							boolean checkApprove)
+							throws AmException
+	{
+<span class="nc" id="L120">		methodStart(&quot;postPayroll&quot;, reqEmpID, empIDCol, payPeriodID, payRollExportConfig);</span>
+<span class="nc" id="L121">		ID reqID = null;</span>
+		try {
+<span class="nc" id="L123">			Set empSet = PayrollStatusDAO.getLatestRequestStatus(PayrollExportManager.PREVIOUS_PENDINGJOB_MINUTES, true, payPeriodID);</span>
+<span class="nc bnc" id="L124" title="All 4 branches missed.">			if (empSet != null &amp;&amp; !empSet.isEmpty()) {</span>
+<span class="nc" id="L125">                empSet.retainAll(empIDCol);</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">				if (!empSet.isEmpty()) {</span>
+<span class="nc" id="L127">					AmEmployeeInRequestException e =</span>
+						new AmEmployeeInRequestException(AmEjbBundleKey.PAYROLLMANAGER_EMPEXIST_ERROR);
+<span class="nc" id="L129">					e.setContent(empSet);</span>
+<span class="nc" id="L130">					throw e;</span>
+				}
+			}
+			PayrollSummaryManager psrizer = BbmManagerFactory.
+<span class="nc" id="L134">												getPayrollSummaryManager();</span>
+			// Get the detail day-by-day payroll summary
+<span class="nc" id="L136">			HashMap payrollMap = psrizer.getPayrollSummary(null, empIDCol, payPeriodID, checkApprove);</span>
+			// Persist into the payperiodsummary, if it is existing skip it
+			// lock timerecord and adjustment
+<span class="nc" id="L139">			StringBuffer empList = new StringBuffer();</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">			for (Iterator it = empIDCol.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L141">				ID emp = (ID)it.next();</span>
+<span class="nc" id="L142">				Object result = payrollMap.get(emp);</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">				if (result != null) {</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">					if (result instanceof ArrayList) {</span>
+<span class="nc" id="L145">						ArrayList payrollSummary = (ArrayList)result;</span>
+						// Get the overview summary
+<span class="nc" id="L147">						PayrollSummary overview = (PayrollSummary)payrollSummary.get(0);</span>
+						// Check if the PayrollSummary is from DB or not
+<span class="nc bnc" id="L149" title="All 4 branches missed.">						if (overview == null || overview.isNotIn())</span>
+<span class="nc" id="L150">							continue;</span>
+						// Add this employee to the message
+<span class="nc" id="L152">						empList.append(emp).append(&quot;,&quot;);</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">						if (overview.isPosted())</span>
+<span class="nc" id="L154">							continue;</span>
+						// Persist the overview payrollsummary
+<span class="nc" id="L156">						ID psID = m_PayrollSummary.createPayrollSummary(overview);</span>
+						// Persist the Day-by-Day payrollsummary
+<span class="nc" id="L158">						payrollSummary.remove(0);</span>
+<span class="nc" id="L159">						m_PayrollSummary.createDailyPayrollSummaryDetail(payrollSummary, psID);</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">					} else if (result instanceof PayrollSummary) {</span>
+						// Get the overview summary
+<span class="nc" id="L162">						PayrollSummary overview = (PayrollSummary)result;</span>
+<span class="nc bnc" id="L163" title="All 4 branches missed.">						if (overview == null || overview.isNotIn())</span>
+<span class="nc" id="L164">							continue;</span>
+						// Add this employee to the message
+<span class="nc" id="L166">						empList.append(emp).append(&quot;,&quot;);</span>
+						// Check if the PayrollSummary is from DB or not
+<span class="nc bnc" id="L168" title="All 2 branches missed.">						if (overview.isPosted())</span>
+<span class="nc" id="L169">							continue;</span>
+						// Persist the overview payrollsummary
+<span class="nc" id="L171">						m_PayrollSummary.createPayrollSummary(overview);</span>
+					}
+				}
+<span class="nc" id="L174">			}</span>
+			// Then Lock TimeRecord and Payroll Adjustments
+<span class="nc" id="L176">			lockForPost(empIDCol, payPeriodID);</span>
+			// remove the last &quot;,&quot;
+<span class="nc" id="L178">			empList.deleteCharAt(empList.length()-1);</span>
+<span class="nc" id="L179">			m_PayrollAdj.lockPayrollSummaryAdj(empIDCol, payPeriodID);</span>
+			// retrieve the datasource id from the config
+<span class="nc" id="L181">			ID dsID = ((PayrollExportConfig)(payRollExportConfig.iterator().next())).getPayrollProviderDataSourceID();</span>
+			// Store the status message and obtain the unique ID to stuff into message
+<span class="nc" id="L183">			PayrollStatus pStatus = new PayrollStatus(reqEmpID, payPeriodID, dsID, targetLocation, true, empIDCol);</span>
+<span class="nc" id="L184">			reqID = m_PayrollStatus.createPayrollStatus(pStatus);</span>
+			// construct JMS message and put into the queue
+<span class="nc" id="L186">			InitialContext ctx = new InitialContext();</span>
+<span class="nc" id="L187">			QueueConnectionFactory queueConnectionFactory = (QueueConnectionFactory) ctx.lookup(JMS_FACTORY);</span>
+<span class="nc" id="L188">			QueueConnection queueConnection = queueConnectionFactory.createQueueConnection();</span>
+<span class="nc" id="L189">			QueueSession queueSession = queueConnection.createQueueSession(false, javax.jms.Session.AUTO_ACKNOWLEDGE);</span>
+<span class="nc" id="L190">			Queue queue = (Queue) ctx.lookup(QUEUE);</span>
+<span class="nc" id="L191">			QueueSender queueSender = queueSession.createSender(queue);</span>
+<span class="nc" id="L192">			ObjectMessage objectMessage = queueSession.createObjectMessage();</span>
+<span class="nc" id="L193">			queueConnection.start();</span>
+<span class="nc" id="L194">			PayRollExportRequestMessage prrm = new PayRollExportRequestMessage();</span>
+<span class="nc" id="L195">			prrm.setPayPeriod(payPeriodID.toString());</span>
+<span class="nc" id="L196">			prrm.setEmployeeIdList(empList.toString());</span>
+<span class="nc" id="L197">			prrm.setIsPost(true);</span>
+<span class="nc" id="L198">			prrm.setMsgId(reqID.toString());</span>
+<span class="nc" id="L199">			PayRollExportField[] pref = new PayRollExportField[payRollExportConfig.size()];</span>
+<span class="nc" id="L200">			int i = 0;</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">			for (Iterator it=payRollExportConfig.iterator(); it.hasNext(); i++) {</span>
+<span class="nc" id="L202">				PayrollExportConfig pec = (PayrollExportConfig)it.next();</span>
+<span class="nc" id="L203">				prrm.setDatasourceId(dsID.toString());</span>
+<span class="nc" id="L204">				pref[i] = new PayRollExportField();</span>
+<span class="nc" id="L205">				pref[i].setFieldType(pec.getFieldType());</span>
+<span class="nc" id="L206">				pref[i].setSequenceNum(pec.getSequence());</span>
+<span class="nc" id="L207">				pref[i].setName(pec.getFieldName());</span>
+<span class="nc" id="L208">				pref[i].setValue(pec.getValue());</span>
+			}
+<span class="nc" id="L210">			prrm.setPayRollExportFields(pref);</span>
+<span class="nc" id="L211">			prrm.setTargetFile(targetLocation);</span>
+<span class="nc" id="L212">			objectMessage.setObject(prrm);</span>
+<span class="nc" id="L213">			queueSender.send(objectMessage);</span>
+<span class="nc" id="L214">			queueSender.close();</span>
+<span class="nc" id="L215">			queueSession.close();</span>
+<span class="nc" id="L216">			queueConnection.close();</span>
+<span class="nc" id="L217">			return reqID;</span>
+<span class="nc" id="L218">		} catch (AmException e) {</span>
+<span class="nc" id="L219">			handleException(e);</span>
+<span class="nc" id="L220">			throw e;</span>
+<span class="nc" id="L221">		} catch (Exception e) {</span>
+<span class="nc" id="L222">			handleException(e);</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">			if (reqID != null) {</span>
+				try {
+<span class="nc" id="L225">					m_PayrollStatus.updateStatus(reqID, PayrollStatus.FAILED);</span>
+<span class="nc" id="L226">					m_PayrollStatus.createPayrollExportError(reqID, AmEjbBundleKey.BUNDLE, AmEjbBundleKey.PAYROLLSTATUSMANAGER_JMS_ERROR, null);</span>
+<span class="nc" id="L227">				} catch (Exception e1) {</span>
+<span class="nc" id="L228">					handleException(e1);</span>
+<span class="nc" id="L229">				}</span>
+			}
+<span class="nc" id="L231">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L233">			methodFinish();</span>
+		}
+	}
+	/**
+	 * process for the Export Request, which will send message to BPX
+	 * @param ID, request employee ID
+	 * @param Collection, employeeid
+	 * @param ID, payPeriodID
+	 * @param Collection, PayrollExportConfig
+	 * @param String, targetLocation
+	 * @throw AmEmployeeInRequestException, if employees are post/export in a pending request
+	 * @return ID, the Status ID of this Export process
+	 * @deprecated, use the method takes checkApprove boolean
+	 */
+	public ID exportPayroll(ID reqEmpID,
+							  Collection empID,
+							  ID payPeriodID,
+							  Collection payRollExportConfig,
+							  String targetLocation)
+							  throws AmException {
+<span class="nc" id="L253">		return exportPayroll(reqEmpID, empID, payPeriodID, payRollExportConfig, targetLocation, true);</span>
+	}
+	/**
+	 * process for the Export Request, which will send message to BPX
+	 * @param ID, request employee ID
+	 * @param Collection, employeeid
+	 * @param ID, payPeriodID
+	 * @param Collection, PayrollExportConfig
+	 * @param String, targetLocation
+	 * @param boolean, checkApprove, approval status of TimeRecord is to be checked or not
+	 * @throw AmEmployeeInRequestException, if employees are post/export in a pending request
+	 * @return ID, the Status ID of this Export process
+	 */
+	public ID exportPayroll(ID reqEmpID,
+							Collection empID,
+							ID payPeriodID,
+							Collection payRollExportConfig,
+							String targetLocation,
+							boolean checkApprove)
+							throws AmException							  
+	{
+<span class="nc" id="L274">		methodStart(&quot;exportPayroll&quot;, reqEmpID, empID, payPeriodID, payRollExportConfig);</span>
+<span class="nc" id="L275">		ID reqID = null;</span>
+		try {
+<span class="nc" id="L277">			Set empSet = PayrollStatusDAO.getLatestRequestStatus(PayrollExportManager.PREVIOUS_PENDINGJOB_MINUTES, false, payPeriodID);</span>
+<span class="nc bnc" id="L278" title="All 4 branches missed.">			if (empSet != null &amp;&amp; !empSet.isEmpty()) {</span>
+<span class="nc bnc" id="L279" title="All 4 branches missed.">				if (empSet.retainAll(empID) || empSet.removeAll(empID)) {</span>
+<span class="nc" id="L280">					AmEmployeeInRequestException e =</span>
+						new AmEmployeeInRequestException(AmEjbBundleKey.PAYROLLMANAGER_EMPEXIST_ERROR);
+<span class="nc" id="L282">					e.setContent(empSet);</span>
+<span class="nc" id="L283">					throw e;</span>
+				}
+			}
+			PayrollSummaryManager psrizer = BbmManagerFactory.
+<span class="nc" id="L287">												getPayrollSummaryManager();</span>
+			// Get the detail day-by-day payroll summary
+<span class="nc" id="L289">			HashMap payrollMap = psrizer.getPayrollSummary(null, empID, payPeriodID, checkApprove);</span>
+			// Persist into the payperiodsummary, if it is existing skip it
+			// lock timerecord and adjustment
+<span class="nc" id="L292">			StringBuffer empList = new StringBuffer();</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">			for (Iterator it = empID.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L294">				ID emp = (ID)it.next();</span>
+<span class="nc" id="L295">				Object result = payrollMap.get(emp);</span>
+				// Add this employee to the message
+<span class="nc" id="L297">				empList.append(emp).append(&quot;,&quot;);</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">				if (result != null) {</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">					if (result instanceof ArrayList) {</span>
+<span class="nc" id="L300">						ArrayList payrollSummary = (ArrayList)result;</span>
+						// Get the overview summary
+<span class="nc" id="L302">						PayrollSummary overview = (PayrollSummary)payrollSummary.get(0);</span>
+<span class="nc bnc" id="L303" title="All 4 branches missed.">						if (overview == null || overview.isNotIn())</span>
+<span class="nc" id="L304">							continue;</span>
+						// Persist the overview payrollsummary
+<span class="nc" id="L306">						m_PayrollSummary.createPayrollSummaryForExport(overview);</span>
+<span class="nc bnc" id="L307" title="All 2 branches missed.">					} else if (result instanceof PayrollSummary) {</span>
+						// Get the overview summary
+<span class="nc" id="L309">						PayrollSummary overview = (PayrollSummary)result;</span>
+<span class="nc bnc" id="L310" title="All 4 branches missed.">						if (overview == null || overview.isNotIn())</span>
+<span class="nc" id="L311">							continue;</span>
+						// Persist the overview payrollsummary
+<span class="nc" id="L313">						m_PayrollSummary.createPayrollSummaryForExport(overview);</span>
+					}
+				}
+<span class="nc" id="L316">			}</span>
+			// remove the last &quot;,&quot;
+<span class="nc bnc" id="L318" title="All 2 branches missed.">			if (empList.length() !=0 )</span>
+<span class="nc" id="L319">				empList.deleteCharAt(empList.length()-1);</span>
+			// retrieve the datasource id from the config
+<span class="nc" id="L321">			ID dsID = ((PayrollExportConfig)(payRollExportConfig.iterator().next())).getPayrollProviderDataSourceID();</span>
+			// Store the status message and obtain the unique ID to stuff into message
+<span class="nc" id="L323">			PayrollStatus pStatus = new PayrollStatus(reqEmpID, payPeriodID, dsID, targetLocation, false, empID);</span>
+<span class="nc" id="L324">			reqID = m_PayrollStatus.createPayrollStatus(pStatus);</span>
+			// construct JMS message and put into the queue
+<span class="nc" id="L326">			InitialContext ctx = new InitialContext();</span>
+<span class="nc" id="L327">			QueueConnectionFactory queueConnectionFactory = (QueueConnectionFactory) ctx.lookup(JMS_FACTORY);</span>
+<span class="nc" id="L328">			QueueConnection queueConnection = queueConnectionFactory.createQueueConnection();</span>
+<span class="nc" id="L329">			QueueSession queueSession = queueConnection.createQueueSession(false, javax.jms.Session.AUTO_ACKNOWLEDGE);</span>
+<span class="nc" id="L330">			Queue queue = (Queue) ctx.lookup(QUEUE);</span>
+<span class="nc" id="L331">			QueueSender queueSender = queueSession.createSender(queue);</span>
+<span class="nc" id="L332">			ObjectMessage objectMessage = queueSession.createObjectMessage();</span>
+<span class="nc" id="L333">			queueConnection.start();</span>
+<span class="nc" id="L334">			PayRollExportRequestMessage prrm = new PayRollExportRequestMessage();</span>
+<span class="nc" id="L335">			prrm.setPayPeriod(payPeriodID.toString());</span>
+<span class="nc" id="L336">			prrm.setEmployeeIdList(empList.toString());</span>
+<span class="nc" id="L337">			prrm.setIsPost(false);</span>
+<span class="nc" id="L338">			prrm.setMsgId(reqID.toString());</span>
+<span class="nc" id="L339">			PayRollExportField[] pref = new PayRollExportField[payRollExportConfig.size()];</span>
+<span class="nc" id="L340">			int i = 0;</span>
+<span class="nc bnc" id="L341" title="All 2 branches missed.">			for (Iterator it=payRollExportConfig.iterator(); it.hasNext(); i++) {</span>
+<span class="nc" id="L342">				PayrollExportConfig pec = (PayrollExportConfig)it.next();</span>
+<span class="nc" id="L343">				prrm.setDatasourceId(pec.getPayrollProviderDataSourceID().toString());</span>
+<span class="nc" id="L344">				pref[i] = new PayRollExportField();</span>
+<span class="nc" id="L345">				pref[i].setFieldType(pec.getFieldType());</span>
+<span class="nc" id="L346">				pref[i].setSequenceNum(pec.getSequence());</span>
+<span class="nc" id="L347">				pref[i].setName(pec.getFieldName());</span>
+<span class="nc" id="L348">				pref[i].setValue(pec.getValue());</span>
+			}
+<span class="nc" id="L350">			prrm.setPayRollExportFields(pref);</span>
+<span class="nc" id="L351">			prrm.setTargetFile(targetLocation);</span>
+<span class="nc" id="L352">			objectMessage.setObject(prrm);</span>
+<span class="nc" id="L353">			queueSender.send(objectMessage);</span>
+<span class="nc" id="L354">			queueSender.close();</span>
+<span class="nc" id="L355">			queueSession.close();</span>
+<span class="nc" id="L356">			queueConnection.close();</span>
+<span class="nc" id="L357">			return reqID;</span>
+<span class="nc" id="L358">		} catch (AmException e) {</span>
+<span class="nc" id="L359">			handleException(Priority.INFO, e);</span>
+<span class="nc" id="L360">			throw e;</span>
+<span class="nc" id="L361">		} catch (Exception e) {</span>
+<span class="nc" id="L362">			handleException(e);</span>
+<span class="nc bnc" id="L363" title="All 2 branches missed.">			if (reqID != null) {</span>
+				try {
+<span class="nc" id="L365">					m_PayrollStatus.updateStatus(reqID, PayrollStatus.FAILED);</span>
+<span class="nc" id="L366">					m_PayrollStatus.createPayrollExportError(reqID, AmEjbBundleKey.BUNDLE, AmEjbBundleKey.PAYROLLSTATUSMANAGER_JMS_ERROR, null);</span>
+<span class="nc" id="L367">				} catch (Exception e1) {</span>
+<span class="nc" id="L368">					handleException(e1);</span>
+<span class="nc" id="L369">				}</span>
+			}
+<span class="nc" id="L371">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L373">			methodFinish();</span>
+		}
+	}
+	/**
+	 * LockForPost, which will lock the TimeRecords
+	 * @param Collection, Employee ID Collection
+	 * @param ID, PayPeriodID
+	 */
+	public void lockForPost(Collection empIDCol,
+							  ID payPeriodID)
+							  throws AmException
+	{
+<span class="nc" id="L385">		methodStart(&quot;lockForPost&quot;, empIDCol, payPeriodID);</span>
+		try {			
+<span class="nc" id="L387">			m_PayrollAdj.lockPayrollSummaryAdj(empIDCol, payPeriodID);</span>
+<span class="nc" id="L388">			m_TimerecordExport.lockTimeRecord(empIDCol, payPeriodID);</span>
+<span class="nc" id="L389">			lockPayPeriod(empIDCol, payPeriodID);</span>
+<span class="nc" id="L390">		} catch (Exception e) {		</span>
+<span class="nc" id="L391">			handleException(e);</span>
+<span class="nc" id="L392">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L394">			methodFinish();</span>
+<span class="nc" id="L395">		}</span>
+<span class="nc" id="L396">	}</span>
+	/**
+	 * Allows UI to lock/unlock a group of Employee for a given Pay Period 
+	 * @param empIDCol
+	 * @param payPeriodID
+	 * @param lock
+	 * @throws AmException
+	 */
+	public void lockPayPeriod(Collection empIDCol, ID payPeriodID, boolean lock) throws AmException {
+<span class="nc bnc" id="L405" title="All 2 branches missed.">		methodStart(&quot;locakPayPeriod&quot;, empIDCol, payPeriodID, lock?Boolean.TRUE:Boolean.FALSE);</span>
+		try {
+<span class="nc bnc" id="L407" title="All 2 branches missed.">			if (lock) {</span>
+<span class="nc" id="L408">				lockPayPeriod(empIDCol, payPeriodID);</span>
+			} else {
+<span class="nc" id="L410">				unLockPayPeriod(empIDCol, payPeriodID);</span>
+			}			
+<span class="nc" id="L412">		} catch(Exception e) {</span>
+<span class="nc" id="L413">			handleException(e);</span>
+<span class="nc" id="L414">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L416">			methodFinish();</span>
+<span class="nc" id="L417">		}</span>
+<span class="nc" id="L418">	}</span>
+	/**
+	 * Lock PayPeriod for a group of Employee
+	 * @param empIDCol
+	 * @param payPeriodID
+	 * @throws Exception
+	 */
+	private void lockPayPeriod(Collection empIDCol, ID payPeriodID) throws Exception {
+<span class="nc bnc" id="L426" title="All 2 branches missed.">		for (Iterator it = empIDCol.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L427">			ID empID = (ID)it.next();</span>
+<span class="nc bnc" id="L428" title="All 2 branches missed.">			if (!m_PayrollLockManager.isPeriodLocked(empID, payPeriodID)) {</span>
+<span class="nc" id="L429">				m_PayrollLockManager.lockPayPeriod(empID, payPeriodID);</span>
+			}
+<span class="nc" id="L431">		}</span>
+<span class="nc" id="L432">	}</span>
+	/**
+	 * unLock PayPeriod for a group of Employee
+	 * @param empIDCol
+	 * @param payPeriodID
+	 * @throws Exception
+	 */
+	private void unLockPayPeriod(Collection empIDCol, ID payPeriodID) throws Exception {
+<span class="nc bnc" id="L440" title="All 2 branches missed.">		for (Iterator it = empIDCol.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L441">			ID empID = (ID)it.next();</span>
+<span class="nc bnc" id="L442" title="All 2 branches missed.">			if (m_PayrollLockManager.isPeriodLocked(empID, payPeriodID)) {</span>
+<span class="nc" id="L443">				m_PayrollLockManager.unLockPayPeriod(empID, payPeriodID);</span>
+			}
+<span class="nc" id="L445">		}</span>
+<span class="nc" id="L446">	}</span>
+	/**
+	 * unLockForPost, which will unLock the TimeRecords only
+	 * @param Collection, EmployeeID
+	 * @param ID, PayPeriodID
+	 */
+	public void unLockForPost(Collection empIDCol,
+								ID payPeriodID)
+								throws AmException
+	{
+<span class="nc" id="L456">		methodStart(&quot;unLockForPost&quot;, empIDCol, payPeriodID);</span>
+		try {
+<span class="nc" id="L458">			m_PayrollSummary.removePayrollSummary(empIDCol, payPeriodID);</span>
+<span class="nc" id="L459">			m_PayrollAdj.unLockPayrollSummaryAdj(empIDCol, payPeriodID);</span>
+<span class="nc" id="L460">			m_TimerecordExport.unLockTimeRecord(empIDCol, payPeriodID);</span>
+<span class="nc" id="L461">		} catch (Exception e) {</span>
+<span class="nc" id="L462">			handleException(e);</span>
+<span class="nc" id="L463">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L465">			methodFinish();</span>
+<span class="nc" id="L466">		}</span>
+<span class="nc" id="L467">	}</span>
+	/**
+	 * unPost, which will unLock the TimeRecords and PayPeriod together
+	 * @param Collection, EmployeeID
+	 * @param ID, PayPeriodID
+	 */
+	public void unPost(Collection empIDCol,	ID payPeriodID)
+								throws AmException
+	{
+<span class="nc" id="L476">		methodStart(&quot;unPost&quot;, empIDCol, payPeriodID);</span>
+		try {
+<span class="nc" id="L478">			m_PayrollSummary.removePayrollSummary(empIDCol, payPeriodID);</span>
+<span class="nc" id="L479">			m_PayrollAdj.unLockPayrollSummaryAdj(empIDCol, payPeriodID);</span>
+<span class="nc" id="L480">			m_TimerecordExport.unLockTimeRecord(empIDCol, payPeriodID);</span>
+<span class="nc" id="L481">			unLockPayPeriod(empIDCol, payPeriodID);</span>
+<span class="nc" id="L482">		} catch (Exception e) {</span>
+<span class="nc" id="L483">			handleException(e);</span>
+<span class="nc" id="L484">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L486">			methodFinish();</span>
+<span class="nc" id="L487">		}</span>
+<span class="nc" id="L488">	}</span>
+	/**
+	 * process after the payroll export is done,
+	 * update the status message
+	 * @param ID, unique request ID
+	 * @param boolean, is successful, if not the next three parameters
+	 * @param String, BundleFileName of the error message
+	 * @param String, MessageKey referenece to the key
+	 * @param Object[], the paramters of the message
+	 */
+	public void postProcessForExport(ID requestID,
+									 boolean success,
+									 String bundleFileName,
+									 String messageKey,
+									 Object[] parameters)
+									 throws AmException
+	{
+<span class="nc" id="L505">		methodStart(&quot;postProcessForExport&quot;, requestID, JdmoParam.getObject(success));</span>
+		try {
+<span class="nc bnc" id="L507" title="All 2 branches missed.">			if (success) {</span>
+<span class="nc" id="L508">				PayrollExportErrorDAO.removePayrollExportErrorByStatusID(requestID);</span>
+<span class="nc" id="L509">				PayrollStatusDAO.updateStatus(requestID, PayrollStatus.COMPLETED);</span>
+			} else {
+<span class="nc" id="L511">				PayrollExportErrorDAO.createPayrollExportError(requestID, bundleFileName, messageKey, parameters);</span>
+<span class="nc" id="L512">				PayrollStatusDAO.updateStatus(requestID, PayrollStatus.FAILED);</span>
+			}
+<span class="nc" id="L514">		} catch(JdmoException e) {</span>
+<span class="nc" id="L515">			handleException(e);</span>
+<span class="nc" id="L516">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L518">			methodFinish();</span>
+<span class="nc" id="L519">		}</span>
+<span class="nc" id="L520">	}</span>
+	/**
+	 * process after the payroll post is done,
+	 * it depends on the sucess flag, if failed(false), it will unLock
+	 * update the status message
+	 * @param ID, request ID
+	 * @param Collection, EmployeeID
+	 * @param ID, PayPeriodID
+	 * @param boolean, is successful, if not the next three parameters
+	 * @param String, BundleFileName of the error message
+	 * @param String, MessageKey referenece to the key
+	 * @param Object[], the paramters of the message
+	 */
+	public void postProcessForPost(ID requestID,
+								   Collection empID,
+								   ID payPeriodID,
+								   boolean success,
+								   String bundleFileName,
+								   String messageKey,
+								   Object[] parameters)
+								   throws AmException
+	{
+<span class="nc" id="L542">		methodStart(&quot;postProcessForPost&quot;, requestID, empID, payPeriodID, JdmoParam.getObject(success));</span>
+		try {
+<span class="nc bnc" id="L544" title="All 2 branches missed.">			if (!success) {</span>
+				try {
+<span class="nc" id="L546">					unLockForPost(empID, payPeriodID);</span>
+<span class="nc" id="L547">				} catch (Exception e) {</span>
+<span class="nc" id="L548">					handleException(e);</span>
+					try {
+<span class="nc" id="L550">						m_PayrollStatus.updateStatus(requestID, PayrollStatus.FAILED);</span>
+<span class="nc" id="L551">						m_PayrollStatus.createPayrollExportError(requestID, AmEjbBundleKey.BUNDLE, AmEjbBundleKey.PAYROLLSTATUSMANAGER_UNLOCK_ERROR, null);</span>
+<span class="nc" id="L552">					} catch (Exception e1) {</span>
+<span class="nc" id="L553">						handleException(e1);</span>
+<span class="nc" id="L554">					}</span>
+<span class="nc" id="L555">					throw new AmException(e);</span>
+<span class="nc" id="L556">				}</span>
+<span class="nc" id="L557">				m_PayrollStatus.createPayrollExportError(requestID, bundleFileName, messageKey, parameters);</span>
+<span class="nc" id="L558">				m_PayrollStatus.updateStatus(requestID, PayrollStatus.FAILED);</span>
+			} else {
+				try {
+<span class="nc" id="L561">					PayrollExportErrorDAO.removePayrollExportErrorByStatusID(requestID);</span>
+<span class="nc" id="L562">				} catch(JdmoException e) {</span>
+<span class="nc" id="L563">					m_PayrollStatus.updateStatus(requestID, PayrollStatus.FAILED);</span>
+<span class="nc" id="L564">					throw e;</span>
+<span class="nc" id="L565">				}</span>
+<span class="nc" id="L566">				PayrollStatusDAO.updateStatus(requestID, PayrollStatus.COMPLETED);</span>
+			}
+<span class="nc" id="L568">		} catch (Exception e) {</span>
+<span class="nc" id="L569">			handleException(e);</span>
+<span class="nc" id="L570">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L572">			methodFinish();</span>
+<span class="nc" id="L573">		}</span>
+<span class="nc" id="L574">	}</span>
+	/**
+	 * poll status of request by ID
+	 * @param ID, unique request ID
+	 * @return PayrollStatus
+	 */
+	public PayrollStatus pollStatus(ID requestID)
+								 throws AmException
+	{
+<span class="nc" id="L583">		methodStart(&quot;pollStatus&quot;, requestID);</span>
+		try {
+<span class="nc" id="L585">			return PayrollStatusDAO.getStatusByID(requestID);</span>
+<span class="nc" id="L586">		} catch (JdmoException e) {</span>
+<span class="nc" id="L587">			handleException(e, false);</span>
+<span class="nc" id="L588">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L590">			methodFinish();</span>
+		}
+	}
+	/**
+	 * poll status of last x requests
+	 * @param int, number of request status to be returned
+	 * @return Collection, PayrollStatus
+	 */
+	public Collection pollStatus(int number) throws AmException
+	{
+<span class="nc" id="L600">		methodStart(&quot;pollStatus&quot;, NumberFactory.newInteger(number));</span>
+		try {
+<span class="nc" id="L602">			return PayrollStatusDAO.pollStatus(number);</span>
+<span class="nc" id="L603">		} catch (JdmoException e) {</span>
+<span class="nc" id="L604">			handleException(e, false);</span>
+<span class="nc" id="L605">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L607">			methodFinish();</span>
+		}
+	}
+	/**
+	 * get Employee information for a request
+	 * @param ID, request ID
+	 * @param int, sortColumn
+	 * @param boolean, ascending
+	 * @return Collection
+	 */
+	public Collection getEmployeesByStatusID(ID requestID, int sortColumn, boolean ascending) throws AmException
+	{
+<span class="nc" id="L619">		methodStart(&quot;getEmployeesByStatusID&quot;, requestID, NumberFactory.newInteger(sortColumn), JdmoParam.getObject(ascending));</span>
+		try {
+<span class="nc" id="L621">			StringBuffer pStmt1 = new StringBuffer(</span>
+	&quot;A.ID in (select EMPLOYEEID from PAYROLLSTATUSEMPLOYEE where PAYROLLSTATUSID=&quot;);
+<span class="nc" id="L623">			pStmt1.append(requestID).append(&quot;)&quot;);</span>
+<span class="nc bnc" id="L624" title="All 4 branches missed.">			switch (sortColumn) {</span>
+				case PayrollExportManager.SORT_EMPLOYEE_BY_FIRSTNAME:
+<span class="nc" id="L626">					pStmt1.append(&quot; order by B.FIRSTNAME&quot;);</span>
+<span class="nc" id="L627">					break;</span>
+				case PayrollExportManager.SORT_EMPLOYEE_BY_PFIRSTNAME:
+<span class="nc" id="L629">					pStmt1.append(&quot; order by B.PFIRSTNAME&quot;);</span>
+<span class="nc" id="L630">					break;</span>
+				case PayrollExportManager.SORT_EMPLOYEE_BY_PLASTNAME:
+<span class="nc" id="L632">					pStmt1.append(&quot; order by B.PLASTNAME&quot;);</span>
+<span class="nc" id="L633">					break;</span>
+<span class="nc" id="L634">				default: pStmt1.append(&quot; order by B.LASTNAME&quot;);</span>
+			}
+<span class="nc bnc" id="L636" title="All 2 branches missed.">			if (ascending)</span>
+<span class="nc" id="L637">				pStmt1.append(&quot; asc&quot;);</span>
+			else
+<span class="nc" id="L639">				pStmt1.append(&quot; desc&quot;);				</span>
+<span class="nc" id="L640">			return m_WorkResourceManager.getEmployeeNames(pStmt1.toString());</span>
+<span class="nc" id="L641">		} catch(Exception e) { </span>
+<span class="nc" id="L642">			handleException(e);</span>
+<span class="nc" id="L643">			throw new AmException(e);</span>
+		} finally {
+<span class="nc" id="L645">			methodFinish();</span>
+		}
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,621 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>OrganizationServiceDelegate.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.wfm.ws.entityImport.organization</a> &gt; <span class="el_source">OrganizationServiceDelegate.java</span></div><h1>OrganizationServiceDelegate.java</h1><pre class="source lang-java linenums">package com.verint.wfm.ws.entityImport.organization;
+
+import java.rmi.RemoteException;
+import java.util.*;
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil.SystemType;
+import com.bluepumpkin.ejb.bbm.vo.validators.ValidatorConstants;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workresource.model.OrganizationHOO;
+import com.bluepumpkin.ejb.core.Log;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.verint.wfm.ws.ServiceApplicationException;
+import com.verint.wfm.ws.entityImport.EntityImportService;
+import com.verint.wfm.ws.entityImport.model.HoursOfOperationDTO;
+import com.verint.wfm.ws.entityImport.organization.model.OrganizationDTO;
+import com.verint.wfm.ws.util.CalendarUtil;
+import com.verint.wfm.ws.util.ExternalIDUtil;
+import com.verint.wfm.ws.util.OrganizationExternalKey;
+import com.verint.wfm.ws.util.SyncUtil;
+import com.verint.wfm.ws.wrappers.MapUtilWrapper;
+
+/**
+ * @author Eliot Clingman, Copyright (c) 2011, 2017 by Verint Systems, Inc. All Rights Reserved. Organization Manager Web
+ *         Service This supports methods to synchronize organizations between WFO and an external application
+ */
+<span class="fc" id="L40">public class OrganizationServiceDelegate {</span>
+
+    private static final long serialVersionUID = 1L;
+    private static final String USER_ERROR_ORGANIZATION_ENTITY_WILL_NOT_BE_PERSISTED =
+            &quot;User error: Organization entity will not be persisted&quot;;
+    public static final String COMMUNICATION_FAULT_UPDATE_OR_MATCH = &quot;There was a communication fault invoking &quot; +
+            &quot;workResourceManager.updateOrganization() or matchOrganizationWithExternalID()&quot;;
+
+<span class="fc" id="L48">    private static Category CAT = Log.initCategory(OrganizationServiceDelegate.class.getName());</span>
+
+    private static final int WEEK_DAYS_PLUS_1 = 8;
+    private static final short DEFAULT_NUM_SEATS = 0;
+
+<span class="fc" id="L53">    private WorkResourceManager workResourceManager = null;</span>
+
+    MapUtilWrapper getMapUtilWrapper() {
+<span class="nc" id="L56">        return MapUtilWrapper.getInstance();</span>
+    }
+
+    @SuppressWarnings(&quot;deprecation&quot;)
+    public List&lt;OrganizationNotPersistedInfo&gt; createOrUpdate(Collection&lt;OrganizationDTO&gt; organizationDTOs, String systemTypeName)
+            throws ServiceApplicationException {
+
+<span class="nc" id="L63">        SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L64">        CAT.debug(&quot;createOrUpdate(): systemType.name(): &quot; + systemType.name());</span>
+<span class="nc" id="L65">        List&lt;OrganizationNotPersistedInfo&gt; organizationNotPersistedInfos = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L66" title="All 4 branches missed.">        if (organizationDTOs == null || organizationDTOs.isEmpty()) {</span>
+<span class="nc" id="L67">            CAT.debug(&quot;No Organizations to create/update&quot;);</span>
+<span class="nc" id="L68">            return organizationNotPersistedInfos;</span>
+        }
+
+        // Convert From DTO's to entities so that the EJB layer can handle them
+<span class="nc" id="L72">        Collection&lt;OrganizationWithWeekWrapper&gt; newOrganizationWrappers = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L73">        Collection&lt;OrganizationWithWeekWrapper&gt; oldOrganizationWrappers = new ArrayList&lt;&gt;();</span>
+        try {
+<span class="nc" id="L75">            convertToEntity(organizationDTOs, systemType, newOrganizationWrappers, oldOrganizationWrappers,</span>
+                    organizationNotPersistedInfos);
+<span class="nc" id="L77">            CAT.info(&quot;Succeeded to convert DTOs!&quot;);</span>
+<span class="nc" id="L78">        } catch (RuntimeException e) {</span>
+<span class="nc" id="L79">            CAT.error(&quot;Unrecoverable system bug while converting DTO to entity Organization&quot;, e);</span>
+<span class="nc" id="L80">            throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L81">        }</span>
+
+<span class="nc" id="L83">        CAT.info(&quot;createOrUpdate():  new and old organizations.size() resp.: &quot; + newOrganizationWrappers.size() + &quot;, &quot;</span>
+<span class="nc" id="L84">                + oldOrganizationWrappers.size());</span>
+
+<span class="nc bnc" id="L86" title="All 2 branches missed.">        if (workResourceManager == null) {</span>
+<span class="nc" id="L87">            CAT.error(&quot;In createOrUpdate method: manager does not exist&quot;);</span>
+<span class="nc" id="L88">            throw new ServiceApplicationException(&quot;In createOrUpdate method: manager does not exist&quot;);</span>
+        }
+
+<span class="nc" id="L91">        createNewOrganizations(systemType, organizationNotPersistedInfos, newOrganizationWrappers);</span>
+<span class="nc" id="L92">        updateExistingOrganizations(systemType, organizationNotPersistedInfos, oldOrganizationWrappers);</span>
+
+<span class="nc" id="L94">        return organizationNotPersistedInfos;</span>
+    }
+
+    private void createNewOrganizations(
+            SystemType systemType,
+            List&lt;OrganizationNotPersistedInfo&gt; organizationNotPersistedInfos,
+            Collection&lt;OrganizationWithWeekWrapper&gt; newOrganizationWrappers)
+                    throws ServiceApplicationException {
+<span class="nc bnc" id="L102" title="All 2 branches missed.">        for (OrganizationWithWeekWrapper organizationWrapper : newOrganizationWrappers) {</span>
+            try {
+<span class="nc" id="L104">                Organization organization = organizationWrapper.getOrganization();</span>
+<span class="nc" id="L105">                CAT.info(&quot;Only at last meinute we get parent id, because it could be earlier member of same collection&quot;);</span>
+<span class="nc" id="L106">                Organization parentOrg = getParentOrg(organization.getName(),</span>
+<span class="nc" id="L107">                            organizationWrapper.getParentOrganizationName(),</span>
+                            organizationNotPersistedInfos, true);
+                // If no parent org, can't persist and the info will be sent back instead
+<span class="nc bnc" id="L110" title="All 2 branches missed.">                if (parentOrg != null){</span>
+<span class="nc" id="L111">                    organization.setParentID(parentOrg.getID());</span>
+<span class="nc bnc" id="L112" title="All 2 branches missed.">                    if ( organizationWrapper.isOrganizationWeekStartDateFromParent()){</span>
+<span class="nc" id="L113">                        organization.setWeekStartDate(parentOrg.getWeekStartDate());</span>
+                    }
+<span class="nc" id="L115">                    workResourceManager.createOrganization(organization, organizationWrapper.getOrganizationHOO(),systemType);</span>
+                }
+                // Note: any problem with validity or database state should have been detected by now
+                // So any exceptions thrown here are unrecoverable system bugs
+                // They are captured separate in case invoked method's contract changes
+<span class="nc" id="L120">            } catch (BbmCreateException e) {</span>
+<span class="nc" id="L121">                CAT.error(&quot;Failed to create the organization!&quot;, e);</span>
+<span class="nc" id="L122">                throw new ServiceApplicationException(&quot;Failed to create the organization!&quot;, e);</span>
+<span class="nc" id="L123">            } catch (RemoteException e) {</span>
+<span class="nc" id="L124">                CAT.error(&quot;There was a communication fault invoking workResourceManager.createOrganization()&quot;, e);</span>
+<span class="nc" id="L125">                throw new ServiceApplicationException(</span>
+                            &quot;There was a communication fault invoking workResourceManager.createOrganization()&quot;, e);
+<span class="nc" id="L127">            } catch (RuntimeException e) {</span>
+<span class="nc" id="L128">                CAT.error(&quot;Failed to create the organization due to Runtime Exception&quot;, e);</span>
+<span class="nc" id="L129">                throw new ServiceApplicationException(&quot;Failed to create the organization due to Runtime Exception&quot;, e);</span>
+<span class="nc" id="L130">            }</span>
+<span class="nc" id="L131">        }</span>
+<span class="nc" id="L132">    }</span>
+
+    private void updateExistingOrganizations(
+            SystemType systemType,
+            List&lt;OrganizationNotPersistedInfo&gt; organizationNotPersistedInfos,
+            Collection&lt;OrganizationWithWeekWrapper&gt; oldOrganizationWrappers)
+            throws ServiceApplicationException {
+        // persist updates for the old organizations
+<span class="nc bnc" id="L140" title="All 2 branches missed.">        for (OrganizationWithWeekWrapper organizationWrapper : oldOrganizationWrappers) {</span>
+            try {
+<span class="nc" id="L142">                Organization organization = organizationWrapper.getOrganization();</span>
+<span class="nc" id="L143">                CAT.info(&quot;Only at last meinute we get parent id, because it could be earlier member of same collection&quot;);</span>
+<span class="nc" id="L144">                Organization parentOrg = getParentOrg(organization.getName(),</span>
+<span class="nc" id="L145">                        organizationWrapper.getParentOrganizationName(),</span>
+                        organizationNotPersistedInfos, true);
+
+                // If no parent org, can't persist and the info will have been added to collection instead
+<span class="nc bnc" id="L149" title="All 2 branches missed.">                if (parentOrg != null) {</span>
+<span class="nc" id="L150">                    organization.setParentID(parentOrg.getID());</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">                    if (organizationWrapper.isOrganizationWeekStartDateFromParent()) {</span>
+<span class="nc" id="L152">                        organization.setWeekStartDate(parentOrg.getWeekStartDate());</span>
+                    }
+<span class="nc" id="L154">                    workResourceManager.updateOrganization(organization, organizationWrapper.getOrganizationHOO());</span>
+<span class="nc bnc" id="L155" title="All 2 branches missed.">                    if(organizationWrapper.getOrgExternalID() != null) {</span>
+<span class="nc" id="L156">                        ID wfoOrgId = getMapUtilWrapper().getExternalToWfoID(</span>
+                                systemType,
+                                MapUtil.ObjectType.Organization,
+<span class="nc" id="L159">                                organizationWrapper.getOrgExternalID());</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">                        if(wfoOrgId == null) {</span>
+                            // Update organization map with external id
+<span class="nc" id="L162">                            workResourceManager.matchOrganizationWithExternalID(</span>
+<span class="nc" id="L163">                                    organizationWrapper.getOrganization(),</span>
+                                    systemType,
+<span class="nc" id="L165">                                    organizationWrapper.getOrgExternalID());</span>
+                        }
+                    }
+                }
+<span class="nc" id="L169">            } catch (MultiUserException e) {</span>
+<span class="nc" id="L170">                CAT.error(&quot;Another process is has updated this organization&quot;, e);</span>
+<span class="nc" id="L171">                throw new ServiceApplicationException(&quot;Another process is has updated this organization&quot;, e);</span>
+<span class="nc" id="L172">            } catch (BbmUpdateException e) {</span>
+<span class="nc" id="L173">                CAT.error(&quot;Failed to update the organization!&quot;, e);</span>
+<span class="nc" id="L174">                throw new ServiceApplicationException(&quot;Failed to update the organization!&quot;, e);</span>
+<span class="nc" id="L175">            } catch (RemoteException e) {</span>
+<span class="nc" id="L176">                CAT.error(COMMUNICATION_FAULT_UPDATE_OR_MATCH, e);</span>
+<span class="nc" id="L177">                throw new ServiceApplicationException(COMMUNICATION_FAULT_UPDATE_OR_MATCH, e);</span>
+<span class="nc" id="L178">            } catch (RuntimeException e) {</span>
+<span class="nc" id="L179">                CAT.error(&quot;Failed to update the organization due to Runtime Exception&quot;, e);</span>
+<span class="nc" id="L180">                throw new ServiceApplicationException(&quot;Failed to update the organization due to Runtime Exception&quot;, e);</span>
+<span class="nc" id="L181">            } catch (Exception any) {</span>
+<span class="nc" id="L182">                CAT.error(&quot;failed to Create/Update Organization!&quot;, any);</span>
+<span class="nc" id="L183">                throw new ServiceApplicationException(any);</span>
+<span class="nc" id="L184">            }</span>
+<span class="nc" id="L185">        }</span>
+<span class="nc" id="L186">    }</span>
+
+    public List&lt;Boolean&gt; areSaved(List&lt;OrganizationExternalKey&gt; organizationKeys, String systemTypeName)
+            throws ServiceApplicationException {
+
+<span class="nc" id="L191">        SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+
+<span class="nc" id="L193">        List&lt;Boolean&gt; result = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L194" title="All 4 branches missed.">        if (organizationKeys == null || organizationKeys.isEmpty()) {</span>
+<span class="nc" id="L195">            CAT.debug(&quot;No organizations to check&quot;);</span>
+<span class="nc" id="L196">            return result;</span>
+        }
+
+        //This first call is just to load the organizations into the cache
+<span class="nc" id="L200">        SyncUtil.getOrganizationIDByNameCaseInsensitive(&quot;&quot;, workResourceManager, true);</span>
+
+<span class="nc bnc" id="L202" title="All 2 branches missed.">        for(OrganizationExternalKey org : organizationKeys) {</span>
+<span class="nc" id="L203">            result.add(isExistingOrganization(systemType, org));</span>
+<span class="nc" id="L204">        }</span>
+<span class="nc" id="L205">        return result;</span>
+    }
+
+    public String doTheseExist(List&lt;OrganizationExternalKey&gt; organizationKeys, String systemTypeName)
+            throws ServiceApplicationException {
+<span class="nc bnc" id="L210" title="All 4 branches missed.">        if (organizationKeys == null || organizationKeys.isEmpty()) {</span>
+<span class="nc" id="L211">            CAT.debug(&quot;No organizations to check&quot;);</span>
+<span class="nc" id="L212">            return &quot;&quot;;</span>
+        }
+
+        //This first call is just to load the organizations into the cache
+<span class="nc" id="L216">        SyncUtil.getOrganizationIDByNameCaseInsensitive(&quot;&quot;, workResourceManager, true);</span>
+<span class="nc" id="L217">        StringBuilder preResult = new StringBuilder();</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">        for (OrganizationExternalKey org : organizationKeys) {</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">            if (getLocalID(org, systemTypeName) != null) {</span>
+<span class="nc" id="L220">                preResult.append(1);</span>
+            } else {
+<span class="nc" id="L222">                preResult.append(0);</span>
+            }
+<span class="nc" id="L224">        }</span>
+<span class="nc" id="L225">        return preResult.toString();</span>
+    }
+
+    private boolean isExistingOrganization(SystemType systemType, OrganizationExternalKey org) throws ServiceApplicationException {
+<span class="nc" id="L229">        String extId = org.externalId;</span>
+<span class="nc" id="L230">        String orgName = org.name;</span>
+<span class="nc" id="L231">        ID localId = null;</span>
+<span class="nc" id="L232">        ID orgExternalId = ExternalIDUtil.buildExternalID(systemType,extId);</span>
+
+<span class="nc bnc" id="L234" title="All 2 branches missed.">        if(orgExternalId != null) {</span>
+            try {
+<span class="nc" id="L236">                localId = getMapUtilWrapper().getExternalToWfoID(systemType, MapUtil.ObjectType.Organization, orgExternalId);</span>
+
+<span class="nc bnc" id="L238" title="All 2 branches missed.">                if(localId == null) {</span>
+<span class="nc" id="L239">                    localId = SyncUtil.getOrganizationIDByNameCaseInsensitive(orgName, workResourceManager, false);</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">                    if(localId != null) {</span>
+<span class="nc" id="L241">                        ID wfoExtId = getMapUtilWrapper().getExternalToWfoID(</span>
+                                systemType,
+                                MapUtil.ObjectType.Organization,
+                                localId);
+<span class="nc bnc" id="L245" title="All 2 branches missed.">                        if(wfoExtId != null) {</span>
+<span class="nc" id="L246">                            localId = null;</span>
+                        }
+                    }
+                }
+<span class="nc" id="L250">            } catch (JdmoException e) {</span>
+<span class="nc" id="L251">                throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L252">            }</span>
+        } else {
+<span class="nc" id="L254">            localId = SyncUtil.getOrganizationIDByNameCaseInsensitive(orgName, workResourceManager, false);</span>
+        }
+<span class="nc bnc" id="L256" title="All 2 branches missed.">        return localId != null;</span>
+    }
+
+    // ---------------------------------------------------------------------- helpers
+
+    @PostConstruct
+    public void postConstruct() {
+        try {
+<span class="fc" id="L264">            workResourceManager = BbmManagerFactory.getWorkResourceManager();</span>
+<span class="fc" id="L265">            CAT.info(&quot;Succeeded to obtain reference to WorkResourceManager :)&quot;);</span>
+<span class="nc" id="L266">        } catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L267">            CAT.error(&quot;Failed to obtain reference to WorkResourceManager :(&quot;, e);</span>
+<span class="fc" id="L268">        }</span>
+<span class="fc" id="L269">    }</span>
+
+    @PreDestroy
+    public void preDestroy() {
+<span class="nc" id="L273">        workResourceManager = null;</span>
+<span class="nc" id="L274">    }</span>
+
+    //Only protected for testing purposes, should be private.
+    protected void convertToEntity(Collection&lt;OrganizationDTO&gt; organizationDTOs,SystemType systemType,
+            Collection&lt;OrganizationWithWeekWrapper&gt; newOrganizationWrappers,
+            Collection&lt;OrganizationWithWeekWrapper&gt; oldOrganizationWrappers,
+            List&lt;OrganizationNotPersistedInfo&gt; organizationNotPersistedInfos) throws ServiceApplicationException {
+
+        // Refresh the cache... it could very well be stale
+<span class="nc" id="L283">        SyncUtil.getOrganizationIDsByNamesCaseInsensitive(Collections.&lt;String&gt; emptyList(), workResourceManager, true);</span>
+        //get the default timezone to be used and keep
+<span class="nc" id="L285">        TimeZone defaultTimeZone = getOrganizationByID(Organization.YOUR_COMPANY_ID_OBJ).getTimeZone();</span>
+
+        // Covert each DTO to a native entity
+<span class="nc bnc" id="L288" title="All 2 branches missed.">        for (OrganizationDTO organizationDTO : organizationDTOs) {</span>
+            // We will create exception info; only add to collection if there is an exception
+            // Note: we are using name as the unique identifier, not an external source id
+<span class="nc" id="L291">            OrganizationNotPersistedInfo organizationNotPersistedInfo = new OrganizationNotPersistedInfo(</span>
+<span class="nc" id="L292">                    organizationDTO.getName());</span>
+
+<span class="nc" id="L294">            OrganizationWithWeekWrapper organizationWrapper = new OrganizationWithWeekWrapper();</span>
+<span class="nc" id="L295">            Organization organization = new Organization();</span>
+<span class="nc" id="L296">            organizationWrapper.setOrganization(organization);</span>
+<span class="nc" id="L297">            ID orgExternalID = ExternalIDUtil.buildExternalID(systemType,organizationDTO.getExternalSourceId());</span>
+<span class="nc" id="L298">            organizationWrapper.setOrgExternalID(orgExternalID);</span>
+
+            // Warning: Keep parent name around, but don't look up its ID yet because the parent might be in
+            // the same collection as the child, and thus not saved yet!
+<span class="nc" id="L302">            organizationWrapper.setParentOrganizationName(organizationDTO.getParentOrganizationName());</span>
+<span class="nc" id="L303">            checkAndSetOrgId(systemType, organizationDTO, organizationNotPersistedInfo, organizationWrapper, organization);</span>
+
+<span class="nc bnc" id="L305" title="All 2 branches missed.">            if (isStartOfWeek(organizationDTO.getWeekStartDate())) {</span>
+<span class="nc" id="L306">                organizationNotPersistedInfo.addWeekStartMessage(organizationDTO.getWeekStartDate());</span>
+            }
+
+<span class="nc bnc" id="L309" title="All 2 branches missed.">            if (!organizationNotPersistedInfo.getMessages().isEmpty()) {</span>
+<span class="nc" id="L310">                CAT.error(USER_ERROR_ORGANIZATION_ENTITY_WILL_NOT_BE_PERSISTED);</span>
+<span class="nc" id="L311">                organizationNotPersistedInfos.add(organizationNotPersistedInfo);</span>
+            } else {
+<span class="nc" id="L313">                setOrgPropertiesFromDTO(</span>
+                        organizationNotPersistedInfos,
+                        defaultTimeZone,
+                        organizationDTO,
+                        organizationNotPersistedInfo,
+                        organizationWrapper,
+                        organization,
+                        orgExternalID);
+            }
+
+            // If its bad add to info collection, else add to entities to be persisted
+<span class="nc bnc" id="L324" title="All 2 branches missed.">            if (!organizationNotPersistedInfo.getMessages().isEmpty()) {</span>
+<span class="nc bnc" id="L325" title="All 2 branches missed.">                if (!organizationNotPersistedInfos.contains(organizationNotPersistedInfo)) {</span>
+                    // but do't add it twice when its already added
+<span class="nc" id="L327">                    organizationNotPersistedInfos.add(organizationNotPersistedInfo);</span>
+                }
+<span class="nc" id="L329">                CAT.error(USER_ERROR_ORGANIZATION_ENTITY_WILL_NOT_BE_PERSISTED);</span>
+            } else {
+<span class="nc bnc" id="L331" title="All 2 branches missed.">                if (organization.getID() == null) {</span>
+<span class="nc" id="L332">                    newOrganizationWrappers.add(organizationWrapper);</span>
+                } else {
+<span class="nc" id="L334">                    oldOrganizationWrappers.add(organizationWrapper);</span>
+                }
+            }
+<span class="nc" id="L337">        }</span>
+<span class="nc" id="L338">    }</span>
+
+    private boolean isStartOfWeek(Short weekStartIndex) {
+<span class="nc bnc" id="L341" title="All 2 branches missed.">        return weekStartIndex != null &amp;&amp;</span>
+<span class="nc bnc" id="L342" title="All 4 branches missed.">                (weekStartIndex.shortValue() &lt; 1 || weekStartIndex &gt; CalendarUtil.DAYS_IN_WEEK);</span>
+    }
+
+    private void checkAndSetOrgId(
+            SystemType systemType,
+            OrganizationDTO organizationDTO,
+            OrganizationNotPersistedInfo organizationNotPersistedInfo,
+            OrganizationWithWeekWrapper organizationWrapper,
+            Organization organization)
+                    throws ServiceApplicationException {
+        // Use name as the unique identifier of this entity
+<span class="nc bnc" id="L353" title="All 2 branches missed.">        if (StringUtil.isEmptyOrWhiteSpace(organizationDTO.getName())) {</span>
+<span class="nc" id="L354">            organizationNotPersistedInfo.addNameMissingMessage(organization.getDescription());</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">        } else if(StringUtil.containsInvalidChars(organizationDTO.getName(), ValidatorConstants.INVALID_NAME_CHARS)){</span>
+<span class="nc" id="L356">            organizationNotPersistedInfo.addNameHasInvalidCharactersMessage(ValidatorConstants.INVALID_NAME_CHARS);</span>
+<span class="nc bnc" id="L357" title="All 2 branches missed.">        }else if (organizationDTO.getName().length() &gt; EntityImportService.NAME_MAX_LENGTH) {</span>
+<span class="nc" id="L358">            organizationNotPersistedInfo.addNameLengthExceededMessage(organizationDTO.getName().length(),</span>
+                    EntityImportService.NAME_MAX_LENGTH);
+<span class="nc bnc" id="L360" title="All 2 branches missed.">        } else if (Organization.YOUR_COMPANY_ID_OBJ.equals(SyncUtil.getOrganizationIDByNameCaseInsensitive(</span>
+<span class="nc" id="L361">                organizationDTO.getName(),</span>
+                workResourceManager,
+                false))) {
+            // check if the organization name is same as your company name
+<span class="nc" id="L365">            organizationNotPersistedInfo.addNameSameAsRoot();</span>
+        } else {
+<span class="nc" id="L367">            ID wfoOrgId = null;</span>
+            try {
+<span class="nc bnc" id="L369" title="All 2 branches missed.">                if(organizationWrapper.getOrgExternalID() != null) {</span>
+<span class="nc" id="L370">                    wfoOrgId = getMapUtilWrapper().getExternalToWfoID(</span>
+                            systemType,
+                            MapUtil.ObjectType.Organization,
+<span class="nc" id="L373">                            organizationWrapper.getOrgExternalID());</span>
+<span class="nc bnc" id="L374" title="All 2 branches missed.">                    if(wfoOrgId == null) {</span>
+<span class="nc" id="L375">                        wfoOrgId = SyncUtil.getOrganizationIDByNameCaseInsensitive(organizationDTO.getName(),</span>
+                                workResourceManager, false);
+
+
+                        //  If extid for this wfoorgid is not null, add org already exists message
+<span class="nc" id="L380">                        ID wfoExternalId = getMapUtilWrapper().getExternalToWfoID(</span>
+                                systemType,
+                                MapUtil.ObjectType.Organization,
+                                wfoOrgId);
+<span class="nc bnc" id="L384" title="All 2 branches missed.">                        if(wfoExternalId != null) {</span>
+<span class="nc" id="L385">                            organizationNotPersistedInfo.addOrganizatonAlreadyExistsMessage();</span>
+<span class="nc" id="L386">                            wfoOrgId = null;</span>
+                        }
+<span class="nc" id="L388">                    }</span>
+                } else {
+<span class="nc" id="L390">                    wfoOrgId = SyncUtil.getOrganizationIDByNameCaseInsensitive(organizationDTO.getName(),</span>
+                            workResourceManager, false);
+                }
+<span class="nc" id="L393">            } catch (JdmoException e) {</span>
+<span class="nc" id="L394">                throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L395">            }</span>
+<span class="nc bnc" id="L396" title="All 2 branches missed.">            if (wfoOrgId != null) {</span>
+<span class="nc" id="L397">                organization.setID(wfoOrgId);</span>
+<span class="nc" id="L398">                organizationNotPersistedInfo.setAlreadyCreatedButNoUpdate(true);</span>
+<span class="nc" id="L399">                CAT.info(&quot;Mapped name to: &quot; + wfoOrgId);</span>
+            }
+        }
+<span class="nc" id="L402">    }</span>
+
+    private void setOrgPropertiesFromDTO(
+            List&lt;OrganizationNotPersistedInfo&gt; organizationNotPersistedInfos,
+            TimeZone defaultTimeZone,
+            OrganizationDTO organizationDTO,
+            OrganizationNotPersistedInfo organizationNotPersistedInfo,
+            OrganizationWithWeekWrapper organizationWrapper,
+            Organization organization,
+            ID orgExternalID) {
+<span class="nc" id="L412">        organization.setName(organizationDTO.getName());</span>
+<span class="nc" id="L413">        organization.setDescription(organizationDTO.getDescription());</span>
+<span class="nc" id="L414">        organization.setExternalID(orgExternalID);</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">        if (organizationDTO.getTimeZoneId() == null) {</span>
+<span class="nc" id="L416">            organization.setTimeZone(defaultTimeZone);</span>
+        } else {
+<span class="nc" id="L418">            organization.setTimeZone(TimeZone.getTimeZone(organizationDTO.getTimeZoneId()));</span>
+        }
+
+        // If not, we will look up the parent right before we persist the organization
+<span class="nc bnc" id="L422" title="All 2 branches missed.">        if (organizationDTO.getWeekStartDate() != null) {</span>
+<span class="nc" id="L423">            organization.setWeekStartDate(organizationDTO.getWeekStartDate());</span>
+        } else {
+<span class="nc" id="L425">            organizationWrapper.setOrganizationWeekStartDateFromParent(true);</span>
+        }
+
+<span class="nc bnc" id="L428" title="All 2 branches missed.">        if (organizationDTO.getNumSeats() == null) {</span>
+<span class="nc" id="L429">            organization.setNumSeats(DEFAULT_NUM_SEATS);</span>
+        } else {
+<span class="nc" id="L431">            organization.setNumSeats(organizationDTO.getNumSeats());</span>
+        }
+
+<span class="nc" id="L434">        setOrgHOOFromDTO(</span>
+                organization, organizationDTO, organizationWrapper, organizationNotPersistedInfos, organizationNotPersistedInfo);
+<span class="nc" id="L436">    }</span>
+
+    private void setOrgHOOFromDTO(
+            Organization organization,
+            OrganizationDTO organizationDTO,
+            OrganizationWithWeekWrapper organizationWrapper,
+            List&lt;OrganizationNotPersistedInfo&gt; organizationNotPersistedInfos,
+            OrganizationNotPersistedInfo organizationNotPersistedInfo) {
+        // handle week hours of operation entity
+<span class="nc" id="L445">        HoursOfOperationDTO hoursOfOperationDTO = organizationDTO.getHoursOfOperationDTO();</span>
+<span class="nc" id="L446">        OrganizationHOO organizationHOO = new OrganizationHOO();</span>
+<span class="nc" id="L447">        organizationWrapper.setOrganizationHOO(organizationHOO);</span>
+<span class="nc" id="L448">        organizationHOO.setOrganizationID(organization.getID());</span>
+
+        // If hour's aren't provided, treat organization as always closed
+<span class="nc bnc" id="L451" title="All 2 branches missed.">        if (hoursOfOperationDTO == null) {</span>
+<span class="nc bnc" id="L452" title="All 2 branches missed.">            for (short i = 1; i &lt;= CalendarUtil.DAYS_IN_WEEK; i++) {</span>
+<span class="nc" id="L453">                organizationHOO.setDayOpen(i, (short) 0);</span>
+<span class="nc" id="L454">                organizationHOO.setDayClose(i, (short) 0);</span>
+            }
+        } else {
+
+            // If hours are provided, first validate them then copy their properties over
+<span class="nc bnc" id="L459" title="All 2 branches missed.">            if (hoursOfOperationDTO.getDayOpen() == null</span>
+<span class="nc bnc" id="L460" title="All 2 branches missed.">                    || hoursOfOperationDTO.getDayOpen().length != WEEK_DAYS_PLUS_1) {</span>
+<span class="nc" id="L461">                organizationNotPersistedInfo.addWeekDayOpenLengthMessage(hoursOfOperationDTO.getDayOpen().length);</span>
+            }
+<span class="nc bnc" id="L463" title="All 2 branches missed.">            if (hoursOfOperationDTO.getDayClose() == null</span>
+<span class="nc bnc" id="L464" title="All 2 branches missed.">                    || hoursOfOperationDTO.getDayClose().length != WEEK_DAYS_PLUS_1) {</span>
+<span class="nc" id="L465">                organizationNotPersistedInfo.addWeekDayCloseLengthMessage(hoursOfOperationDTO.getDayClose().length);</span>
+            }
+
+<span class="nc bnc" id="L468" title="All 2 branches missed.">            if (!organizationNotPersistedInfo.getMessages().isEmpty()) {</span>
+<span class="nc" id="L469">                CAT.error(USER_ERROR_ORGANIZATION_ENTITY_WILL_NOT_BE_PERSISTED);</span>
+<span class="nc" id="L470">                organizationNotPersistedInfos.add(organizationNotPersistedInfo);</span>
+            } else {
+<span class="nc bnc" id="L472" title="All 2 branches missed.">                for (short i = 1; i &lt;= CalendarUtil.DAYS_IN_WEEK; i++) {</span>
+<span class="nc" id="L473">                    organizationHOO.setDayOpen(i, (short) (hoursOfOperationDTO.getDayOpen()[i]));</span>
+<span class="nc" id="L474">                    organizationHOO.setDayClose(i, (short) (hoursOfOperationDTO.getDayClose()[i]));</span>
+                }
+                // This method is called after setDayOpen()/Close() because it overwrites it
+<span class="nc bnc" id="L477" title="All 2 branches missed.">                if (hoursOfOperationDTO.isFull24Hour()) {</span>
+<span class="nc" id="L478">                    organizationHOO.setOpen24Hours();</span>
+                }
+            }
+        }
+<span class="nc" id="L482">    }</span>
+
+    private Organization getParentOrg(
+            String organizationName,
+            String parentOrganizationName,
+            List&lt;OrganizationNotPersistedInfo&gt; organizationNotPersistedInfos,
+            boolean alwaysResetCache) throws ServiceApplicationException {
+        ID wfoParentOrgId;
+<span class="nc bnc" id="L490" title="All 2 branches missed.">        if (parentOrganizationName == null) {</span>
+            // If parent not provided, this must be the root entity of the corporation, so its system parent is the
+            // built in thing. We use YOUR_COMPANY_ID_OBJ rather than ROOT_ORG_ID_OBJ because if we have &quot;co-tenantcy&quot;
+            // the latter would be a problem
+<span class="nc" id="L494">            wfoParentOrgId = Organization.YOUR_COMPANY_ID_OBJ;</span>
+        } else {
+            // I always recache, because in this use case the parent might have just been created, and speed isn't a big problem
+<span class="nc" id="L497">            wfoParentOrgId = SyncUtil.getOrganizationIDByNameCaseInsensitive(parentOrganizationName,</span>
+                    workResourceManager, alwaysResetCache);
+<span class="nc" id="L499">            CAT.info(&quot;Mapped parent org external id to: &quot; + wfoParentOrgId);</span>
+        }
+
+        Organization parentOrganization;
+<span class="nc bnc" id="L503" title="All 2 branches missed.">        if (wfoParentOrgId == null) {</span>
+<span class="nc" id="L504">            OrganizationNotPersistedInfo organizationNotPersistedInfo = new OrganizationNotPersistedInfo(organizationName);</span>
+<span class="nc" id="L505">            organizationNotPersistedInfo.addNoSuchParentOrganizatonNameMessage(parentOrganizationName);</span>
+<span class="nc" id="L506">            organizationNotPersistedInfos.add(organizationNotPersistedInfo);</span>
+<span class="nc" id="L507">            parentOrganization = null;</span>
+<span class="nc" id="L508">        } else {</span>
+<span class="nc" id="L509">            parentOrganization = getOrganizationByID(wfoParentOrgId);</span>
+        }        
+<span class="nc" id="L511">        return parentOrganization;</span>
+    }
+
+    /**
+     * Returns the organization by the given id.
+     */
+    Organization getOrganizationByID(ID orgID) throws ServiceApplicationException {
+        try {
+<span class="nc" id="L519">            return workResourceManager.getOrganizationByID(orgID);</span>
+<span class="nc" id="L520">        } catch (BbmObjectNotFoundException e) {</span>
+<span class="nc" id="L521">            throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L522">        } catch (BbmFinderException e) {</span>
+<span class="nc" id="L523">            throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L524">        } catch (RemoteException e) {</span>
+<span class="nc" id="L525">            throw new ServiceApplicationException(e);</span>
+        }
+    }
+
+    private ID getLocalID(OrganizationExternalKey externalKey,
+        String systemTypeName) throws ServiceApplicationException {
+<span class="nc" id="L531">        String extId = externalKey.externalId;</span>
+<span class="nc" id="L532">        String orgName = externalKey.name;</span>
+<span class="nc" id="L533">        SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+
+<span class="nc" id="L535">        ID localId = null;</span>
+<span class="nc" id="L536">        ID orgExternalId = ExternalIDUtil.buildExternalID(systemType, extId);</span>
+<span class="nc bnc" id="L537" title="All 2 branches missed.">        if (orgExternalId != null) {</span>
+            try {
+<span class="nc" id="L539">                localId = MapUtil.getExternalToWfoID(systemType,MapUtil.ObjectType.Organization, orgExternalId);</span>
+<span class="nc bnc" id="L540" title="All 2 branches missed.">                if (localId == null) {</span>
+<span class="nc" id="L541">                    localId = SyncUtil.getOrganizationIDByNameCaseInsensitive(</span>
+                        orgName, workResourceManager, false);
+<span class="nc bnc" id="L543" title="All 2 branches missed.">                    if (localId != null) {</span>
+<span class="nc" id="L544">                        ID wfoExtId = MapUtil.getWfoToExternalID(systemType, MapUtil.ObjectType.Organization, localId, null);</span>
+<span class="nc bnc" id="L545" title="All 2 branches missed.">                        if (wfoExtId != null) {</span>
+<span class="nc" id="L546">                            localId = null;</span>
+                        }
+                    }
+                }
+<span class="nc" id="L550">            } catch (JdmoException e) {</span>
+<span class="nc" id="L551">                throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L552">            }</span>
+        } else {
+<span class="nc" id="L554">            localId = SyncUtil.getOrganizationIDByNameCaseInsensitive(orgName, workResourceManager, false);</span>
+        }
+<span class="nc" id="L556">        return localId;</span>
+    }
+
+    /**
+     * We need to keep each organization directly associated with its weekly hours of operations for proper processing.
+     * Its only meant to be used here, and that's why its not a top level class.
+     * 
+     * @author EClingman
+     */
+<span class="pc" id="L565">    protected static class OrganizationWithWeekWrapper {</span>
+        private Organization organization;
+        private String parentOrganizationName;
+        private OrganizationHOO organizationHOO;
+        private boolean isOrganizationWeekStartDateFromParent;
+        private ID orgExternalID;
+
+        public Organization getOrganization() {
+<span class="nc" id="L573">            return organization;</span>
+        }
+
+        public boolean isOrganizationWeekStartDateFromParent() {
+<span class="nc" id="L577">            return isOrganizationWeekStartDateFromParent;</span>
+        }
+
+        public void setOrganizationWeekStartDateFromParent(boolean isOrganizationWeekStartDateFromParent) {
+<span class="nc" id="L581">            this.isOrganizationWeekStartDateFromParent = isOrganizationWeekStartDateFromParent;</span>
+<span class="nc" id="L582">        }</span>
+
+        public void setOrganization(Organization organization) {
+<span class="nc" id="L585">            this.organization = organization;</span>
+<span class="nc" id="L586">        }</span>
+
+        public String getParentOrganizationName() {
+<span class="nc" id="L589">            return parentOrganizationName;</span>
+        }
+
+        public void setParentOrganizationName(String parentOrganizationName) {
+<span class="nc" id="L593">            this.parentOrganizationName = parentOrganizationName;</span>
+<span class="nc" id="L594">        }</span>
+
+        public OrganizationHOO getOrganizationHOO() {
+<span class="nc" id="L597">            return organizationHOO;</span>
+        }
+
+        public void setOrganizationHOO(OrganizationHOO organizationHOO) {
+<span class="nc" id="L601">            this.organizationHOO = organizationHOO;</span>
+<span class="nc" id="L602">        }</span>
+
+        public static Collection&lt;Organization&gt; convertToOrganizations(Collection&lt;OrganizationWithWeekWrapper&gt; wrappers) {
+<span class="nc" id="L605">            Collection&lt;Organization&gt; result = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L606" title="All 2 branches missed.">            for (OrganizationWithWeekWrapper wrapper : wrappers) {</span>
+<span class="nc" id="L607">                result.add(wrapper.getOrganization());</span>
+<span class="nc" id="L608">            }</span>
+<span class="nc" id="L609">            return result;</span>
+        }
+
+        public ID getOrgExternalID() {
+<span class="nc" id="L613">            return orgExternalID;</span>
+        }
+
+        public void setOrgExternalID(ID orgExternalID) {
+<span class="nc" id="L617">            this.orgExternalID = orgExternalID;</span>
+<span class="nc" id="L618">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

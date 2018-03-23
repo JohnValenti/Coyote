@@ -1,0 +1,831 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ActivityModelHandler.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.bbm.activity</a> &gt; <span class="el_source">ActivityModelHandler.java</span></div><h1>ActivityModelHandler.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.bbm.activity;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.ResourceBundle;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.Filter.Filter;
+import com.bluepumpkin.ejb.bbm.activity.ejb.ActivityManager;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityCategoryFilter;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityFilter;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityGroup;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityValidationException;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityProperties;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.ejb.bbm.workload.model.Queue;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.core.CoreManagerFactory;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.bluepumpkin.web.bbm.Log;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.workload.WorkloadModelHandler;
+import com.bluepumpkin.web.core.base.ModelHandler;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.witness.ejb.bbm.scorecards.ejb.BbmScorecardsBridgeInterface;
+import com.witness.ejb.bbm.scorecards.model.SourceMeasureInt;
+import com.witness.ejb.core.gcr.ejb.GCRManager;
+import com.witness.ejb.core.gcr.model.GCREntry;
+import com.witness.ejb.core.licensing.LicenseKeys;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.model.User;
+import com.witness.web.uif.system.RequestContext;
+
+/**
+ * Title:        ActivityModelHandler
+ * Description:  Handle interactions with Activity Manager EJB
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, Inc
+ * @author       Shimon Kakon
+ * @version 1.0
+ */
+
+<span class="nc" id="L55">public class ActivityModelHandler extends ModelHandler {</span>
+<span class="fc" id="L56">	private static final Category log = Log.initCategory(ActivityModelHandler.class.getName());</span>
+
+	public static ActivityManager getActivityManager(RequestContext context) throws BbmException {
+<span class="fc" id="L59">		return WfmManagerFactory.getActivityManager(context.isInWhatIfMode());</span>
+	}
+
+	/**
+	 * Return Activities Map with Key being Activity ID
+	 */
+	public static HashMap&lt;ID, Activity&gt; getAllActivitiesMap(RequestContext context) throws RemoteException, BbmException {
+<span class="fc" id="L66">		ActivityManager actManager = getActivityManager(context);</span>
+
+		//Get all active and deleted activities
+<span class="fc" id="L69">		ActivityFilter activityFilter = new ActivityFilter(ActivityFilter.FILTER_NONE);</span>
+
+<span class="fc" id="L71">		Collection&lt;Activity&gt; activities = actManager.findActivities(activityFilter);</span>
+<span class="fc" id="L72">		HashMap&lt;ID, Activity&gt; activityMap = new HashMap&lt;ID, Activity&gt;();</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">		for (Iterator&lt;Activity&gt; i = activities.iterator(); i.hasNext();){</span>
+<span class="fc" id="L74">			Activity activity = i.next();</span>
+<span class="fc" id="L75">			activityMap.put(activity.getID(), activity);</span>
+<span class="fc" id="L76">		}</span>
+<span class="fc" id="L77">		return activityMap;</span>
+	}
+
+	/**
+	 * getOrgActivitiesByCategory()
+	 */
+	public static Collection getActivitiesByCategory(RequestContext context, ID orgId, ID activityCategoryID)
+			throws BbmException, RemoteException {
+<span class="nc" id="L85">		Collection activities = null;</span>
+
+<span class="nc" id="L87">		ActivityFilter activityFilter = new ActivityFilter();</span>
+<span class="nc" id="L88">		activityFilter.setDeleted(false);</span>
+<span class="nc" id="L89">		activities = getActivityManager(context).findOrganizationActivitiesByCategory(</span>
+				orgId, activityCategoryID, activityFilter);
+
+<span class="nc" id="L92">		return activities;</span>
+	}
+
+
+	/**
+	 * Return all ActivityCategories given organization ID and ActivityCategoryFilter
+	 *
+	 * @param orgId - The Organization ID
+	 * @param filter - An ActivityCategoryFilter object
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return Collection of ActivityCategory value objects
+	 */
+	public static Collection getActivityCategories(RequestContext context, ID orgId, ActivityCategoryFilter filter)
+			throws RemoteException, BbmException {
+<span class="fc" id="L107">		ArrayList orgCol = new ArrayList(1);</span>
+<span class="fc" id="L108">		orgCol.add(orgId);</span>
+<span class="fc" id="L109">		return getActivityManager(context).findOrganizationActivityCategories(orgCol, filter, true);</span>
+	}
+
+	/**
+	 * Return all activities given organization ID and ActivityFilter
+	 *
+	 * @param orgId - The Organization ID
+	 * @param filter - An ActivityFilter object
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return Collection of activity value objects
+	 */
+	public static Collection getActivities(RequestContext context, ID orgId, ActivityFilter filter)
+			throws RemoteException, BbmException {
+<span class="fc" id="L123">		return getActivityManager(context).findOrganizationActivities(orgId, filter);</span>
+	}
+
+	/**
+	 * Return all activities given organization IDs, ActivityFilter, and whether to get parent activities.
+	 *
+	 * @param orgIds - A collection of Organization ID
+	 * @param filter - An ActivityFilter object
+	*  @param findParentOrgs - indicates if to find activities from parent orgs
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return Colection of activity value objects
+	 */
+	public static Collection&lt;Activity&gt; getActivities(RequestContext context, Collection&lt;ID&gt; orgIds, ActivityFilter filter, boolean findParentOrgs)
+			throws RemoteException, BbmException
+	{
+<span class="fc" id="L139">		return getActivityManager(context).findOrganizationActivities(orgIds, filter, findParentOrgs);</span>
+	}
+	
+	/**
+	 * Return all activities given organization IDs, ActivityFilter, and whether to get parent activities.
+	 *
+	 * @param orgIds - A collection of Organization ID
+	 * @param filter - An ActivityFilter object
+	 * @param findParentOrgs - indicates if to find activities from parent orgs
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return Collection of activity value objects
+	 */
+	public static Collection&lt;Activity&gt; getActivities(RequestContext context, Collection&lt;ID&gt; orgIds, ActivityFilter filter,
+			boolean findParentOrgs,	int flexType) throws RemoteException, BbmException {
+<span class="nc" id="L154">		return getActivityManager(context).findOrganizationActivities(orgIds, filter, findParentOrgs, flexType);</span>
+	}
+
+
+	/**
+	 * Return all activities given organization ID and a filter except for activities
+	 * defined in the ROOT organization.
+	 *
+	 * @param orgId - The Organization ID
+	 * @param filter - An ActivityFilter object
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return Colection of activity value objects
+	 */
+	public static Collection&lt;Activity&gt; getActivitiesFilterRoot(RequestContext context, ID orgId, ActivityFilter filter)
+			throws RemoteException, BbmException {
+
+<span class="nc bnc" id="L171" title="All 2 branches missed.">		ActivityFilter localFilter = (filter != null) ? filter : new ActivityFilter();</span>
+<span class="nc" id="L172">		localFilter.setOrganizationId(Organization.ROOT_ORG_ID_OBJ, Filter.OP_NOT_EQUAL);</span>
+<span class="nc" id="L173">		return getActivityManager(context).findOrganizationActivities(orgId, localFilter);</span>
+	}
+
+
+	/**
+	 * Return all activities given organization ID and a filter but filter out activities
+	 * define in the activityIds collection
+	 * @param orgId - The Organization ID
+	 * @param filter - An ActivityFilter object
+	 * @param activitiesToFilterOut - activityIds to filter out.
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return Colection of activity value objects
+	 */
+	public static Collection&lt;Activity&gt; getActivitiesFilterActivities(RequestContext context,
+			ID orgId, ActivityFilter filter, ID[] activitiesToFilterOut)
+			throws RemoteException, BbmException
+	{
+<span class="fc" id="L191">		Collection&lt;Activity&gt; activities = getActivityManager(context).findOrganizationActivities(orgId, filter);</span>
+<span class="fc" id="L192">		Activity activity = null;</span>
+<span class="pc bpc" id="L193" title="1 of 4 branches missed.">		if (activitiesToFilterOut != null &amp;&amp; activitiesToFilterOut.length &gt; 0)</span>
+		{
+<span class="fc bfc" id="L195" title="All 2 branches covered.">			for (Iterator&lt;Activity&gt; it = activities.iterator(); it.hasNext();)</span>
+			{
+<span class="fc" id="L197">				activity = it.next();</span>
+<span class="fc bfc" id="L198" title="All 2 branches covered.">				for (int j = 0; j &lt; activitiesToFilterOut.length; j++)</span>
+				{
+<span class="fc bfc" id="L200" title="All 2 branches covered.">					if (activity.getID().equals(activitiesToFilterOut[j]))</span>
+					{
+<span class="fc" id="L202">						it.remove();</span>
+<span class="fc" id="L203">						break;</span>
+					}
+				}
+			}
+		}
+
+		//QC83301/QA102331 if activitiesToFilterOut is null then resultActivities was empty
+<span class="fc" id="L210">		Collection&lt;Activity&gt; resultActivities = new ArrayList&lt;Activity&gt;();</span>
+<span class="fc bfc" id="L211" title="All 2 branches covered.">		for (Iterator&lt;Activity&gt; it = activities.iterator(); it.hasNext();)</span>
+		{
+<span class="fc" id="L213">			activity = it.next();</span>
+			//For special activities, get the overridden tolerance and maxDuration values
+<span class="fc" id="L215">			resultActivities.add(updateSpecialActivityAttributes(context, orgId, activity));</span>
+		}
+
+<span class="fc" id="L218">		return resultActivities;</span>
+	}
+
+	/**
+	 * For each special activity, we will substitute the overridden tolerance and
+	 * MaxDuration attributes (if any) from the ORGANIZATIONCONFIG table. These settings are specified on
+	 * the &quot;App Admin \ Activities \ Special Activities&quot; page.
+	 */
+	private static Activity updateSpecialActivityAttributes(RequestContext context, ID orgId, Activity activity)
+	{
+		try
+		{
+<span class="pc bpc" id="L230" title="1 of 2 branches missed.">			if (!CoreManagerFactory.getLicenseManager().isLicensed(LicenseKeys.SPECIAL_ACTIVITY_OVERRIDES))</span>
+<span class="nc" id="L231">				return activity;</span>
+
+<span class="fc" id="L233">			ID activityID = activity.getID();</span>
+<span class="fc bfc" id="L234" title="All 2 branches covered.">			if (SpecialActivityFormPageModel.isSpecialActivity(activityID))</span>
+			{
+<span class="fc" id="L236">				activity = (Activity)activity.clone(); //so that we don't change the values in the Activity cache</span>
+<span class="fc" id="L237">				activity.setAdherenceTolerance(getAdherenceToleranceOverride(context, orgId, activityID));</span>
+<span class="fc" id="L238">				activity.setMaxDurationThreshold(getMaxDurationOverride(context, orgId, activityID));</span>
+			}
+		}
+<span class="nc" id="L241">		catch(Exception ex)</span>
+		{
+<span class="fc" id="L243">		}</span>
+
+<span class="fc" id="L245">		return activity;</span>
+	}
+
+	/**
+	 * Return Activity by ID
+	 *
+	 * @param id - The activity ID
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return activity value object
+	 */
+	public static Activity getActivityByID(RequestContext context, ID id)
+			throws RemoteException, BbmException {
+<span class="fc" id="L258">		return getActivityManager(context).findActivityById(id);</span>
+	}
+
+
+	/**
+	 * Return activities given a collection of activity IDs
+	 *
+	 * @param activityIDs - a collection of activities IDs to load
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return Colection of activity value objects
+	 */
+	public static Collection&lt;Activity&gt; getActivitiesByIDs(RequestContext context, Collection activityIDs)
+			throws RemoteException, BbmException {
+<span class="fc" id="L272">		return getActivityManager(context).findActivities(activityIDs);</span>
+	}
+
+
+	/**
+	 * Return activities given an activie type
+	 *
+	 * @param filter - An ActivityFilter object
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return Colection of activity value objects
+	 */
+	public static Collection getActivities(RequestContext context, ActivityFilter filter)
+			throws RemoteException, BbmException {
+<span class="fc" id="L286">		return getActivityManager(context).findActivities(filter);</span>
+	}
+
+	/**
+	 * Return all activities given organization ID and ActivityFilter
+	 *
+	 * @param orgId - The Organization ID
+	 * @param filter - An ActivityFilter object
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return Collection of activity value objects
+	 */
+	public static Collection getActivitiesWithMedia(RequestContext context)
+			throws RemoteException, BbmException {
+<span class="nc" id="L300">		return getActivityManager(context).findActivitiesWithMedia();</span>
+	}
+
+	/**
+	 * Create new activity
+	 *
+	 * @param activity - activity value object to create
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return new activity ID
+	 */
+	public static ID createActivity(RequestContext context, Activity activity, Collection mediaIds)
+			throws RemoteException, BbmException, ActivityValidationException {
+<span class="nc" id="L313">		return getActivityManager(context).createActivity(activity, mediaIds);</span>
+	}
+
+	/**
+	 * Create new activity
+	 *
+	 * @param activity - activity value object to create
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return new activity ID
+	 */
+	public static ID createActivity(RequestContext context, Activity activity, Collection mediaIds, ActivityProperties activityProperties)
+			throws RemoteException, BbmException, ActivityValidationException {
+<span class="fc" id="L326">		return getActivityManager(context).createActivity(activity, mediaIds, activityProperties);</span>
+	}
+
+	/**
+	 * Create new activity queues
+	 *
+	 * @param activity - activity value object to link the queues to
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @return new ActivityQueue IDs
+	 */
+	public static Collection createActivityQueue(RequestContext context, ID activityId, Collection queueIds)
+			throws RemoteException, BbmException, ActivityValidationException {
+<span class="fc" id="L339">		return getActivityManager(context).createActivityQueue(activityId, queueIds);</span>
+	}
+
+	/**
+	 * Update Activity
+	 *
+	 * @param activity - activity value object to update
+	 * @throws RemoteException
+	 * @throws BbmException
+	 */
+	public static void updateActivity(RequestContext context, Activity activity, Collection mediaIds)
+			throws RemoteException, BbmException, MultiUserException, ActivityValidationException {
+<span class="nc" id="L351">		getActivityManager(context).updateActivity(activity, mediaIds);</span>
+<span class="nc" id="L352">	}</span>
+
+	public static void updateActivity(RequestContext context, Activity activity, Collection mediaIds, Collection queueIds)
+		throws RemoteException, BbmException, MultiUserException, ActivityValidationException {
+<span class="nc" id="L356">		getActivityManager(context).updateActivity(activity, mediaIds, queueIds);</span>
+<span class="nc" id="L357">	}</span>
+
+	/**
+	 * Update Activity
+	 *
+	 * @param activity - activity value object to update
+	 * @throws RemoteException
+	 * @throws BbmException
+	 */
+	public static void updateActivity(RequestContext context, Activity activity, Collection mediaIds, Collection queueIds, ActivityProperties activityProperties)
+		throws RemoteException, BbmException, MultiUserException, ActivityValidationException {
+<span class="fc" id="L368">		getActivityManager(context).updateActivity(activity, mediaIds, queueIds, activityProperties);</span>
+<span class="fc" id="L369">	}</span>
+
+	/**
+	 * Create a hashmap activityID, activityName (key, value) combination
+	 * return HashMap of activityID, activityName
+	 */
+	public static Map buildActivityMap(RequestContext context, Collection activityIDs)
+			throws RemoteException, BbmException {
+
+<span class="nc bnc" id="L378" title="All 4 branches missed.">		if (activityIDs == null || activityIDs.isEmpty()) {</span>
+<span class="nc" id="L379">			return Collections.EMPTY_MAP;</span>
+		}
+<span class="nc" id="L381">		Collection activities = getActivitiesByIDs(context, activityIDs);</span>
+<span class="nc" id="L382">		HashMap activityMap = new HashMap(activities.size());</span>
+<span class="nc bnc" id="L383" title="All 4 branches missed.">		if (activities != null &amp;&amp; activities.size() &gt; 0) {</span>
+<span class="nc bnc" id="L384" title="All 2 branches missed.">			for (Iterator it = activities.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L385">				Activity activity = (Activity) it.next();</span>
+<span class="nc" id="L386">				activityMap.put(activity.getID(), activity.getName());</span>
+<span class="nc" id="L387">			}</span>
+		}
+<span class="nc" id="L389">		return activityMap;</span>
+	}
+
+
+	/**
+	 * Return Collection of Activities StringsPair (String activityId, String activityName)
+	 * for  given org
+	 * @param orgId Organization ID
+	 * @param filter ActivityFilter
+	 */
+	public static Collection getActivitiesStringsPair(RequestContext context, ID orgId, ActivityFilter filter)
+			throws RemoteException, BbmException {
+
+<span class="nc" id="L402">		Collection activities = getActivities(context, orgId, filter);</span>
+<span class="nc bnc" id="L403" title="All 4 branches missed.">		if (activities == null || activities.isEmpty()) {</span>
+<span class="nc" id="L404">			return new ArrayList();</span>
+		}
+<span class="nc" id="L406">		Collection activitiesStringsPair = new ArrayList(activities.size());</span>
+<span class="nc bnc" id="L407" title="All 2 branches missed.">		for (Iterator it = activities.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L408">			Activity activity = (Activity) it.next();</span>
+<span class="nc" id="L409">			activitiesStringsPair.add(new StringsPair(</span>
+<span class="nc" id="L410">					activity.getID().toString(), activity.getName()));</span>
+<span class="nc" id="L411">		}</span>
+<span class="nc" id="L412">		return activitiesStringsPair;</span>
+	}
+
+
+	/**
+	 * Return a map of media per activity
+	 * @param activityIds
+	 * @return Map - activityID(key), collection of media VO (value)
+	 */
+	public static Map&lt;ID, Collection&lt;Media&gt;&gt; getActivitiesMediaMap(RequestContext context, Collection&lt;ID&gt; activityIds)
+			throws RemoteException, BbmException {
+
+		// Fetch a map of activity id (key), Collection of Media Ids (value)
+<span class="fc" id="L425">		Map&lt;ID, Collection&lt;ID&gt;&gt; activityIdMediaIdsMap = getActivityManager(context).findMediaForActivities(activityIds);</span>
+
+		// Fetch a map of Media Id (key) Media VO(value)
+<span class="fc" id="L428">		Map&lt;ID, Media&gt; mediaIdMediaMap = WorkloadModelHandler.getMediaMap(context);</span>
+
+		// This will hold the returned Map
+<span class="fc" id="L431">		HashMap&lt;ID, Collection&lt;Media&gt;&gt; activitiesMediaMap = new HashMap&lt;ID, Collection&lt;Media&gt;&gt;(activityIds.size());</span>
+<span class="fc" id="L432">		ID activityId = null;</span>
+<span class="pc bpc" id="L433" title="4 of 8 branches missed.">		if (activityIdMediaIdsMap == null || activityIdMediaIdsMap.isEmpty() || mediaIdMediaMap == null || mediaIdMediaMap.isEmpty()) {</span>
+<span class="nc bnc" id="L434" title="All 2 branches missed.">			for (Iterator&lt;ID&gt; it = activityIds.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L435">				activityId = it.next();</span>
+<span class="nc" id="L436">				activitiesMediaMap.put(activityId, Collections.EMPTY_LIST);</span>
+			}
+<span class="nc" id="L438">			return activitiesMediaMap;</span>
+		}
+
+<span class="fc" id="L441">		Collection&lt;ID&gt; MediaIds = null; //a collection of ActivityMedia VO</span>
+<span class="fc" id="L442">		ID id = null;</span>
+<span class="fc" id="L443">		ArrayList&lt;Media&gt; mediaCollection = null; // a collection of Media VO</span>
+<span class="fc" id="L444">		Media media = null; // Single Media</span>
+<span class="fc bfc" id="L445" title="All 2 branches covered.">		for (Iterator&lt;ID&gt; it = activityIds.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L446">			activityId = it.next();</span>
+<span class="fc" id="L447">			MediaIds = activityIdMediaIdsMap.get(activityId);</span>
+<span class="pc bpc" id="L448" title="1 of 4 branches missed.">			if (MediaIds == null || MediaIds.isEmpty()) {</span>
+<span class="fc" id="L449">				activitiesMediaMap.put(activityId, Collections.EMPTY_LIST);</span>
+<span class="fc" id="L450">				continue;</span>
+			}
+<span class="fc" id="L452">			mediaCollection = new ArrayList&lt;Media&gt;(MediaIds.size());</span>
+<span class="fc bfc" id="L453" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; it2 = MediaIds.iterator(); it2.hasNext();) {</span>
+<span class="fc" id="L454">				id = it2.next();</span>
+<span class="fc" id="L455">				media = mediaIdMediaMap.get(id);</span>
+<span class="fc" id="L456">				mediaCollection.add(media);</span>
+			}
+<span class="fc" id="L458">			activitiesMediaMap.put(activityId, mediaCollection);</span>
+		}
+<span class="fc" id="L460">		return activitiesMediaMap;</span>
+	}
+
+	/**
+	 * Return a map of queue per activity
+	 * @param activityIds
+	 * @return Map - activityID(key), collection of queue VO (value)
+	 */
+	public static Map&lt;ID, Collection&lt;Queue&gt;&gt; getActivitiesQueueMap(RequestContext context, Collection&lt;ID&gt; activityIds)
+		throws RemoteException, BbmException
+	{
+		//get all the queue IDs linked to all of the activities
+<span class="fc" id="L472">		HashSet allQueueIds = new HashSet();</span>
+<span class="fc" id="L473">		Map activityIdQueueIdMap = getActivityManager(context).findQueueForActivities(activityIds);</span>
+<span class="pc bpc" id="L474" title="1 of 4 branches missed.">		if (activityIdQueueIdMap!=null &amp;&amp; activityIdQueueIdMap.size()&gt;0)</span>
+		{
+<span class="fc bfc" id="L476" title="All 2 branches covered.">			for (Iterator it=activityIdQueueIdMap.values().iterator(); it.hasNext();)</span>
+			{
+<span class="fc" id="L478">				Collection queueIds = (Collection)it.next();</span>
+<span class="fc" id="L479">				allQueueIds.addAll(queueIds);</span>
+<span class="fc" id="L480">			}</span>
+		}
+
+		//get all the queue objects linked to all of the activities
+<span class="fc" id="L484">		Map queueIdQueueMap = new HashMap(allQueueIds.size());</span>
+<span class="fc bfc" id="L485" title="All 2 branches covered.">		if (allQueueIds.size() &gt; 0)</span>
+<span class="fc" id="L486">			queueIdQueueMap = WorkloadModelHandler.getQueuesMapByIDs(context, allQueueIds);</span>
+		else
+<span class="fc" id="L488">			queueIdQueueMap = new HashMap();</span>
+
+
+		// This will hold the returned Map
+<span class="fc" id="L492">		HashMap&lt;ID, Collection&lt;Queue&gt;&gt; activitiesQueueMap = new HashMap&lt;ID, Collection&lt;Queue&gt;&gt;(activityIds.size());</span>
+<span class="fc" id="L493">		ID activityId = null;</span>
+<span class="pc bpc" id="L494" title="3 of 8 branches missed.">		if (activityIdQueueIdMap == null || activityIdQueueIdMap.isEmpty() || queueIdQueueMap == null || queueIdQueueMap.isEmpty()) {</span>
+<span class="fc bfc" id="L495" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; it = activityIds.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L496">				activityId = it.next();</span>
+<span class="fc" id="L497">				activitiesQueueMap.put(activityId, Collections.EMPTY_LIST);</span>
+			}
+<span class="fc" id="L499">			return activitiesQueueMap;</span>
+		}
+
+<span class="fc" id="L502">		Collection&lt;ID&gt; QueueIds = null; //a collection of ActivityQueue VO</span>
+<span class="fc" id="L503">		ID id = null;</span>
+<span class="fc" id="L504">		ArrayList&lt;Queue&gt; queueCollection = null; // a collection of Queue VO</span>
+<span class="fc" id="L505">		Queue queue = null; // Single Queue</span>
+<span class="fc bfc" id="L506" title="All 2 branches covered.">		for (Iterator&lt;ID&gt; it = activityIds.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L507">			activityId = it.next();</span>
+<span class="fc" id="L508">			QueueIds = (Collection)activityIdQueueIdMap.get(activityId);</span>
+<span class="pc bpc" id="L509" title="1 of 4 branches missed.">			if (QueueIds == null || QueueIds.isEmpty()) {</span>
+<span class="fc" id="L510">				activitiesQueueMap.put(activityId, Collections.EMPTY_LIST);</span>
+<span class="fc" id="L511">				continue;</span>
+			}
+<span class="fc" id="L513">			queueCollection = new ArrayList&lt;Queue&gt;(QueueIds.size());</span>
+<span class="fc bfc" id="L514" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; it2 = QueueIds.iterator(); it2.hasNext();) {</span>
+<span class="fc" id="L515">				id = it2.next();</span>
+<span class="fc" id="L516">				queue = (Queue)queueIdQueueMap.get(id);</span>
+<span class="fc" id="L517">				queueCollection.add(queue);</span>
+			}
+<span class="fc" id="L519">			activitiesQueueMap.put(activityId, queueCollection);</span>
+		}
+<span class="fc" id="L521">		return activitiesQueueMap;</span>
+	}
+
+	/**
+	 * Return a collection of media ids for given activity
+	 * @param activityId
+	 * @return Collection of media ids
+	 */
+	public static Collection&lt;ID&gt; getActivityMedia(RequestContext context, ID activityId)
+			throws RemoteException, BbmException {
+<span class="fc" id="L531">		return getActivityManager(context).findMediaForActivity(activityId);</span>
+	}
+
+	/**
+	 * Return a collection of Queue Hopping (or Project) queue ids for a given activity
+	 * @param activityId
+	 * @return Collection of queue ids
+	 */
+	public static Collection&lt;ID&gt; getActivityQueues(RequestContext context, ID activityId)
+			throws RemoteException, BbmException {
+<span class="nc" id="L541">		return getActivityManager(context).findQueueForActivity(activityId);</span>
+	}
+
+
+	public static Collection getAllActivities(RequestContext context)
+			throws RemoteException, BbmException {
+<span class="fc" id="L547">		return getActivities(context, null);</span>
+	}
+
+	/**
+	 * Return a collection of media ids for given activity
+	 * @param activityId
+	 * @return Collection of media ids
+	 */
+	public static ActivityProperties getActivityProperties(RequestContext context, ID activityId)
+			throws RemoteException, BbmException {
+<span class="fc" id="L557">		return getActivityManager(context).findPropertiesForActivity(activityId);</span>
+	}
+
+	/**
+	 * Return activities that are not from seed data
+	 * @return
+	 * @throws RemoteException
+	 * @throws BbmException
+	 */
+	public static Collection getAllNonSeedActivities(RequestContext context)
+			throws RemoteException, BbmException {
+<span class="nc" id="L568">		return getActivityManager(context).getAllNonSeedActivities();</span>
+	}
+
+	/**
+	 * Return all time off activities that are visible to the given user.
+	 *
+	 * @param user  The user object.
+	 *
+	 * @return A collection of activity objects.
+	 * @throws RemoteException
+	 * @throws BbmException
+	 */
+	static public Collection getAllTOActivitiesVisibleToUser(RequestContext context, User user) throws Exception {
+<span class="nc" id="L581">		HashSet set = new HashSet(64);</span>
+
+<span class="nc" id="L583">		Collection userOrgIDs = user.getAuthorizedScopes(PrivilegeKeys.CORE_VIEWACTIVITIES_ID, Organization.SCOPE_TYPE);</span>
+
+<span class="nc bnc" id="L585" title="All 2 branches missed.">		if (userOrgIDs != null) {</span>
+<span class="nc bnc" id="L586" title="All 2 branches missed.">			for (Iterator orgIter = userOrgIDs.iterator(); orgIter.hasNext();) {</span>
+<span class="nc" id="L587">				ID orgID = (ID)orgIter.next();</span>
+
+<span class="nc" id="L589">				Collection activities = getActivitiesFilterRoot(context, orgID, null);</span>
+<span class="nc bnc" id="L590" title="All 2 branches missed.">				if (activities != null) {</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">					for (Iterator actIter = activities.iterator(); actIter.hasNext();) {</span>
+<span class="nc" id="L592">						Activity act = (Activity)actIter.next();</span>
+<span class="nc bnc" id="L593" title="All 2 branches missed.">						if (act.isTimeoff())</span>
+<span class="nc" id="L594">							set.add(act);</span>
+<span class="nc" id="L595">					}</span>
+				}
+<span class="nc" id="L597">			}</span>
+		}
+<span class="nc" id="L599">		return set;</span>
+	}
+
+	/**
+	 * getActivityGroup()
+	 * return ActivityGroup
+	 */
+	public static ActivityGroup getActivityGroup(RequestContext context, ID orgId, int activityCat) throws Exception{
+<span class="fc" id="L607">		List idList = Collections.singletonList(orgId);</span>
+<span class="fc" id="L608">		return getActivityManager(context).getActivities(idList, activityCat);</span>
+	}
+
+	/**
+	 * getActivityGroup()
+	 * return ActivityGroup
+	 */
+	public static ActivityGroup getActivityGroup(RequestContext context, Collection orgIDs, int activityCat)
+			throws Exception {
+<span class="nc" id="L617">		return getActivityManager(context).getActivities(orgIDs, activityCat);</span>
+	}
+
+	public static HashMap&lt;ID, String&gt; getCoreSourceMeasureMap(RequestContext context){
+<span class="fc" id="L621">		HashMap&lt;ID, String&gt;	measureMap = null;</span>
+
+		/* [DS]
+		try {
+			//get the advisor source measures
+			Collection sourceMeasures = AdvisorSourcesMH.getCoreSourceMeasures();
+			measureMap = new HashMap(sourceMeasures.size());
+			//add the names to the map
+			SourceMeasure sourceMeasure = null;
+			for(Iterator it = sourceMeasures.iterator(); it.hasNext();) {
+				sourceMeasure = (SourceMeasure)it.next();
+				measureMap.put(sourceMeasure.getID(), sourceMeasure.getName());
+			}
+		} catch (Exception ex){
+			log.l7dError(BbmWebBundleKey.UNABLE_TO_LOAD_DATA, ex);
+		}*/
+
+		try {
+			//get Scorecards API impl.
+<span class="fc" id="L640">			GCRManager gcrManager = CoreManagerFactory.getGCRManagerRemote(context.isInWhatIfMode());</span>
+<span class="fc" id="L641">			Collection entries    = gcrManager.getGCREntryOfType(BbmScorecardsBridgeInterface.GCR_NAME);</span>
+<span class="pc bpc" id="L642" title="2 of 4 branches missed.">			if (entries == null || entries.isEmpty()) return new HashMap();</span>
+
+<span class="fc" id="L644">			Class clazz = Class.forName(((GCREntry)(entries.iterator().next())).getHook());</span>
+<span class="fc" id="L645">			BbmScorecardsBridgeInterface scorecardsAPI = (BbmScorecardsBridgeInterface) clazz.newInstance();</span>
+
+			//get the advisor source measures
+<span class="fc" id="L648">			Collection 			sourceMeasures 	= scorecardsAPI.getCoreSourceMeasures();</span>
+<span class="fc" id="L649">			SourceMeasureInt 	sourceMeasure 	= null;</span>
+
+<span class="fc" id="L651">			measureMap = new HashMap&lt;ID, String&gt;(sourceMeasures.size());</span>
+			//add the names to the map
+<span class="fc bfc" id="L653" title="All 2 branches covered.">			for(Iterator it = sourceMeasures.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L654">				sourceMeasure = (SourceMeasureInt)it.next();</span>
+<span class="fc" id="L655">				measureMap.put(sourceMeasure.getId(), sourceMeasure.getName());</span>
+			}
+<span class="nc" id="L657">		} catch (Exception ex){</span>
+<span class="nc" id="L658">			log.l7dError(BbmWebBundleKey.UNABLE_TO_LOAD_DATA, ex);</span>
+<span class="fc" id="L659">		}</span>
+
+		//return map
+<span class="fc" id="L662">		return measureMap;</span>
+	}
+
+	public static String getAccrualScheduleStr(Localizer localizer, int toAccrualSchedule) {
+<span class="fc" id="L666">		String result = &quot;&quot;;</span>
+<span class="fc" id="L667">		ResourceBundle bbmBundle = localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+<span class="pc bpc" id="L668" title="1 of 6 branches missed.">		switch (toAccrualSchedule) {</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_YEARLY:
+<span class="fc" id="L670">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_YEARLY);</span>
+<span class="fc" id="L671">			break;</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_MONTHLY:
+<span class="fc" id="L673">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_MONTHLY);</span>
+<span class="fc" id="L674">			break;</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_SEMI_MONTHLY:
+<span class="fc" id="L676">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_SEMI_MONTHLY);</span>
+<span class="fc" id="L677">			break;</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_DAILY:
+<span class="fc" id="L679">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_DAILY);</span>
+<span class="fc" id="L680">			break;</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_WEEKLY:
+<span class="fc" id="L682">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_WEEKLY);</span>
+			break;
+		}
+<span class="fc" id="L685">		return result;</span>
+	}
+
+	public static String getAccrualSchedulePerStr(Localizer localizer, int toAccrualSchedule) {
+<span class="nc" id="L689">		String result = &quot;&quot;;</span>
+<span class="nc" id="L690">		ResourceBundle bbmBundle = localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc bnc" id="L691" title="All 6 branches missed.">		switch (toAccrualSchedule) {</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_YEARLY:
+<span class="nc" id="L693">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_PER_YEAR);</span>
+<span class="nc" id="L694">			break;</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_MONTHLY:
+<span class="nc" id="L696">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_PER_MONTH);</span>
+<span class="nc" id="L697">			break;</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_SEMI_MONTHLY:
+<span class="nc" id="L699">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_PER_SEMI_MONTH);</span>
+<span class="nc" id="L700">			break;</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_DAILY:
+<span class="nc" id="L702">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_PER_DAY);</span>
+<span class="nc" id="L703">			break;</span>
+		case Activity.TO_ACCRUAL_SCHEDULE_WEEKLY:
+<span class="nc" id="L705">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.TO_ACCRUAL_SCHEDULE_PER_WEEK);</span>
+			break;
+		}
+<span class="nc" id="L708">		return result;</span>
+	}
+
+	public static String getAccrualPolicyStr(Localizer localizer, int toAccrualPolicy) {
+<span class="fc" id="L712">		String result = &quot;&quot;;</span>
+<span class="fc" id="L713">		ResourceBundle bbmBundle = localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+<span class="pc bpc" id="L714" title="1 of 5 branches missed.">		switch (toAccrualPolicy) {</span>
+		case Activity.ACCRUAL_POLICY_ALL_HOURS_ON_START:
+<span class="fc" id="L716">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.ACCRUAL_POLICY_ALL_HOURS_ON_START);</span>
+<span class="fc" id="L717">			break;</span>
+		case Activity.ACCRUAL_POLICY_PRORATED_ON_START:
+<span class="fc" id="L719">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.ACCRUAL_POLICY_PRORATED_ON_START);</span>
+<span class="fc" id="L720">			break;</span>
+		case Activity.ACCRUAL_POLICY_ALL_HOURS_ON_NEXT:
+<span class="fc" id="L722">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.ACCRUAL_POLICY_ALL_HOURS_ON_NEXT);</span>
+<span class="fc" id="L723">			break;</span>
+		case Activity.ACCRUAL_POLICY_PRORATED_ON_NEXT:
+<span class="fc" id="L725">			result = localizer.i18n(bbmBundle, BbmWebBundleKey.ACCRUAL_POLICY_PRORATED_ON_NEXT);</span>
+			break;
+		}
+<span class="fc" id="L728">		return result;</span>
+	}
+
+<span class="pc" id="L731">	public enum ActivitySelectionProperty {</span>
+<span class="fc" id="L732">		All,</span>
+<span class="fc" id="L733">		UsedInShift,</span>
+<span class="fc" id="L734">		UsedInShiftEvent</span>
+	}
+
+	/**
+	 * Returns a collection of activities with the specified ActivitySelection type.  ActivitySelection is an enum that specifies
+	 * certain properties of an activity.
+	 */
+	public static Collection&lt;Activity&gt; getActivitiesByActivitySelectionType(RequestContext context,
+			ActivitySelectionProperty activitySelection) throws RemoteException, BbmException {
+<span class="nc" id="L743">		Collection&lt;Activity&gt; retVal = new ArrayList&lt;Activity&gt;();</span>
+<span class="nc bnc" id="L744" title="All 2 branches missed.">		for (Activity a : new ArrayList&lt;Activity&gt;(ActivityModelHandler.getAllActivities(context))) {</span>
+<span class="nc bnc" id="L745" title="All 2 branches missed.">			if (a.isDeleted()) continue;</span>
+<span class="pc bnc" id="L746" title="All 3 branches missed.">			switch (activitySelection) {</span>
+			case UsedInShift:
+<span class="nc bnc" id="L748" title="All 2 branches missed.">				if (! a.isUsedInShift()) continue;</span>
+				break;
+			case UsedInShiftEvent:
+<span class="nc bnc" id="L751" title="All 2 branches missed.">				if (! a.isUsedInShiftEvent()) continue;</span>
+				break;
+			}
+<span class="nc" id="L754">			retVal.add(a);</span>
+<span class="nc" id="L755">		}</span>
+<span class="nc" id="L756">		return retVal;</span>
+	}
+
+	/**
+	 * Returns a collection of activities with the specified ActivitySelection type.  ActivitySelection is an enum that specifies
+	 * certain properties of an activity.
+	 * This method additionally filters out activities that are scoped to the given organizations via the scopedToOrgs param.
+	 */
+	public static Collection&lt;Activity&gt; getActivitiesByActivitySelectionType(RequestContext context, ActivitySelectionProperty activitySelection,
+			Collection&lt;ID&gt; scopedToOrgs) throws RemoteException, BbmException {
+<span class="fc" id="L766">		Collection&lt;Activity&gt; retVal = new ArrayList&lt;Activity&gt;();</span>
+<span class="fc" id="L767">		ActivityFilter activityFilter = new ActivityFilter();</span>
+<span class="pc bpc" id="L768" title="1 of 3 branches missed.">		switch (activitySelection) {</span>
+		case UsedInShift:
+<span class="fc" id="L770">			activityFilter.setUsedInShift(true);</span>
+<span class="fc" id="L771">			break;</span>
+		case UsedInShiftEvent:
+<span class="fc" id="L773">			activityFilter.setUsedInShiftEvent(true);</span>
+			break;
+		}
+
+<span class="fc bfc" id="L777" title="All 2 branches covered.">		 if (! activitySelection.equals(ActivitySelectionProperty.UsedInShiftEvent)){</span>
+<span class="fc" id="L778">     		activityFilter.setActivityId(Activity.ACTIVITY_NONE.toString(), ActivityFilter.OP_NOT_IN_LIST);</span>
+		 }
+
+<span class="fc" id="L781">		Collection&lt;Activity&gt; activities = ActivityModelHandler.getActivities(context, scopedToOrgs, activityFilter, true);</span>
+<span class="fc bfc" id="L782" title="All 2 branches covered.">		for (Activity a : activities) {</span>
+<span class="pc bpc" id="L783" title="1 of 2 branches missed.">			if (a.isDeleted()) continue;</span>
+<span class="pc bpc" id="L784" title="1 of 3 branches missed.">			switch (activitySelection) {</span>
+			case UsedInShift:
+<span class="pc bpc" id="L786" title="1 of 2 branches missed.">				if (! a.isUsedInShift()) continue;</span>
+				break;
+			case UsedInShiftEvent:
+<span class="pc bpc" id="L789" title="1 of 2 branches missed.">				if (! a.isUsedInShiftEvent()) continue;</span>
+				break;
+			}
+<span class="fc" id="L792">			retVal.add(a);</span>
+<span class="fc" id="L793">		}</span>
+<span class="fc" id="L794">		return retVal;</span>
+	}
+
+	//Special Activities API START
+
+	public static int getMaxDurationOverride(RequestContext context, ID orgID, ID activityID) throws Exception
+	{
+<span class="fc" id="L801">		return getActivityManager(context).getMaxDurationOverride(orgID, activityID);</span>
+	}
+
+	public static void setMaxDurationOverride(RequestContext context, ID orgID, ID activityID, int value) throws Exception
+	{
+<span class="nc" id="L806">		getActivityManager(context).setMaxDurationOverride(orgID, activityID, value);</span>
+<span class="nc" id="L807">	}</span>
+
+	public static int getAdherenceToleranceOverride(RequestContext context, ID orgID, ID activityID) throws Exception
+	{
+<span class="fc" id="L811">		return getActivityManager(context).getAdherenceToleranceOverride(orgID, activityID);</span>
+	}
+
+	public static void setAdherenceToleranceOverride(RequestContext context, ID orgID, ID activityID, int value) throws Exception
+	{
+<span class="nc" id="L816">		getActivityManager(context).setAdherenceToleranceOverride(orgID, activityID, value);</span>
+<span class="nc" id="L817">	}</span>
+
+	public static Activity getVacationOverride(RequestContext context, ID orgID) throws Exception
+	{
+<span class="nc" id="L821">		return getActivityManager(context).getVacationOverride(orgID);</span>
+	}
+
+	public static void setVacationOverride(RequestContext context, ID orgID, ID vacationActivityID) throws Exception
+	{
+<span class="nc" id="L826">		getActivityManager(context).setVacationOverride(orgID, vacationActivityID);</span>
+<span class="nc" id="L827">	}</span>
+	//Special Activities API END
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

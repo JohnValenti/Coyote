@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SamePaidHoursValidationRule.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.request.validation</a> &gt; <span class="el_source">SamePaidHoursValidationRule.java</span></div><h1>SamePaidHoursValidationRule.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.swap.request.validation;
+
+/**
+ * Title:        rm
+ * Description:
+ * Copyright:    Copyright (c) 2002
+ * Company:
+ * @author
+ * @version 1.0
+ */
+
+
+import java.io.Serializable;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbLogBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.bluepumpkin.ejb.rm.util.ShiftSwapRequestUtil;
+
+/**
+ * &lt;li&gt; Rule from UI: Swapped shifts have the same paid hours
+ *
+ * &lt;li&gt; Rule to enforce that each shiftItem participating in the Shift Swap
+ * has the same number of paid hours as the first item.
+ *
+ * &lt;ul&gt;
+ * &lt;li&gt; applies only for two way swaps and not for one way swaps.
+ * &lt;li&gt; calculate paid hours for each shift by deducting unpaid events duration from shift
+ *      duration
+ * &lt;li&gt; compare if paid hours match
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;
+ * Rule does not apply for one way swaps.
+ *
+ * &lt;p&gt;
+ * Rule applies equally for tentatively and non tentatively approved requests.
+ *
+ */
+public class SamePaidHoursValidationRule implements Validator
+{
+<span class="nc" id="L56">    private static final String m_className = SamePaidHoursValidationRule.class.getName();</span>
+
+<span class="nc" id="L58">    private static final Category m_cat = Log.initCategory( m_className );</span>
+
+    private ShiftSwapValidationCache m_vc;
+
+<span class="nc" id="L62">    public SamePaidHoursValidationRule(){</span>
+<span class="nc" id="L63">    };</span>
+
+    @Override
+	public ValidationResult validate(Validatable validatable) throws Exception
+    {
+<span class="nc" id="L68">        ShiftSwapRequest ssr = (ShiftSwapRequest)validatable;</span>
+<span class="nc" id="L69">        String methodName = &quot;validate&quot;;</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L71">			m_cat.debug(RmUtil.dumpEnterMethod(methodName, ssr));</span>
+		}
+
+        //todo: refactor common code
+<span class="nc" id="L75">        ValidationResult result = null;</span>
+<span class="nc" id="L76">        m_vc = (ShiftSwapValidationCache) ssr.getValidationCache();</span>
+
+        // ignore this rule if a one-way swap
+<span class="nc bnc" id="L79" title="All 2 branches missed.">        if (ssr.getSwapType().equals(ShiftSwapRequest.SHIFTSWAP_TYPE_ONEWAY)) {</span>
+<span class="nc" id="L80">			return result;</span>
+		}
+
+<span class="nc" id="L83">        List items = ssr.getShiftSwapItems();</span>
+
+        // calculate the paid hours for the first item
+        // each subsequent item must have same paid hours as first item
+        //this should never happen - caught in hard validation
+
+<span class="nc" id="L89">        Iterator itrItems = items.iterator();</span>
+<span class="nc" id="L90">        ShiftSwapItem itemFirst = (ShiftSwapItem) itrItems.next();</span>
+
+<span class="nc" id="L92">        long paidTimeInMsFirst = calculatePaidHours(itemFirst); //in milliseconds</span>
+
+        // compare the paid hours of each subsequent item to the first
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        while ( itrItems.hasNext() ) {</span>
+<span class="nc" id="L96">            ShiftSwapItem itemNext = (ShiftSwapItem)itrItems.next();</span>
+<span class="nc" id="L97">            long paidTimeInMsNext = calculatePaidHours(itemNext); //in milliseconds</span>
+            
+            // validation fails if paid hours are not the same
+<span class="nc bnc" id="L100" title="All 2 branches missed.">            if (paidTimeInMsFirst != paidTimeInMsNext) {</span>
+<span class="nc" id="L101">                result = ValidationUtil.setSoftValidationResult(validatable,</span>
+                    RmEjbBundleKey.SS_SAME_PAIDHOURS,
+                    new Serializable[] {
+<span class="nc" id="L104">                        m_vc.getEmployeeNameByID(itemFirst.getEmployeeID()),</span>
+                        (paidTimeInMsFirst) / (1000.0 * 60 * 60) + &quot;&quot;, // + &quot; (&quot; + paidTimeInMsFirst + &quot; ms) &quot;,
+<span class="nc" id="L106">                        m_vc.getEmployeeNameByID(itemNext.getEmployeeID()),</span>
+                        (paidTimeInMsNext) / (1000.0 * 60 * 60) + &quot;&quot;, // + &quot; (&quot; + paidTimeInMsNext + &quot; ms) &quot;,
+                    }, m_className);
+
+<span class="nc" id="L110">                m_cat.debug(&quot;Paid hours mismatch: paidTimeInMsFirst, paidTimeInMsNext: &quot; +</span>
+<span class="nc" id="L111">                    RmUtil.dumpCommaSeparated(new Long(paidTimeInMsFirst), new Long(paidTimeInMsNext)));</span>
+            }
+<span class="nc" id="L113">        }</span>
+
+<span class="nc bnc" id="L115" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L116">			m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+		}
+<span class="nc" id="L118">        return result;</span>
+    }
+
+    private long calculatePaidHours(ShiftSwapItem item) throws Exception
+    {
+<span class="nc" id="L123">        ShiftAssignment shiftAssignment = m_vc.getShiftAssignForShiftSwapItem(item, true, null);</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">        if (shiftAssignment == null) {</span>
+<span class="nc" id="L125">            throw RequestUtil.createAndLogRmHardValidationException(</span>
+									RmEjbBundleKey.SS_SHIFTNOTFOUND_FOR_SSITEM,
+									RmEjbLogBundleKey.SS_SHIFTNOTFOUND_FOR_SSITEM,
+                new Object[]{
+<span class="nc" id="L129">										 item.getStartDate(), item.getEndDate(), </span>
+<span class="nc" id="L130">										 item.getEmployeeID(), item.getID()},</span>
+									m_cat);
+        }
+
+        // in milliseconds.
+<span class="nc" id="L135">        long paidTimeInMs= ShiftSwapRequestUtil.getPaidTimeInShiftAssignment(shiftAssignment);</span>
+<span class="nc" id="L136">        return paidTimeInMs;</span>
+
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

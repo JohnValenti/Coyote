@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RmQuartzServletControl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.servlet</a> &gt; <span class="el_source">RmQuartzServletControl.java</span></div><h1>RmQuartzServletControl.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.servlet;
+
+import javax.naming.Context;
+import javax.naming.InitialContext;
+import javax.transaction.SystemException;
+import javax.transaction.UserTransaction;
+
+import com.bluepumpkin.common.base.Log;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.core.CoreManagerFactory;
+import com.bluepumpkin.ejb.core.servlet.ServletControl;
+import com.bluepumpkin.ejb.rm.util.QuartzUtil;
+import com.witness.ejb.core.licensing.LicenseKeys;
+import com.witness.ejb.core.licensing.ejb.LicenseManager;
+
+/**
+ * @author swati tewari
+ *         &lt;p/&gt;
+ *         Helper class used to register AppServer during initilization
+ *         It will register to DB, and if cache is used to the cache also
+ */
+<span class="nc" id="L22">public class RmQuartzServletControl implements ServletControl {</span>
+<span class="nc" id="L23">	private static final Category m_cat = Log.initCategory(RmQuartzServletControl.class.getName());</span>
+
+	/* (non-Javadoc)
+		* @see com.bluepumpkin.ejb.core.servlet.ServletControl#startProcess()
+		*/
+	public void startProcess() {
+
+<span class="nc" id="L30">		UserTransaction jta_userTX = null;</span>
+
+		try {
+			// start a JTA transaction to encompass the database updates done by
+			// StdSchedulerFactory.getScheduler() below.  These udpates are related to the recovery of
+			// jobs and triggers stored in the DB.  The quartz scheduler is configured to use JTA
+			// transactions (via JobStoreCMT) and if the transaction is not started before
+			// StdSchedulerFactory.getScheduler() is called, any SQL updates done by this
+			// method will be rolledback (JDBC driver dependent: rolledback for weblogic.mssql4 driver
+			// but committed if the newer driver weblogic.sqlserver is used).
+<span class="nc" id="L40">			Context ctx = new InitialContext();</span>
+<span class="nc" id="L41">			jta_userTX = (UserTransaction) ctx.lookup(&quot;java:comp/UserTransaction&quot;);</span>
+<span class="nc" id="L42">			jta_userTX.begin();</span>
+
+<span class="nc" id="L44">			LicenseManager licManager = CoreManagerFactory.getLicenseManager();</span>
+			//check for Shift bid license
+<span class="nc" id="L46">			boolean hasShiftBidLicense = licManager.isLicensed(LicenseKeys.APP_RM_SB);</span>
+<span class="nc bnc" id="L47" title="All 2 branches missed.">			if (hasShiftBidLicense) {</span>
+<span class="nc" id="L48">				QuartzUtil.addOrUpdateShiftBidJobsIfNecess();</span>
+			} else {
+<span class="nc" id="L50">				QuartzUtil.removeShiftBidJobs();</span>
+			}
+			//Need to add this job irrespective of TIme-off License. because it calculates TO Events as well.
+<span class="nc" id="L53">			QuartzUtil.addOrUpdateTOwaitlistPollerBackgroudTasksJobIfNecess();</span>
+<span class="nc" id="L54">			QuartzUtil.addOrUpdateTOHoursPerDayUpdateJobIfNecess();</span>
+			// call context.close() since an open context affects the security principal associated with
+			// this thread (security principals are maintained in the principal stack for each thread).
+<span class="nc" id="L57">			ctx.close();</span>
+
+<span class="nc" id="L59">			jta_userTX.commit();</span>
+<span class="nc" id="L60">		} catch (Exception e) {</span>
+			try {
+<span class="nc bnc" id="L62" title="All 2 branches missed.">				if (jta_userTX != null) jta_userTX.rollback();</span>
+<span class="nc" id="L63">			} catch (SystemException se) {</span>
+<span class="nc" id="L64">				m_cat.error(&quot;Cannot rollback transaction&quot;, se);</span>
+<span class="nc" id="L65">			}</span>
+
+<span class="nc" id="L67">			m_cat.error(e.getMessage(), e);</span>
+<span class="nc" id="L68">		}</span>
+
+<span class="nc" id="L70">	}</span>
+
+	/* (non-Javadoc)
+	 * @see com.bluepumpkin.ejb.core.servlet.ServletControl#stopProcess()
+	 */
+	public void stopProcess() {
+<span class="nc" id="L76">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

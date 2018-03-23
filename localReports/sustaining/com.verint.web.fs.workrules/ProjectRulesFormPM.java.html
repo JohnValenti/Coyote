@@ -1,0 +1,896 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ProjectRulesFormPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.workrules</a> &gt; <span class="el_source">ProjectRulesFormPM.java</span></div><h1>ProjectRulesFormPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.workrules;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.ResourceBundle;
+import java.util.Set;
+import java.util.TimeZone;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.Duration;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeContext;
+import com.bluepumpkin.common.datatypes.TimeOfDay;
+import com.bluepumpkin.common.util.BPMessageFormat;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignHOO;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignOrg;
+import com.bluepumpkin.ejb.bbm.time.TimeContextFactory;
+import com.bluepumpkin.ejb.bbm.vo.HOOAssignment;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workresource.model.OrganizationHOO;
+import com.bluepumpkin.ejb.bbm.workrules.ejb.WorkRuleManager;
+import com.bluepumpkin.ejb.bbm.workrules.model.ProjectRules;
+import com.bluepumpkin.ejb.bbm.workrules.model.ProjectStart;
+import com.bluepumpkin.ejb.bbm.workrules.model.ProjectStart.WeekDay;
+import com.bluepumpkin.web.bbm.activity.ActivityModelHandler;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.core.pagecomponent.CheckBoxPC;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.bluepumpkin.web.fs.project.ProjectUtil;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.web.fs.widgets.ActivitySelectorDDPC;
+import com.verint.web.fs.widgets.StartTimesPickerPC;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.CompositePC;
+import com.witness.web.uif.pagecomponent.form.FormInputPC;
+import com.witness.web.uif.pagecomponent.form.FormTwoColumnPC;
+import com.witness.web.uif.pagecomponent.picker.time.DurationSpinnerPC;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.TimeZoneOverrideUtil;
+
+public class ProjectRulesFormPM extends WorkRulesFormPM {
+	private static final long serialVersionUID = 1L;
+
+	// Form Fields
+	private static final String FN_NAME = &quot;project_rule_name&quot;;
+	private static final String FN_DESCRIPTION = &quot;project_rule_desc&quot;;
+	private static final String JSVARNAME_ACTIVITY_ID = &quot;activityID&quot;;
+	private static final String JSVARNAME_SHIFT_DURATION = &quot;projectDurationInMins&quot;;
+	private static final String JSVARNAME_WEEKLY_MAX_CNT = &quot;weeklyMaxCnt&quot;;
+	private static final String JSVARNAME_DAILY_MAX_CNT = &quot;dailyMaxCnt&quot;;
+	private static final String JSVARNAME_SIMUL_MAX_CNT = &quot;simultMaxCnt&quot;;
+
+	private FormInputPC nameInputPC;
+	private FormInputPC descInputPC;
+	private EmployeeCountPC dailyMaxCountPC;
+	private EmployeeCountPC weeklyMaxCountPC;
+	private EmployeeCountPC simultMaxCountPC;
+	private DurationSpinnerPC durationPC;
+	private ActivitySelectorDDPC activitySelectorPC;
+	
+	private Map&lt;WeekDay,ProjectRulesStartTimePC&gt; startTimesByWeek;
+
+	StartTimesPickerPC startTimePickerPC;
+
+<span class="nc" id="L84">	private List&lt;ProjectRules&gt; projectRule = new ArrayList&lt;ProjectRules&gt;();</span>
+	
+<span class="nc" id="L86">	private boolean hasAssignableActivities = false;</span>
+
+	public static ProjectRulesFormPM getInstance(RequestContext context) {
+<span class="nc" id="L89">		return (ProjectRulesFormPM) PageModel.getInstance(context,</span>
+				ProjectRulesFormPM.class);
+	}
+
+	public ProjectRulesFormPM(RequestContext context) {
+<span class="nc" id="L94">		super(context);</span>
+<span class="nc" id="L95">		setName(&quot;WorkRulesProjectFormPM&quot;);</span>
+
+<span class="nc" id="L97">		addRequiredJavaScriptFile(WorkRulesJSFileID.WORK_RULES_UTIL);</span>
+<span class="nc" id="L98">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+
+<span class="nc" id="L100">	}</span>
+
+	protected TimeZone optimizationTargetTimeZone;
+
+<span class="nc" id="L104">	protected Map&lt;ID, ProjectRules&gt; projectRuleMap = new HashMap&lt;ID, ProjectRules&gt;();</span>
+<span class="nc" id="L105">	protected Collection&lt;String&gt; shiftNames = new HashSet&lt;String&gt;();</span>
+<span class="nc" id="L106">	protected Map&lt;ID, Organization&gt; organizationMap = new HashMap&lt;ID, Organization&gt;();</span>
+<span class="nc" id="L107">	protected Map&lt;ID, Campaign&gt; campaignMap = new HashMap&lt;ID, Campaign&gt;();</span>
+<span class="nc" id="L108">	protected Map&lt;ID, Activity&gt; activityMap = new HashMap&lt;ID, Activity&gt;();</span>
+<span class="nc" id="L109">	protected HashSet&lt;ID&gt; activityIDs = new HashSet&lt;ID&gt;();</span>
+<span class="nc" id="L110">	protected HashSet&lt;ID&gt; shiftEventActivityIDs = new HashSet&lt;ID&gt;();</span>
+<span class="nc" id="L111">	protected Collection&lt;Duration&gt; durations = new HashSet&lt;Duration&gt;();</span>
+<span class="nc" id="L112">	protected Collection&lt;Integer&gt; minSpacings = new HashSet&lt;Integer&gt;();</span>
+<span class="nc" id="L113">	protected Collection&lt;Integer&gt; maxSpacings = new HashSet&lt;Integer&gt;();</span>
+	protected int dayBoundaryOffset;
+
+	@Override
+	protected void loadData() throws Exception {
+<span class="nc" id="L118">		super.loadData();</span>
+<span class="nc" id="L119">		WorkRuleManager wrm = WfmManagerFactory.getWorkRuleManager(m_context</span>
+<span class="nc" id="L120">				.isInWhatIfMode());</span>
+
+<span class="nc bnc" id="L122" title="All 2 branches missed.">		if (getPerformActionOnIDSize() &gt; 0) {</span>
+<span class="nc" id="L123">			projectRule = new ArrayList&lt;ProjectRules&gt;(</span>
+<span class="nc" id="L124">					wrm.getProjectRulesByID(Arrays</span>
+<span class="nc" id="L125">							.asList(getPerformActionOnIDs())));</span>
+		}
+
+<span class="nc" id="L128">		Collection&lt;ID&gt; orgIDs = new HashSet&lt;ID&gt;();</span>
+<span class="nc" id="L129">		Collection&lt;ID&gt; campaignIDs = new HashSet&lt;ID&gt;();</span>
+
+<span class="nc bnc" id="L131" title="All 2 branches missed.">		for (ProjectRules lProjRule : projectRule) {</span>
+<span class="nc" id="L132">			projectRuleMap.put(lProjRule.getID(), lProjRule);</span>
+
+<span class="nc bnc" id="L134" title="All 2 branches missed.">			if (lProjRule.getActivityID() != null) {</span>
+<span class="nc" id="L135">				activityIDs.add(lProjRule.getActivityID());</span>
+			}
+
+<span class="nc bnc" id="L138" title="All 2 branches missed.">			if (lProjRule.getOrganizationID() != null) {</span>
+<span class="nc" id="L139">				orgIDs.add(lProjRule.getOrganizationID());</span>
+			}
+
+<span class="nc bnc" id="L142" title="All 4 branches missed.">			if (!isByOrg &amp;&amp; lProjRule.getCampaignID() != null) {</span>
+<span class="nc" id="L143">				campaignIDs.add(lProjRule.getCampaignID());</span>
+			}
+<span class="nc" id="L145">		}</span>
+
+<span class="nc bnc" id="L147" title="All 2 branches missed.">		if (isByOrg) {</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">			if (selectedOrg != null) {</span>
+<span class="nc" id="L149">				orgIDs.add(selectedOrg.getID());</span>
+			}
+		}
+<span class="nc bnc" id="L152" title="All 2 branches missed.">		else if (selectedCampaign != null) {</span>
+<span class="nc" id="L153">			campaignIDs.add(selectedCampaign.getID());</span>
+		}
+
+<span class="nc" id="L156">		organizationMap = WorkRulesModelHandler.getOrgs(m_context, orgIDs);</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">		if (!isByOrg) {</span>
+<span class="nc" id="L158">			campaignMap = WorkRulesModelHandler.getCampaigns(m_context, campaignIDs);</span>
+		}
+
+<span class="nc" id="L161">		activityIDs.addAll(shiftEventActivityIDs);</span>
+<span class="nc" id="L162">		activityMap = WorkRulesModelHandler.getActivities(m_context, activityIDs);</span>
+
+<span class="nc bnc" id="L164" title="All 2 branches missed.">		if (isByOrg) {</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">			if (selectedOrg != null) {</span>
+<span class="nc" id="L166">				optimizationTargetTimeZone = selectedOrg.getTimeZone();</span>
+			}
+		}
+		else {
+<span class="nc bnc" id="L170" title="All 2 branches missed.">			if (selectedCampaign != null) {</span>
+<span class="nc" id="L171">				optimizationTargetTimeZone = selectedCampaign.getTimeZone();</span>
+			}
+		}
+
+<span class="nc bnc" id="L175" title="All 2 branches missed.">		if (optimizationTargetTimeZone == null) {</span>
+<span class="nc" id="L176">			optimizationTargetTimeZone = m_context.getViewingTimeZone(); // Shouldn't happen, but good to have a default</span>
+		}
+
+<span class="nc bnc" id="L179" title="All 2 branches missed.">		if (selectedOrg != null) {</span>
+<span class="nc" id="L180">			dayBoundaryOffset = selectedOrg.getDayBoundaryOffset();</span>
+		}
+		else {
+<span class="nc" id="L183">			dayBoundaryOffset = selectedCampaign.getDayBoundaryOffset();</span>
+		}
+<span class="nc" id="L185">	}</span>
+
+	@Override
+	protected void initContentTitle() {
+<span class="nc" id="L189">		super.initContentTitle();</span>
+
+		// GMT may need custom strings from BPCONFIG. This handles internationalization
+
+<span class="nc" id="L193">		ResourceBundle bundle = m_localizer.getBundle(FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L194">		String titleString = verticalize(bundle, FsWebBundleKey.PROJECT_RULES_TITLE);</span>
+<span class="nc" id="L195">		m_contentTitlePC.setPageTitle(titleString);</span>
+
+
+<span class="nc bnc" id="L198" title="All 2 branches missed.">		if (projectRuleMap.size() &gt; 1) {</span>
+<span class="nc" id="L199">			String vertString = verticalizeFormatted(bundle, FsWebBundleKey.N_PROJECTS, projectRuleMap.size());</span>
+<span class="nc" id="L200">			m_contentTitlePC.setItemName(vertString);</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">		} else if (projectRuleMap.size() == 1) {</span>
+<span class="nc" id="L202">			m_contentTitlePC.setItemName(projectRuleMap.values().iterator().next().getName());</span>
+		}
+<span class="nc" id="L204">	}</span>
+
+	@Override
+	protected void initToolbar() {
+<span class="nc" id="L208">		super.initToolbar();</span>
+		// if there are no activities, then add a message and disable the save button
+		try {
+<span class="nc bnc" id="L211" title="All 2 branches missed.">			if (!hasAssignableActivities) {</span>
+<span class="nc" id="L212">				m_toolbar.getElement(&quot;CREATE_NEW_ACTION&quot;).setEnabled(false);</span>
+<span class="nc" id="L213">				addPageMessage(Message.ERROR_TYPE, FsWebBundleKey.FS_PROJECT_RULES_ADD_ACTIVITIES, FsWebBundleKey.BUNDLE_NAME);</span>
+			}
+		}
+<span class="nc" id="L216">		catch (Exception ex) {</span>
+<span class="nc" id="L217">			handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L218">		}</span>
+<span class="nc" id="L219">	}</span>
+
+	@Override
+	protected void initForm() {
+		try {
+<span class="nc" id="L224">			FormTwoColumnPC formPC = new FormTwoColumnPC(m_context, true);</span>
+<span class="nc" id="L225">			formPC.setIsBorderEnabled(true);</span>
+<span class="nc" id="L226">			setForm(formPC);</span>
+			
+			
+
+<span class="nc" id="L230">			ProjectRules lProjRule = new ProjectRules();</span>
+			// TODO
+<span class="nc bnc" id="L232" title="All 2 branches missed.">			if (projectRuleMap.values().size() &gt; 0)</span>
+<span class="nc" id="L233">				lProjRule = projectRuleMap.values().iterator().next();</span>
+
+			// Org or Campaign
+			// Net to build a list of organizations to use for scoped
+			// retrieval of valid activities.
+<span class="nc" id="L238">			Collection&lt;ID&gt; orgs = new ArrayList&lt;ID&gt;();</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">			if (isByOrg) {</span>
+<span class="nc" id="L240">				String orgName = &quot;&quot;;</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">				if (selectedOrg != null) {</span>
+<span class="nc" id="L242">					orgName = selectedOrg.getName();</span>
+<span class="nc" id="L243">					orgs.add(selectedOrg.getID());</span>
+				}
+				
+<span class="nc" id="L246">				formPC.addRow(localizeIt(FsWebBundleKey.FS_ORGANIZATION), orgName);</span>
+<span class="nc" id="L247">				lProjRule.setOrganizationID(selectedOrg.getID());</span>
+<span class="nc" id="L248">			} else {</span>
+<span class="nc" id="L249">				String campaignName = &quot;&quot;;</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">				if (selectedCampaign != null) {</span>
+<span class="nc" id="L251">					campaignName = selectedCampaign.getName();</span>
+
+<span class="nc" id="L253">					CampaignModelHandler cmh = new CampaignModelHandler();</span>
+<span class="nc" id="L254">					Collection&lt;CampaignOrg&gt; orgAssigned = cmh</span>
+<span class="nc" id="L255">							.getCampaignOrgAssignments(m_context,</span>
+<span class="nc" id="L256">									selectedCampaign.getID(),</span>
+<span class="nc" id="L257">									selectedSchedulingPeriod.getStartTime(),</span>
+<span class="nc" id="L258">									selectedSchedulingPeriod.getEndTime());</span>
+<span class="nc bnc" id="L259" title="All 2 branches missed.">					for (CampaignOrg co : orgAssigned) {</span>
+<span class="nc" id="L260">						orgs.add(co.getOrganizationID());</span>
+<span class="nc" id="L261">					}</span>
+<span class="nc" id="L262">					lProjRule.setCampaignID(selectedCampaign.getID());</span>
+				}
+
+<span class="nc" id="L265">				formPC.addRow(m_context.getSystemManagerFactory().getVerticalizationManager().getVerticalizedString(m_context,FsWebBundleKey.BUNDLE_NAME,FsWebBundleKey.FS_CAMPAIGN), campaignName);</span>
+<span class="nc" id="L266">				lProjRule.setCampaignID(selectedCampaign.getID());</span>
+			}
+
+			// Name &amp; Desc
+<span class="nc bnc" id="L270" title="All 2 branches missed.">			if (isEditingNameAndDesc()) {</span>
+<span class="nc" id="L271">				nameInputPC = new FormInputPC(m_context);</span>
+<span class="nc" id="L272">				nameInputPC.reset(FN_NAME, lProjRule.getName(),</span>
+						FormInputPC.TYPE_STRING, true);
+<span class="nc" id="L274">				nameInputPC.setAllowAllChars(true);</span>
+<span class="nc" id="L275">				nameInputPC.setAutoExtractParamEnabled(true);</span>
+<span class="nc" id="L276">				nameInputPC.setIsRequired(true);</span>
+<span class="nc" id="L277">				nameInputPC.setMaxLength(50);</span>
+<span class="nc" id="L278">				nameInputPC.setInputFieldDesc(UIFWebBundleKey.NAME,</span>
+						UIFWebBundleKey.BUNDLE_NAME);
+<span class="nc" id="L280">				this.addChildComponent(nameInputPC);</span>
+<span class="nc" id="L281">				formPC.addRow(localizeIt(FsWebBundleKey.FS_NAME), nameInputPC);</span>
+	
+<span class="nc" id="L283">				descInputPC = new FormInputPC(m_context);</span>
+<span class="nc" id="L284">				descInputPC.reset(FN_DESCRIPTION, lProjRule.getDescription(), FormInputPC.TYPE_STRING, false);</span>
+<span class="nc" id="L285">				descInputPC.setAllowAllChars(true);</span>
+<span class="nc" id="L286">				descInputPC.setAutoExtractParamEnabled(true);</span>
+<span class="nc" id="L287">				descInputPC.setMaxLength(250);</span>
+<span class="nc" id="L288">				descInputPC.setInputFieldDesc(UIFWebBundleKey.DESCRIPTION, UIFWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L289">				this.addChildComponent(descInputPC);</span>
+<span class="nc" id="L290">				formPC.addRow(localizeIt(FsWebBundleKey.FS_DESCRIPTION), descInputPC);</span>
+			
+			}
+
+			// Activity
+			// TODO Activity Selector should be changed to show only the Project
+			// Media related activities
+			// and multi-edit capability can be removed safely its not
+			// applicable to Project Rules
+<span class="nc" id="L299">			Collection&lt;Activity&gt; activities =</span>
+<span class="nc" id="L300">				ActivityModelHandler.getActivitiesByActivitySelectionType(</span>
+<span class="nc" id="L301">					getRequestContext(),</span>
+					ActivityModelHandler.ActivitySelectionProperty.All,
+					orgs);
+<span class="nc" id="L304">			activities = getProjectMediaActivities(activities);</span>
+			
+<span class="nc bnc" id="L306" title="All 2 branches missed.">			hasAssignableActivities = (activities.size() &gt; 0);</span>
+			
+<span class="nc bnc" id="L308" title="All 2 branches missed.">			if (activityIDs.size() &gt; 0) {</span>
+<span class="nc" id="L309">				activitySelectorPC = new ActivitySelectorDDPC(m_context, JSVARNAME_ACTIVITY_ID, activities, activityIDs.iterator().next().toString());</span>
+			}
+			else {
+<span class="nc" id="L312">				activitySelectorPC = new ActivitySelectorDDPC(m_context, JSVARNAME_ACTIVITY_ID, activities);</span>
+			}
+			
+
+			
+<span class="nc" id="L317">			this.addChildComponent(activitySelectorPC);</span>
+<span class="nc" id="L318">			formPC.addRow(localizeIt(FsWebBundleKey.FS_ACTIVITY), activitySelectorPC);</span>
+
+			// Project duration
+<span class="nc" id="L321">			durationPC = new DurationSpinnerPC(m_context,</span>
+					JSVARNAME_SHIFT_DURATION);
+			
+			//The same javascript variable name is used in the form Javascript init code.
+<span class="nc" id="L325">			durationPC.setOnChangeJS(&quot;jQuery.each(startTimeTableArr,function(i){startTimeTableArr[i].updateShiftLength(new Date(0,0,0,0,0,&quot; </span>
+<span class="nc" id="L326">							+ durationPC.getName() + &quot;.getTime()));});&quot;);</span>
+<span class="nc" id="L327">			durationPC.setMinutesIncrement(1);</span>
+<span class="nc" id="L328">			durationPC.setMaxTime(23, 0, 0);</span>
+<span class="nc" id="L329">			durationPC.setMinTime(0, 15, 0);</span>
+<span class="nc" id="L330">			durationPC.setValue(lProjRule.getDuration());</span>
+
+<span class="nc bnc" id="L332" title="All 2 branches missed.">			if (durations.size() &gt; 1){</span>
+<span class="nc" id="L333">				durationPC.setMultiEdit(true);</span>
+			}
+
+<span class="nc" id="L336">			this.addChildComponent(durationPC);</span>
+<span class="nc" id="L337">			formPC.addRow(localizeIt(FsWebBundleKey.FS_DURATION), durationPC);</span>
+			// Adding Daily Max Count per Employee
+<span class="nc" id="L339">			dailyMaxCountPC = new EmployeeCountPC(m_context,</span>
+<span class="nc" id="L340">					JSVARNAME_DAILY_MAX_CNT, lProjRule.getDailyMaxPerEmployee());</span>
+<span class="nc" id="L341">			dailyMaxCountPC.getCountInputPC().setInputFieldDesc(</span>
+<span class="nc" id="L342">					localizeIt(FsWebBundleKey.FS_PROJECT_RULES_LBL_DAILYMAXEMPLOYEE));</span>
+<span class="nc" id="L343">			this.addChildComponent(dailyMaxCountPC);</span>
+<span class="nc" id="L344">			formPC.addRow(</span>
+<span class="nc" id="L345">					localizeIt(FsWebBundleKey.FS_PROJECT_RULES_LBL_DAILYMAXEMPLOYEE),</span>
+					dailyMaxCountPC);
+			// Adding Weekly Max per Employee
+<span class="nc" id="L348">			weeklyMaxCountPC = new EmployeeCountPC(m_context,</span>
+					JSVARNAME_WEEKLY_MAX_CNT, lProjRule
+<span class="nc" id="L350">							.getWeeklyMaxPerEmployee());</span>
+<span class="nc" id="L351">			weeklyMaxCountPC.getCountInputPC().setInputFieldDesc(</span>
+<span class="nc" id="L352">					localizeIt(FsWebBundleKey.FS_PROJECT_RULES_LBL_WEEKLYMAXEMPLOYEE));</span>
+<span class="nc" id="L353">			this.addChildComponent(weeklyMaxCountPC);</span>
+<span class="nc" id="L354">			formPC.addRow(</span>
+<span class="nc" id="L355">					localizeIt(FsWebBundleKey.FS_PROJECT_RULES_LBL_WEEKLYMAXEMPLOYEE),</span>
+					weeklyMaxCountPC);
+			// Adding Max Simultaneous Employee
+<span class="nc" id="L358">			simultMaxCountPC = new EmployeeCountPC(m_context,</span>
+<span class="nc" id="L359">					JSVARNAME_SIMUL_MAX_CNT, lProjRule.getMaxSimultaneous());</span>
+<span class="nc" id="L360">			simultMaxCountPC.getCountInputPC().setInputFieldDesc(</span>
+<span class="nc" id="L361">					localizeIt(FsWebBundleKey.FS_PROJECT_RULES_LBL_MAXSIMULTANEOUS));</span>
+<span class="nc" id="L362">			this.addChildComponent(simultMaxCountPC);</span>
+<span class="nc" id="L363">			formPC.addRow(</span>
+<span class="nc" id="L364">					localizeIt(FsWebBundleKey.FS_PROJECT_RULES_LBL_MAXSIMULTANEOUS),</span>
+					simultMaxCountPC);
+					
+<span class="nc" id="L367">			this.initStartTimes(lProjRule, formPC);</span>
+
+			// Set page component state from submitted values
+<span class="nc bnc" id="L370" title="All 4 branches missed.">			if ( null != getPageAction() &amp;&amp; ! PageAction.EDIT.equals(getPageAction())) {  // Is postback</span>
+<span class="nc" id="L371">				this.extractParameters(m_context.getRequest());</span>
+			}
+<span class="nc" id="L373">		} catch (Exception ex) {</span>
+<span class="nc" id="L374">			handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L375">		}</span>
+<span class="nc" id="L376">	}</span>
+	
+	@Override
+	public String getJavaScriptInitCode() {
+		
+<span class="nc" id="L381">		return &quot;var startTimeTableArr = new Array();&quot;+super.getJavaScriptInitCode();</span>
+	}
+	
+
+
+	private void initStartTimes(ProjectRules objProjRule,
+			FormTwoColumnPC objaFormPC) throws BbmException, RemoteException {
+
+<span class="nc" id="L389">		Map&lt;WeekDay, Set&lt;TimeOfDay&gt;&gt; objMapTod = null;</span>
+<span class="nc" id="L390">		int dayOffset = 0;</span>
+		
+<span class="nc" id="L392">		int weekStartDay = 0;</span>
+		
+<span class="nc" id="L394">		Collection&lt;OrganizationHOO&gt; orgHOO = null;</span>
+<span class="nc" id="L395">		Collection&lt;CampaignHOO&gt; campaignHOO = null;</span>
+<span class="nc" id="L396">		Collection refHOO = null;	//FIXME: This collection could be either of type OrganizationHOO or CampaignHOO depending on value of isByOrg</span>
+		
+<span class="nc" id="L398">		FormTwoColumnPC stFormPC = new FormTwoColumnPC(m_context);</span>
+<span class="nc" id="L399">		stFormPC.setIsBorderEnabled(true);</span>
+<span class="nc" id="L400">		stFormPC.setTitle(localizeIt(FsWebBundleKey.FS_PROJECT_STARTTIMES_FORM_TITLE));</span>
+		// TODO
+		/**
+		 * Make a call to the Project util to get the Start times for the given
+		 * Project Rule grouped by Week While iterating through the loop, get
+		 * the Operating hours for each weekday set them to the StartTimePC
+		 * 
+		 * NOTE: Should see how it effects as this method is being called only
+		 * when the action is type edit
+		 */
+
+		// Initializing the dayOffset value
+<span class="nc bnc" id="L412" title="All 4 branches missed.">		if (isByOrg &amp;&amp; selectedOrg != null) {</span>
+<span class="nc" id="L413">			dayOffset = selectedOrg.getDayBoundaryOffset();</span>
+<span class="nc bnc" id="L414" title="All 4 branches missed.">		} else if (!isByOrg &amp;&amp; selectedCampaign != null) {</span>
+<span class="nc" id="L415">			dayOffset = selectedCampaign.getWeekStart() % 1440;</span>
+		}
+
+		// Set invalid start times based on the HOO for the given Campaign or
+		// Organization
+<span class="nc bnc" id="L420" title="All 2 branches missed.">		if (isByOrg) {</span>
+			// Dates are parameters but aren't actually used by the function
+			// strangely enough. Just pass in any date
+<span class="nc" id="L423">			orgHOO = OrganizationModelHandler.getOrganizationHOOAssignments(</span>
+<span class="nc" id="L424">					getRequestContext(), selectedOrg.getID(), new Date(),</span>
+					new Date());
+			
+<span class="nc" id="L427">			weekStartDay = selectedOrg.getWeekStartDay().get0SundayCount();</span>
+			
+<span class="nc" id="L429">			refHOO = orgHOO;</span>
+		} else {
+<span class="nc" id="L431">			campaignHOO = CampaignModelHandler.getCampaignHOOAssignments(</span>
+<span class="nc" id="L432">					getRequestContext(), selectedCampaign.getID(),</span>
+<span class="nc" id="L433">					selectedSchedulingPeriod.getStartTime(),</span>
+<span class="nc" id="L434">					selectedSchedulingPeriod.getEndTime());</span>
+<span class="nc" id="L435">			refHOO = campaignHOO;</span>
+			
+<span class="nc" id="L437">			weekStartDay = selectedCampaign.getWeekStart()/1440;</span>
+		}
+		//Adjusting the value for Sunday as WeekDay class treats Sunday as 7th day
+<span class="nc bnc" id="L440" title="All 2 branches missed.">		if (weekStartDay == 0) {</span>
+<span class="nc" id="L441">			weekStartDay = WeekDay.SUNDAY.getCount();</span>
+		}
+
+		// BEGIN modifying the Project Start times for each weekday
+<span class="nc" id="L445">		objMapTod = ProjectUtil.getStartTimes(TimeContextFactory.getTimeContext(objProjRule,organizationMap,campaignMap),</span>
+<span class="nc" id="L446">				objProjRule.getProjectStartTimes(), </span>
+<span class="nc" id="L447">				TimeZoneOverrideUtil.getTimeZoneOffset(m_context, optimizationTargetTimeZone,timeZoneEffectiveDate));</span>
+
+<span class="nc bnc" id="L449" title="All 4 branches missed.">		if (objMapTod != null &amp;&amp; objMapTod.size() &gt; 0) {</span>
+<span class="nc" id="L450">			Set&lt;TimeOfDay&gt; lSetTod = new HashSet&lt;TimeOfDay&gt;();</span>
+<span class="nc" id="L451">			startTimesByWeek = new HashMap&lt;WeekDay,ProjectRulesStartTimePC&gt;();</span>
+<span class="nc" id="L452">			ProjectRulesStartTimePC projStPC = null;</span>
+<span class="nc" id="L453">			short dayOpen = 0;</span>
+<span class="nc" id="L454">			WeekDay wd = null;</span>
+			
+<span class="nc bnc" id="L456" title="All 2 branches missed.">			for (short iDay = 0; iDay &lt; WeekDay.WEEK_LENGTH; iDay++) {</span>
+				
+<span class="nc" id="L458">				short iWeekday = (short)(iDay + weekStartDay);</span>
+<span class="nc bnc" id="L459" title="All 2 branches missed.">				if (iWeekday &gt;= WeekDay.WEEK_LENGTH) {</span>
+<span class="nc" id="L460">					iWeekday -= WeekDay.WEEK_LENGTH;</span>
+				}
+				
+<span class="nc" id="L463">				wd = WeekDay.values()[iWeekday];</span>
+				
+<span class="nc bnc" id="L465" title="All 2 branches missed.">				dayOpen = (short) ((wd.getCount() + 1) &gt; 7 ? (wd.getCount() + 1) - 7</span>
+<span class="nc" id="L466">						: (wd.getCount() + 1));</span>
+
+<span class="nc bnc" id="L468" title="All 2 branches missed.">				if (objMapTod.get(wd) != null) {</span>
+<span class="nc" id="L469">					lSetTod = objMapTod.get(wd);</span>
+				} else {
+<span class="nc" id="L471">					lSetTod =  new HashSet&lt;TimeOfDay&gt;();</span>
+				}
+
+<span class="nc" id="L474">				int earliestStart = ((HOOAssignment)refHOO.iterator().next()).getDayOpen(dayOpen);</span>
+<span class="nc" id="L475">				int latestEnd = ((HOOAssignment)refHOO.iterator().next()).getDayClose(dayOpen);</span>
+<span class="nc bnc" id="L476" title="All 2 branches missed.">				boolean is24Hr = (latestEnd - earliestStart == 1440);</span>
+<span class="nc" id="L477">				projStPC = new ProjectRulesStartTimePC(m_context,</span>
+<span class="nc bnc" id="L478" title="All 4 branches missed.">						wd.toString(), dayOffset, lSetTod,</span>
+<span class="nc bnc" id="L479" title="All 2 branches missed.">						selectedOrg != null ? is24Hr &amp;&amp; selectedOrg.canCrossDayBoundary() : false);</span>
+<span class="nc" id="L480">				projStPC.getStartPickerPC().setEarliestStartTime(earliestStart);</span>
+<span class="nc" id="L481">				projStPC.getStartPickerPC().setLatestEndTime(latestEnd);</span>
+<span class="nc" id="L482">				projStPC.getStartPickerPC().setShiftLength(</span>
+<span class="nc" id="L483">						durationPC.getDuration().getDurationInMinutes());</span>
+<span class="nc" id="L484">				projStPC.setAutoExtractParamEnabled(true);</span>
+				//Adding Start Times to a class Level variable
+<span class="nc" id="L486">				startTimesByWeek.put(wd,projStPC);</span>
+				
+<span class="nc" id="L488">				stFormPC.addRow(m_localizer.getWeekdayNames(true)[dayOpen], projStPC);</span>
+			}
+		}
+<span class="nc" id="L491">		addChildComponent(stFormPC);</span>
+<span class="nc" id="L492">		addForm(stFormPC);</span>
+
+<span class="nc" id="L494">	}</span>
+	
+	public Collection&lt;Activity&gt; getProjectMediaActivities(Collection&lt;Activity&gt; activities) {
+<span class="nc" id="L497">		Map&lt;ID,Collection&lt;Media&gt;&gt; objMediaMap = null;</span>
+<span class="nc" id="L498">		HashSet&lt;ID&gt; activityIds = new HashSet&lt;ID&gt;(activities.size());</span>
+<span class="nc" id="L499">		ID id = null;</span>
+
+		try {
+<span class="nc bnc" id="L502" title="All 2 branches missed.">			for(Activity activity : activities) {</span>
+				
+<span class="nc" id="L504">				id = activity.getID();</span>
+<span class="nc bnc" id="L505" title="All 2 branches missed.">				if(!activityIds.contains(id)) {</span>
+<span class="nc" id="L506">					activityIds.add(id);</span>
+				}
+<span class="nc" id="L508">			}</span>
+			
+<span class="nc" id="L510">			id = null;</span>
+			
+<span class="nc" id="L512">			objMediaMap = ActivityModelHandler.getActivitiesMediaMap(m_context, activityIds);</span>
+			
+<span class="nc bnc" id="L514" title="All 2 branches missed.">			if (objMediaMap != null) {</span>
+<span class="nc" id="L515">				Collection&lt;Media&gt; collMed = null;</span>
+<span class="nc" id="L516">				boolean isProject = false;</span>
+<span class="nc bnc" id="L517" title="All 2 branches missed.">				for (Iterator&lt;ID&gt; i = objMediaMap.keySet().iterator(); i.hasNext();) {</span>
+<span class="nc" id="L518">					id =  i.next();</span>
+<span class="nc" id="L519">					collMed = objMediaMap.get(id); </span>
+					
+<span class="nc bnc" id="L521" title="All 2 branches missed.">					for (Media m :collMed) {</span>
+<span class="nc bnc" id="L522" title="All 2 branches missed.">						if (m.getId().equals(Media.MEDIA_ID_PROJECT)) {</span>
+<span class="nc" id="L523">							isProject = true;</span>
+						} else {
+							continue;
+						}
+<span class="nc" id="L527">					}</span>
+<span class="nc bnc" id="L528" title="All 2 branches missed.">					if (!isProject) {</span>
+<span class="nc" id="L529">						Activity toRemove = new Activity();</span>
+<span class="nc" id="L530">						toRemove.setID(id);</span>
+<span class="nc" id="L531">						activities.remove(toRemove);</span>
+					}
+					
+<span class="nc" id="L534">					isProject = false;</span>
+				}
+			}
+			
+<span class="nc" id="L538">			return activities;</span>
+<span class="nc" id="L539">		} catch (RemoteException e) {</span>
+<span class="nc" id="L540">			handleUnableToLoadDataError(log, e);</span>
+<span class="nc" id="L541">			e.printStackTrace();</span>
+<span class="nc" id="L542">		} catch (BbmException e) {</span>
+<span class="nc" id="L543">			handleUnableToLoadDataError(log, e);</span>
+<span class="nc" id="L544">			e.printStackTrace();</span>
+<span class="nc" id="L545">		}</span>
+			
+<span class="nc" id="L547">		return activities;</span>
+	}
+
+	public Collection&lt;ProjectRules&gt; getRules() throws BbmFinderException {
+<span class="nc" id="L551">		Collection&lt;ProjectRules&gt; ret = new ArrayList&lt;ProjectRules&gt;(projectRule);</span>
+<span class="nc bnc" id="L552" title="All 2 branches missed.">		if (ret.isEmpty()) {</span>
+<span class="nc" id="L553">			ret.add(new ProjectRules());</span>
+		}
+
+<span class="nc bnc" id="L556" title="All 2 branches missed.">		for (ProjectRules rule : ret) { // Construct a shift from the form field</span>
+
+<span class="nc bnc" id="L558" title="All 6 branches missed.">			if (!activitySelectorPC.getSelections().isEmpty() &amp;&amp; (activitySelectorPC.isEdited()) || !isMultiEdit()) {</span>
+<span class="nc" id="L559">				rule.setActivityID(activitySelectorPC.getSelections().get(0).getID());</span>
+			}
+
+<span class="nc bnc" id="L562" title="All 2 branches missed.">			if (isEditingNameAndDesc()) {</span>
+<span class="nc bnc" id="L563" title="All 2 branches missed.">				rule.setName(nameInputPC.getInputValue() != null ? nameInputPC.getInputValue().trim() : null);</span>
+<span class="nc" id="L564">				rule.setDescription(descInputPC.getInputValue());</span>
+
+<span class="nc bnc" id="L566" title="All 2 branches missed.">				if (isByOrg) {</span>
+<span class="nc" id="L567">					rule.setOrganizationID(selectedOrg.getID());</span>
+				}
+<span class="nc bnc" id="L569" title="All 2 branches missed.">				else if (!isByOrg) {</span>
+<span class="nc" id="L570">					rule.setCampaignID(selectedCampaign.getID());</span>
+				}
+			}
+
+<span class="nc bnc" id="L574" title="All 4 branches missed.">			if (!isMultiEdit() || durationPC.isEdited()) {</span>
+<span class="nc" id="L575">				rule.setDuration(durationPC.getDuration().getDurationInMinutes());</span>
+			}
+<span class="nc" id="L577">		}</span>
+<span class="nc" id="L578">		return ret;</span>
+	}
+
+	private String localizeIt(String key) {
+<span class="nc" id="L582">		return m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, key);</span>
+	}
+
+	private boolean isEditingNameAndDesc() {
+<span class="nc bnc" id="L586" title="All 2 branches missed.">		return !isMultiEdit();</span>
+	}
+
+	@Override
+	public boolean validate() {
+<span class="nc" id="L591">		boolean retVal = super.validate();</span>
+
+		try {
+<span class="nc" id="L594">			getProjectRule();</span>
+<span class="nc" id="L595">		} catch (BbmFinderException e1) {</span>
+<span class="nc" id="L596">			handleUnableToLoadDataError(log, e1);</span>
+<span class="nc" id="L597">			return false;</span>
+<span class="nc" id="L598">		}</span>
+
+<span class="nc" id="L600">		return retVal;</span>
+	}
+	
+	public Collection&lt;ProjectRules&gt; getProjectRule()
+		throws BbmFinderException
+	{
+<span class="nc" id="L606">		Collection&lt;ProjectRules&gt; ret = new ArrayList&lt;ProjectRules&gt;(projectRule);</span>
+
+		TimeContext tx;
+
+<span class="nc bnc" id="L610" title="All 2 branches missed.">		if (ret.isEmpty()) {</span>
+<span class="nc" id="L611">			ret.add(new ProjectRules());</span>
+		}
+
+<span class="nc bnc" id="L614" title="All 2 branches missed.">		for (ProjectRules projRule : ret) {</span>
+			// Construct a shift from the form field
+<span class="nc bnc" id="L616" title="All 6 branches missed.">			if (!activitySelectorPC.getSelections().isEmpty() &amp;&amp; (activitySelectorPC.isEdited() || !isMultiEdit())) {</span>
+<span class="nc" id="L617">				projRule.setActivityID(activitySelectorPC.getSelections().get(0).getID());</span>
+			}
+<span class="nc bnc" id="L619" title="All 2 branches missed.">			if (isEditingNameAndDesc()) {</span>
+<span class="nc" id="L620">				projRule.setName(nameInputPC.getInputValue());</span>
+<span class="nc" id="L621">				projRule.setDescription(descInputPC.getInputValue());</span>
+<span class="nc bnc" id="L622" title="All 2 branches missed.">				if (isByOrg) {</span>
+<span class="nc" id="L623">					projRule.setOrganizationID(selectedOrg.getID()); // check for null</span>
+				}
+<span class="nc bnc" id="L625" title="All 2 branches missed.">				else if (!isByOrg) {</span>
+<span class="nc" id="L626">					projRule.setCampaignID(selectedCampaign.getID()); // check for null</span>
+				}
+			}
+<span class="nc bnc" id="L629" title="All 2 branches missed.">			if (durationPC != null) {</span>
+<span class="nc" id="L630">				projRule.setDuration(durationPC.getDuration().getDurationInMinutes());</span>
+			}
+			// Reading changes made to the Employee Counts
+			// user receives a popup if these are left empty, so not checking for null
+<span class="nc" id="L634">			projRule.setDailyMaxPerEmployee(dailyMaxCountPC.getEmployeeCount());</span>
+<span class="nc" id="L635">			projRule.setWeeklyMaxPerEmployee(weeklyMaxCountPC.getEmployeeCount());</span>
+<span class="nc" id="L636">			projRule.setMaxSimultaneous(simultMaxCountPC.getEmployeeCount());</span>
+
+			//Reading and Storing changes made to the Start Times by week
+			/*
+			 * Get the Start Times set by Week from the Map by each weekday
+			 * Add and Remove Start Times from each Weekday.
+			 * Finally prepare a collection of the Start Times for the whole week
+			 * While Adding Start Times make sure all the parameters are set
+			 */
+<span class="nc" id="L645">			tx = TimeContextFactory.getTimeContext(projRule, organizationMap, campaignMap);</span>
+
+<span class="nc" id="L647">			Map&lt;WeekDay, Set&lt;ProjectStart&gt;&gt; mapOrgProjStartTimes = ProjectUtil.getProjectStartByWeek(tx, projRule);</span>
+<span class="nc" id="L648">			ProjectUtil.prepareStartTimes(startTimesByWeek, mapOrgProjStartTimes, projRule, tx);</span>
+<span class="nc" id="L649">		}</span>
+<span class="nc" id="L650">		return ret;</span>
+	}
+
+	@SuppressWarnings(&quot;serial&quot;)
+	protected class EmployeeCountPC extends CompositePC {
+
+		public static final int MIN_EMPLOYEE_COUNT = 1;
+		public static final int MAX_EMPLOYEE_COUNT = 32767;
+
+		private FormInputPC countPC;
+		private CheckBoxPC unlimitedCheckBoxPC;
+
+<span class="nc" id="L662">		private boolean isEdited = false;</span>
+
+<span class="nc" id="L664">		EmployeeCountPC(RequestContext context, String name, int iCnt) {</span>
+<span class="nc" id="L665">			super(context);</span>
+<span class="nc" id="L666">			setName(name);</span>
+
+<span class="nc" id="L668">			addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="nc" id="L669">			setRenderJavaScriptIfDisabled(true);</span>
+
+<span class="nc" id="L671">			countPC = new FormInputPC(context);</span>
+<span class="nc" id="L672">			countPC.reset(getCountName(), String.valueOf(iCnt),</span>
+					FormInputPC.TYPE_INTEGER, true);
+<span class="nc" id="L674">			countPC.setLowerLimit(EmployeeCountPC.MIN_EMPLOYEE_COUNT);</span>
+<span class="nc" id="L675">			countPC.setUpperLimit(EmployeeCountPC.MAX_EMPLOYEE_COUNT);</span>
+<span class="nc" id="L676">			countPC.setAutoExtractParamEnabled(true);</span>
+
+<span class="nc bnc" id="L678" title="All 2 branches missed.">			if (iCnt == EmployeeCountPC.MAX_EMPLOYEE_COUNT) {</span>
+<span class="nc" id="L679">				unlimitedCheckBoxPC = new CheckBoxPC(context,</span>
+<span class="nc" id="L680">						getUnlimitedName(), true, &quot;jQuery('input[name=&quot;</span>
+<span class="nc" id="L681">								+ getCountName() + &quot;]').val(&quot;</span>
+								+ EmployeeCountPC.MAX_EMPLOYEE_COUNT
+								+ &quot;).attr('readOnly','readonly').hide(); &quot;,
+<span class="nc" id="L684">						&quot;jQuery('input[name=&quot; + getCountName() + &quot;]').val(jQuery('input[name=&quot;</span>
+<span class="nc" id="L685">								+ getCountName() + &quot;]').attr('lowerlimit')).removeAttr('readOnly').show().focus();&quot;);</span>
+<span class="nc" id="L686">				unlimitedCheckBoxPC.setStyleClass(&quot;vAlignMiddle&quot;);</span>
+<span class="nc" id="L687">				countPC.setEnabled(false);</span>
+<span class="nc" id="L688">				countPC.setVisible(false);</span>
+
+			} else {
+<span class="nc" id="L691">				unlimitedCheckBoxPC = new CheckBoxPC(context,</span>
+<span class="nc" id="L692">						getUnlimitedName(), false, &quot;jQuery('input[name=&quot;</span>
+<span class="nc" id="L693">								+ getCountName() + &quot;]').val(&quot;</span>
+								+ EmployeeCountPC.MAX_EMPLOYEE_COUNT
+								+ &quot;).attr('readOnly','readonly').hide(); &quot;,
+<span class="nc" id="L696">						&quot;jQuery('input[name=&quot; + getCountName() + &quot;]').val(&quot;</span>
+								+ iCnt + &quot;).removeAttr('readOnly').show().focus();&quot;);
+<span class="nc" id="L698">				unlimitedCheckBoxPC.setStyleClass(&quot;vAlignMiddle&quot;);</span>
+			}
+<span class="nc" id="L700">			addChildComponent(unlimitedCheckBoxPC);</span>
+<span class="nc" id="L701">			addChildComponent(countPC);</span>
+
+<span class="nc" id="L703">		}</span>
+
+		@Override
+		public String getJavaScriptInitCode() {
+<span class="nc" id="L707">			String handlerName = getName() + &quot;.OnChange&quot;;</span>
+<span class="nc" id="L708">			StringBuffer javascriptSb = new StringBuffer();</span>
+<span class="nc" id="L709">			javascriptSb.append(super.getJavaScriptInitCode());</span>
+<span class="nc" id="L710">			javascriptSb.append(&quot;\n&quot; + handlerName</span>
+<span class="nc" id="L711">					+ &quot; = function() { jQuery('input[name=&quot; + getEditedName()</span>
+					+ &quot;]').val('true'); };&quot;);
+<span class="nc" id="L713">			javascriptSb.append(&quot;\n&quot; + getUnlimitedName()</span>
+					+ &quot;.change(function() {&quot;);
+<span class="nc" id="L715">			javascriptSb.append(handlerName + &quot;();&quot;);</span>
+<span class="nc" id="L716">			javascriptSb.append(&quot;});&quot;);</span>
+<span class="nc" id="L717">			javascriptSb.append(&quot;\n jQuery('input[name=&quot;</span>
+<span class="nc" id="L718">					+ this.unlimitedCheckBoxPC.getInputName()</span>
+					+ &quot;]').click(function() { &quot;);
+<span class="nc" id="L720">			javascriptSb.append(&quot;jQuery('input[name=&quot; + getCountName()</span>
+					+ &quot;]').toggleClass('&quot;
+					+ FormInputPC.INPUT_TEXT_READ_ONLY_STYLE
+					+ &quot;').toggleClass('&quot; + FormInputPC.DEFAULT_STYLE + &quot;');&quot;);
+<span class="nc" id="L724">			javascriptSb.append(&quot;});&quot;);</span>
+
+<span class="nc" id="L726">			return javascriptSb.toString();</span>
+
+		}
+
+		@Override
+		public String getHtmlDisplay() {
+<span class="nc" id="L732">			return BPMessageFormat</span>
+<span class="nc" id="L733">					.format(</span>
+							&quot;{0}{1}&amp;nbsp;&amp;nbsp;{2}&lt;input type='hidden' name=\&quot;{3}\&quot; value=\&quot;{4}\&quot;&gt;&quot;,
+							new Object[] {
+<span class="nc" id="L736">									unlimitedCheckBoxPC.getHtmlDisplay(),</span>
+<span class="nc" id="L737">									localizeIt(FsWebBundleKey.FS_UNLIMITED),</span>
+<span class="nc" id="L738">									countPC.getHtmlDisplay(), getEditedName(),</span>
+<span class="nc" id="L739">									isEdited });</span>
+		}
+
+		private String getCountName() {
+<span class="nc" id="L743">			return getName() + &quot;__count&quot;;</span>
+		}
+
+		private String getUnlimitedName() {
+<span class="nc" id="L747">			return getName() + &quot;__unlimited&quot;;</span>
+		}
+
+		private String getEditedName() {
+<span class="nc" id="L751">			return getName() + &quot;__edited&quot;;</span>
+		}
+
+		@Override
+		public boolean extractParameters(HttpServletRequest request) {
+<span class="nc bnc" id="L756" title="All 2 branches missed.">			if (!isAutoExtractParamEnabled())</span>
+<span class="nc" id="L757">				return true;</span>
+<span class="nc" id="L758">			String editedStr = request.getParameter(getEditedName());</span>
+<span class="nc bnc" id="L759" title="All 2 branches missed.">			if (editedStr != null)</span>
+<span class="nc" id="L760">				isEdited = new Boolean(editedStr);</span>
+<span class="nc" id="L761">			return super.extractParameters(request);</span>
+		}
+
+		public boolean isEdited() {
+<span class="nc" id="L765">			return isEdited;</span>
+		}
+
+		public FormInputPC getCountInputPC() {
+<span class="nc" id="L769">			return countPC;</span>
+		}
+		
+		public void setEmpCount(FormInputPC empCount) {
+<span class="nc bnc" id="L773" title="All 4 branches missed.">			if (empCount != null &amp;&amp; empCount.getInputValue().equals(MAX_EMPLOYEE_COUNT)) {</span>
+<span class="nc" id="L774">				unlimitedCheckBoxPC.setIsChecked(true);</span>
+<span class="nc" id="L775">				countPC.setEnabled(false);</span>
+			} else {
+<span class="nc" id="L777">				unlimitedCheckBoxPC.setIsChecked(false);</span>
+			}
+<span class="nc" id="L779">			countPC.setInputValue(empCount.getInputValue());</span>
+<span class="nc" id="L780">		}</span>
+		public CheckBoxPC getCheckBoxPC() {
+<span class="nc" id="L782">			return unlimitedCheckBoxPC;</span>
+		}
+		
+		public int getEmployeeCount(){
+<span class="nc bnc" id="L786" title="All 4 branches missed.">			if(this.countPC != null &amp;&amp; this.countPC.getInputValue() != null){</span>
+<span class="nc" id="L787">				return Integer.parseInt(this.countPC.getInputValue());</span>
+			}else{
+<span class="nc" id="L789">				return 0;</span>
+			}
+		}
+	}
+
+	@SuppressWarnings(&quot;serial&quot;)
+	public class ProjectRulesStartTimePC extends CompositePC {
+
+		private StartTimesPickerPC stPickerPC;
+
+		private CheckBoxPC weekDayCheck;
+<span class="nc" id="L800">		private boolean isEdited = false;</span>
+<span class="nc" id="L801">		private boolean canShiftAssignmentsCrossDayBoundary = false;</span>
+
+		ProjectRulesStartTimePC(RequestContext context, String name,
+<span class="nc" id="L804">				int dayOffset, Collection&lt;TimeOfDay&gt; projStTimes, boolean canShiftAssignmentsCrossDayBoundary) {</span>
+<span class="nc" id="L805">			super(context);</span>
+
+<span class="nc" id="L807">			setName(name);</span>
+<span class="nc" id="L808">			stPickerPC = new StartTimesPickerPC(context, getStartPickerName(),</span>
+<span class="nc" id="L809">					Duration.fromMinutes(getTimeZoneOffset()), Duration</span>
+<span class="nc" id="L810">							.fromMinutes(dayOffset), canShiftAssignmentsCrossDayBoundary);</span>
+<span class="nc" id="L811">			this.canShiftAssignmentsCrossDayBoundary = canShiftAssignmentsCrossDayBoundary;</span>
+
+<span class="nc" id="L813">			stPickerPC.setStartTimes(projStTimes);</span>
+<span class="nc" id="L814">			stPickerPC.setAutoExtractParamEnabled(true);</span>
+			
+
+<span class="nc bnc" id="L817" title="All 4 branches missed.">			if (projStTimes != null &amp;&amp; projStTimes.size() &gt; 0) {</span>
+<span class="nc" id="L818">				weekDayCheck = new CheckBoxPC(context, getWeekBoxName(), true,</span>
+<span class="nc" id="L819">						&quot;jQuery(\&quot;#&quot; + getStartPickerName()</span>
+								+ &quot;_table\&quot;).css('display','');&quot;, &quot;jQuery(\&quot;#&quot;
+<span class="nc" id="L821">								+ getStartPickerName()</span>
+<span class="nc" id="L822">								+ &quot;_table\&quot;).css('display','none');&quot; + getStartPickerName() + &quot;.reset();&quot;);</span>
+
+			} else {
+<span class="nc" id="L825">				weekDayCheck = new CheckBoxPC(context, getWeekBoxName(), false,</span>
+<span class="nc" id="L826">						&quot;jQuery(\&quot;#&quot; + getStartPickerName()</span>
+								+ &quot;_table\&quot;).css('display','');&quot;, &quot;jQuery(\&quot;#&quot;
+<span class="nc" id="L828">								+ getStartPickerName()</span>
+<span class="nc" id="L829">								+ &quot;_table\&quot;).css('display','none');&quot; + getStartPickerName() + &quot;.reset();&quot;);</span>
+<span class="nc" id="L830">				stPickerPC.setDisplay(false);</span>
+			}
+<span class="nc" id="L832">			weekDayCheck.setAutoExtractParamEnabled(true);</span>
+<span class="nc" id="L833">			addChildComponent(weekDayCheck);</span>
+<span class="nc" id="L834">			addChildComponent(stPickerPC);</span>
+<span class="nc" id="L835">		}</span>
+
+		@Override
+		public String getHtmlDisplay() {
+<span class="nc" id="L839">			StringBuffer html = new StringBuffer();</span>
+<span class="nc" id="L840">			html.append(BPMessageFormat</span>
+<span class="nc" id="L841">					.format(</span>
+							&quot;{0}&amp;nbsp;{1}&lt;input type='hidden' name=\&quot;{2}\&quot; value=\&quot;{3}\&quot;&gt;&quot;,
+<span class="nc" id="L843">							new Object[] { weekDayCheck.getHtmlDisplay(),</span>
+<span class="nc" id="L844">									stPickerPC.getHtmlDisplay(),</span>
+<span class="nc" id="L845">									getEditedName(), isEdited }));</span>
+<span class="nc" id="L846">			html.append(&quot;&lt;input type='hidden' id='24hrAndcanCrossDayBounday' value='&quot;).</span>
+<span class="nc" id="L847">				append(canShiftAssignmentsCrossDayBoundary).append(&quot;'&gt;&lt;/input&gt;&quot;);</span>
+<span class="nc" id="L848">			return html.toString();</span>
+		}
+
+		@Override
+		public String getJavaScriptInitCode() {
+<span class="nc" id="L853">			StringBuffer js = new StringBuffer();</span>
+<span class="nc" id="L854">			js.append(super.getJavaScriptInitCode());</span>
+<span class="nc" id="L855">			js.append(&quot; startTimeTableArr[startTimeTableArr.length] =&quot;+stPickerPC.getName()+&quot;;&quot;);</span>
+<span class="nc" id="L856">			return js.toString();</span>
+		}
+		
+		@Override
+		public boolean extractParameters(HttpServletRequest request) {
+<span class="nc bnc" id="L861" title="All 2 branches missed.">			if (!isAutoExtractParamEnabled()) {</span>
+<span class="nc" id="L862">				return true;</span>
+			}
+<span class="nc" id="L864">			String editedStr = request.getParameter(getEditedName());</span>
+<span class="nc bnc" id="L865" title="All 2 branches missed.">			if (editedStr != null) {</span>
+<span class="nc" id="L866">				isEdited = new Boolean(editedStr);</span>
+			}
+<span class="nc" id="L868">			return super.extractParameters(request);</span>
+		}
+
+		private String getEditedName() {
+<span class="nc" id="L872">			return getName() + &quot;__edited&quot;;</span>
+		}
+
+		private String getStartPickerName() {
+<span class="nc" id="L876">			return getName() + &quot;__stTimePick&quot;;</span>
+		}
+
+		private String getWeekBoxName() {
+<span class="nc" id="L880">			return getName() + &quot;__chkBx&quot;;</span>
+		}
+
+		public boolean isEdited() {
+<span class="nc" id="L884">			return isEdited;</span>
+		}
+		
+		public boolean isChecked(){
+<span class="nc" id="L888">			return weekDayCheck.isChecked();</span>
+		}
+
+		public StartTimesPickerPC getStartPickerPC() {
+<span class="nc" id="L892">			return stPickerPC;</span>
+		}
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

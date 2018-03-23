@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AgentSchedCompliesWithMinMaxHours.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.validation</a> &gt; <span class="el_source">AgentSchedCompliesWithMinMaxHours.java</span></div><h1>AgentSchedCompliesWithMinMaxHours.java</h1><pre class="source lang-java linenums">/*
+ * Created on Aug 19, 2003
+ *
+ * To change this generated comment go to
+ * Window&gt;Preferences&gt;Java&gt;Code Generation&gt;Code and Comments
+ */
+package com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.validation;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Date;
+import java.util.List;
+
+import org.apache.log4j.Priority;
+
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.empworkrule.model.WorkResourceMinMaxHour;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.shifts.model.ShiftsConflict;
+import com.bluepumpkin.ejb.bbm.shifts.model.ShiftsUtil;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TOCalcUtil;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+/**
+ * @author rrajendran
+ *
+ * The shift assignments associated with this shift bid request comply with the min/max hours
+ * specified for the org or bidder.
+ *
+ */
+<span class="nc" id="L43">public class AgentSchedCompliesWithMinMaxHours implements Validator {</span>
+<span class="nc" id="L44">	private static final Priority m_tracePriority = RequestUtil.m_defaultTracePriority;</span>
+
+<span class="nc" id="L46">	private static final String CLASS_NAME = AgentSchedCompliesWithMinMaxHours.class.getName();</span>
+<span class="nc" id="L47">	private static final Category LOG = Log.initCategory(CLASS_NAME);</span>
+
+	/* (non-Javadoc)
+	 * @see com.bluepumpkin.ejb.rm.requests.common.validation.Validator#validate(com.bluepumpkin.ejb.rm.requests.common.validation.Validatable)
+	 */
+	@Override
+	public ValidationResult validate(Validatable validatable) throws Exception {
+		ValidationResult result;
+<span class="nc" id="L55">		LOG.log(m_tracePriority, &quot;Validation Rule: &quot; + CLASS_NAME + &quot; started&quot;);</span>
+
+		try {
+<span class="nc" id="L58">			ShiftBidRequest sbReq = (ShiftBidRequest) validatable;</span>
+
+
+<span class="nc" id="L61">			Collection&lt;Event&gt; allScheduledEvents = getScheduledEvents(sbReq);</span>
+
+<span class="nc" id="L63">			result = null;</span>
+<span class="nc bnc" id="L64" title="All 2 branches missed.">			for (TimeRange checkedWeek : getOnlyWeeksContainBiddedShifts(sbReq)) {</span>
+<span class="nc" id="L65">				result = validate(sbReq, allScheduledEvents, checkedWeek);</span>
+<span class="nc bnc" id="L66" title="All 2 branches missed.">				if (result != null) {</span>
+<span class="nc" id="L67">					break;</span>
+				}
+<span class="nc" id="L69">			}</span>
+
+		} finally {
+<span class="nc" id="L72">			LOG.log(m_tracePriority, &quot;Validation Rule: &quot; + CLASS_NAME + &quot; done&quot;);</span>
+<span class="nc" id="L73">		}</span>
+
+<span class="nc" id="L75">		return result;</span>
+	}
+
+	private TimeRange getDateRange(ShiftBidRequest sbReq) throws Exception {
+<span class="nc" id="L79">		return sbReq.getValidationCache().getDateRange();</span>
+	}
+
+	private Organization getOrg(ShiftBidRequest sbReq) throws Exception {
+<span class="nc" id="L83">		return sbReq.getValidationCache().getOrg();</span>
+	}
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	private Collection&lt;ShiftAssignment&gt; getBiddedShiftAssignments(ShiftBidRequest sbReq) {
+<span class="nc" id="L88">		return sbReq.getOptMethods().getShiftAssignments();</span>
+	}
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	protected Collection&lt;Event&gt; getScheduledEvents(ShiftBidRequest sbReq) throws Exception {
+<span class="nc" id="L93">		return ValidationUtil.getEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
+<span class="nc" id="L94">				sbReq.getEmployeeID(), getDateRange(sbReq).getStartDate(), getDateRange(sbReq).getEndDate());</span>
+	}
+
+	protected Collection&lt;WorkResourceMinMaxHour&gt; getMinMaxHourAssignments(ShiftBidRequest sbReq, TimeRange week) throws Exception {
+<span class="nc" id="L98">		return WfmManagerFactory.getEmpWorkRuleManager().getMinMaxHourAssignments(sbReq.getEmployeeID(), week.getStartDate(), week.getEndDate());</span>
+	}
+
+	private ValidationResult validate(ShiftBidRequest sbReq, Collection&lt;Event&gt; allScheduledEvents, TimeRange checkedWeek) throws Exception {
+		ValidationResult result;
+
+		// get min/max hours assignment for employee during the bid request's time range.
+<span class="nc" id="L105">		WorkResourceMinMaxHour wrMinMaxHour = getMinMaxHourAssnForWeek(sbReq, checkedWeek);</span>
+
+		// list of all assignments
+<span class="nc" id="L108">		Collection&lt;Event&gt; shiftAssns = new ArrayList&lt;Event&gt;();</span>
+
+		// add shift assignments for this shift bid request.
+<span class="nc" id="L111">		shiftAssns.addAll(getBiddedShiftAssignments(sbReq));</span>
+
+		// also add shift assignments from the schedules if any
+<span class="nc" id="L114">		shiftAssns.addAll(allScheduledEvents);</span>
+
+		// check if shift assignments comply with min/max hours.
+<span class="nc" id="L117">		Collection&lt;ShiftsConflict&gt; minMaxResults = getMinMaxHourConflicts(sbReq, checkedWeek, wrMinMaxHour, shiftAssns);</span>
+
+		// if no min/max validation errors.
+<span class="nc bnc" id="L120" title="All 4 branches missed.">		if (minMaxResults == null || minMaxResults.isEmpty()) {</span>
+<span class="nc" id="L121">			result = null;</span>
+		} else {
+			// we lose validation errors if minMaxResults has 2 or more
+<span class="nc" id="L124">			result = ValidationUtil.setSoftValidationResult(sbReq,</span>
+<span class="nc" id="L125">					RmEjbBundleKey.NONLOCALIZED_MESSAGE, minMaxResults.iterator().next(), CLASS_NAME);</span>
+		}
+<span class="nc" id="L127">		return result;</span>
+	}
+
+	private WorkResourceMinMaxHour getMinMaxHourAssnForWeek(ShiftBidRequest sbReq, TimeRange checkedWeek) throws Exception {
+		WorkResourceMinMaxHour wrMinMaxHour;
+
+<span class="nc" id="L133">		Collection&lt;WorkResourceMinMaxHour&gt; minMaxAssns = getMinMaxHourAssignments(sbReq, checkedWeek);</span>
+
+		// return if no assignments found.
+<span class="nc bnc" id="L136" title="All 4 branches missed.">		if (minMaxAssns == null || minMaxAssns.isEmpty()) {</span>
+<span class="nc" id="L137">			return null;</span>
+		}
+
+<span class="nc" id="L140">		wrMinMaxHour = RequestUtil.getMinMaxHourAssnOverlappingTimeRange(minMaxAssns, checkedWeek.getStartDate(), checkedWeek.getEndDate());</span>
+
+<span class="nc bnc" id="L142" title="All 2 branches missed.">		if (wrMinMaxHour == null) {</span>
+<span class="nc" id="L143">			throw new RuntimeException(&quot;No min/max hour assignments found: ID,starttime, endttime = &quot; +</span>
+<span class="nc" id="L144">				sbReq.getID() + ',' + checkedWeek.getStartDate() + ',' + checkedWeek.getEndDate());</span>
+		}
+<span class="nc" id="L146">		return wrMinMaxHour;</span>
+	}
+
+	private Collection&lt;ShiftsConflict&gt; getMinMaxHourConflicts(ShiftBidRequest sbReq, TimeRange checkedWeek,
+			WorkResourceMinMaxHour wrMinMaxHour, Collection&lt;Event&gt; shiftAssns) throws Exception {
+		// (minus 1 second from end date because the the method getMinMaxHourConflicts will add 1 second into end date )
+<span class="nc" id="L152">		Calendar endCal = Calendar.getInstance(getOrg(sbReq).getTimeZone());</span>
+<span class="nc" id="L153">		endCal.setTime(checkedWeek.getEndDate());</span>
+<span class="nc" id="L154">		endCal.add(Calendar.SECOND, -1);</span>
+<span class="nc" id="L155">		return ShiftsUtil.getMinMaxHourConflicts(shiftAssns, wrMinMaxHour,</span>
+<span class="nc" id="L156">				checkedWeek.getStartDate(), endCal.getTime(), getOrg(sbReq), null);</span>
+	}
+
+
+	private List&lt;TimeRange&gt; getOnlyWeeksContainBiddedShifts(ShiftBidRequest sbReq) throws Exception {
+
+<span class="nc" id="L162">		List&lt;TimeRange&gt; result = new ArrayList&lt;TimeRange&gt;();</span>
+
+<span class="nc" id="L164">		Date firstOrgWeekStart = getDateRange(sbReq).getStartDate();</span>
+<span class="nc" id="L165">		Date lastOrgWeekEnd = getDateRange(sbReq).getEndDate();</span>
+<span class="nc" id="L166">		Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L167">		cal.setTime(firstOrgWeekStart);</span>
+
+<span class="nc" id="L169">		Date weekStart = cal.getTime();</span>
+
+<span class="nc bnc" id="L171" title="All 2 branches missed.">		for (; weekStart.before(lastOrgWeekEnd); weekStart = cal.getTime()) {</span>
+<span class="nc" id="L172">			TOCalcUtil.addDaysToCalendar(cal, Calendar.DAY_OF_WEEK);</span>
+<span class="nc" id="L173">			TimeRange thisWeek = new TimeRange(weekStart, cal.getTime());</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">			if (hasAssignments(thisWeek, getBiddedShiftAssignments(sbReq))) {</span>
+<span class="nc" id="L175">				result.add(thisWeek);</span>
+			}
+		}
+
+<span class="nc" id="L179">		return result;</span>
+	}
+
+	private boolean hasAssignments(TimeRange duration, Collection&lt;ShiftAssignment&gt; shiftAssignments) {
+<span class="nc" id="L183">		boolean result = false;</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">		for (ShiftAssignment assignment : shiftAssignments) {</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">			if (new TimeRange(assignment.getStartTime(), assignment.getEndTime()).getOverlapDuration(duration) &gt; 0) {</span>
+<span class="nc" id="L186">				result = true;</span>
+<span class="nc" id="L187">				break;</span>
+			}
+<span class="nc" id="L189">		}</span>
+<span class="nc" id="L190">		return result;</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

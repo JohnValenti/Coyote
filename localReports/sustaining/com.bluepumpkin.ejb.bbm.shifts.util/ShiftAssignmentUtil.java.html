@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftAssignmentUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.shifts.util</a> &gt; <span class="el_source">ShiftAssignmentUtil.java</span></div><h1>ShiftAssignmentUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.shifts.util;
+
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.EventUtils;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignmentFields;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+
+import java.util.Collection;
+import java.util.Date;
+
+public class ShiftAssignmentUtil {
+
+<span class="nc" id="L17">	private ShiftAssignmentUtil() {}</span>
+
+	/**
+	 * Adjusts a shift assignment's start time and the start time of any of its child Shift Event assignments by
+	 * moveAmountMillis milliseconds.
+	 *
+	 * Ported from Calendar's UpdateShiftAssignmentCommand class.
+	 *
+	 * @param newShiftId - If the shift assignment's shift template ID was changed as part of this operation (e.g. from
+	 *                   Calendar's edit shift assignment dialog) then the new shift ID will be different from the existing
+	 *                   shift ID and the move operation will not be performed (as the events are going to be replaced with
+	 *                   the new shift template's events).
+	 *                   This should match shiftAssignment's ID if you want the move operation to be performed.
+	 * @param shiftAssignment - the shift assignment to adjust
+	 * @param moveAmountMillis - the amount of milliseconds that the shift assignment is to be adjusted by.
+	 * @param isUndo - Set to true if this is part of an undo operation (used in the Calendar)
+	 */
+	public static void moveShiftAssignmentAndEventsIfNeeded(ID newShiftId, ShiftAssignment shiftAssignment,
+			long moveAmountMillis, boolean isUndo) {
+<span class="nc bnc" id="L36" title="All 2 branches missed.">		if (moveAmountMillis != 0) {</span>
+			// we only want to update the current shift event assignments if
+			// the underlying shift template hasn't changed (indicated by a different newShiftId)
+			// - otherwise, we're creating new shift event assignments anyway so a move is unnecessary
+<span class="nc bnc" id="L40" title="All 2 branches missed.">			if (areShiftIDsEqual(newShiftId, shiftAssignment.getShiftID())) {</span>
+<span class="nc bnc" id="L41" title="All 2 branches missed.">				for (ShiftEventAssignment nextSEA : shiftAssignment.getChildren()) {</span>
+					// when undo, we delete all the current events and add back
+					// old events
+<span class="nc bnc" id="L44" title="All 6 branches missed.">					if (!isUndo || (isUndo &amp;&amp; (isOTBefore(shiftAssignment, nextSEA)</span>
+<span class="nc bnc" id="L45" title="All 2 branches missed.">							|| nextSEA.getActivityID().equals(Activity.ACTIVITY_SHIFT_OVERTIME_GAP)</span>
+<span class="nc bnc" id="L46" title="All 2 branches missed.">							|| isOTAfter(shiftAssignment, nextSEA)))) {</span>
+<span class="nc" id="L47">						Date newSEAStartDate = new Date(nextSEA.getStartTime().getTime() + moveAmountMillis);</span>
+<span class="nc" id="L48">						nextSEA.setStartTime(newSEAStartDate);</span>
+<span class="nc" id="L49">						shiftAssignment.updateChildObject(ShiftAssignmentFields.CHILD_SHIFT_EVENT, nextSEA);</span>
+					}
+<span class="nc" id="L51">				}</span>
+			}
+
+			// Have to set shift start time after updating all the children,
+			// because shift start time is used to determine OTAfter or OTBefore
+<span class="nc" id="L56">			Date newStartDate = new Date(shiftAssignment.getStartTime().getTime() + moveAmountMillis);</span>
+<span class="nc" id="L57">			shiftAssignment.setStartTime(newStartDate);</span>
+		}
+<span class="nc" id="L59">	}</span>
+
+	/**
+	 * Utility function to
+	 * 1. Remove truncated Shift Event assignments for a Shift Assignment that has had its duration
+	 * shortened, such that the new duration causes existing Shift Event assignments to no longer fit inside the Shift
+	 * Assignment.
+	 * 2. Adjust OT Gap shift events for a Shift Assignment that has had its duration lengthened, it figures out the
+	 * direction of the duration increase and adjust any OT Gap appropriately.
+	 *
+	 * Ported from Calendar's UpdateShiftAssignmentCommand class.
+	 *
+	 * @param shiftAssignment - The recently modified shiftAssignment to perform the operation on.  The child events will be
+	 *                        removed from this assignment if they are determined to no longer fit in the assignment's new
+	 *                        start/end window.  If this shift was moved prior to this operation, the child shift event assignments
+	 *                        should also have been moved appropriately so that this method can check the updated shift event windows
+	 *                        to see if they fit in the new shift window.
+	 * @param oldStartEnd - Pair representing start/end dates of the old shift assignment (before modification).
+	 * @param newStartEnd - Pair representing start/end dates of the new shift assignment (after modification).
+	 * @param isUndo - Set to true if this is part of an undo operation (used in the Calendar)
+	 */
+	public static void adjustShiftEventsIfShiftAssignmentDurationHasChanged(ShiftAssignment shiftAssignment,
+			Pair&lt;Date, Date&gt; oldStartEnd, Pair&lt;Date, Date&gt; newStartEnd, boolean isUndo) {
+
+		// if we are cutting the shift assignment shorter, we need to remove shift events that no longer
+		// fit inside the shift assignment.
+		// when undo, we delete all the current events and add back old events
+<span class="nc bnc" id="L86" title="All 4 branches missed.">		if (didShiftWindowGetShortened(oldStartEnd, newStartEnd) &amp;&amp; !isUndo) {</span>
+<span class="nc" id="L87">			Collection&lt;ShiftEventAssignment&gt; shiftEvents = shiftAssignment.getChildren();</span>
+<span class="nc bnc" id="L88" title="All 4 branches missed.">			if (shiftEvents != null &amp;&amp; !shiftEvents.isEmpty()) {</span>
+				// check event if it falls in the new shift assignment window
+<span class="nc bnc" id="L90" title="All 2 branches missed.">				for (ShiftEventAssignment event : shiftEvents) {</span>
+					// GQ: What if an event was in the Shift portion, but after moving, it's now in the
+					// OTExtension portion? This code won't remove it.
+<span class="nc bnc" id="L93" title="All 2 branches missed.">					if (event.getEndTime().after(newStartEnd.getSecond()) ||</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">							event.getStartTime().before(newStartEnd.getFirst())) {</span>
+						// not valid, remove it
+<span class="nc" id="L96">						shiftAssignment.removeShiftEventAssignment(event.getID());</span>
+					}
+<span class="nc" id="L98">				}</span>
+			}
+<span class="nc bnc" id="L100" title="All 2 branches missed.">		} else if (!isUndo) {</span>
+			//the window got increased, we need to find the direction of increase and adjust the gap event
+			//other shift events are not effected by resize as they stay at the same place
+			long resizeAmountInMillis;
+			short overTimeGapType;
+
+<span class="nc bnc" id="L106" title="All 2 branches missed.">			if (isMoveOperation(oldStartEnd, newStartEnd)) {</span>
+				//resize increase happen from both ends - and move operation is already performed
+<span class="nc" id="L108">				resizeAmountInMillis = getChangeInDurationInMillis(oldStartEnd, newStartEnd);</span>
+<span class="nc" id="L109">				overTimeGapType = 2;</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">			} else if (newStartEnd.getFirst().equals(oldStartEnd.getFirst())) {</span>
+				//resize increase happened at the back
+<span class="nc" id="L112">				resizeAmountInMillis = newStartEnd.getSecond().getTime() - oldStartEnd.getSecond().getTime();</span>
+<span class="nc" id="L113">				overTimeGapType = 2;</span>
+			} else {
+				//resize increase happened from the front
+<span class="nc" id="L116">				resizeAmountInMillis = newStartEnd.getFirst().getTime() - oldStartEnd.getFirst().getTime();</span>
+<span class="nc" id="L117">				overTimeGapType = 1;</span>
+			}
+
+<span class="nc" id="L120">			Collection&lt;ShiftEventAssignment&gt; shiftEvents = shiftAssignment.getChildren();</span>
+<span class="nc bnc" id="L121" title="All 8 branches missed.">			if (resizeAmountInMillis != 0 &amp;&amp; overTimeGapType != 0 &amp;&amp; shiftEvents != null &amp;&amp; !shiftEvents.isEmpty()) {</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">				for (ShiftEventAssignment event : shiftEvents) {</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">					if (event.getOverTimeGapType() == overTimeGapType</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">							&amp;&amp; event.getActivityID().equals(Activity.ACTIVITY_SHIFT_OVERTIME_GAP)) {</span>
+						// overtime gap
+<span class="nc" id="L126">						event.setStartTime(new Date(event.getStartTime().getTime()+resizeAmountInMillis));</span>
+<span class="nc" id="L127">						shiftAssignment.updateShiftEventAssignment(event);</span>
+<span class="nc" id="L128">						break;</span>
+					}
+<span class="nc" id="L130">				}</span>
+			}
+		}
+<span class="nc" id="L133">	}</span>
+
+	public static boolean isOTBefore(ShiftAssignment sa, ShiftEventAssignment event) {
+<span class="nc bnc" id="L136" title="All 4 branches missed.">		if (EventUtils.isOT(event) &amp;&amp; event.getStartTime().equals(sa.getStartTime())) {</span>
+<span class="nc" id="L137">			return true;</span>
+		}
+<span class="nc" id="L139">		return false;</span>
+	}
+
+	public static boolean isOTAfter(ShiftAssignment sa, ShiftEventAssignment event) {
+<span class="nc bnc" id="L143" title="All 4 branches missed.">		if (EventUtils.isOT(event) &amp;&amp; event.getEndTime().equals(sa.getEndTime())) {</span>
+<span class="nc" id="L144">			return true;</span>
+		}
+<span class="nc" id="L146">		return false;</span>
+	}
+
+	/**
+	 * If the new start date occurs after the old start date (implies a shrinking of the shift's window from the beginning of the shift)
+	 * or if the new end date occurs before the old end date (implies a shrinking of the shift's window from the end of the shift), this
+	 * method will return true.  True may be returned EVEN IF the total duration is now larger than before (for example, the end of the
+	 * shift was extended but the beginning was shrunk by a lesser amount).
+	 */
+	private static boolean didShiftWindowGetShortened(Pair&lt;Date, Date&gt; oldStartEnd, Pair&lt;Date, Date&gt; newStartEnd) {
+<span class="nc bnc" id="L156" title="All 2 branches missed.">		return newStartEnd.getFirst().after(oldStartEnd.getFirst()) ||</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">				newStartEnd.getSecond().before(oldStartEnd.getSecond());</span>
+	}
+
+	/**
+	 * Returns the duration change in millis
+	 */
+	private static long getChangeInDurationInMillis(Pair&lt;Date, Date&gt; oldStartEnd, Pair&lt;Date, Date&gt; newStartEnd) {
+<span class="nc" id="L164">		return (newStartEnd.getSecond().getTime() - newStartEnd.getFirst().getTime())</span>
+<span class="nc" id="L165">				- (oldStartEnd.getSecond().getTime() - oldStartEnd.getFirst().getTime());</span>
+	}
+
+	/**
+	 * Checks if the start and end dates both are different then it is a move operation
+	 *
+	 * @param oldStartEnd - Pair representing start/end dates of the old shift assignment (before modification).
+	 * @param newStartEnd - Pair representing start/end dates of the new shift assignment (after modification).
+	 *
+	 * @return true if both start and end dates have changed else false
+	 */
+	public static boolean isMoveOperation(Pair&lt;Date, Date&gt; oldStartEnd, Pair&lt;Date, Date&gt; newStartEnd) {
+<span class="nc bnc" id="L177" title="All 2 branches missed.">		return !oldStartEnd.getFirst().equals(newStartEnd.getFirst()) &amp;&amp;</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">				!oldStartEnd.getSecond().equals(newStartEnd.getSecond());</span>
+	}
+
+	/**
+	 * Returns the duration of the shift portion of the shift assignment, which excludes the
+	 * durations of the OT Extensions and gaps.
+	 */
+	public static int getDurationOfShiftPortionOfShiftAssignment(ShiftAssignment sa) {
+<span class="nc" id="L186">		return sa.getDuration() - sa.getExtensionBefore() - sa.getExtensionAfter();</span>
+	}
+
+	private static boolean areShiftIDsEqual(ID shiftId1, ID shiftId2) {
+<span class="nc bnc" id="L190" title="All 2 branches missed.">		if (shiftId1 == null) {</span>
+<span class="nc bnc" id="L191" title="All 2 branches missed.">			return shiftId2 == null;</span>
+		}
+<span class="nc" id="L193">		return shiftId1.equals(shiftId2);</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

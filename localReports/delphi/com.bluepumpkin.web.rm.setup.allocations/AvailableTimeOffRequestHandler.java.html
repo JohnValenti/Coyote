@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AvailableTimeOffRequestHandler.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.setup.allocations</a> &gt; <span class="el_source">AvailableTimeOffRequestHandler.java</span></div><h1>AvailableTimeOffRequestHandler.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.setup.allocations;
+
+import java.rmi.RemoteException;
+import java.text.NumberFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TONotifyMessage;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.bluepumpkin.ejb.rm.l10n.RmSettingKey;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOIntervalCalendar;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.ejb.MonthRange;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.BlackoutDay;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.CalendarTimeOffDay;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOIntervalAllocation;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPool;
+import com.bluepumpkin.ejb.rm.util.TOIntervalCalendarUtil;
+import com.bluepumpkin.ejb.rm.util.TONotifyMessageClient;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
+import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.keys.RmPageAction;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.l10n.RmWebLogBundleKey;
+import com.bluepumpkin.web.rm.setup.allocations.interval.AvailableTimeOffIntervalCalendarPC;
+import com.bluepumpkin.web.rm.setup.allocations.interval.AvailableTimeOffIntervalCalendarViewModel;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.system.RequestContext;
+
+/**
+ * Title          AvailableTimeOffRequestHandler
+ * Description
+ * Copyright      Copyright (c) 2002
+ * Company        Blue Pumpkin Software, Inc
+ * @author        Howard Mullings
+ * @version       1.0
+ */
+<span class="nc" id="L55">public class AvailableTimeOffRequestHandler extends OrganizationRequestHandler {</span>
+<span class="nc" id="L56">	private static final Category log =</span>
+<span class="nc" id="L57">		Log.initCategory(AvailableTimeOffRequestHandler.class.getName());</span>
+
+	/**
+	 * Process Request for the User page
+	 *
+	 * @param context The Request Context
+	 */
+	@Override
+	public void processRequest(RequestContext context) throws Exception
+	{
+		// Process requested action
+<span class="nc bnc" id="L68" title="All 2 branches missed.">		if (isAction(context, PageAction.SAVE)) {</span>
+<span class="nc" id="L69">			processSave(context);</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.TOIC_INTERVAL_ACTION)) {</span>
+<span class="nc" id="L71">			processIntervalAction(context);</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">		} else if (isAction(context, PageAction.IMPORT)) {</span>
+<span class="nc" id="L73">			processImport(context);</span>
+<span class="nc bnc" id="L74" title="All 4 branches missed.">		} else if (isAction(context, PageAction.REFRESH) ||isAction(context,RmPageAction.TIMEOFF_ALLOCATION_TYPE_CHANGE_ACTION)) {</span>
+<span class="nc" id="L75">			setNextPage(context, TimeOffPoolListRH.EDIT_PAGE);</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">        } else if (isAction(context, PageAction.CANCEL)) {</span>
+<span class="nc" id="L77">			setNextPage(context, TimeOffPoolListRH.LIST_PAGE);</span>
+        } else {
+			//return to time off pools list page
+<span class="nc" id="L80">			setNextPage(context, TimeOffPoolListRH.LIST_PAGE);</span>
+		}
+<span class="nc" id="L82">	}</span>
+
+	/**
+	 * Processes the Save action
+	 * @param context RequestContext        The Request context object
+	 */
+	private void processSave(RequestContext context)
+	{
+<span class="nc" id="L90">		AvailableTimeOffPageModel model = new AvailableTimeOffPageModel(context);</span>
+<span class="nc" id="L91">		model.extractParameters(context.getRequest());</span>
+
+<span class="nc bnc" id="L93" title="All 2 branches missed.">		if (!isAuthorizedForOrg(context, PrivilegeKeys.TOM_EDITAVAILABLETIMEOFF, true))</span>
+		{
+<span class="nc" id="L95">			return;</span>
+		}
+
+		// Store page model in request object
+<span class="nc" id="L99">		context.setPageModel(model);</span>
+
+<span class="nc bnc" id="L101" title="All 2 branches missed.">		if (model.validate())</span>
+		{
+			try
+			{
+<span class="nc" id="L105">				ID poolID = model.getPoolID();</span>
+<span class="nc" id="L106">				TOPool pool = model.getPool();</span>
+
+				// get the pool's waitlist settings from the request
+<span class="nc" id="L109">				getWaitlistSettings(context, pool);</span>
+
+<span class="nc bnc" id="L111" title="All 2 branches missed.">				if (poolID == null)</span>
+				{
+					// create a new pool
+<span class="nc" id="L114">					poolID = AvailableTimeOffModelHandler.createTOPool(pool);</span>
+<span class="nc" id="L115">					model.setPoolID(poolID);</span>
+				} else {
+					// update an existing pool
+<span class="nc" id="L118">					AvailableTimeOffModelHandler.updateTOPool(pool);</span>
+				}
+
+<span class="nc bnc" id="L121" title="All 2 branches missed.">				if (poolID != null) {</span>
+<span class="nc" id="L122">					saveAllocations(context, model, pool);</span>
+				}
+
+				// trigger auto scan if user selected the option and waitlist is NEWLY enabled
+<span class="nc bnc" id="L126" title="All 6 branches missed.">				if (pool.isWaitlistEnabled() &amp;&amp; pool.isIsWaitlistscan() &amp;&amp; !model.getWlScanEnabled()) {</span>
+<span class="nc" id="L127">					triggerWaitlistScan(model.getSelectedIDObject());</span>
+				}
+<span class="nc" id="L129">			} catch (Exception ex) {</span>
+<span class="nc" id="L130">				log.l7dError(RmWebLogBundleKey.ORG_RM_TIME_OFF_CREATE_FAILURE, ex);</span>
+<span class="nc" id="L131">				String msgID = RmWebBundleKey.ORG_RM_TIME_OFF_CREATE_FAILURE;</span>
+<span class="nc" id="L132">				model.addPageMessage(Message.ERROR_TYPE, msgID, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L133">			}</span>
+		}
+<span class="nc" id="L135">	}</span>
+
+	private void saveAllocations(RequestContext context, AvailableTimeOffPageModel model, TOPool pool) throws MultiUserException,
+			RemoteException, ParseException, BbmException {
+
+<span class="nc bnc" id="L140" title="All 2 branches missed.">		if (model.isIntervalAllocationType()) {</span>
+<span class="nc" id="L141">			saveIntervalAllocations(context, model, pool);</span>
+		} else {
+			// now save the time off allocations for the pool
+<span class="nc" id="L144">			CalendarTimeOffDay[] calendarTimeOffDays = model.getCalendarTimeOffDays();</span>
+<span class="nc" id="L145">			AvailableTimeOffModelHandler.saveCalendarTimeOffDays(calendarTimeOffDays, pool.getId());</span>
+		}
+<span class="nc" id="L147">	}</span>
+
+	private void saveIntervalAllocations(RequestContext context, AvailableTimeOffPageModel model, TOPool pool) throws ParseException,
+			BbmException, RemoteException, MultiUserException {
+
+<span class="nc" id="L152">		AvailableTimeOffIntervalCalendarPC toicPC = model.getIntervalAllocationPC();</span>
+<span class="nc" id="L153">		AvailableTimeOffIntervalCalendarViewModel vm = toicPC.getIntervalAllocationViewModel();</span>
+<span class="nc" id="L154">		Map&lt;LocalDate, List&lt;TOIntervalAllocation&gt;&gt; intervalMap = new HashMap&lt;LocalDate, List&lt;TOIntervalAllocation&gt;&gt;();</span>
+<span class="nc" id="L155">		Organization org = OrganizationModelHandler.getOrganization(context, pool.getOrganizationId());</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">		if (vm != null) {</span>
+<span class="nc" id="L157">			NumberFormat numberFormat = toicPC.getNumberFormat();</span>
+<span class="nc" id="L158">			SimpleDateFormat dateTimeAttributeFormat = AvailableTimeOffIntervalCalendarPC.getDateTimeFormatGmt();</span>
+<span class="nc" id="L159">			List&lt;TOIntervalAllocation&gt; intervals = vm.getIntervalAllocations(pool.getID(), dateTimeAttributeFormat, numberFormat);</span>
+<span class="nc" id="L160">			intervalMap = TOIntervalCalendarUtil.toLocalDateMap(intervals, org.getTimeZone());</span>
+		}
+<span class="nc" id="L162">		MonthRange monthRange = toicPC.getMonthRange();</span>
+<span class="nc" id="L163">		BlackoutDay[] blackoutDays = toicPC.getBlackoutDays();</span>
+<span class="nc" id="L164">		AvailableTimeOffModelHandler.saveTimeOffIntervalCalendar(intervalMap, pool.getID(), org.getTimeZone(), monthRange, blackoutDays);</span>
+<span class="nc" id="L165">	}</span>
+
+	private void getWaitlistSettings(RequestContext context, TOPool pool)
+	{
+<span class="nc" id="L169">		HttpServletRequest request = context.getRequest();</span>
+<span class="nc" id="L170">        String key = RmSettingKey.ORG_RM_SETTINGS_TO_WAITLIST_FEATURE_ENABLE;</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">        boolean isWaitlistEnabled = request.getParameter(AvailableTimeOffPageModel.getNameKey(key)) != null;</span>
+<span class="nc" id="L172">        pool.setWaitlistEnabled(isWaitlistEnabled);</span>
+
+<span class="nc bnc" id="L174" title="All 2 branches missed.">		if (isWaitlistEnabled) {</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">			boolean isScanEnabled = request.getParameter(AvailableTimeOffPageModel.getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_WAITLIST_SCAN_ENABLE)) != null;</span>
+			//waitlist settings: save only when enabled
+<span class="nc" id="L177">			pool.setIsWaitlistscan(isScanEnabled);</span>
+<span class="nc" id="L178">			Pair[] pairArray = new Pair[3];</span>
+<span class="nc" id="L179">			pairArray[0] = getWLSortOrderPair(request, &quot;0&quot;);</span>
+<span class="nc" id="L180">			pairArray[1] = getWLSortOrderPair(request, &quot;1&quot;);</span>
+<span class="nc" id="L181">			pairArray[2] = getWLSortOrderPair(request, &quot;2&quot;);</span>
+<span class="nc" id="L182">			pool.setTOWaitlistPriortyOrderSettings(pairArray);</span>
+		}
+<span class="nc" id="L184">	}</span>
+
+	private Pair&lt;String, String&gt; getWLSortOrderPair(HttpServletRequest request, String index) {
+<span class="nc" id="L187">		String column = getParameter(request, AvailableTimeOffPageModel.getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_WAITLIST_ORDER_PREFIX + index) + AvailableTimeOffPageModel.COLUMN);</span>
+<span class="nc" id="L188">		String order = getParameter(request, AvailableTimeOffPageModel.getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_WAITLIST_ORDER_PREFIX + index) + AvailableTimeOffPageModel.ORDER);</span>
+
+<span class="nc bnc" id="L190" title="All 4 branches missed.">		if (!StringUtil.isEmpty(column) &amp;&amp; !StringUtil.isEmpty(order)) {</span>
+<span class="nc" id="L191">			return new Pair&lt;String, String&gt;(column, order);</span>
+		} else {
+<span class="nc" id="L193">			return new Pair&lt;String, String&gt;(RmSettingKey.ORG_RM_SETTINGS_TO_WAITLIST_ORDER_COLUMN_NO_VALUE, RmSettingKey.ORG_RM_SETTINGS_TO_WAITLIST_ORDER_COLUMN_NO_VALUE);</span>
+		}
+	}
+
+	public void triggerWaitlistScan(ID orgID) throws BbmUpdateException {
+<span class="nc" id="L198">        TONotifyMessageClient.scanTOWaitlist(orgID,true, TONotifyMessage.TO_NOTIFY_WAITLIST_SETTING_CHANGE);</span>
+<span class="nc" id="L199">	}</span>
+
+	/**
+	 * Get a normal html paramater.
+	 *
+	 * @param request - request
+	 * @param key - the parameter name.
+	 *
+	 * @return String - the html parameter or null.
+	 */
+	private String getParameter(HttpServletRequest request, String key) {
+<span class="nc" id="L210">		key = AvailableTimeOffPageModel.getNameKey(key);</span>
+<span class="nc" id="L211">		return request.getParameter(key);</span>
+	}
+
+	/**
+	 * AvailableTimeOffIntervalCalendarPC.getBlackoutDays returns an array for each day of the month. Remove the null items.
+	 *
+	 * @param blackoutDays
+	 * @return
+	 */
+	private List&lt;BlackoutDay&gt; getNonNullBlackoutDays(BlackoutDay[] blackoutDays) {
+<span class="nc" id="L221">		List&lt;BlackoutDay&gt; results = new ArrayList&lt;BlackoutDay&gt;(blackoutDays.length);</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">		for (BlackoutDay blackoutDay : blackoutDays) {</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">			if (blackoutDay != null) {</span>
+<span class="nc" id="L224">				results.add(blackoutDay);</span>
+			}
+		}
+<span class="nc" id="L227">		return results;</span>
+	}
+
+	/**
+	 * Processes the Import action
+	 * @param context RequestContext        The Request context object
+	 */
+	private void processImport(RequestContext context)
+	{
+<span class="nc" id="L236">		AvailableTimeOffImportPageModel model = new AvailableTimeOffImportPageModel(context);</span>
+<span class="nc" id="L237">		model.extractParameters(context.getRequest());</span>
+
+<span class="nc bnc" id="L239" title="All 2 branches missed.">		if (!isAuthorizedForOrg(context, PrivilegeKeys.TOM_EDITAVAILABLETIMEOFF, true))</span>
+		{
+<span class="nc" id="L241">			return;</span>
+		}
+
+		// Store page model in request object
+<span class="nc" id="L245">		context.setPageModel(model);</span>
+		try
+		{
+<span class="nc" id="L248">			model.processUpload(context);</span>
+		}
+<span class="nc" id="L250">		catch (Exception e)</span>
+		{
+<span class="nc" id="L252">			log.error(&quot;&quot;, e);</span>
+<span class="nc" id="L253">		}</span>
+<span class="nc" id="L254">	}</span>
+
+	private void processIntervalAction(RequestContext context) {
+<span class="nc" id="L257">		AvailableTimeOffPageModel model = new AvailableTimeOffPageModel(context);</span>
+<span class="nc" id="L258">		model.extractParameters(context.getRequest());</span>
+
+<span class="nc bnc" id="L260" title="All 2 branches missed.">		if (!isAuthorizedForOrg(context, PrivilegeKeys.TOM_EDITAVAILABLETIMEOFF, true)) {</span>
+<span class="nc" id="L261">			return;</span>
+		}
+
+		// Store page model in request object
+<span class="nc" id="L265">		context.setPageModel(model);</span>
+		// always set it to dirty because submitting from the popup clears this value.
+<span class="nc" id="L267">		model.setPageDirty(true);</span>
+
+<span class="nc bnc" id="L269" title="All 2 branches missed.">		if (!model.validate()) {</span>
+<span class="nc" id="L270">			return;</span>
+		}
+		try {
+<span class="nc" id="L273">			processIntervalAction(context, model);</span>
+<span class="nc" id="L274">		} catch (Exception ex) {</span>
+<span class="nc" id="L275">			log.l7dError(RmWebLogBundleKey.ORG_RM_TIME_OFF_CREATE_FAILURE, ex);</span>
+<span class="nc" id="L276">			String msgID = RmWebBundleKey.TIMEOFF_POOL_FAILED_TO_SET_INTERVAL;</span>
+<span class="nc" id="L277">			model.addPageMessage(Message.ERROR_TYPE, msgID, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L278">		}</span>
+<span class="nc" id="L279">	}</span>
+
+	private void processIntervalAction(RequestContext context, AvailableTimeOffPageModel model) throws BbmException, RemoteException,
+			ParseException, CloneNotSupportedException {
+
+<span class="nc" id="L284">		TOPool pool = model.getPool();</span>
+<span class="nc" id="L285">		Organization org = OrganizationModelHandler.getOrganization(context, pool.getOrganizationId());</span>
+<span class="nc" id="L286">		AvailableTimeOffIntervalCalendarPC toicPC = model.getIntervalAllocationPC();</span>
+<span class="nc" id="L287">		SimpleDateFormat dateTimeAttributeFormat = AvailableTimeOffIntervalCalendarPC.getDateTimeFormatGmt();</span>
+
+		// view model -&gt; model
+<span class="nc" id="L290">		AvailableTimeOffIntervalCalendarViewModel viewModel = toicPC.getIntervalAllocationViewModel();</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">		if (viewModel == null) {</span>
+<span class="nc" id="L292">			model.addPageMessage(Message.ERROR_TYPE, RmWebBundleKey.TIMEOFF_POOL_FAILED_TO_SET_INTERVAL, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L293">			return;</span>
+		}
+<span class="nc" id="L295">		List&lt;TOIntervalAllocation&gt; intervals = viewModel.getIntervalAllocations(model.getPoolID(), dateTimeAttributeFormat,</span>
+<span class="nc" id="L296">				toicPC.getNumberFormat());</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">		if (intervals == null) {</span>
+<span class="nc" id="L298">			model.addPageMessage(Message.ERROR_TYPE, RmWebBundleKey.TIMEOFF_POOL_FAILED_TO_SET_INTERVAL, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L299">			return;</span>
+		}
+
+<span class="nc" id="L302">		List&lt;BlackoutDay&gt; blackoutDays = getNonNullBlackoutDays(toicPC.getBlackoutDays());</span>
+
+<span class="nc" id="L304">		String action = toicPC.getIntervalAllocationMode();</span>
+<span class="nc" id="L305">		log.debug(&quot;processIntervalAction: &quot; + action);</span>
+<span class="nc bnc" id="L306" title="All 4 branches missed.">		if (PageAction.CREATE_NEW.equals(action) || PageAction.EDIT.equals(action)) {</span>
+			// popup params -&gt; model
+<span class="nc" id="L308">			TOIntervalAllocation interval = toicPC.getIntervalForAction(org, pool.getID());</span>
+<span class="nc bnc" id="L309" title="All 2 branches missed.">			if (interval != null) {</span>
+<span class="nc bnc" id="L310" title="All 2 branches missed.">				if (PageAction.CREATE_NEW.equals(action)) {</span>
+<span class="nc" id="L311">					TOIntervalCalendarUtil.addInterval(intervals, interval);</span>
+				} else {
+<span class="nc" id="L313">					log.debug(&quot;processIntervalAction: IntervalAllocationEditIntervalStartTime: &quot;</span>
+<span class="nc" id="L314">							+ toicPC.getIntervalAllocationEditIntervalStartTime());</span>
+
+<span class="nc" id="L316">					Date editStartTime = dateTimeAttributeFormat.parse(toicPC.getIntervalAllocationEditIntervalStartTime());</span>
+<span class="nc" id="L317">					TOIntervalCalendarUtil.editInterval(intervals, interval, editStartTime, org.getTimeZone(),</span>
+<span class="nc" id="L318">							org.getDayBoundaryOffset());</span>
+				}
+			}
+<span class="nc bnc" id="L321" title="All 2 branches missed.">		} else if (PageAction.DELETE.equals(action)) {</span>
+<span class="nc" id="L322">			Date startTime = dateTimeAttributeFormat.parse(toicPC.getIntervalAllocationStartTime());</span>
+<span class="nc" id="L323">			log.debug(&quot;processIntervalAction: Delete at IntervalAllocationStartTime: &quot; + toicPC.getIntervalAllocationStartTime());</span>
+<span class="nc" id="L324">			TOIntervalCalendarUtil.removeInterval(intervals, startTime, org.getTimeZone(), org.getDayBoundaryOffset());</span>
+		}
+
+<span class="nc" id="L327">		TOIntervalCalendar intervalCalendar = viewModel.getTOIntervalCalendar(pool.getID(), org, intervals, blackoutDays,</span>
+				dateTimeAttributeFormat);
+<span class="nc" id="L329">		toicPC.setTimeOffIntervalCalendar(intervalCalendar);</span>
+<span class="nc" id="L330">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

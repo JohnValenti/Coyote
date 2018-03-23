@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PublishingPeriodDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.schedule.ejb</a> &gt; <span class="el_source">PublishingPeriodDAO.java</span></div><h1>PublishingPeriodDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.schedule.ejb;
+
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  Publishing period DAO class
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, inc
+ * @author       Greg Fichtenholtz
+ * @version		 1.0
+ */
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.dao.DAOBase;
+import com.bluepumpkin.ejb.bbm.schedule.model.BbmSchedulePublishingException;
+import com.bluepumpkin.ejb.bbm.schedule.model.PublishingPeriod;
+import com.bluepumpkin.ejb.bbm.schedule.model.PublishingPeriodFields;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectUtil;
+
+public class PublishingPeriodDAO extends DAOBase&lt;PublishingPeriod&gt; {
+<span class="fc" id="L33">	private static FieldInfo m_fieldInfo = new PublishingPeriodFields();</span>
+
+	protected FieldInfo getFieldInfo() {
+<span class="fc" id="L36">		return m_fieldInfo;</span>
+	}
+
+	public PublishingPeriodDAO() {
+<span class="fc" id="L40">		super();</span>
+<span class="fc" id="L41">	}</span>
+
+	public PublishingPeriodDAO(Jdmo dmo) {
+<span class="fc" id="L44">		super(dmo);</span>
+<span class="fc" id="L45">	}</span>
+
+	public PublishingPeriod createValueObject() {
+<span class="fc" id="L48">		return new PublishingPeriod();</span>
+	}
+
+	/**
+	 * For a given set of work resources, returns a collection of published
+	 * periods that overlap with the given time window note: return all the
+	 * periods overlapped with the time range. including both partial and full
+	 * publishing
+	 */
+	public List&lt;Collection&lt;PublishingPeriod&gt;&gt; getPublishedPeriods(Collection&lt;ID&gt; workResourceIDs, Date dtStart, Date dtEnd)
+			throws BbmFinderException {
+		try {
+<span class="fc" id="L60">			StringBuffer buf = new StringBuffer(100);</span>
+<span class="fc" id="L61">			buf.append(&quot; A.WORKRESOURCEID IN &quot;);</span>
+<span class="fc" id="L62">			buf.append(m_dmo.createInClause(workResourceIDs));</span>
+<span class="pc bpc" id="L63" title="1 of 2 branches missed.">			if (dtStart != null) {</span>
+<span class="fc" id="L64">				buf.append(&quot; AND A.ENDTIME &gt; '&quot;).append(JdmoUtil.formatDBString(dtStart)).append(&quot;'&quot;);</span>
+			}
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">			if (dtEnd != null) {</span>
+<span class="fc" id="L67">				buf.append(&quot; AND A.STARTTIME &lt; '&quot;).append(JdmoUtil.formatDBString(dtEnd)).append(&quot;'&quot;);</span>
+			}
+<span class="fc" id="L69">			buf.append(&quot; order by A.STARTTIME ASC &quot;);// QA99660</span>
+
+<span class="fc" id="L71">			Collection&lt;PublishingPeriod&gt; periods = getObjects(buf.toString());</span>
+
+<span class="fc" id="L73">			HashMap&lt;ID, List&lt;PublishingPeriod&gt;&gt; mapPeriods = ValueObjectUtil.groupByField(PublishingPeriodFields.WORKRESOURCEID, periods);</span>
+
+			/* repackage as a list */
+<span class="fc" id="L76">			List&lt;Collection&lt;PublishingPeriod&gt;&gt; listPeriods = new ArrayList&lt;Collection&lt;PublishingPeriod&gt;&gt;(workResourceIDs.size());</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; it = workResourceIDs.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L78">				ID workResourceID = it.next();</span>
+<span class="fc" id="L79">				listPeriods.add(mapPeriods.get(workResourceID));</span>
+<span class="fc" id="L80">			}</span>
+<span class="fc" id="L81">			return listPeriods;</span>
+<span class="nc" id="L82">		} catch (JdmoException e) {</span>
+<span class="nc" id="L83">			throw new BbmFinderException(e);</span>
+		}
+	}
+
+	/**
+	 * Record the fact that the schedule has been published for this set of
+	 * employees and this time window
+	 */
+	public void publishPeriods(Collection&lt;ID&gt; workResourceIDs, Date dtStart, Date dtEnd)
+			throws BbmSchedulePublishingException {
+<span class="fc" id="L93">		publishPeriods(workResourceIDs, dtStart, dtEnd, false);</span>
+<span class="fc" id="L94">	}</span>
+
+	public void publishPeriods(Collection&lt;ID&gt; workResourceIDs, Date dtStart, Date dtEnd, boolean isPartialPublish)
+			throws BbmSchedulePublishingException {
+<span class="fc" id="L98">		unPublishPeriods(workResourceIDs, dtStart, dtEnd, isPartialPublish);</span>
+		try {
+<span class="fc" id="L100">			List&lt;PublishingPeriod&gt; listToCreate = new ArrayList&lt;PublishingPeriod&gt;(workResourceIDs.size());</span>
+<span class="fc" id="L101">			Date cur = new Date();</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; it = workResourceIDs.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L103">				ID workResourceID = it.next();</span>
+<span class="fc" id="L104">				PublishingPeriod newPeriod = new PublishingPeriod();</span>
+<span class="fc" id="L105">				newPeriod.setWorkResourceID(workResourceID);</span>
+<span class="fc" id="L106">				newPeriod.setStartTime(dtStart);</span>
+<span class="fc" id="L107">				newPeriod.setEndTime(dtEnd);</span>
+<span class="fc" id="L108">				newPeriod.setPublishTime(cur); // current time</span>
+<span class="fc" id="L109">				newPeriod.setIsPartialPublish(isPartialPublish);</span>
+<span class="fc" id="L110">				listToCreate.add(newPeriod);</span>
+<span class="fc" id="L111">			}</span>
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">			if (!listToCreate.isEmpty())</span>
+<span class="fc" id="L113">				createObjects(listToCreate);</span>
+<span class="nc" id="L114">		} catch (Exception e) {</span>
+<span class="nc" id="L115">			throw new BbmSchedulePublishingException(e);</span>
+<span class="fc" id="L116">		}</span>
+<span class="fc" id="L117">	}</span>
+
+	/**
+	 * Record the fact that the schedule has been un-published for this set of
+	 * employees and this time window
+	 */
+	public void unPublishPeriods(Collection&lt;ID&gt; workResourceIDs, Date dtStart, Date dtEnd)
+			throws BbmSchedulePublishingException {
+<span class="nc" id="L125">		unPublishPeriods(workResourceIDs, dtStart, dtEnd, false);</span>
+<span class="nc" id="L126">	}</span>
+
+	public void unPublishPeriods(Collection&lt;ID&gt; workResourceIDs, Date dtStart, Date dtEnd, boolean isPartialPublish)
+			throws BbmSchedulePublishingException {
+		/*
+		 * here we shall try to minimize the number of records that are stored
+		 * in the PUBLISHINGPERIOD table, so we shall go through the existing
+		 * records and remove records that are no longer needed and update the
+		 * ones that need to be updated
+		 */
+		try {
+<span class="fc" id="L137">			StringBuffer buf = new StringBuffer(100);</span>
+<span class="fc" id="L138">			buf.append(&quot; A.WORKRESOURCEID IN &quot;);</span>
+<span class="fc" id="L139">			buf.append(m_dmo.createInClause(workResourceIDs));</span>
+<span class="fc bfc" id="L140" title="All 2 branches covered.">			if (isPartialPublish)</span>
+				// for partial unpublish, only remove the partial publish
+				// period.
+<span class="fc" id="L143">				buf.append(&quot; AND A.ISPARTIALPUBLISH = &quot;).append(JdmoUtil.formatBool(isPartialPublish));</span>
+<span class="fc" id="L144">			buf.append(&quot; AND A.STARTTIME &lt; '&quot; + JdmoUtil.formatDBString(dtEnd));</span>
+<span class="fc" id="L145">			buf.append(&quot;' AND A.ENDTIME &gt; '&quot; + JdmoUtil.formatDBString(dtStart));</span>
+<span class="fc" id="L146">			buf.append(&quot;'&quot;);</span>
+
+			/* find the overlapping periods */
+<span class="fc" id="L149">			HashMap&lt;ID, Collection&lt;PublishingPeriod&gt;&gt; mapOldPeriods = ValueObjectUtil.groupByField(PublishingPeriodFields.WORKRESOURCEID,</span>
+<span class="fc" id="L150">					getObjects(buf.toString()));</span>
+
+<span class="fc" id="L152">			List&lt;ID&gt; listToDelete = new ArrayList&lt;ID&gt;();</span>
+<span class="fc" id="L153">			List&lt;PublishingPeriod&gt; listToUpdate = new ArrayList&lt;PublishingPeriod&gt;();</span>
+<span class="fc" id="L154">			List&lt;PublishingPeriod&gt; listToCreate = new ArrayList&lt;PublishingPeriod&gt;();</span>
+
+<span class="fc bfc" id="L156" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; it = workResourceIDs.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L157">				ID workResourceID = it.next();</span>
+<span class="fc" id="L158">				Collection&lt;PublishingPeriod&gt; oldPeriods = mapOldPeriods.get(workResourceID);</span>
+<span class="pc bpc" id="L159" title="1 of 4 branches missed.">				if (oldPeriods != null &amp;&amp; !oldPeriods.isEmpty()) {</span>
+<span class="fc bfc" id="L160" title="All 2 branches covered.">					for (Iterator&lt;PublishingPeriod&gt; it2 = oldPeriods.iterator(); it2.hasNext();) {</span>
+<span class="fc" id="L161">						PublishingPeriod oldPeriod = it2.next();</span>
+
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">						if (oldPeriod.getStartTime().before(dtStart)) {</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">							if (oldPeriod.getEndTime().after(dtEnd)) {</span>
+								/*
+								 * if this is the case, we'll need to split this
+								 * old period into two
+								 */
+<span class="nc" id="L169">								PublishingPeriod newPeriod = new PublishingPeriod();</span>
+<span class="nc" id="L170">								newPeriod.setWorkResourceID(workResourceID);</span>
+<span class="nc" id="L171">								newPeriod.setStartTime(oldPeriod.getStartTime());</span>
+<span class="nc" id="L172">								newPeriod.setEndTime(dtStart);</span>
+<span class="nc" id="L173">								newPeriod.setPublishTime(oldPeriod.getPublishTime());</span>
+<span class="nc" id="L174">								newPeriod.setIsPartialPublish(oldPeriod.isPartialPublish());</span>
+<span class="nc" id="L175">								listToCreate.add(newPeriod);</span>
+
+<span class="nc" id="L177">								oldPeriod.setStartTime(dtEnd);</span>
+<span class="nc" id="L178">								listToUpdate.add(oldPeriod);</span>
+<span class="nc" id="L179">							} else {</span>
+<span class="nc" id="L180">								oldPeriod.setEndTime(dtStart);</span>
+<span class="nc" id="L181">								listToUpdate.add(oldPeriod);</span>
+							}
+						} else {
+<span class="pc bpc" id="L184" title="1 of 2 branches missed.">							if (oldPeriod.getEndTime().after(dtEnd)) {</span>
+<span class="nc" id="L185">								oldPeriod.setStartTime(dtEnd);</span>
+<span class="nc" id="L186">								listToUpdate.add(oldPeriod);</span>
+							} else {
+<span class="fc" id="L188">								listToDelete.add(oldPeriod.getID());</span>
+							}
+						}
+<span class="fc" id="L191">					}</span>
+				}
+<span class="fc" id="L193">			}</span>
+
+<span class="fc bfc" id="L195" title="All 2 branches covered.">			if (!listToDelete.isEmpty()) {</span>
+<span class="fc" id="L196">				deleteObjects(listToDelete);</span>
+			}
+
+<span class="pc bpc" id="L199" title="1 of 2 branches missed.">			if (!listToUpdate.isEmpty()) {</span>
+<span class="nc" id="L200">				updateObjects(listToUpdate);</span>
+			}
+
+<span class="pc bpc" id="L203" title="1 of 2 branches missed.">			if (!listToCreate.isEmpty()) {</span>
+<span class="nc" id="L204">				createObjects(listToCreate);</span>
+			}
+<span class="nc" id="L206">		} catch (Exception e) {</span>
+<span class="nc" id="L207">			throw new BbmSchedulePublishingException(e);</span>
+<span class="fc" id="L208">		}</span>
+<span class="fc" id="L209">	}</span>
+
+	// override the deleteObjects method defined in DAOBase
+	public void deleteObjects(Collection colIDs) throws BbmRemoveException {
+<span class="pc bpc" id="L213" title="2 of 4 branches missed.">		if (colIDs == null || colIDs.isEmpty())</span>
+<span class="nc" id="L214">			return;</span>
+		try {
+			// delete records in publishingperiod table
+<span class="fc" id="L217">			StringBuffer stmt = new StringBuffer(100);</span>
+<span class="fc" id="L218">			stmt.append(&quot;DELETE PUBLISHINGPERIOD WHERE ID IN &quot; + m_dmo.createInClause(colIDs));</span>
+<span class="fc" id="L219">			m_dmo.execute(stmt.toString());</span>
+<span class="nc" id="L220">		} catch (Exception ex) {</span>
+<span class="nc" id="L221">			new BbmRemoveException(ex);</span>
+<span class="fc" id="L222">		}</span>
+<span class="fc" id="L223">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

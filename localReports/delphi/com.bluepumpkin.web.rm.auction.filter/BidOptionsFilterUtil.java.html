@@ -1,0 +1,1535 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>BidOptionsFilterUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.auction.filter</a> &gt; <span class="el_source">BidOptionsFilterUtil.java</span></div><h1>BidOptionsFilterUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.auction.filter;
+
+import java.rmi.RemoteException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.ResourceBundle;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.IDStringPair;
+import com.bluepumpkin.common.localization.LocaleContext;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignOrg;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.skill.model.Skill;
+import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeTemplate;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.model.ShiftBidAuction;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.validation.SameSkillsMatchBidSchedValidationRule;
+import com.bluepumpkin.ejb.rm.setup.autoprocessing.model.AutoProcessingRule;
+import com.bluepumpkin.ejb.rm.setup.autoprocessing.model.AutoProcessingValidation;
+import com.bluepumpkin.ejb.rm.setup.validation.model.ValidationRule;
+import com.bluepumpkin.ejb.rm.util.ActivityFilterLink;
+import com.bluepumpkin.ejb.rm.util.DateTimeFilterLink;
+import com.bluepumpkin.ejb.rm.util.RmFilterChain;
+import com.bluepumpkin.ejb.rm.util.ShiftFilterLink;
+import com.bluepumpkin.ejb.rm.util.SizeFilterLink;
+import com.bluepumpkin.ejb.rm.util.SkillFilterLink;
+import com.bluepumpkin.web.bbm.activity.ActivityModelHandler;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.bbm.employee.EmployeeModelHandler;
+import com.bluepumpkin.web.bbm.skill.SkillModelHandler;
+import com.bluepumpkin.web.rm.auction.AuctionMH;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.setup.autoprocessing.AutoProcessingModelHandler;
+import com.bluepumpkin.web.rm.setup.validation.ValidationModelHandler;
+import com.bluepumpkin.web.rm.validation.ValidationRulesMap;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.html.HtmlChoiceInput;
+import com.witness.web.uif.util.js.JSUtil;
+
+/**
+ * Title: BidOptionsFilterUtil Description: Utility class for the Bid Options
+ * Filter Copyright: Copyright (c) 2005 Company: Witness Systems, Inc.
+ * 
+ * @author Gonzalo Quintanar
+ * @version 1.0
+ */
+
+<span class="nc" id="L61">public class BidOptionsFilterUtil {</span>
+	private static final String EMPTY = &quot;&quot;;
+	private static final String SPACE = &quot; &quot;;
+	private static final String NBSP = HtmlUtil.NBSP;
+	public static final String TAB = NBSP + NBSP + NBSP + NBSP;
+	protected static final String ROW_HEIGHT = &quot;18&quot;;
+
+	public static final String IS_SKILLED_SP_KEY = &quot;IS_SKILLED_SP_KEY&quot;;
+
+	/**
+	 * Conver a Java String array to a JavaScript string array.
+	 * 
+	 * @param buds
+	 *            The java array containing the strings to be added to a
+	 *            JavaScript array.
+	 * @return The JavaScript String for the array.
+	 */
+	public static String toJSArray(String buds[]) {
+<span class="nc" id="L79">		StringBuffer sb = new StringBuffer(200);</span>
+
+<span class="nc" id="L81">		sb.append(&quot;[&quot;);</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">		if (buds != null) {</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">			for (int i = 0; i &lt; buds.length; i++) {</span>
+<span class="nc" id="L84">				sb.append(&quot;'&quot;).append(buds[i]).append(&quot;'&quot;);</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">				if (i &lt; buds.length - 1)</span>
+<span class="nc" id="L86">					sb.append(&quot;, &quot;);</span>
+			}
+		}
+<span class="nc" id="L89">		sb.append(&quot;]&quot;);</span>
+<span class="nc" id="L90">		return sb.toString();</span>
+	}
+
+	/**
+	 * Wrap 2 items in an HTML table with 1 row and 2 columns.
+	 * 
+	 * @param style
+	 *            The style to apply to the TD elements
+	 * @param items
+	 *            An array of HTML items to place in the table cells The first
+	 *            row contains : item1, item2.
+	 * @return the HTML string for the table
+	 */
+	public static String wrapInTable1Row2Col(String style, String items[]) {
+<span class="nc" id="L104">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L105">		sb.append(&quot;&lt;table border=\&quot;0\&quot; cellpadding=\&quot;0\&quot; cellspacing=\&quot;0\&quot; width=\&quot;100%\&quot; align=\&quot;left\&quot; &gt;&quot;);</span>
+<span class="nc" id="L106">		sb.append(&quot;&lt;tr&gt;&lt;td width=\&quot;30%\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L107">		sb.append(items[0]);</span>
+<span class="nc" id="L108">		sb.append(&quot;&lt;/td&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L109">		sb.append(items[1]);</span>
+<span class="nc" id="L110">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L111">		sb.append(&quot;&lt;tr&gt;&lt;td&gt;&quot; + HtmlUtil.makeSpacerHtml(1, 3) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L112">		sb.append(&quot;&lt;/table&gt;&quot;);</span>
+<span class="nc" id="L113">		return sb.toString();</span>
+	}
+
+	/**
+	 * Wrap 4 items in an HTML table with 2 rows and 2 columns.
+	 * 
+	 * @param style
+	 *            The style to apply to the TD elements
+	 * @param items
+	 *            An array of HTML items to place in the table cells The first
+	 *            row contains : item1, item2. The second row contains: item3,
+	 *            item4.
+	 * @return the HTML string for the table
+	 */
+	public static String wrapInTable2Row2Col(String style, String items[]) {
+<span class="nc" id="L128">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L129">		sb.append(&quot;&lt;table border=\&quot;0\&quot; cellpadding=\&quot;0\&quot; cellspacing=\&quot;0\&quot; width=\&quot;100%\&quot; height=\&quot;0%\&quot; align=\&quot;left\&quot; &gt;&quot;);</span>
+<span class="nc" id="L130">		sb.append(&quot;&lt;tr&gt;&lt;td width=\&quot;30%\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L131">		sb.append(items[0]);</span>
+<span class="nc" id="L132">		sb.append(&quot;&lt;/td&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L133">		sb.append(items[1]);</span>
+<span class="nc" id="L134">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L135">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L136">		sb.append(items[2]);</span>
+<span class="nc" id="L137">		sb.append(&quot;&lt;/td&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L138">		sb.append(items[3]);</span>
+<span class="nc" id="L139">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L140">		sb.append(&quot;&lt;tr&gt;&lt;td&gt;&quot; + HtmlUtil.makeSpacerHtml(1, 3) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L141">		sb.append(&quot;&lt;/table&gt;&quot;);</span>
+<span class="nc" id="L142">		return sb.toString();</span>
+	}
+
+	/**
+	 * Wrap 5 items in an HTML table with 2 rows and 3 columns.
+	 * 
+	 * @param style
+	 *            The style to apply to the TD elements
+	 * @param items
+	 *            An array of HTML items to place in the table cells The first
+	 *            row contains : item1, item2, item3. The second row contains:
+	 *            item4, item5.
+	 * @return the HTML string for the table
+	 */
+	public static String wrapInTable2Row3Col(String style, String itmes[]) {
+<span class="nc" id="L157">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L158">		sb.append(&quot;&lt;table border=\&quot;0\&quot; cellpadding=\&quot;0\&quot; cellspacing=\&quot;0\&quot; width=\&quot;100%\&quot; align=\&quot;left\&quot; &gt;&quot;);</span>
+<span class="nc" id="L159">		sb.append(&quot;&lt;tr&gt;&lt;td width=\&quot;30%\&quot;&gt;&quot;);</span>
+<span class="nc" id="L160">		sb.append(itmes[0]);</span>
+<span class="nc" id="L161">		sb.append(&quot;&lt;/td&gt;&lt;td width=\&quot;40%\&quot; class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L162">		sb.append(itmes[1]);</span>
+<span class="nc" id="L163">		sb.append(&quot;&lt;/td&gt;&lt;td width=\&quot;30%\&quot; class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L164">		sb.append(itmes[2]);</span>
+<span class="nc" id="L165">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L166">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L167">		sb.append(itmes[3]);</span>
+<span class="nc" id="L168">		sb.append(&quot;&lt;/td&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L169">		sb.append(itmes[4]);</span>
+<span class="nc" id="L170">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L171">		sb.append(&quot;&lt;tr&gt;&lt;td&gt;&quot; + HtmlUtil.makeSpacerHtml(1, 3) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L172">		sb.append(&quot;&lt;/table&gt;&quot;);</span>
+<span class="nc" id="L173">		return sb.toString();</span>
+	}
+
+	/**
+	 * Wrap 5 items in an HTML table with 3 rows and 2 columns.
+	 * 
+	 * @param style
+	 *            The style to apply to the TD elements
+	 * @param items
+	 *            An array of HTML items to place in the table cells The first
+	 *            row contains : item1, item2. The second row contains: item3,
+	 *            item4. The third row contains: item5.
+	 * @return the HTML string for the table
+	 */
+	public static String wrapInTable3Row2Col(String style, String itmes[]) {
+<span class="nc" id="L188">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L189">		sb.append(&quot;&lt;table border=\&quot;0\&quot; cellpadding=\&quot;0\&quot; cellspacing=\&quot;0\&quot; width=\&quot;100%\&quot; align=\&quot;left\&quot; &gt;&quot;);</span>
+<span class="nc" id="L190">		sb.append(&quot;&lt;tr&gt;&lt;td width=\&quot;30%\&quot;&gt;&quot;);</span>
+<span class="nc" id="L191">		sb.append(itmes[0]);</span>
+<span class="nc" id="L192">		sb.append(&quot;&lt;/td&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L193">		sb.append(itmes[1]);</span>
+<span class="nc" id="L194">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L195">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L196">		sb.append(itmes[2]);</span>
+<span class="nc" id="L197">		sb.append(&quot;&lt;/td&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L198">		sb.append(itmes[3]);</span>
+<span class="nc" id="L199">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L200">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L201">		sb.append(itmes[4]);</span>
+<span class="nc" id="L202">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L203">		sb.append(&quot;&lt;tr&gt;&lt;td&gt;&quot; + HtmlUtil.makeSpacerHtml(1, 3) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L204">		sb.append(&quot;&lt;/table&gt;&quot;);</span>
+<span class="nc" id="L205">		return sb.toString();</span>
+	}
+
+	/**
+	 * Wrap 3 items in an HTML table with 1 row and 3 columns.
+	 * 
+	 * @param style
+	 *            The style to apply to the TD elements
+	 * @param items
+	 *            An array of HTML items to place in the table cells The first
+	 *            row contains : item1, item2, item3.
+	 * @return the HTML string for the table
+	 */
+	public static String wrapInTable1Row3Col(String style, String items[]) {
+<span class="nc" id="L219">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L220">		sb.append(&quot;&lt;table border=\&quot;0\&quot; cellpadding=\&quot;0\&quot; cellspacing=\&quot;0\&quot; width=\&quot;100%\&quot; align=\&quot;left\&quot; &gt;&quot;);</span>
+<span class="nc" id="L221">		sb.append(&quot;&lt;tr&gt;&lt;td width=\&quot;30%\&quot;&gt;&quot;);</span>
+<span class="nc" id="L222">		sb.append(items[0]);</span>
+<span class="nc" id="L223">		sb.append(&quot;&lt;/td&gt;&lt;td width=\&quot;40%\&quot; class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L224">		sb.append(items[1]);</span>
+<span class="nc" id="L225">		sb.append(&quot;&lt;/td&gt;&lt;td width=\&quot;30%\&quot; class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L226">		sb.append(items[2]);</span>
+<span class="nc" id="L227">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L228">		sb.append(&quot;&lt;tr&gt;&lt;td&gt;&quot; + HtmlUtil.makeSpacerHtml(1, 3) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L229">		sb.append(&quot;&lt;/table&gt;&quot;);</span>
+<span class="nc" id="L230">		return sb.toString();</span>
+	}
+
+	/**
+	 * Wrap 3 items in an HTML table with 3 rows and 1 column.
+	 * 
+	 * @param items
+	 *            An array of HTML items to place in the table cells
+	 * @param style
+	 *            The style to apply to the TD elements
+	 * @return the HTML string for the table
+	 */
+	public static String wrapInTable3Row1Col(String style, String itmes[]) {
+<span class="nc" id="L243">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L244">		sb.append(&quot;&lt;table border=\&quot;0\&quot; cellpadding=\&quot;0\&quot; cellspacing=\&quot;0\&quot; width=\&quot;100%\&quot; height=\&quot;100%\&quot; align=\&quot;left\&quot; &gt;&quot;);</span>
+<span class="nc" id="L245">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; style=\&quot;height:36px; vertical-align: middle;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L246">		sb.append(itmes[0]);</span>
+<span class="nc" id="L247">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L248">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; style=\&quot;height:36px; vertical-align: middle;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L249">		sb.append(itmes[1]);</span>
+<span class="nc" id="L250">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L251">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; style=\&quot;height:36px; vertical-align: middle;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L252">		sb.append(itmes[2]);</span>
+<span class="nc" id="L253">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L254">		sb.append(&quot;&lt;/table&gt;&quot;);</span>
+<span class="nc" id="L255">		return sb.toString();</span>
+	}
+
+	/**
+	 * Wrap 4 items in an HTML table with 4 rows and 1 column.
+	 * 
+	 * @param items
+	 *            An array of HTML items to place in the table cells
+	 * @param style
+	 *            The style to apply to the TD elements
+	 * @return the HTML string for the table
+	 */
+	public static String wrapInTable4Row1Col(String style, String itmes[]) {
+<span class="nc" id="L268">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L269">		sb.append(&quot;&lt;table border=\&quot;0\&quot; cellpadding=\&quot;0\&quot; cellspacing=\&quot;0\&quot; width=\&quot;100%\&quot; height=\&quot;100%\&quot; align=\&quot;left\&quot; &gt;&quot;);</span>
+<span class="nc" id="L270">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L271">		sb.append(itmes[0]);</span>
+<span class="nc" id="L272">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L273">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L274">		sb.append(itmes[1]);</span>
+<span class="nc" id="L275">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L276">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L277">		sb.append(itmes[2]);</span>
+<span class="nc" id="L278">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L279">		sb.append(&quot;&lt;tr&gt;&lt;td class=\&quot;&quot; + style + &quot;\&quot; nowrap&gt;&quot;);</span>
+<span class="nc" id="L280">		sb.append(itmes[3]);</span>
+<span class="nc" id="L281">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L282">		sb.append(&quot;&lt;/table&gt;&quot;);</span>
+<span class="nc" id="L283">		return sb.toString();</span>
+	}
+
+	/**
+	 * Wrap an item in an HTML span tag.
+	 * 
+	 * @param item
+	 *            The string to wrap in a span element
+	 * @param id
+	 *            The id for the span element
+	 * @param style
+	 *            The style to apply to the span element
+	 * @return the HTML string for the span
+	 */
+	public static String wrapInSpan(String item, String id, String style) {
+<span class="nc" id="L298">		StringBuffer sb = new StringBuffer(50);</span>
+<span class="nc" id="L299">		sb.append(&quot;&lt;span id=\&quot;&quot;).append(id).append(&quot;\&quot; style=\&quot;&quot; + style + &quot;\&quot;&gt;&quot;).append(item).append(&quot;&lt;/span&gt;&quot;);</span>
+<span class="nc" id="L300">		return sb.toString();</span>
+	}
+
+	/**
+	 * Create a single radio button form element.
+	 * 
+	 * @param elementName
+	 *            The form element name
+	 * @param value
+	 *            The value given to the button
+	 * @param label
+	 *            The label for the button
+	 * @param defaultValue
+	 *            Tells us which radio button (if any) to check.
+	 * @return The HTML string for the buttons.
+	 */
+	public static String createRadio(String elementName, String value, String label, String defaultValue) {
+<span class="nc" id="L317">		boolean isChecked = defaultValue.equals(value);</span>
+<span class="nc" id="L318">		HtmlChoiceInput choice = HtmlChoiceInput.newInstance(elementName, value, label, isChecked, JSUtil.ON_CHANGE,</span>
+				false);
+<span class="nc" id="L320">		return choice.getHtmlDisplay();</span>
+	}
+
+	/**
+	 * Makes a selection list entry html string
+	 * 
+	 * @param title
+	 *            The title attribute of the selector which appears whenmouse
+	 *            hovers over it.
+	 * @return html code for the text input
+	 */
+	public static String makeSelectInput(String inputName, String selectedValue, String onChange, Collection options,
+			String width, String title) {
+		// return HtmlUtil.makeSelectInput(inputName, &quot;&quot;, new
+		// String[]{selectedValue}, onChange, options, width);
+<span class="nc" id="L335">		return HtmlUtil.makeSelectInput(inputName, options, &quot;&quot;, selectedValue, title, onChange, true, width);</span>
+	}
+
+	/**
+	 * Return true if any of the StringBuffers in the array have a length &gt; 0.
+	 * 
+	 * @param sbs
+	 *            an array of StringBuffers to check the length of.
+	 * @return
+	 */
+	private static boolean hasMore(StringBuffer sbs[]) {
+<span class="nc" id="L346">		boolean result = false;</span>
+<span class="nc bnc" id="L347" title="All 2 branches missed.">		for (int i = 0; i &lt; sbs.length; i++) {</span>
+<span class="nc bnc" id="L348" title="All 2 branches missed.">			if (sbs[i].length() &gt; 0)</span>
+<span class="nc" id="L349">				return true;</span>
+		}
+<span class="nc" id="L351">		return result;</span>
+	}
+
+	/**
+	 * Get a String representation of the Filter data. It contains all of the
+	 * filter settings in a format which is easy to understand by the user. It
+	 * also contains some HTML (for use in a MessagePC).
+	 */
+	public static String getFilterString(BidOptionsFilter filter, ShiftBidAuction auction, RequestContext context,
+			Localizer localizer, LocaleContext localeContext) throws RemoteException, BbmException, Exception {
+<span class="nc" id="L361">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L362">		ResourceBundle bundle = localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L363">		String optionsLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_OPTIONS);</span>
+<span class="nc" id="L364">		String hoursLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_HOURS);</span>
+<span class="nc" id="L365">		String shiftLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SHIFT);</span>
+<span class="nc" id="L366">		String scheduleLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SCHEDULE);</span>
+<span class="nc" id="L367">		String workPatternLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_WORK_PATTERN);</span>
+<span class="nc" id="L368">		String availabilityLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_AVAILABILITY);</span>
+<span class="nc" id="L369">		String scheduleLengthLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SCHEDULE_LENGTH);</span>
+<span class="nc" id="L370">		String scheduleLengthUseLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SCHEDULE_LENGTH_USE);</span>
+<span class="nc" id="L371">		String shiftLengthLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SHIFT_LENGTH);</span>
+<span class="nc" id="L372">		String shiftLengthUseLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SHIFT_LENGTH_USE);</span>
+<span class="nc" id="L373">		String actualScheduleLengthLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_ACTUAL_SCHEDULE_LENGTH);</span>
+<span class="nc" id="L374">		String actualShiftLengthLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_ACTUAL_SHIFT_LENGTH);</span>
+<span class="nc" id="L375">		String paidTimeOnlyLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_PAID_TIME_ONLY);</span>
+<span class="nc" id="L376">		String startLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_START);</span>
+<span class="nc" id="L377">		String endLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_END);</span>
+<span class="nc" id="L378">		String activityLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_ACTIVITY);</span>
+<span class="nc" id="L379">		String activityLengthLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_LENGTH);</span>
+<span class="nc" id="L380">		String nameLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_NAME);</span>
+<span class="nc" id="L381">		String templateLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_TEMPLATE);</span>
+<span class="nc" id="L382">		String lengthLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_LENGTH);</span>
+<span class="nc" id="L383">		String matchLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_MATCH);</span>
+<span class="nc" id="L384">		String matchAllLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_ALL_SHIFTS_IN_SCHEDULE);</span>
+<span class="nc" id="L385">		String matchAnyLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_ANY_SHIFT_IN_SCHEDULE);</span>
+<span class="nc" id="L386">		String skillsLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SKILLS);</span>
+<span class="nc" id="L387">		String skillsExactlyLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SKILLS_EXACTLY);</span>
+<span class="nc" id="L388">		String skillsAtLeastLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SKILLS_MINIMUM);</span>
+<span class="nc" id="L389">		String skillsAtMostLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_SKILLS_MAXIMUM);</span>
+<span class="nc" id="L390">		String noneLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_NONE);</span>
+
+<span class="nc" id="L392">		boolean isWeeklyMode = auction.getIsFullPeriodSchedule();</span>
+
+		// ///////////////////////////////////////////////////////
+		// Template Section
+		// ///////////////////////////////////////////////////////
+
+		// Work Pattern Name (only show if user made a selection)
+<span class="nc" id="L399">		StringBuffer templateName = new StringBuffer(40);</span>
+<span class="nc bnc" id="L400" title="All 2 branches missed.">		if (filter.getID(&quot;workPatternId&quot;) != null) {</span>
+<span class="nc" id="L401">			templateName.append(TAB).append(bold(nameLabel + &quot;:&quot;)).append(SPACE);</span>
+			// templateName.append(getWorkPatternName(filter.getID(&quot;workPatternId&quot;),
+			// getOrgIDs(context, auction)));
+<span class="nc" id="L404">			templateName.append(getTemplateName(context, filter.getID(&quot;workPatternId&quot;))); // ,</span>
+																							// auction.getID(),
+																							// orgID,
+																							// bidderID));
+<span class="nc" id="L408">			templateName.append(HtmlUtil.NEW_LINE);</span>
+		}
+
+<span class="nc bnc" id="L411" title="All 2 branches missed.">		if (templateName.length() &gt; 0)</span>
+<span class="nc" id="L412">			sb.append(bold(templateLabel)).append(HtmlUtil.NEW_LINE).append(templateName);</span>
+
+		// ///////////////////////////////////////////////////////
+		// Availability Section
+		// ///////////////////////////////////////////////////////
+
+		// Availability (number of bids)
+<span class="nc" id="L419">		StringBuffer availability = new StringBuffer(40);</span>
+<span class="nc" id="L420">		availability.append(getNumberSummary(BidOptionsFilterPopupPM.DD_TYPE_COUNT, filter.getInt(&quot;availability&quot;),</span>
+<span class="nc" id="L421">				filter.getInt(&quot;availabilityValue1&quot;), filter.getInt(&quot;availabilityValue2&quot;), &quot;&quot;, optionsLabel, false,</span>
+				false, localizer, localeContext));
+<span class="nc bnc" id="L423" title="All 2 branches missed.">		if (availability.length() &gt; 0)</span>
+<span class="nc" id="L424">			sb.append(bold(availabilityLabel)).append(HtmlUtil.NEW_LINE).append(TAB).append(availability);</span>
+
+		// ///////////////////////////////////////////////////////
+		// Schedule Length Section
+		// ///////////////////////////////////////////////////////
+
+<span class="nc bnc" id="L430" title="All 2 branches missed.">		if (isWeeklyMode) {</span>
+			// Schedule Length (number of hours)
+<span class="nc" id="L432">			StringBuffer scheduleLength = new StringBuffer(40);</span>
+<span class="nc" id="L433">			String scheduleLengthString = getNumberSummary(BidOptionsFilterPopupPM.DD_TYPE_LENGTH,</span>
+<span class="nc" id="L434">					filter.getInt(&quot;scheduleLengthType&quot;), filter.getFloat(&quot;scheduleLengthValue1&quot;),</span>
+<span class="nc" id="L435">					filter.getFloat(&quot;scheduleLengthValue2&quot;), lengthLabel + &quot;:&quot;, hoursLabel, false, false, localizer,</span>
+					localeContext);
+<span class="nc bnc" id="L437" title="All 2 branches missed.">			if (scheduleLengthString.length() &gt; 0)</span>
+<span class="nc" id="L438">				scheduleLength.append(TAB).append(scheduleLengthString);</span>
+
+			// Schedule Length Use (only show if Schedule Length has been
+			// entered)
+<span class="nc" id="L442">			StringBuffer scheduleLengthUse = new StringBuffer(40);</span>
+<span class="nc bnc" id="L443" title="All 2 branches missed.">			if (filter.getInt(&quot;scheduleLengthType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L444">				scheduleLengthUse.append(TAB).append(TAB).append(bold(matchLabel + &quot;:&quot;)).append(SPACE);</span>
+<span class="nc bnc" id="L445" title="All 2 branches missed.">				if (filter.getInt(&quot;scheduleLengthUse&quot;) == BidOptionsFilter.LENGTH_USE_ACTUAL)</span>
+<span class="nc" id="L446">					scheduleLengthUse.append(actualScheduleLengthLabel);</span>
+				else
+<span class="nc" id="L448">					scheduleLengthUse.append(paidTimeOnlyLabel);</span>
+<span class="nc" id="L449">				scheduleLengthUse.append(HtmlUtil.NEW_LINE);</span>
+			}
+
+<span class="nc bnc" id="L452" title="All 4 branches missed.">			if ((scheduleLength.length() &gt; 0) || (scheduleLengthUse.length() &gt; 0))</span>
+<span class="nc" id="L453">				sb.append(bold(scheduleLabel)).append(HtmlUtil.NEW_LINE).append(scheduleLength)</span>
+<span class="nc" id="L454">						.append(scheduleLengthUse);</span>
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Shift Section
+		// ///////////////////////////////////////////////////////
+
+		// Shift Name (only show if user made a selection)
+<span class="nc" id="L462">		StringBuffer shiftName = new StringBuffer(40);</span>
+<span class="nc bnc" id="L463" title="All 2 branches missed.">		if (filter.getID(&quot;shiftId&quot;) != null) {</span>
+<span class="nc" id="L464">			shiftName.append(TAB).append(bold(nameLabel + &quot;:&quot;)).append(SPACE);</span>
+<span class="nc" id="L465">			shiftName.append(getShiftName(filter.getID(&quot;shiftId&quot;), getOrgIDs(context, auction)));</span>
+<span class="nc bnc" id="L466" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L467">				shiftName.append(HtmlUtil.NEW_LINE).append(TAB).append(TAB).append(bold(matchLabel + &quot;:&quot;))</span>
+<span class="nc" id="L468">						.append(SPACE);</span>
+<span class="nc bnc" id="L469" title="All 2 branches missed.">				shiftName.append(filter.getBool(&quot;shiftIdMatchAll&quot;) ? matchAllLabel : matchAnyLabel);</span>
+			}
+<span class="nc" id="L471">			shiftName.append(HtmlUtil.NEW_LINE);</span>
+		}
+
+		// Shift Length (number of hours)
+<span class="nc" id="L475">		StringBuffer shiftLength = new StringBuffer(40);</span>
+<span class="nc" id="L476">		String shiftLengthString = getNumberSummary(BidOptionsFilterPopupPM.DD_TYPE_LENGTH,</span>
+<span class="nc" id="L477">				filter.getInt(&quot;shiftLengthType&quot;), filter.getFloat(&quot;shiftLengthValue1&quot;),</span>
+<span class="nc" id="L478">				filter.getFloat(&quot;shiftLengthValue2&quot;), lengthLabel + &quot;:&quot;, hoursLabel, isWeeklyMode,</span>
+<span class="nc" id="L479">				filter.getBool(&quot;shiftLengthMatchAll&quot;), localizer, localeContext);</span>
+<span class="nc bnc" id="L480" title="All 2 branches missed.">		if (shiftLengthString.length() &gt; 0)</span>
+<span class="nc" id="L481">			shiftLength.append(TAB).append(shiftLengthString);</span>
+
+		// Shift Length Use (only show if Shift Length has been entered)
+<span class="nc" id="L484">		StringBuffer shiftLengthUse = new StringBuffer(40);</span>
+<span class="nc bnc" id="L485" title="All 2 branches missed.">		if (filter.getInt(&quot;shiftLengthType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L486">			shiftLengthUse.append(TAB).append(TAB).append(bold(matchLabel + &quot;:&quot;)).append(SPACE);</span>
+<span class="nc bnc" id="L487" title="All 2 branches missed.">			if (filter.getInt(&quot;shiftLengthUse&quot;) == BidOptionsFilter.LENGTH_USE_ACTUAL)</span>
+<span class="nc" id="L488">				shiftLengthUse.append(actualShiftLengthLabel);</span>
+			else
+<span class="nc" id="L490">				shiftLengthUse.append(paidTimeOnlyLabel);</span>
+<span class="nc" id="L491">			shiftLengthUse.append(HtmlUtil.NEW_LINE);</span>
+		}
+
+		// Shift Start Time
+<span class="nc" id="L495">		StringBuffer shiftStart = new StringBuffer(40);</span>
+<span class="nc" id="L496">		String shiftStartString = getTimeSummary(filter.getInt(&quot;shiftStartType&quot;), filter.getInt(&quot;shiftStart1&quot;),</span>
+<span class="nc" id="L497">				filter.getInt(&quot;shiftStart2&quot;), startLabel + &quot;:&quot;, isWeeklyMode, filter.getBool(&quot;shiftStartMatchAll&quot;),</span>
+				localizer, localeContext);
+<span class="nc bnc" id="L499" title="All 2 branches missed.">		if (shiftStartString.length() &gt; 0)</span>
+<span class="nc" id="L500">			shiftStart.append(TAB).append(shiftStartString);</span>
+
+		// Shift End Time
+<span class="nc" id="L503">		StringBuffer shiftEnd = new StringBuffer(40);</span>
+<span class="nc" id="L504">		String shiftEndString = getTimeSummary(filter.getInt(&quot;shiftEndType&quot;), filter.getInt(&quot;shiftEnd1&quot;),</span>
+<span class="nc" id="L505">				filter.getInt(&quot;shiftEnd2&quot;), endLabel + &quot;:&quot;, isWeeklyMode, filter.getBool(&quot;shiftEndMatchAll&quot;),</span>
+				localizer, localeContext);
+<span class="nc bnc" id="L507" title="All 2 branches missed.">		if (shiftEndString.length() &gt; 0)</span>
+<span class="nc" id="L508">			shiftEnd.append(TAB).append(shiftEndString);</span>
+
+<span class="nc bnc" id="L510" title="All 6 branches missed.">		if ((shiftName.length() &gt; 0) || (shiftLength.length() &gt; 0) || (shiftLengthUse.length() &gt; 0)</span>
+<span class="nc bnc" id="L511" title="All 4 branches missed.">				|| (shiftStart.length() &gt; 0) || (shiftEnd.length() &gt; 0)) {</span>
+<span class="nc" id="L512">			sb.append(bold(shiftLabel)).append(HtmlUtil.NEW_LINE);</span>
+<span class="nc" id="L513">			sb.append(shiftName).append(shiftLength).append(shiftLengthUse).append(shiftStart).append(shiftEnd);</span>
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Activity1 Section
+		// ///////////////////////////////////////////////////////
+
+		// Activity1 Name (only show if user made a selection)
+<span class="nc" id="L521">		StringBuffer activity1Name = new StringBuffer(40);</span>
+<span class="nc bnc" id="L522" title="All 2 branches missed.">		if (filter.getID(&quot;activity1Id&quot;) != null) {</span>
+<span class="nc" id="L523">			activity1Name.append(TAB).append(bold(nameLabel + &quot;:&quot;)).append(SPACE);</span>
+<span class="nc" id="L524">			activity1Name.append(getActivityName(context, filter.getID(&quot;activity1Id&quot;).toInt()));</span>
+<span class="nc bnc" id="L525" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L526">				activity1Name.append(HtmlUtil.NEW_LINE).append(TAB).append(TAB).append(bold(matchLabel + &quot;:&quot;))</span>
+<span class="nc" id="L527">						.append(SPACE);</span>
+<span class="nc bnc" id="L528" title="All 2 branches missed.">				activity1Name.append(filter.getBool(&quot;activity1IdMatchAll&quot;) ? matchAllLabel : matchAnyLabel);</span>
+			}
+<span class="nc" id="L530">			activity1Name.append(HtmlUtil.NEW_LINE);</span>
+		}
+
+		// Activity1 Length (number of hours)
+<span class="nc" id="L534">		StringBuffer activity1Length = new StringBuffer(40);</span>
+<span class="nc" id="L535">		String activity1LengthString = getNumberSummary(BidOptionsFilterPopupPM.DD_TYPE_LENGTH,</span>
+<span class="nc" id="L536">				filter.getInt(&quot;activity1LengthType&quot;), filter.getFloat(&quot;activity1LengthValue1&quot;),</span>
+<span class="nc" id="L537">				filter.getFloat(&quot;activity1LengthValue2&quot;), activityLengthLabel + &quot;:&quot;, hoursLabel, isWeeklyMode,</span>
+<span class="nc" id="L538">				filter.getBool(&quot;activity1LengthMatchAll&quot;), localizer, localeContext);</span>
+<span class="nc bnc" id="L539" title="All 2 branches missed.">		if (activity1LengthString.length() &gt; 0)</span>
+<span class="nc" id="L540">			activity1Length.append(TAB).append(activity1LengthString);</span>
+
+		// Activity1 Start Time
+<span class="nc" id="L543">		StringBuffer activity1Start = new StringBuffer(40);</span>
+<span class="nc" id="L544">		String activity1StartString = getTimeSummary(filter.getInt(&quot;activity1StartType&quot;),</span>
+<span class="nc" id="L545">				filter.getInt(&quot;activity1Start1&quot;), filter.getInt(&quot;activity1Start2&quot;), startLabel + &quot;:&quot;, isWeeklyMode,</span>
+<span class="nc" id="L546">				filter.getBool(&quot;activity1StartMatchAll&quot;), localizer, localeContext);</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">		if (activity1StartString.length() &gt; 0)</span>
+<span class="nc" id="L548">			activity1Start.append(TAB).append(activity1StartString);</span>
+
+<span class="nc bnc" id="L550" title="All 6 branches missed.">		if ((activity1Name.length() &gt; 0) || (activity1Length.length() &gt; 0) || (activity1Start.length() &gt; 0)) {</span>
+<span class="nc" id="L551">			sb.append(bold(activityLabel)).append(HtmlUtil.NEW_LINE);</span>
+<span class="nc" id="L552">			sb.append(activity1Name).append(activity1Length).append(activity1Start);</span>
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Activity2 Section
+		// ///////////////////////////////////////////////////////
+
+		// Activity2 Name (only show if user made a selection)
+<span class="nc" id="L560">		StringBuffer activity2Name = new StringBuffer(40);</span>
+<span class="nc bnc" id="L561" title="All 2 branches missed.">		if (filter.getID(&quot;activity2Id&quot;) != null) {</span>
+<span class="nc" id="L562">			activity2Name.append(TAB).append(bold(nameLabel + &quot;:&quot;)).append(SPACE);</span>
+<span class="nc" id="L563">			activity2Name.append(getActivityName(context, filter.getID(&quot;activity2Id&quot;).toInt()));</span>
+<span class="nc bnc" id="L564" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L565">				activity2Name.append(HtmlUtil.NEW_LINE).append(TAB).append(TAB).append(bold(matchLabel + &quot;:&quot;))</span>
+<span class="nc" id="L566">						.append(SPACE);</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">				activity2Name.append(filter.getBool(&quot;activity2IdMatchAll&quot;) ? matchAllLabel : matchAnyLabel);</span>
+			}
+<span class="nc" id="L569">			activity2Name.append(HtmlUtil.NEW_LINE);</span>
+		}
+
+		// Activity2 Length (number of hours)
+<span class="nc" id="L573">		StringBuffer activity2Length = new StringBuffer(40);</span>
+<span class="nc" id="L574">		String activity2LengthString = getNumberSummary(BidOptionsFilterPopupPM.DD_TYPE_LENGTH,</span>
+<span class="nc" id="L575">				filter.getInt(&quot;activity2LengthType&quot;), filter.getFloat(&quot;activity2LengthValue1&quot;),</span>
+<span class="nc" id="L576">				filter.getFloat(&quot;activity2LengthValue2&quot;), activityLengthLabel + &quot;:&quot;, hoursLabel, isWeeklyMode,</span>
+<span class="nc" id="L577">				filter.getBool(&quot;activity2LengthMatchAll&quot;), localizer, localeContext);</span>
+<span class="nc bnc" id="L578" title="All 2 branches missed.">		if (activity2LengthString.length() &gt; 0)</span>
+<span class="nc" id="L579">			activity2Length.append(TAB).append(activity2LengthString);</span>
+
+		// Activity2 Start Time
+<span class="nc" id="L582">		StringBuffer activity2Start = new StringBuffer(40);</span>
+<span class="nc" id="L583">		String activity2StartString = getTimeSummary(filter.getInt(&quot;activity2StartType&quot;),</span>
+<span class="nc" id="L584">				filter.getInt(&quot;activity2Start1&quot;), filter.getInt(&quot;activity2Start2&quot;), startLabel + &quot;:&quot;, isWeeklyMode,</span>
+<span class="nc" id="L585">				filter.getBool(&quot;activity2StartMatchAll&quot;), localizer, localeContext);</span>
+<span class="nc bnc" id="L586" title="All 2 branches missed.">		if (activity2StartString.length() &gt; 0)</span>
+<span class="nc" id="L587">			activity2Start.append(TAB).append(activity2StartString);</span>
+
+<span class="nc bnc" id="L589" title="All 6 branches missed.">		if ((activity2Name.length() &gt; 0) || (activity2Length.length() &gt; 0) || (activity2Start.length() &gt; 0)) {</span>
+<span class="nc" id="L590">			sb.append(bold(activityLabel)).append(HtmlUtil.NEW_LINE);</span>
+<span class="nc" id="L591">			sb.append(activity2Name).append(activity2Length).append(activity2Start);</span>
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Skills Section
+		// ///////////////////////////////////////////////////////
+<span class="nc" id="L597">		Collection mappedSkillIDsList = filter.getList(&quot;skills&quot;);</span>
+<span class="nc bnc" id="L598" title="All 2 branches missed.">		if (mappedSkillIDsList != null) {</span>
+<span class="nc" id="L599">			ArrayList mappedSkillsList = new ArrayList(SkillModelHandler.getSkillsByIDs(mappedSkillIDsList));</span>
+<span class="nc" id="L600">			StringBuffer skillNames = new StringBuffer(40);</span>
+<span class="nc bnc" id="L601" title="All 2 branches missed.">			for (Iterator it = mappedSkillsList.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L602">				Skill skill = (Skill) it.next();</span>
+<span class="nc bnc" id="L603" title="All 2 branches missed.">				if (skill != null) {</span>
+<span class="nc" id="L604">					skillNames.append(HtmlUtil.NEW_LINE).append(TAB).append(skill.getName());</span>
+				}
+<span class="nc" id="L606">			}</span>
+
+<span class="nc" id="L608">			String skillsMatchLabel = &quot;&quot;;</span>
+<span class="nc" id="L609">			int skillsMatchType = filter.getInt(&quot;skillsMatchType&quot;);</span>
+<span class="nc bnc" id="L610" title="All 2 branches missed.">			if (skillsMatchType == BidOptionsFilter.SKILLS_MATCH_EXACT) {</span>
+<span class="nc" id="L611">				skillsMatchLabel = skillsExactlyLabel;</span>
+<span class="nc bnc" id="L612" title="All 2 branches missed.">				if (skillNames.length() == 0) {</span>
+					// User wants to search for all options which require no
+					// skills.
+<span class="nc" id="L615">					skillNames.append(HtmlUtil.NEW_LINE).append(TAB).append(noneLabel);</span>
+				}
+<span class="nc bnc" id="L617" title="All 2 branches missed.">			} else if (skillsMatchType == BidOptionsFilter.SKILLS_MATCH_AT_LEAST) {</span>
+<span class="nc" id="L618">				skillsMatchLabel = skillsAtLeastLabel;</span>
+<span class="nc bnc" id="L619" title="All 2 branches missed.">			} else if (skillsMatchType == BidOptionsFilter.SKILLS_MATCH_AT_MOST) {</span>
+<span class="nc" id="L620">				skillsMatchLabel = skillsAtMostLabel;</span>
+<span class="nc bnc" id="L621" title="All 2 branches missed.">				if (skillNames.length() == 0) {</span>
+					// User wants to search for all options which require no
+					// skills.
+<span class="nc" id="L624">					skillNames.append(HtmlUtil.NEW_LINE).append(TAB).append(noneLabel);</span>
+				}
+			}
+
+<span class="nc bnc" id="L628" title="All 2 branches missed.">			if (skillNames.length() &gt; 0) {</span>
+<span class="nc" id="L629">				sb.append(bold(skillsLabel)).append(SPACE).append(&quot;(&quot;).append(skillsMatchLabel).append(&quot;)&quot;)</span>
+<span class="nc" id="L630">						.append(skillNames);</span>
+			}
+		}
+<span class="nc" id="L633">		return sb.toString();</span>
+	}
+
+	/**
+	 * Produce a summary string for a particular Length or Count choice.
+	 * 
+	 * @param ddType
+	 *            The type of dropdown (DD_TYPE_LENGTH or DD_TYPE_COUNT)
+	 * @param choice
+	 *            The value of the choice from the dropdown list. (UNDEFINED,
+	 *            EQUAL, MIN, MAX, BETWEEN)
+	 * @param val1
+	 *            The value in the first input field
+	 * @param val2
+	 *            The value in the second input field
+	 * @param headerLabel
+	 *            Text to use before length value strings
+	 * @param unitsLabel
+	 *            Text to use after length value strings
+	 * @param showMatchString
+	 *            Whether to display value of 'matchAll' parameter
+	 * @param matchAll
+	 *            Pass true to append &quot;(All shifts)&quot; to time selection strings
+	 * @param localizer
+	 * @param localeContext
+	 * @return
+	 */
+	private static String getNumberSummary(int ddType, int choice, float val1, float val2, String headerLabel,
+			String unitsLabel, boolean showMatchString, boolean matchAll, Localizer localizer,
+			LocaleContext localeContext) {
+<span class="nc" id="L663">		ResourceBundle bundle = localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L664">		String matchLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_MATCH);</span>
+<span class="nc" id="L665">		String matchAllLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_ALL_SHIFTS_IN_SCHEDULE);</span>
+<span class="nc" id="L666">		String matchAnyLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_ANY_SHIFT_IN_SCHEDULE);</span>
+
+<span class="nc" id="L668">		StringBuffer sb = new StringBuffer(100);</span>
+
+<span class="nc bnc" id="L670" title="All 4 branches missed.">		if ((choice != BidOptionsFilter.UNDEFINED_INT) &amp;&amp; (val1 != BidOptionsFilter.UNDEFINED_FLOAT)) {</span>
+<span class="nc" id="L671">			String val1String = EMPTY + val1;</span>
+<span class="nc" id="L672">			String val2String = EMPTY + val2;</span>
+<span class="nc bnc" id="L673" title="All 2 branches missed.">			if (ddType == BidOptionsFilterPopupPM.DD_TYPE_COUNT) {</span>
+				// must convert floats to ints
+<span class="nc" id="L675">				val1String = EMPTY + (int) val1;</span>
+<span class="nc" id="L676">				val2String = EMPTY + (int) val2;</span>
+			}
+
+<span class="nc" id="L679">			StringBuffer choiceBuf = getDDChoiceString(ddType, choice, val1String, val2String, unitsLabel, localizer);</span>
+<span class="nc bnc" id="L680" title="All 2 branches missed.">			if (choiceBuf.length() &gt; 0) {</span>
+<span class="nc bnc" id="L681" title="All 4 branches missed.">				if ((headerLabel != null) &amp;&amp; (headerLabel.length() &gt; 0))</span>
+<span class="nc" id="L682">					sb.append(bold(headerLabel)).append(SPACE);</span>
+<span class="nc" id="L683">				sb.append(choiceBuf);</span>
+<span class="nc bnc" id="L684" title="All 2 branches missed.">				if (showMatchString) {</span>
+<span class="nc" id="L685">					sb.append(HtmlUtil.NEW_LINE).append(TAB).append(TAB).append(bold(matchLabel + &quot;:&quot;)).append(SPACE);</span>
+<span class="nc bnc" id="L686" title="All 2 branches missed.">					sb.append(matchAll ? matchAllLabel : matchAnyLabel);</span>
+				}
+<span class="nc" id="L688">				sb.append(HtmlUtil.NEW_LINE);</span>
+			}
+		}
+<span class="nc" id="L691">		return sb.toString();</span>
+	}
+
+	/**
+	 * Produce a summary string of a particular Time choice.
+	 * 
+	 * @param choice
+	 *            The value of the choice from the dropdown list. (UNDEFINED,
+	 *            MIN, MAX, BETWEEN)
+	 * @param val1
+	 *            The value in the first time field
+	 * @param val2
+	 *            The value in the second time field
+	 * @param headerLabel
+	 *            Text to use before time value strings
+	 * @param showMatchString
+	 *            Whether to display value of 'matchAll' parameter
+	 * @param matchAll
+	 *            Pass true to append &quot;(All shifts)&quot; to time selection strings
+	 * @param localizer
+	 * @param localeContext
+	 * @return
+	 */
+	private static String getTimeSummary(int choice, int val1, int val2, String headerLabel, boolean showMatchString,
+			boolean matchAll, Localizer localizer, LocaleContext localeContext) {
+<span class="nc" id="L716">		StringBuffer sb = new StringBuffer(100);</span>
+<span class="nc" id="L717">		ResourceBundle bundle = localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L718">		String matchLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_MATCH);</span>
+<span class="nc" id="L719">		String matchAllLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_ALL_SHIFTS_IN_SCHEDULE);</span>
+<span class="nc" id="L720">		String matchAnyLabel = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_ANY_SHIFT_IN_SCHEDULE);</span>
+
+<span class="nc bnc" id="L722" title="All 2 branches missed.">		if (choice != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L723">			StringBuffer choiceBuf = getDDChoiceString(BidOptionsFilterPopupPM.DD_TYPE_TIME, choice,</span>
+<span class="nc" id="L724">					formatTime(val1, localizer, localeContext), formatTime(val2, localizer, localeContext), &quot;&quot;,</span>
+					localizer);
+<span class="nc bnc" id="L726" title="All 2 branches missed.">			if (choiceBuf.length() &gt; 0) {</span>
+<span class="nc" id="L727">				sb.append(bold(headerLabel)).append(SPACE);</span>
+<span class="nc" id="L728">				sb.append(choiceBuf);</span>
+<span class="nc bnc" id="L729" title="All 2 branches missed.">				if (showMatchString) {</span>
+<span class="nc" id="L730">					sb.append(HtmlUtil.NEW_LINE).append(TAB).append(TAB).append(bold(matchLabel + &quot;:&quot;)).append(SPACE);</span>
+<span class="nc bnc" id="L731" title="All 2 branches missed.">					sb.append(matchAll ? matchAllLabel : matchAnyLabel);</span>
+				}
+<span class="nc" id="L733">				sb.append(HtmlUtil.NEW_LINE);</span>
+			}
+		}
+<span class="nc" id="L736">		return sb.toString();</span>
+	}
+
+	/**
+	 * Wrap a string in HTML bold tags.
+	 */
+	public static String bold(String s) {
+<span class="nc" id="L743">		return &quot;&lt;b&gt;&quot; + s + &quot;&lt;/b&gt;&quot;;</span>
+	}
+
+	/**
+	 * Get the time formatter.
+	 * 
+	 * @return The time formatter
+	 */
+	private static SimpleDateFormat getFormatter(Localizer localizer, LocaleContext localeContext) {
+<span class="nc" id="L752">		String timePattern = localizer.getTimeInputFormat(false);</span>
+<span class="nc" id="L753">		SimpleDateFormat tf = new SimpleDateFormat(timePattern, localeContext.getRegionalFormatLocale());</span>
+<span class="nc" id="L754">		return tf;</span>
+	}
+
+	/**
+	 * Given a number of minutes from midnight, return a localized time string.
+	 * 
+	 * @param time
+	 *            The number of minutes since midnight.
+	 * @param tz
+	 *            The TimeZone
+	 * @return The localized time string.
+	 */
+	private static String formatTime(int time, Localizer localizer, LocaleContext localeContext, TimeZone tz) {
+<span class="nc bnc" id="L767" title="All 2 branches missed.">		if (time == BidOptionsFilter.UNDEFINED_INT)</span>
+<span class="nc" id="L768">			return &quot;&quot;;</span>
+
+<span class="nc" id="L770">		return getFormatter(localizer, localeContext).format(minutesToDate(time, tz));</span>
+	}
+
+	/**
+	 * Given a number of minutes from midnight, return a localized time string.
+	 * 
+	 * @param time
+	 *            The number of minutes since midnight.
+	 * @return The localized time string.
+	 */
+	private static String formatTime(int time, Localizer localizer, LocaleContext localeContext) {
+<span class="nc" id="L781">		return formatTime(time, localizer, localeContext, null);</span>
+	}
+
+	/**
+	 * Convert a time (in minutes) to a Date.
+	 * 
+	 * @param time
+	 *            Number of minutes since midnight.
+	 * @param tz
+	 *            The TimeZone
+	 * @param convertToGMT
+	 *            True will convert the date to GMT TimeZone.
+	 * @return A date set to that time.
+	 */
+	private static Date minutesToDate(int minutes, TimeZone tz) {
+<span class="nc" id="L796">		Calendar cal = null;</span>
+<span class="nc bnc" id="L797" title="All 2 branches missed.">		if (tz != null)</span>
+<span class="nc" id="L798">			cal = Calendar.getInstance(tz);</span>
+		else
+<span class="nc" id="L800">			cal = Calendar.getInstance();</span>
+
+<span class="nc" id="L802">		cal.set(1970, 1, 1, 0, minutes, 0); // TBD: should we use the SP date</span>
+											// rather than feb 1,1970 ?
+
+		/*
+		 * System.out.println(&quot;\n\n\n\n\n&quot; + &quot;minutesToDate(): minutes=&quot; +
+		 * minutes); System.out.println(&quot;\n&quot; + &quot;TimeZone=&quot; + tz);
+		 * System.out.println(&quot;\n&quot; + &quot;cal.getTime()=&quot; + cal.getTime());
+		 */
+<span class="nc" id="L810">		return cal.getTime();</span>
+	}
+
+	/**
+	 * Get the appropriate user summary string to display for a user's drop down
+	 * choice.
+	 * 
+	 * @param ddType
+	 *            The type of dropdown (ex: DD_TYPE_TIME, DD_TYPE_LENGTH)
+	 * @param choice
+	 *            The user's choice: EQUAL, MAX, MIN, or BETWEEN
+	 * @param val1
+	 *            The first value in the string
+	 * @param val2
+	 *            The second value in the string
+	 * @param suffix
+	 *            A string which will be appended to the result
+	 * @return A StringBuffer representation of the choice. If any required
+	 *         value is undefined, returns an empty StringBuffer.
+	 */
+	private static StringBuffer getDDChoiceString(int ddType, int choice, String val1, String val2, String suffix,
+			Localizer localizer) {
+<span class="nc" id="L832">		StringBuffer output = new StringBuffer(30);</span>
+<span class="nc" id="L833">		ResourceBundle bundle = localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L834">		String equalString = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_EQUAL_TO);</span>
+<span class="nc" id="L835">		String maxString = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_NO_MORE_THAN);</span>
+<span class="nc" id="L836">		String minString = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_NO_LESS_THAN);</span>
+<span class="nc bnc" id="L837" title="All 2 branches missed.">		if (ddType == BidOptionsFilterPopupPM.DD_TYPE_TIME) {</span>
+<span class="nc" id="L838">			equalString = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_AT);</span>
+<span class="nc" id="L839">			maxString = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_NOT_AFTER);</span>
+<span class="nc" id="L840">			minString = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_NOT_BEFORE);</span>
+		}
+<span class="nc" id="L842">		String betweenString = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_BETWEEN);</span>
+<span class="nc" id="L843">		String andString = localizer.i18n(bundle, RmWebBundleKey.RM_SA_FILTER_AND);</span>
+
+<span class="nc bnc" id="L845" title="All 2 branches missed.">		if (!val1.equals(EMPTY + BidOptionsFilter.UNDEFINED_INT)) {</span>
+<span class="nc bnc" id="L846" title="All 2 branches missed.">			if (suffix == null)</span>
+<span class="nc" id="L847">				suffix = &quot;&quot;;</span>
+<span class="nc bnc" id="L848" title="All 2 branches missed.">			else if (suffix.length() &gt; 0)</span>
+<span class="nc" id="L849">				suffix = SPACE + suffix;</span>
+
+<span class="nc bnc" id="L851" title="All 5 branches missed.">			switch (choice) {</span>
+			case BidOptionsFilter.EQUAL:
+<span class="nc" id="L853">				output.append(equalString).append(SPACE).append(val1).append(suffix);</span>
+<span class="nc" id="L854">				break;</span>
+			case BidOptionsFilter.MAX:
+<span class="nc" id="L856">				output.append(maxString).append(SPACE).append(val1).append(suffix);</span>
+<span class="nc" id="L857">				break;</span>
+			case BidOptionsFilter.MIN:
+<span class="nc" id="L859">				output.append(minString).append(SPACE).append(val1).append(suffix);</span>
+<span class="nc" id="L860">				break;</span>
+			case BidOptionsFilter.BETWEEN:
+<span class="nc bnc" id="L862" title="All 2 branches missed.">				if (!val2.equals(EMPTY + BidOptionsFilter.UNDEFINED_INT)) {</span>
+<span class="nc" id="L863">					output.append(betweenString).append(SPACE).append(val1).append(SPACE);</span>
+<span class="nc" id="L864">					output.append(andString).append(SPACE).append(val2).append(suffix);</span>
+				}
+				break;
+			}
+		}
+<span class="nc" id="L869">		return output;</span>
+	}
+
+	/**
+	 * Create and return a SizeFilterLink appropriate for the parameters.
+	 * 
+	 * @param sizeType
+	 *            Type of selection (ex: EQUAL, MIN, MAX, or BETWEEN)
+	 * @param value1
+	 *            The value of the first input field.
+	 * @param value2
+	 *            The value of the second input field.
+	 * @return A SizeFilterLink initialized with the proper data for the
+	 *         sizeType.
+	 */
+	private static SizeFilterLink getSizeFilterLink(int sizeType, int value1, int value2) {
+<span class="nc" id="L885">		SizeFilterLink link = new SizeFilterLink();</span>
+<span class="nc bnc" id="L886" title="All 5 branches missed.">		switch (sizeType) {</span>
+		case BidOptionsFilter.EQUAL:
+<span class="nc" id="L888">			link.setEqual(value1);</span>
+<span class="nc" id="L889">			break;</span>
+		case BidOptionsFilter.MIN:
+<span class="nc" id="L891">			link.setMin(value1);</span>
+<span class="nc" id="L892">			break;</span>
+		case BidOptionsFilter.MAX:
+<span class="nc" id="L894">			link.setMax(value1);</span>
+<span class="nc" id="L895">			break;</span>
+		case BidOptionsFilter.BETWEEN:
+<span class="nc" id="L897">			link.setRange(value1, value2);</span>
+			break;
+		}
+<span class="nc" id="L900">		return link;</span>
+	}
+
+	/**
+	 * Create and return a DateTimeFilterLink appropriate for the time
+	 * parameters. Note: The user will enter times in Campaign timeZone, but the
+	 * backend, (including the filter link), requires GMT. We will convert.
+	 * 
+	 * @param timeType
+	 *            Type of time (ex: EQUAL, MIN, MAX, or BETWEEN)
+	 * @param value1
+	 *            The value of the first input field (number of minutes since
+	 *            midnight).
+	 * @param value2
+	 *            The value of the second input field (number of minutes since
+	 *            midnight).
+	 * @param context
+	 *            The RequestContext.
+	 * @param tz
+	 *            The campaign TimeZone. This is the TimeZone which the user
+	 *            uses to enter values in the filter form.
+	 * @return A DateTimeFilterLink initialized with the proper data for the
+	 *         timeType. Note: Only the time is stored. We don't care about
+	 *         dates. The times stored in the DateTimeFilterLink will be in GMT.
+	 */
+	private static DateTimeFilterLink getTimeFilterLink(int timeType, int value1, int value2, RequestContext context,
+			TimeZone tz) {
+<span class="nc" id="L927">		DateTimeFilterLink link = new DateTimeFilterLink();</span>
+<span class="nc" id="L928">		link.setTimeZone(tz);</span>
+
+		// convert from minutes to seconds
+<span class="nc" id="L931">		value1 *= 60;</span>
+<span class="nc" id="L932">		value2 *= 60;</span>
+
+<span class="nc bnc" id="L934" title="All 5 branches missed.">		switch (timeType) {</span>
+		case BidOptionsFilter.EQUAL:
+			// link.setEqual(getSeconds(minutesToDate(value1, tz)));
+<span class="nc" id="L937">			link.setEqual(value1);</span>
+<span class="nc" id="L938">			break;</span>
+		case BidOptionsFilter.MIN:
+			// link.setAfter(getSeconds(minutesToDate(value1, tz)) - 1);
+<span class="nc" id="L941">			link.setAfter(value1 - 1);</span>
+<span class="nc" id="L942">			break;</span>
+		case BidOptionsFilter.MAX:
+			// link.setBefore(getSeconds(minutesToDate(value1, tz)) + 1);
+<span class="nc" id="L945">			link.setBefore(value1 + 1);</span>
+<span class="nc" id="L946">			break;</span>
+		case BidOptionsFilter.BETWEEN:
+			// link.setBetween(getSeconds(minutesToDate(value1, tz)),
+			// getSeconds(minutesToDate(value2, tz)));
+<span class="nc" id="L950">			link.setBetween(value1, value2);</span>
+			break;
+		}
+<span class="nc" id="L953">		return link;</span>
+	}
+
+	/**
+	 * Given a date, return the number of seconds since midnight for the time
+	 * portion.
+	 * 
+	 * @param date
+	 *            The date.
+	 * @param tz
+	 *            The TimeZone.
+	 * @return The number of seconds since midnight for the time portion of the
+	 *         date parameter.
+	 */
+	public static int getSeconds(Date date, TimeZone tz) {
+<span class="nc" id="L968">		int totalSeconds = 0;</span>
+<span class="nc bnc" id="L969" title="All 2 branches missed.">		if (date != null) {</span>
+<span class="nc" id="L970">			Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L971">			cal.setTime(date);</span>
+<span class="nc" id="L972">			int hours = cal.get(Calendar.HOUR_OF_DAY); // 0..23</span>
+<span class="nc" id="L973">			int minutes = cal.get(Calendar.MINUTE); // 0..59</span>
+<span class="nc" id="L974">			int seconds = cal.get(Calendar.SECOND); // 0..61</span>
+
+<span class="nc" id="L976">			totalSeconds = ((hours * 60 + minutes) * 60) + seconds;</span>
+		}
+<span class="nc" id="L978">		return totalSeconds;</span>
+	}
+
+	/**
+	 * Given a date, return the number of seconds since midnight for the time
+	 * portion. The TimeZone for the date is assumed to be GMT.
+	 * 
+	 * @param date
+	 *            The date.
+	 * @return The number of seconds since midnight for the time portion of the
+	 *         date parameter.
+	 */
+	public static int getSeconds(Date date) {
+<span class="nc" id="L991">		return getSeconds(date, TimeZoneUtil.GMT_TIMEZONE);</span>
+	}
+
+	public static TimeZone getCampaignTimeZone(ShiftBidAuction auction, RequestContext context) throws RemoteException,
+			BbmException {
+<span class="nc" id="L996">		ID campaignID = auction.getOptMethods().getCampaignID();</span>
+<span class="nc" id="L997">		Campaign campaign = CampaignModelHandler.getCampaign(context, campaignID);</span>
+<span class="nc" id="L998">		return campaign.getTimeZone();</span>
+	}
+
+	/**
+	 * Construct an RmFilterChain from our BidOptionsFilter object (if any).
+	 * 
+	 * @param tz
+	 *            The logged-in user's Timezone (as specified in the user
+	 *            preferences).
+	 * @return An RmFilterChain object containing the settings for our filter.
+	 */
+	public static RmFilterChain createFilterChain(BidOptionsFilter filter, ShiftBidAuction auction, ID bidderID,
+			RequestContext context, TimeZone tz) throws RemoteException, BbmException, Exception {
+<span class="nc bnc" id="L1011" title="All 2 branches missed.">		if (filter == null)</span>
+<span class="nc" id="L1012">			return null;</span>
+
+<span class="nc" id="L1014">		boolean isWeeklyMode = auction.getIsFullPeriodSchedule();</span>
+<span class="nc" id="L1015">		SchedulingPeriod sp = getSP(context, auction);</span>
+
+		// Possible links in the filter chain
+<span class="nc" id="L1018">		RmFilterChain rootFilterLink = null;</span>
+<span class="nc" id="L1019">		ShiftFilterLink shiftFilterLink = null;</span>
+<span class="nc" id="L1020">		ActivityFilterLink activity1FilterLink = null;</span>
+<span class="nc" id="L1021">		ActivityFilterLink activity2FilterLink = null;</span>
+<span class="nc" id="L1022">		SkillFilterLink skillFilterLink = null;</span>
+
+		// ///////////////////////////////////////////////////////
+		// Template Section
+		// ///////////////////////////////////////////////////////
+
+		// NOTE: In the past, we used to filter by workPatternId.
+		// This was incorrect. We need to filter by TEMPLATE Id.
+		// So, wherever you see workPatternId, that actually
+		// means templateId.
+<span class="nc bnc" id="L1032" title="All 2 branches missed.">		if (filter.getID(&quot;workPatternId&quot;) != null) {</span>
+<span class="nc" id="L1033">			ID workPatternId = filter.getID(&quot;workPatternId&quot;);</span>
+<span class="nc" id="L1034">			shiftFilterLink = new ShiftFilterLink();</span>
+			// shiftFilterLink.setWorkPatternID( workPatternId );
+<span class="nc" id="L1036">			shiftFilterLink.setTemplateID(workPatternId);</span>
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Availability Section
+		// ///////////////////////////////////////////////////////
+
+<span class="nc bnc" id="L1043" title="All 2 branches missed.">		if (filter.getInt(&quot;availability&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L1044">			int availability = filter.getInt(&quot;availability&quot;);</span>
+<span class="nc" id="L1045">			int availabilityValue1 = filter.getInt(&quot;availabilityValue1&quot;);</span>
+<span class="nc" id="L1046">			int availabilityValue2 = filter.getInt(&quot;availabilityValue2&quot;);</span>
+
+<span class="nc bnc" id="L1048" title="All 2 branches missed.">			if (shiftFilterLink == null)</span>
+<span class="nc" id="L1049">				shiftFilterLink = new ShiftFilterLink();</span>
+
+<span class="nc" id="L1051">			SizeFilterLink numAvailable = getSizeFilterLink(availability, availabilityValue1, availabilityValue2);</span>
+<span class="nc" id="L1052">			shiftFilterLink.setBidAvailability(numAvailable);</span>
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Schedule Length Section
+		// ///////////////////////////////////////////////////////
+
+<span class="nc bnc" id="L1059" title="All 2 branches missed.">		if (isWeeklyMode) {</span>
+			// Schedule Length (number of hours)
+<span class="nc bnc" id="L1061" title="All 2 branches missed.">			if (filter.getInt(&quot;scheduleLengthType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L1062">				int scheduleLengthType = filter.getInt(&quot;scheduleLengthType&quot;);</span>
+<span class="nc" id="L1063">				float scheduleLengthValue1 = filter.getFloat(&quot;scheduleLengthValue1&quot;);</span>
+<span class="nc" id="L1064">				float scheduleLengthValue2 = filter.getFloat(&quot;scheduleLengthValue2&quot;);</span>
+<span class="nc bnc" id="L1065" title="All 2 branches missed.">				boolean paidOnly = (filter.getInt(&quot;scheduleLengthUse&quot;) == BidOptionsFilter.LENGTH_USE_PAID_TIME);</span>
+
+<span class="nc bnc" id="L1067" title="All 2 branches missed.">				if (shiftFilterLink == null)</span>
+<span class="nc" id="L1068">					shiftFilterLink = new ShiftFilterLink();</span>
+
+<span class="nc" id="L1070">				SizeFilterLink scheduleLength = getSizeFilterLink(scheduleLengthType,</span>
+						(int) (scheduleLengthValue1 * 60), (int) (scheduleLengthValue2 * 60));
+<span class="nc" id="L1072">				shiftFilterLink.setScheduleLength(scheduleLength, paidOnly);</span>
+			}
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Shift Section
+		// ///////////////////////////////////////////////////////
+
+		// Shift ID
+<span class="nc bnc" id="L1081" title="All 2 branches missed.">		if (filter.getID(&quot;shiftId&quot;) != null) {</span>
+<span class="nc" id="L1082">			ID shiftId = filter.getID(&quot;shiftId&quot;);</span>
+
+<span class="nc bnc" id="L1084" title="All 2 branches missed.">			if (shiftFilterLink == null)</span>
+<span class="nc" id="L1085">				shiftFilterLink = new ShiftFilterLink();</span>
+
+<span class="nc bnc" id="L1087" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1088">				boolean shiftIdMatchAll = filter.getBool(&quot;shiftIdMatchAll&quot;);</span>
+<span class="nc" id="L1089">				shiftFilterLink.setShiftID(shiftId, shiftIdMatchAll);</span>
+<span class="nc" id="L1090">			} else {</span>
+<span class="nc" id="L1091">				shiftFilterLink.setShiftID(shiftId);</span>
+			}
+		}
+
+		// Shift Length (number of hours)
+<span class="nc bnc" id="L1096" title="All 2 branches missed.">		if (filter.getInt(&quot;shiftLengthType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L1097">			int shiftLengthType = filter.getInt(&quot;shiftLengthType&quot;);</span>
+<span class="nc" id="L1098">			float shiftLengthValue1 = filter.getFloat(&quot;shiftLengthValue1&quot;);</span>
+<span class="nc" id="L1099">			float shiftLengthValue2 = filter.getFloat(&quot;shiftLengthValue2&quot;);</span>
+<span class="nc bnc" id="L1100" title="All 2 branches missed.">			boolean paidOnly = (filter.getInt(&quot;shiftLengthUse&quot;) == BidOptionsFilter.LENGTH_USE_PAID_TIME);</span>
+
+<span class="nc bnc" id="L1102" title="All 2 branches missed.">			if (shiftFilterLink == null)</span>
+<span class="nc" id="L1103">				shiftFilterLink = new ShiftFilterLink();</span>
+
+<span class="nc" id="L1105">			SizeFilterLink shiftLength = getSizeFilterLink(shiftLengthType, (int) (shiftLengthValue1 * 60),</span>
+					(int) (shiftLengthValue2 * 60));
+<span class="nc bnc" id="L1107" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1108">				boolean shiftLengthMatchAll = filter.getBool(&quot;shiftLengthMatchAll&quot;);</span>
+<span class="nc" id="L1109">				shiftLength.setMatchAllShifts(shiftLengthMatchAll);</span>
+			}
+<span class="nc" id="L1111">			shiftFilterLink.setShiftLength(shiftLength, paidOnly);</span>
+		}
+
+		// Shift Start Time
+<span class="nc bnc" id="L1115" title="All 2 branches missed.">		if (filter.getInt(&quot;shiftStartType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L1116">			int shiftStartType = filter.getInt(&quot;shiftStartType&quot;);</span>
+<span class="nc" id="L1117">			int shiftStart1 = filter.getInt(&quot;shiftStart1&quot;);</span>
+<span class="nc" id="L1118">			int shiftStart2 = filter.getInt(&quot;shiftStart2&quot;);</span>
+
+<span class="nc bnc" id="L1120" title="All 2 branches missed.">			if (shiftFilterLink == null)</span>
+<span class="nc" id="L1121">				shiftFilterLink = new ShiftFilterLink();</span>
+
+<span class="nc" id="L1123">			DateTimeFilterLink shiftStartTime = getTimeFilterLink(shiftStartType, shiftStart1, shiftStart2, context, tz);</span>
+<span class="nc bnc" id="L1124" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1125">				boolean shiftStartMatchAll = filter.getBool(&quot;shiftStartMatchAll&quot;);</span>
+<span class="nc" id="L1126">				shiftStartTime.setMatchAllShifts(shiftStartMatchAll);</span>
+			}
+<span class="nc" id="L1128">			shiftFilterLink.setShiftStartDate(shiftStartTime);</span>
+		}
+
+		// Shift End Time
+<span class="nc bnc" id="L1132" title="All 2 branches missed.">		if (filter.getInt(&quot;shiftEndType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L1133">			int shiftEndType = filter.getInt(&quot;shiftEndType&quot;);</span>
+<span class="nc" id="L1134">			int shiftEnd1 = filter.getInt(&quot;shiftEnd1&quot;);</span>
+<span class="nc" id="L1135">			int shiftEnd2 = filter.getInt(&quot;shiftEnd2&quot;);</span>
+
+<span class="nc bnc" id="L1137" title="All 2 branches missed.">			if (shiftFilterLink == null)</span>
+<span class="nc" id="L1138">				shiftFilterLink = new ShiftFilterLink();</span>
+
+<span class="nc" id="L1140">			DateTimeFilterLink shiftEndTime = getTimeFilterLink(shiftEndType, shiftEnd1, shiftEnd2, context, tz);</span>
+<span class="nc bnc" id="L1141" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1142">				boolean shiftEndMatchAll = filter.getBool(&quot;shiftEndMatchAll&quot;);</span>
+<span class="nc" id="L1143">				shiftEndTime.setMatchAllShifts(shiftEndMatchAll);</span>
+			}
+<span class="nc" id="L1145">			shiftFilterLink.setShiftEndDate(shiftEndTime);</span>
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Activity1 Section
+		// ///////////////////////////////////////////////////////
+
+		// Activity1 ID
+<span class="nc bnc" id="L1153" title="All 2 branches missed.">		if (filter.getID(&quot;activity1Id&quot;) != null) {</span>
+<span class="nc" id="L1154">			activity1FilterLink = new ActivityFilterLink();</span>
+<span class="nc" id="L1155">			activity1FilterLink.setActivityID(filter.getID(&quot;activity1Id&quot;));</span>
+
+<span class="nc bnc" id="L1157" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1158">				boolean activity1IdMatchAll = filter.getBool(&quot;activity1IdMatchAll&quot;);</span>
+<span class="nc" id="L1159">				activity1FilterLink.setMatchAllShifts(activity1IdMatchAll);</span>
+			}
+		}
+
+		// Activity1 Length (number of hours)
+<span class="nc bnc" id="L1164" title="All 2 branches missed.">		if (filter.getInt(&quot;activity1LengthType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L1165">			int activity1LengthType = filter.getInt(&quot;activity1LengthType&quot;);</span>
+<span class="nc" id="L1166">			float activity1LengthValue1 = filter.getFloat(&quot;activity1LengthValue1&quot;);</span>
+<span class="nc" id="L1167">			float activity1LengthValue2 = filter.getFloat(&quot;activity1LengthValue2&quot;);</span>
+
+<span class="nc bnc" id="L1169" title="All 2 branches missed.">			if (activity1FilterLink == null)</span>
+<span class="nc" id="L1170">				activity1FilterLink = new ActivityFilterLink();</span>
+
+<span class="nc" id="L1172">			SizeFilterLink activity1Length = getSizeFilterLink(activity1LengthType, (int) (activity1LengthValue1 * 60),</span>
+					(int) (activity1LengthValue2 * 60));
+<span class="nc bnc" id="L1174" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1175">				boolean activity1LengthMatchAll = filter.getBool(&quot;activity1LengthMatchAll&quot;);</span>
+<span class="nc" id="L1176">				activity1Length.setMatchAllShifts(activity1LengthMatchAll);</span>
+<span class="nc" id="L1177">				activity1FilterLink.setMatchAllShifts(activity1LengthMatchAll); // the</span>
+																				// activity1
+																				// checkboxes
+																				// are
+																				// synched
+			}
+<span class="nc" id="L1183">			activity1FilterLink.setActivityDuration(activity1Length);</span>
+		}
+
+		// Activity1 Start Time
+<span class="nc bnc" id="L1187" title="All 2 branches missed.">		if (filter.getInt(&quot;activity1StartType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L1188">			int activity1StartType = filter.getInt(&quot;activity1StartType&quot;);</span>
+<span class="nc" id="L1189">			int activity1Start1 = filter.getInt(&quot;activity1Start1&quot;);</span>
+<span class="nc" id="L1190">			int activity1Start2 = filter.getInt(&quot;activity1Start2&quot;);</span>
+
+<span class="nc bnc" id="L1192" title="All 2 branches missed.">			if (activity1FilterLink == null)</span>
+<span class="nc" id="L1193">				activity1FilterLink = new ActivityFilterLink();</span>
+
+<span class="nc" id="L1195">			DateTimeFilterLink activity1StartTime = getTimeFilterLink(activity1StartType, activity1Start1,</span>
+					activity1Start2, context, tz);
+
+<span class="nc bnc" id="L1198" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1199">				boolean activity1StartMatchAll = filter.getBool(&quot;activity1StartMatchAll&quot;);</span>
+<span class="nc" id="L1200">				activity1StartTime.setMatchAllShifts(activity1StartMatchAll);</span>
+<span class="nc" id="L1201">				activity1FilterLink.setMatchAllShifts(activity1StartMatchAll); // the</span>
+																				// activity1
+																				// checkboxes
+																				// are
+																				// synched
+			}
+
+<span class="nc" id="L1208">			activity1FilterLink.setActivityDate(activity1StartTime);</span>
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Activity2 Section
+		// ///////////////////////////////////////////////////////
+
+		// Activity2 ID
+<span class="nc bnc" id="L1216" title="All 2 branches missed.">		if (filter.getID(&quot;activity2Id&quot;) != null) {</span>
+<span class="nc" id="L1217">			activity2FilterLink = new ActivityFilterLink();</span>
+<span class="nc" id="L1218">			activity2FilterLink.setActivityID(filter.getID(&quot;activity2Id&quot;));</span>
+
+<span class="nc bnc" id="L1220" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1221">				boolean activity2IdMatchAll = filter.getBool(&quot;activity2IdMatchAll&quot;);</span>
+<span class="nc" id="L1222">				activity2FilterLink.setMatchAllShifts(activity2IdMatchAll);</span>
+			}
+		}
+
+		// Activity2 Length (number of hours)
+<span class="nc bnc" id="L1227" title="All 2 branches missed.">		if (filter.getInt(&quot;activity2LengthType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L1228">			int activity2LengthType = filter.getInt(&quot;activity2LengthType&quot;);</span>
+<span class="nc" id="L1229">			float activity2LengthValue1 = filter.getFloat(&quot;activity2LengthValue1&quot;);</span>
+<span class="nc" id="L1230">			float activity2LengthValue2 = filter.getFloat(&quot;activity2LengthValue2&quot;);</span>
+
+<span class="nc bnc" id="L1232" title="All 2 branches missed.">			if (activity2FilterLink == null)</span>
+<span class="nc" id="L1233">				activity2FilterLink = new ActivityFilterLink();</span>
+
+<span class="nc" id="L1235">			SizeFilterLink activity2Length = getSizeFilterLink(activity2LengthType, (int) (activity2LengthValue1 * 60),</span>
+					(int) (activity2LengthValue2 * 60));
+<span class="nc bnc" id="L1237" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1238">				boolean activity2LengthMatchAll = filter.getBool(&quot;activity2LengthMatchAll&quot;);</span>
+<span class="nc" id="L1239">				activity2Length.setMatchAllShifts(activity2LengthMatchAll);</span>
+<span class="nc" id="L1240">				activity2FilterLink.setMatchAllShifts(activity2LengthMatchAll); // the</span>
+																				// activity2
+																				// checkboxes
+																				// are
+																				// synched
+			}
+<span class="nc" id="L1246">			activity2FilterLink.setActivityDuration(activity2Length);</span>
+		}
+
+		// Activity2 Start Time
+<span class="nc bnc" id="L1250" title="All 2 branches missed.">		if (filter.getInt(&quot;activity2StartType&quot;) != BidOptionsFilter.UNDEFINED_INT) {</span>
+<span class="nc" id="L1251">			int activity2StartType = filter.getInt(&quot;activity2StartType&quot;);</span>
+<span class="nc" id="L1252">			int activity2Start1 = filter.getInt(&quot;activity2Start1&quot;);</span>
+<span class="nc" id="L1253">			int activity2Start2 = filter.getInt(&quot;activity2Start2&quot;);</span>
+
+<span class="nc bnc" id="L1255" title="All 2 branches missed.">			if (activity2FilterLink == null)</span>
+<span class="nc" id="L1256">				activity2FilterLink = new ActivityFilterLink();</span>
+
+<span class="nc" id="L1258">			DateTimeFilterLink activity2StartTime = getTimeFilterLink(activity2StartType, activity2Start1,</span>
+					activity2Start2, context, tz);
+
+<span class="nc bnc" id="L1261" title="All 2 branches missed.">			if (isWeeklyMode) {</span>
+<span class="nc" id="L1262">				boolean activity2StartMatchAll = filter.getBool(&quot;activity2StartMatchAll&quot;);</span>
+<span class="nc" id="L1263">				activity2StartTime.setMatchAllShifts(activity2StartMatchAll);</span>
+<span class="nc" id="L1264">				activity2FilterLink.setMatchAllShifts(activity2StartMatchAll); // the</span>
+																				// activity2
+																				// checkboxes
+																				// are
+																				// synched
+			}
+
+<span class="nc" id="L1271">			activity2FilterLink.setActivityDate(activity2StartTime);</span>
+		}
+
+		// ///////////////////////////////////////////////////////
+		// Skills Section
+		// ///////////////////////////////////////////////////////
+
+<span class="nc" id="L1278">		Collection mappedSkillIDsList = filter.getList(&quot;skills&quot;);</span>
+<span class="nc bnc" id="L1279" title="All 4 branches missed.">		if (sp.getSkillBased() &amp;&amp; (mappedSkillIDsList != null)) {</span>
+<span class="nc" id="L1280">			skillFilterLink = new SkillFilterLink();</span>
+
+<span class="nc" id="L1282">			Collection mappedSkillsList = SkillModelHandler.getSkillsByIDs(mappedSkillIDsList);</span>
+
+<span class="nc bnc" id="L1284" title="All 2 branches missed.">			if (mappedSkillsList != null) {</span>
+<span class="nc bnc" id="L1285" title="All 2 branches missed.">				for (Iterator it = mappedSkillsList.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L1286">					Skill skill = (Skill) it.next();</span>
+<span class="nc" id="L1287">					skillFilterLink.addSkillID(skill.getID());</span>
+<span class="nc" id="L1288">				}</span>
+<span class="nc" id="L1289">				int skillsMatchType = filter.getInt(&quot;skillsMatchType&quot;);</span>
+<span class="nc bnc" id="L1290" title="All 2 branches missed.">				if (skillsMatchType == BidOptionsFilter.SKILLS_MATCH_EXACT) {</span>
+<span class="nc" id="L1291">					skillFilterLink.setMatchType(RmFilterChain.MATCH_EXACT);</span>
+<span class="nc bnc" id="L1292" title="All 2 branches missed.">				} else if (skillsMatchType == BidOptionsFilter.SKILLS_MATCH_AT_LEAST) {</span>
+<span class="nc" id="L1293">					skillFilterLink.setMatchType(RmFilterChain.MATCH_AT_LEAST);</span>
+<span class="nc bnc" id="L1294" title="All 2 branches missed.">				} else if (skillsMatchType == BidOptionsFilter.SKILLS_MATCH_AT_MOST) {</span>
+<span class="nc" id="L1295">					skillFilterLink.setMatchType(RmFilterChain.MATCH_AT_MOST);</span>
+				}
+			}
+		}
+
+		// Choose a root for the filter chain
+<span class="nc bnc" id="L1301" title="All 2 branches missed.">		if (shiftFilterLink != null)</span>
+<span class="nc" id="L1302">			rootFilterLink = shiftFilterLink;</span>
+<span class="nc bnc" id="L1303" title="All 2 branches missed.">		else if (activity1FilterLink != null)</span>
+<span class="nc" id="L1304">			rootFilterLink = activity1FilterLink;</span>
+<span class="nc bnc" id="L1305" title="All 2 branches missed.">		else if (activity2FilterLink != null)</span>
+<span class="nc" id="L1306">			rootFilterLink = activity2FilterLink;</span>
+<span class="nc bnc" id="L1307" title="All 2 branches missed.">		else if (skillFilterLink != null)</span>
+<span class="nc" id="L1308">			rootFilterLink = skillFilterLink;</span>
+
+		// Add links to the chain
+<span class="nc bnc" id="L1311" title="All 2 branches missed.">		if (rootFilterLink != null) {</span>
+<span class="nc bnc" id="L1312" title="All 4 branches missed.">			if ((shiftFilterLink != null) &amp;&amp; (rootFilterLink != shiftFilterLink))</span>
+<span class="nc" id="L1313">				rootFilterLink.appendToChain(shiftFilterLink);</span>
+<span class="nc bnc" id="L1314" title="All 4 branches missed.">			if ((activity1FilterLink != null) &amp;&amp; (rootFilterLink != activity1FilterLink))</span>
+<span class="nc" id="L1315">				rootFilterLink.appendToChain(activity1FilterLink);</span>
+<span class="nc bnc" id="L1316" title="All 4 branches missed.">			if ((activity2FilterLink != null) &amp;&amp; (rootFilterLink != activity2FilterLink))</span>
+<span class="nc" id="L1317">				rootFilterLink.appendToChain(activity2FilterLink);</span>
+<span class="nc bnc" id="L1318" title="All 4 branches missed.">			if ((skillFilterLink != null) &amp;&amp; (rootFilterLink != skillFilterLink))</span>
+<span class="nc" id="L1319">				rootFilterLink.appendToChain(skillFilterLink);</span>
+
+<span class="nc" id="L1321">			rootFilterLink.setParameters(auction.getID(), null, bidderID);</span>
+		}
+
+<span class="nc" id="L1324">		return rootFilterLink;</span>
+	}
+
+	/**
+	 * Determine whether current user is a supervisor.
+	 */
+	public static boolean isSupervisor(RequestContext context) throws RemoteException, BbmException {
+<span class="nc" id="L1331">		ID employeeID = context.getUser().getEmployeeID();</span>
+<span class="nc bnc" id="L1332" title="All 2 branches missed.">		if (employeeID != null) {</span>
+<span class="nc" id="L1333">			Employee employee = EmployeeModelHandler.getEmployeeByID(context, employeeID);</span>
+<span class="nc" id="L1334">			return employee.isSupervisor();</span>
+		}
+<span class="nc" id="L1336">		return false;</span>
+	}
+
+	/**
+	 * Get Organization ID's linked to an auction's SP
+	 */
+	public static Collection getOrgIDs(RequestContext context, ShiftBidAuction auction) throws RemoteException,
+			BbmException {
+<span class="nc" id="L1344">		Collection orgAssignments = CampaignModelHandler.getCampaignOrgAssignments(context, auction.getOptMethods()</span>
+<span class="nc" id="L1345">				.getCampaignID(), auction.getStartTime(), auction.getEndTime());</span>
+<span class="nc" id="L1346">		Collection orgIDs = new ArrayList();</span>
+<span class="nc bnc" id="L1347" title="All 2 branches missed.">		if (orgAssignments != null) {</span>
+<span class="nc bnc" id="L1348" title="All 2 branches missed.">			for (Iterator it = orgAssignments.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L1349">				CampaignOrg orgAssignment = (CampaignOrg) it.next();</span>
+<span class="nc" id="L1350">				orgIDs.add(orgAssignment.getOrganizationID());</span>
+<span class="nc" id="L1351">			}</span>
+		}
+<span class="nc" id="L1353">		return orgIDs;</span>
+	}
+
+	/**
+	 * Get a shift name.
+	 * 
+	 * @param id
+	 *            The shift ID.
+	 * @param orgIDs
+	 *            The orgIDs are needed for the query which returns shifts to
+	 *            compare to.
+	 * @return The shift name if found, otherwise an empty string.
+	 */
+	public static String getShiftName(ID id, Collection orgIDs) throws RemoteException, BbmException {
+<span class="nc bnc" id="L1367" title="All 2 branches missed.">		if (id != null) {</span>
+<span class="nc" id="L1368">			Collection shifts = AuctionMH.getShiftIDNamePairs(orgIDs);</span>
+<span class="nc bnc" id="L1369" title="All 2 branches missed.">			for (Iterator it = shifts.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L1370">				IDStringPair idStringPair = (IDStringPair) it.next();</span>
+<span class="nc bnc" id="L1371" title="All 2 branches missed.">				if (idStringPair.getID().equals(id))</span>
+<span class="nc" id="L1372">					return idStringPair.getString();</span>
+<span class="nc" id="L1373">			}</span>
+		}
+<span class="nc" id="L1375">		return &quot;&quot;;</span>
+	}
+
+	/**
+	 * Get a work pattern name.
+	 * 
+	 * @param id
+	 *            The work pattern ID.
+	 * @param orgIDs
+	 *            The orgIDs are needed for the query which returns work
+	 *            patterns to compare to.
+	 * @return The work pattern name if found, otherwise an empty string.
+	 */
+	public static String getWorkPatternName(ID id, Collection orgIDs) throws RemoteException, BbmException {
+<span class="nc bnc" id="L1389" title="All 2 branches missed.">		if (id != null) {</span>
+<span class="nc" id="L1390">			Collection workPatterns = AuctionMH.getWorkPatternIDNamePairs(orgIDs);</span>
+<span class="nc bnc" id="L1391" title="All 2 branches missed.">			for (Iterator it = workPatterns.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L1392">				IDStringPair idStringPair = (IDStringPair) it.next();</span>
+<span class="nc bnc" id="L1393" title="All 2 branches missed.">				if (idStringPair.getID().equals(id))</span>
+<span class="nc" id="L1394">					return idStringPair.getString();</span>
+<span class="nc" id="L1395">			}</span>
+		}
+<span class="nc" id="L1397">		return &quot;&quot;;</span>
+	}
+
+	/**
+	 * Get an EmployeeTemplate's name.
+	 * 
+	 * @param id
+	 *            The Template ID.
+	 * @return The Template name if found, otherwise an empty string.
+	 */
+	public static String getTemplateName(RequestContext context, ID templateId) throws RemoteException, BbmException,
+			Exception {
+<span class="nc" id="L1409">		String retval = &quot;&quot;;</span>
+<span class="nc bnc" id="L1410" title="All 2 branches missed.">		if (templateId != null) {</span>
+<span class="nc" id="L1411">			ArrayList templateIds = new ArrayList(1);</span>
+<span class="nc" id="L1412">			templateIds.add(templateId);</span>
+<span class="nc" id="L1413">			Collection employeeTemplates = EmployeeModelHandler.getEmployeeTemplatesByID(context, templateIds);</span>
+<span class="nc bnc" id="L1414" title="All 2 branches missed.">			if (employeeTemplates != null) {</span>
+<span class="nc bnc" id="L1415" title="All 2 branches missed.">				for (Iterator it = employeeTemplates.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L1416">					EmployeeTemplate employeeTemplate = (EmployeeTemplate) it.next();</span>
+<span class="nc" id="L1417">					retval = employeeTemplate.getName();</span>
+<span class="nc" id="L1418">					break;</span>
+				}
+			}
+		}
+<span class="nc" id="L1422">		return retval;</span>
+	}
+
+	/**
+	 * Given an activity ID, return its name.
+	 */
+	public static String getActivityName(RequestContext context, int activityID) throws RemoteException, BbmException {
+<span class="nc" id="L1429">		String name = &quot;&quot;;</span>
+<span class="nc" id="L1430">		Activity activity = ActivityModelHandler.getActivityByID(context, new ID(activityID));</span>
+<span class="nc bnc" id="L1431" title="All 2 branches missed.">		if (activity != null)</span>
+<span class="nc" id="L1432">			name = activity.getName();</span>
+<span class="nc" id="L1433">		return name;</span>
+	}
+
+	/**
+	 * Determines whether we should autmatically filter the bid options list by
+	 * the current bidder's skills. Bid Options will be automatically filtered
+	 * by the bidder's skills if: (1) The auction is for a skilled SP. (2)
+	 * Validation Rule set : &quot;Agent has sufficient skills&quot;, AND (3) Auto
+	 * Processing Rule set:
+	 * &quot;Auto Deny request when it violates the rule 'Agent has sufficient skills'&quot;
+	 * .
+	 * 
+	 * @param context
+	 * @param sp
+	 *            The schedule period for the selected auction.
+	 * @param empID
+	 *            The employee ID for the current bidder.
+	 * @return true if we should automatically filter by the bidder's skills.
+	 *         False otherwise.
+	 */
+	public static boolean isShowBidderSkillsOnly(RequestContext context, SchedulingPeriod sp, ID empID)
+			throws RemoteException, BbmException, Exception {
+<span class="nc" id="L1455">		boolean showBidderSkillsOnly = false;</span>
+
+<span class="nc bnc" id="L1457" title="All 2 branches missed.">		if (sp.getSkillBased()) {</span>
+			// Get the employee
+<span class="nc" id="L1459">			Date startDate = sp.getStartTime();</span>
+<span class="nc" id="L1460">			ID orgID = AuctionMH.getOrgIDForEmp(context, empID);</span>
+
+			// Check the Validation rules for this employee
+<span class="nc" id="L1463">			Map validationRules = ValidationModelHandler.getValidationRules(Request.REQUESTTYPE_SHIFTBID, orgID);</span>
+<span class="nc" id="L1464">			ValidationRule vr = (ValidationRule) validationRules.get(ValidationRulesMap.VALIDATION_SB_COMPLY_SKILLS);</span>
+<span class="nc bnc" id="L1465" title="All 2 branches missed.">			if (vr != null) {</span>
+<span class="nc bnc" id="L1466" title="All 2 branches missed.">				if (vr.isEnabled()) // (&quot;Agent has sufficient skills&quot;)</span>
+				{
+					// Check Auto-processing rules for this employee for the
+					// first day of the auction
+<span class="nc" id="L1470">					Collection processingRules = AutoProcessingModelHandler.getAutoProcessingRuleList(orgID,</span>
+							Request.REQUESTTYPE_SHIFTBID);
+
+<span class="nc bnc" id="L1473" title="All 2 branches missed.">					if (processingRules != null) {</span>
+<span class="nc bnc" id="L1474" title="All 2 branches missed.">						for (Iterator it = processingRules.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L1475">							AutoProcessingRule apr = (AutoProcessingRule) it.next();</span>
+
+<span class="nc bnc" id="L1477" title="All 4 branches missed.">							if (apr.isApplied() &amp;&amp; apr.isDenial()</span>
+<span class="nc bnc" id="L1478" title="All 2 branches missed.">									&amp;&amp; apr.getDenialType().equals(AutoProcessingRule.APPROVAL_DENIAL_TYPE_VIOLATION)) {</span>
+								// check &quot;skills&quot; rule type
+<span class="nc" id="L1480">								ArrayList denialRules = new ArrayList(1);</span>
+<span class="nc" id="L1481">								denialRules.add(SameSkillsMatchBidSchedValidationRule.class.getName());</span>
+
+<span class="nc" id="L1483">								Collection validators = apr.getValidators(denialRules,</span>
+										AutoProcessingValidation.APPROVALSTATUS_DENY);
+<span class="nc bnc" id="L1485" title="All 2 branches missed.">								if (!validators.isEmpty()) {</span>
+<span class="nc bnc" id="L1486" title="All 2 branches missed.">									if (checkRuleDate(apr, startDate)) {</span>
+<span class="nc" id="L1487">										showBidderSkillsOnly = true;</span>
+<span class="nc" id="L1488">										break;</span>
+									}
+								}
+							}
+<span class="nc" id="L1492">						}</span>
+					}
+				}
+			}
+		}
+<span class="nc" id="L1497">		return showBidderSkillsOnly;</span>
+	}
+
+	/**
+	 * Given an auction, get its scheduling period.
+	 */
+	public static SchedulingPeriod getSP(RequestContext context, ShiftBidAuction auction) throws RemoteException,
+			BbmException, Exception {
+<span class="nc" id="L1505">		ID spID = auction.getOptMethods().getSP().getID();</span>
+<span class="nc" id="L1506">		SchedulingPeriod sp = CampaignModelHandler.getSchedPeriod(context, spID);</span>
+<span class="nc" id="L1507">		return sp;</span>
+	}
+
+	/**
+	 * See if a shiftbid AutoProcessingRule applies for a particular date.
+	 * 
+	 * @param apr
+	 *            An AutoProcessingRule of type REQUESTTYPE_SHIFTBID.
+	 * @param checkDate
+	 *            Date to see if the rule applies on that date.
+	 * @return true if the date parameter falls within the dates of the
+	 *         AutoProcessingRule, or if the AutoProcessingRule applies to all
+	 *         dates.
+	 */
+	private static boolean checkRuleDate(AutoProcessingRule apr, Date checkDate) {
+<span class="nc" id="L1522">		boolean dateMatch = false;</span>
+<span class="nc bnc" id="L1523" title="All 2 branches missed.">		if (apr != null) {</span>
+<span class="nc bnc" id="L1524" title="All 2 branches missed.">			if (apr.getDayRange().equals(AutoProcessingRule.DAYRANGE_ALL_DAYS)) {</span>
+<span class="nc" id="L1525">				dateMatch = true;</span>
+<span class="nc bnc" id="L1526" title="All 2 branches missed.">			} else if (apr.getDayRange().equals(AutoProcessingRule.DAYRANGE_DATES)) {</span>
+<span class="nc bnc" id="L1527" title="All 4 branches missed.">				if (!apr.getStartDate().after(checkDate) &amp;&amp; checkDate.before(apr.getEndDate()))</span>
+<span class="nc" id="L1528">					dateMatch = true;</span>
+			}
+		}
+<span class="nc" id="L1531">		return dateMatch;</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>QuartzUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.util</a> &gt; <span class="el_source">QuartzUtil.java</span></div><h1>QuartzUtil.java</h1><pre class="source lang-java linenums">/*
+ * Created on Jun 28, 2004
+ *
+ * To change the template for this generated file go to
+ * Window&amp;gt;Preferences&amp;gt;Java&amp;gt;Code Generation&amp;gt;Code and Comments
+ */
+package com.bluepumpkin.ejb.rm.util;
+
+import java.rmi.RemoteException;
+import java.util.Date;
+import java.util.HashMap;
+
+import javax.naming.NamingException;
+
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.SchedulerFactory;
+import org.quartz.SimpleTrigger;
+import org.quartz.impl.StdSchedulerFactory;
+
+import com.bluepumpkin.common.base.Log;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.common.util.SystemProperties;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.rm.RmManagerFactory;
+import com.bluepumpkin.ejb.rm.scheduler.jobs.SerializedAuctionPollerJob;
+import com.bluepumpkin.ejb.rm.scheduler.jobs.ShiftBidBackgroudTasksJob;
+import com.bluepumpkin.ejb.rm.scheduler.jobs.TOHoursPerDayUpdateJob;
+import com.bluepumpkin.ejb.rm.scheduler.jobs.TOWaitlistExipryPollerJob;
+
+/**
+ * @author rrajendran
+ *
+ * To change the template for this generated type comment go to
+ * Window&amp;gt;Preferences&amp;gt;Java&amp;gt;Code Generation&amp;gt;Code and Comments
+ */
+<span class="nc" id="L41">public class QuartzUtil {</span>
+<span class="nc" id="L42">    private static Category m_cat = Log.initCategory(QuartzUtil.class.getName());</span>
+
+<span class="nc" id="L44">	 private static String m_quartzRMGroupName = &quot;RM&quot;;</span>
+    private static final String m_triggerPrefix = &quot;triggerForJob&quot;;
+    
+<span class="nc" id="L47">    private static String m_quartzSerAucPollerJobName = &quot;SerializedAuctionPoller&quot;;</span>
+<span class="nc" id="L48">    private static final String m_quartzSerAucPollerTriggerName = m_triggerPrefix + m_quartzSerAucPollerJobName;</span>
+
+<span class="nc" id="L50">    private static String m_quartzSBBackgroundTaskJobName = &quot;SBBackgroundTask&quot;;</span>
+<span class="nc" id="L51">    private static final String m_quartzSBBackgroundTaskTriggerName = m_triggerPrefix + m_quartzSBBackgroundTaskJobName;</span>
+
+<span class="nc" id="L53">    private static String m_quartzTOWaitlistExpiryPollerJobName = &quot;TOWaitlistExpiryPoller&quot;;</span>
+<span class="nc" id="L54">    private static final String m_quartzTOWaitlistExpiryPollerTriggerName = m_triggerPrefix + m_quartzTOWaitlistExpiryPollerJobName;</span>
+
+<span class="nc" id="L56">    private static String m_quartzTOHoursPerDayJobName = &quot;TOHoursPerDay&quot;;</span>
+<span class="nc" id="L57">    private static final String m_quartzTOHoursPerDayTriggerName = m_triggerPrefix + m_quartzTOHoursPerDayJobName;</span>
+    /**
+     * The scheduler reference when running outside the container for testing purposes.
+     */
+    private static Scheduler m_quartzSchedOutsideContainer;
+
+    public static void startQuartz() throws SchedulerException {
+<span class="nc bnc" id="L64" title="All 2 branches missed.">        if (!RmManagerFactory.m_useEJBRemoteRefs) {</span>
+            // create the scheduler factory and instantiate the scheduler.
+<span class="nc" id="L66">            String quartzConfigFile = SystemProperties.get(&quot;quartz.configuration&quot;);</span>
+<span class="nc" id="L67">            quartzConfigFile = &quot;./config/quartzconfig/&quot; + quartzConfigFile;</span>
+<span class="nc" id="L68">            SchedulerFactory schedFactory = new StdSchedulerFactory(quartzConfigFile);</span>
+    
+<span class="nc" id="L70">            m_quartzSchedOutsideContainer = schedFactory.getScheduler();</span>
+<span class="nc" id="L71">            m_quartzSchedOutsideContainer.start();</span>
+<span class="nc" id="L72">            m_cat.debug(&quot;Created quartz scheduler and started it outside container&quot;);</span>
+        }
+<span class="nc" id="L74">    }</span>
+    
+    /**
+     * 
+     */
+    public static void stopQuartzScheduler() throws SchedulerException {
+<span class="nc bnc" id="L80" title="All 2 branches missed.">	    if (!RmManagerFactory.m_useEJBRemoteRefs) {</span>
+<span class="nc" id="L81">		    m_quartzSchedOutsideContainer.shutdown(); //shutdown.</span>
+
+<span class="nc" id="L83">		    m_quartzSchedOutsideContainer = null;</span>
+	    }
+<span class="nc" id="L85">    }</span>
+
+	public static void addOrUpdateShiftBidJobsIfNecess() throws Exception {
+<span class="nc" id="L88">		addPollerJobIfNecess();</span>
+<span class="nc" id="L89">		addOrUpdateBackgroudTasksJobIfNecess();</span>
+<span class="nc" id="L90">	}</span>
+	public static void removeShiftBidJobs() throws Exception {
+		//check for sb job
+<span class="nc bnc" id="L93" title="All 2 branches missed.">		if (quartzJobExists(m_quartzSBBackgroundTaskJobName, m_quartzRMGroupName)) {</span>
+			//remove rm processes
+<span class="nc" id="L95">			removeQuartzJob(m_quartzSBBackgroundTaskJobName, m_quartzRMGroupName);</span>
+		}
+		//check for serialized auction poller job
+<span class="nc bnc" id="L98" title="All 2 branches missed.">		if (quartzJobExists(m_quartzSerAucPollerJobName, m_quartzRMGroupName)) {</span>
+			//remove rm processes
+<span class="nc" id="L100">			removeQuartzJob(m_quartzSerAucPollerJobName, m_quartzRMGroupName);</span>
+		}
+<span class="nc" id="L102">	}</span>
+
+	public static void removeTimeOffJobs() throws Exception {
+		//check for TOWaitlistExpiryPoller  job
+<span class="nc bnc" id="L106" title="All 2 branches missed.">		if (quartzJobExists(m_quartzTOWaitlistExpiryPollerJobName, m_quartzRMGroupName)) {</span>
+			//remove rm processes
+<span class="nc" id="L108">			removeQuartzJob(m_quartzTOWaitlistExpiryPollerJobName, m_quartzRMGroupName);</span>
+		}
+		//stopQuartzScheduler();
+<span class="nc" id="L111">	}</span>
+
+	private static void addOrUpdateBackgroudTasksJobIfNecess() 
+        throws BbmEJBCreateException, RemoteException, NamingException, SchedulerException  {
+        
+        // get the configuration value for background task execution interval.
+<span class="nc" id="L117">        String intervalStr = BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.SHIFTBIDDING_BACKGROUND_TASK_INTERVAL);</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">		int cfgInterval = StringUtil.isEmpty(intervalStr)?600:Integer.parseInt(intervalStr)*60;</span>
+		
+<span class="nc" id="L120">        boolean jobExists = quartzJobExists(m_quartzSBBackgroundTaskJobName, m_quartzRMGroupName);</span>
+        
+<span class="nc bnc" id="L122" title="All 2 branches missed.">        if (jobExists){</span>
+<span class="nc" id="L123">        	removeQuartzJob(m_quartzSBBackgroundTaskJobName, m_quartzRMGroupName);</span>
+        }
+		
+		//add job
+<span class="nc" id="L127">	    addQuartzJob(m_quartzSBBackgroundTaskJobName, m_quartzRMGroupName, </span>
+            ShiftBidBackgroudTasksJob.class, m_quartzSBBackgroundTaskTriggerName, 
+            m_quartzRMGroupName, SimpleTrigger.REPEAT_INDEFINITELY, cfgInterval);
+<span class="nc" id="L130">    }</span>
+
+	public static void addOrUpdateTOwaitlistPollerBackgroudTasksJobIfNecess()
+	        throws BbmEJBCreateException, RemoteException, NamingException, SchedulerException {
+		// get the configuration value for background task execution interval.
+<span class="nc" id="L135">		String intervalStr = BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.TIMEOFF_WAITLIST_EXPIRY_BACKGROUND_TASK_INTERVAL);</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">		int cfgInterval = StringUtil.isEmpty(intervalStr) ? 900 : Integer.parseInt(intervalStr) * 60;//Default interval is 15 minutes</span>
+<span class="nc" id="L137">		boolean jobExists = quartzJobExists(m_quartzTOWaitlistExpiryPollerJobName, m_quartzRMGroupName);</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">		if (jobExists) {// if job exists, remove it.</span>
+<span class="nc" id="L139">			removeQuartzJob(m_quartzTOWaitlistExpiryPollerJobName, m_quartzRMGroupName);</span>
+		}
+<span class="nc" id="L141">		addQuartzJob(m_quartzTOWaitlistExpiryPollerJobName, m_quartzRMGroupName,</span>
+		        TOWaitlistExipryPollerJob.class, m_quartzTOWaitlistExpiryPollerTriggerName,
+		        m_quartzRMGroupName, SimpleTrigger.REPEAT_INDEFINITELY, cfgInterval);
+<span class="nc" id="L144">	}</span>
+
+	private static void addPollerJobIfNecess() throws NamingException, SchedulerException {
+<span class="nc" id="L147">		boolean pollerJobExists = quartzJobExists(m_quartzSerAucPollerJobName, m_quartzRMGroupName);</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">		if (pollerJobExists) {</span>
+<span class="nc" id="L149">			removeQuartzJob(m_quartzSerAucPollerJobName, m_quartzRMGroupName);</span>
+		}
+<span class="nc" id="L151">		addQuartzJob(m_quartzSerAucPollerJobName, m_quartzRMGroupName, SerializedAuctionPollerJob.class,</span>
+		        m_quartzSerAucPollerTriggerName, m_quartzRMGroupName, SimpleTrigger.REPEAT_INDEFINITELY, 60);
+<span class="nc" id="L153">	}</span>
+
+	public static void addOrUpdateTOHoursPerDayUpdateJobIfNecess() throws NamingException, SchedulerException {
+<span class="nc" id="L156">		boolean pollerJobExists = quartzJobExists(m_quartzTOHoursPerDayJobName, m_quartzRMGroupName);</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">		if (pollerJobExists) {</span>
+<span class="nc" id="L158">			removeQuartzJob(m_quartzTOHoursPerDayJobName, m_quartzRMGroupName);</span>
+		}
+<span class="nc" id="L160">		com.bluepumpkin.ejb.bbm.quartz.QuartzUtil.addJob(m_quartzTOHoursPerDayJobName, m_quartzRMGroupName, </span>
+				TOHoursPerDayUpdateJob.class, new Date());//do not repeat
+<span class="nc" id="L162">	}</span>
+
+    private static Scheduler getScheduler() throws NamingException, SchedulerException {
+<span class="nc bnc" id="L165" title="All 2 branches missed.">        return ( !RmManagerFactory.m_useEJBRemoteRefs )?m_quartzSchedOutsideContainer:</span>
+<span class="nc" id="L166">            com.bluepumpkin.ejb.bbm.quartz.QuartzUtil.getScheduler();</span>
+    }
+
+    /**
+     * @param jobGroupName
+     * @param jobName
+     */
+    private static boolean quartzJobExists(String jobName, String jobGroupName)
+        throws NamingException, SchedulerException {
+    
+<span class="nc bnc" id="L176" title="All 2 branches missed.">        if (!RmManagerFactory.m_useEJBRemoteRefs) {</span>
+    
+<span class="nc" id="L178">            JobDetail jobDetailFromQuartz = m_quartzSchedOutsideContainer.getJobDetail(jobName, jobGroupName);</span>
+<span class="nc bnc" id="L179" title="All 2 branches missed.">            if (jobDetailFromQuartz == null) {</span>
+<span class="nc" id="L180">                return false;</span>
+            }
+<span class="nc" id="L182">        } else { // if running within container.</span>
+<span class="nc" id="L183">            m_cat.debug(&quot;retrieving quartz job from JNDI jobName=&quot;+jobName +&quot; : jobGroupName=&quot;+jobGroupName );</span>
+    
+<span class="nc" id="L185">            Scheduler scheduler = com.bluepumpkin.ejb.bbm.quartz.QuartzUtil.getScheduler();</span>
+<span class="nc" id="L186">            JobDetail jobDetail = scheduler.getJobDetail(jobName, jobGroupName);</span>
+    
+<span class="nc bnc" id="L188" title="All 2 branches missed.">            if (jobDetail == null) { //if job does not exist already.</span>
+<span class="nc" id="L189">                return false;</span>
+            }
+        }
+    
+<span class="nc" id="L193">        return true;</span>
+    }
+
+    /**
+     * @param jobGroupName
+     * @param jobName
+     * @param jobClass
+     * @param triggerGroupName
+     * @param triggerName
+     * @param repeatCount
+     * @param repeatInterval
+     */
+    private static void addQuartzJob(String jobName, String jobGroupName,
+        Class jobClass, String triggerName, String triggerGroupName, int repeatCount, int repeatInterval) 
+        throws NamingException, SchedulerException {
+
+<span class="nc bnc" id="L209" title="All 2 branches missed.">        if (!RmManagerFactory.m_useEJBRemoteRefs) {</span>
+<span class="nc" id="L210">            JobDetail jobDetail = new JobDetail(jobName, jobGroupName, jobClass);</span>
+
+<span class="nc" id="L212">            SimpleTrigger st = new SimpleTrigger(triggerName, triggerGroupName, repeatCount, repeatInterval * 1000);</span>
+
+<span class="nc" id="L214">            m_cat.debug(&quot;adding quartz job and trigger to scheduler outside container&quot;);</span>
+<span class="nc" id="L215">            m_quartzSchedOutsideContainer.scheduleJob(jobDetail, st);</span>
+<span class="nc" id="L216">        } else {        </span>
+<span class="nc" id="L217">		  com.bluepumpkin.ejb.bbm.quartz.QuartzUtil.addJob(jobName, jobGroupName, jobClass, </span>
+		  	repeatInterval, new HashMap());
+        }
+<span class="nc" id="L220">    }</span>
+
+    private static void removeQuartzJob(String jobName, String jobGroupName)
+        throws NamingException, SchedulerException {
+
+<span class="nc bnc" id="L225" title="All 2 branches missed.">		if ( !RmManagerFactory.m_useEJBRemoteRefs ) {</span>
+<span class="nc" id="L226">			m_quartzSchedOutsideContainer.deleteJob(jobName, jobGroupName);</span>
+		} else {
+<span class="nc" id="L228">			com.bluepumpkin.ejb.bbm.quartz.QuartzUtil.removeJob(jobName, jobGroupName);	</span>
+		}
+<span class="nc" id="L230">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>
