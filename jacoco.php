@@ -50,8 +50,46 @@
       <div class="container">
       <hr>
          <div class="item-section col-md-12 col-sm-4 col-xs-12">
-             <p class="text-center"> <br><br>Display progress bar for each team and a combined progress bar</p>
+             <p class="text-center"> <br><br>Teams Current Progress</p>
              <br><br>
+<div class="progress">
+  <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="43"
+  aria-valuemin="0" aria-valuemax="100" style="width:50%">
+    43% ALL TEAMS COMBINED
+  </div>
+</div>
+
+<div class="progress">
+  <div class="progress-bar progress-bar-warning" role="progressbar" aria-valuenow="69"
+  aria-valuemin="0" aria-valuemax="100" style="width:60%">
+    69% DELPHI
+  </div>
+</div>
+
+<div class="progress">
+  <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="53"
+  aria-valuemin="0" aria-valuemax="100" style="width:70%">
+    53% FIS
+  </div>
+</div>
+     <div class="progress">
+  <div class="progress-bar progress-bar-warning" role="progressbar" aria-valuenow="50"
+  aria-valuemin="0" aria-valuemax="100" style="width:70%">
+    50% FIREBIRDS
+  </div>
+</div>
+<div class="progress">
+  <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="67"
+  aria-valuemin="0" aria-valuemax="100" style="width:40%">
+    67% QUEUEX
+  </div>
+</div>
+<div class="progress">
+  <div class="progress-bar progress-bar-warning" role="progressbar" aria-valuenow="99"
+  aria-valuemin="0" aria-valuemax="100" style="width:40%">
+    99% SUSTAINING
+  </div>
+</div>             
           </div>
      </div>
   </section>
