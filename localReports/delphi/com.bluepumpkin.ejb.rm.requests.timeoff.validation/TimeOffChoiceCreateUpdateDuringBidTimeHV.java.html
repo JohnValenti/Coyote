@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeOffChoiceCreateUpdateDuringBidTimeHV.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.timeoff.validation</a> &gt; <span class="el_source">TimeOffChoiceCreateUpdateDuringBidTimeHV.java</span></div><h1>TimeOffChoiceCreateUpdateDuringBidTimeHV.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.timeoff.validation;
+
+/**
+ * Title:        TimeOffChoiceCreateUpdateDuringBidTimeHV
+ * Description:  Hard validation alert when a Time Off Request entered during open bid time. It is normal time off bids so it should not be saved here -time off request dialog
+ * It should be done in Time Off Bid request dialog
+ * Copyright:    Copyright (c) 2016
+ * Company:      Verint System, Inc
+ * @author       Truc Pham
+ * @version      1.0
+**/
+import java.util.Date;
+import java.util.Iterator;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.setup.timeoffbid.ejb.TimeOffBidUtil;
+import com.bluepumpkin.ejb.rm.setup.timeoffbid.model.TimeOffBid;
+
+<span class="nc" id="L28">public class TimeOffChoiceCreateUpdateDuringBidTimeHV implements Validator {</span>
+
+<span class="nc" id="L30">	private static String clsName = TimeOffChoiceCreateUpdateDuringBidTimeHV.class.getName();</span>
+<span class="nc" id="L31">	private static final Category LOGGER = Log.initCategory(clsName);</span>
+
+	/* (non-Javadoc)
+	 * @see com.bluepumpkin.ejb.rm.requests.common.validation.Validator#validate(com.bluepumpkin.ejb.rm.requests.common.validation.Validatable)
+	 */
+	@SuppressWarnings(&quot;rawtypes&quot;)
+	@Override
+	public ValidationResult validate(Validatable validatable) throws Exception {
+<span class="nc" id="L39">		ValidationResult result = null;</span>
+<span class="nc" id="L40">		TORequest toReq = (TORequest) validatable;</span>
+<span class="nc" id="L41">		ID timeOffType = toReq.getTimeOffType();</span>
+<span class="nc" id="L42">		ID employeeId = toReq.getEmployeeID();</span>
+		//If new request: toReq.getSubmittedOn()
+		//If modify an existing request: toReq.getLastModifiedAt()
+<span class="nc bnc" id="L45" title="All 2 branches missed.">		Date submittedRequestDate = toReq.getLastModifiedAt() == null ? toReq.getSubmittedOn() : toReq.getLastModifiedAt();</span>
+<span class="nc" id="L46">		TimeOffBid bid = getOpenTimeOffBidForActivityIdAndEmployeId(timeOffType, employeeId, submittedRequestDate);</span>
+<span class="nc" id="L47">		LOGGER.debug(&quot;==TimeOffChoiceCreateUpdateDuringBidTimeHV, bid=&quot; + bid);</span>
+<span class="nc bnc" id="L48" title="All 2 branches missed.">		if (bid != null) {</span>
+<span class="nc" id="L49">			long bidRequestStart = bid.getRequestStartTime().getTime();</span>
+<span class="nc" id="L50">			long bidRequestEnd = bid.getRequestEndTime().getTime();</span>
+<span class="nc" id="L51">			Date bidEnd = bid.getBidEndTime();</span>
+<span class="nc bnc" id="L52" title="All 2 branches missed.">			for (Iterator it = toReq.getRequestChoiceList().iterator(); it.hasNext();) {</span>
+<span class="nc" id="L53">				TOChoice choice = (TOChoice) it.next();</span>
+<span class="nc" id="L54">				long choiceStart = choice.getStartDate().getTime();</span>
+<span class="nc" id="L55">				long choiceEnd = choice.getEndDate().getTime();</span>
+<span class="nc bnc" id="L56" title="All 4 branches missed.">				boolean choicePeriodInBidRequestPeriod = bidRequestStart &lt;= choiceStart &amp;&amp; choiceEnd &lt;= bidRequestEnd;</span>
+				//Only preventing creating time off bid if choice Period is in bid request period and the submitted Request date before bid End 
+<span class="nc bnc" id="L58" title="All 4 branches missed.">				if (choicePeriodInBidRequestPeriod &amp;&amp; submittedRequestDate.before(bidEnd)) {</span>
+<span class="nc" id="L59">					result = ValidationUtil.setHardValidationResult(choice, RmEjbBundleKey.TIMEOFF_TOCHOICE_MUST_NOT_SAVE_DURING_BID_TIME,</span>
+<span class="nc" id="L60">							choice.getStartDate(), choice.getEndDate(), clsName);</span>
+<span class="nc" id="L61">					return result;</span>
+
+				}
+<span class="nc" id="L64">			}</span>
+		}
+<span class="nc" id="L66">		return result;</span>
+	}
+
+	protected TimeOffBid getOpenTimeOffBidForActivityIdAndEmployeId(ID timeOffType, ID employeeId, Date submittedDate) throws Exception {
+<span class="nc" id="L70">		return TimeOffBidUtil.getOpenTimeOffBidForActivityIdAndEmployeId(timeOffType, employeeId, submittedDate);</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

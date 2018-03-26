@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RotationsListPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.workrules</a> &gt; <span class="el_source">RotationsListPM.java</span></div><h1>RotationsListPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.workrules;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.PaginationPair;
+import com.bluepumpkin.common.datatypes.ScopeID;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.empworkrule.model.WorkResourceRotation;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectIDListComparator;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectUtil;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workrules.ejb.WorkRuleManager;
+import com.bluepumpkin.ejb.bbm.workrules.model.Rotation;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.bbm.workresource.WorkResourceModelHandler;
+import com.bluepumpkin.web.fs.keys.FsJavaScriptFileID;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.web.fs.widgets.FindToolbarPageComponent;
+import com.verint.web.fs.widgets.JumpToPagePaginationPC;
+import com.verint.web.fs.workrules.assignment.RotationListPC;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.Scope;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.MultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarUtil;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.TimeZoneOverrideUtil;
+
+@SuppressWarnings(&quot;serial&quot;)
+public class RotationsListPM extends WorkRulesListPM {
+	public static final String ROTATION_LIST_SORTCOLUMN = RotationListPC.ROTATION_LIST_SORTCOLUMN;
+	public static final String ROTATION_LIST_SORTORDER =  RotationListPC.ROTATION_LIST_SORTORDER;
+	public static final String ROTATIONLIST_ITEMINDEX = JumpToPagePaginationPC.ROTATIONLIST_ITEMINDEX;
+<span class="fc" id="L54">	private List&lt;Rotation&gt; rotations = Collections.emptyList();</span>
+<span class="fc" id="L55">	private HashMap&lt;ID, Organization&gt; orgsByID = new HashMap&lt;ID, Organization&gt;();</span>
+	private RotationListPC pc_rotationList;
+	private Map&lt;ID, List&lt;String&gt;&gt; rotationEmpNameMap;
+
+	public RotationsListPM(RequestContext context) {
+<span class="fc" id="L60">		super(context,JumpToPagePaginationPC.USED_IN_ROTATION_LIST_PAGE);</span>
+<span class="fc" id="L61">		this.setJSMediator(FsJavaScriptFileID.WORK_PANE_LIST_ALT_DELETE_MEDIATOR);</span>
+		
+<span class="fc" id="L63">		option_showTimeZoneToggle = false;</span>
+<span class="fc" id="L64">		setIsMultiRowSelectable(false);</span>
+		
+		// Replace the existing list component with a RotationListPC
+<span class="fc" id="L67">		removeChildComponent(m_list);</span>
+<span class="fc" id="L68">		pc_rotationList = new RotationListPC(m_context, rotations, orgsByID){</span>
+			@Override
+			protected void setRowAttributes(DefaultMultiColumnNodeData rowData,
+					Rotation rotation) {
+<span class="fc" id="L72">				super.setRowAttributes(rowData, rotation);</span>
+<span class="fc" id="L73">				RotationsListPM.this.setRowAttributes(rowData, rotation.getOrganizationID());</span>
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">				if (rotationEmpNameMap.containsKey(rotation.getID())) {</span>
+<span class="nc" id="L75">					List&lt;String&gt; empNames = rotationEmpNameMap.get(rotation.getID());</span>
+<span class="nc" id="L76">					String msg = m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.DELETE_CONFIRMATION_WITH_ASSIGNMENTS, &quot;\n\n&quot; + StringUtil.join(empNames, &quot;\n&quot;));</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">					boolean truncated = empNames.size() &gt; 10;</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">					if (truncated) {</span>
+<span class="nc" id="L79">						int extra = empNames.size() - 10;</span>
+<span class="nc" id="L80">						empNames = empNames.subList(0, 10);</span>
+<span class="nc" id="L81">						msg = m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.DELETE_CONFIRMATION_WITH_ASSIGNMENTS_X_MORE, &quot;\n\n&quot; + StringUtil.join(empNames, &quot;\n&quot;) + &quot;\n\n&quot;, extra);</span>
+					}
+<span class="nc" id="L83">					rowData.setNodeAttribute(&quot;deleteConfirmation&quot;, msg);</span>
+					
+				}
+<span class="fc" id="L86">			}</span>
+		};
+<span class="fc" id="L88">		m_list = pc_rotationList;</span>
+<span class="fc" id="L89">		addChildComponent(m_list);</span>
+
+<span class="fc" id="L91">	}</span>
+
+	@Override
+	protected boolean isSortSupported() {
+<span class="fc" id="L95">		return true;</span>
+	}
+
+
+<span class="fc" id="L99">	boolean isExtracted = false;</span>
+	@Override
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">		if (isExtracted) return true;</span>
+<span class="fc" id="L103">		isExtracted = true;</span>
+<span class="fc" id="L104">		return super.extractParameters(request);</span>
+	}
+
+	@Override
+	protected void loadData() throws Exception {
+<span class="fc" id="L109">		super.loadData();</span>
+<span class="fc" id="L110">		int pageIndex = getPagePaginationIndex();</span>
+<span class="fc" id="L111">		int pageSize = getPageIDSize();	</span>
+<span class="fc" id="L112">		int itemIndex = getEditIndex();</span>
+<span class="fc" id="L113">		String pageAction = getPageAction();</span>
+<span class="fc" id="L114">		String strItemIndex = (String) m_context.getAttribute(RequestContext.SESSION_SCOPE, ROTATIONLIST_ITEMINDEX);</span>
+<span class="pc bpc" id="L115" title="2 of 6 branches missed.">		if(pageAction!=null&amp;&amp; (pageAction.equals(PageAction.CANCEL)||pageAction.equals(PageAction.SAVE) </span>
+<span class="pc bpc" id="L116" title="1 of 4 branches missed.">				||pageAction.equals(PageAction.TABLE_SORT)||pageAction.equals(PageAction.CREATE_NEW))){</span>
+		
+<span class="pc bpc" id="L118" title="1 of 2 branches missed.">			if (!StringUtil.isEmpty(strItemIndex)){</span>
+<span class="nc" id="L119">					itemIndex = Integer.parseInt(strItemIndex);</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">					pageIndex = (itemIndex/pageSize)+ (itemIndex%pageSize &gt; 0 ? 1: 0); </span>
+			}
+		} 
+<span class="fc" id="L123">		ID selectedOrgID = getSelectedIDObject();</span>
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">		if (selectedOrgID != null) {</span>
+<span class="fc" id="L125">			WorkRuleManager wrm = WfmManagerFactory.getWorkRuleManager(m_context.isInWhatIfMode());</span>
+			// Load Rotations
+<span class="pc bpc" id="L127" title="1 of 2 branches missed.">			if ( m_context.getUser().isAuthorized(PrivilegeKeys.FS_VIEWWORKRULES_ID, new ScopeID(selectedOrg.getID(), Scope.ORG_SCOPE))) {</span>
+<span class="pc bpc" id="L128" title="1 of 2 branches missed.">				if (isPaginationNavPressed()) {</span>
+<span class="nc" id="L129">					ArrayList&lt;ID&gt; pageIDs = (ArrayList&lt;ID&gt;)getPageIDs();</span>
+<span class="nc" id="L130">					rotations = new ArrayList&lt;Rotation&gt;(wrm.getRotationsByIDs(pageIDs));</span>
+<span class="nc" id="L131">					Collections.sort(rotations, new ValueObjectIDListComparator(pageIDs));</span>
+<span class="nc" id="L132">				} else {</span>
+<span class="fc" id="L133">					PaginationPair&lt;Rotation&gt; rotationData = wrm.getRotationsForOrgAndAncestors(selectedOrgID, pageSize, pageIndex,pc_rotationList.getSortFields(), m_list.getHeader().isAscending(),getTextToFind(itemToFind) );</span>
+<span class="fc" id="L134">					rotations = new ArrayList&lt;Rotation&gt;(rotationData.getValues());</span>
+<span class="fc" id="L135">					initPaginationIDs(rotationData.getIDs());</span>
+<span class="fc" id="L136">					Collections.sort(rotations, new ValueObjectIDListComparator(new ArrayList&lt;ID&gt;(getPageIDs())));</span>
+<span class="fc" id="L137">				}</span>
+				
+			} else {
+<span class="nc" id="L140">				addPageMessage(Message.INFO_TYPE, FsWebBundleKey.FS_NOT_AUTHORIZED_TO_VIEW_WORK_RULES_IN_THIS_SCOPE, FsWebBundleKey.BUNDLE_NAME);</span>
+			}
+<span class="fc" id="L142">			pc_rotationList.setRotations(rotations);</span>
+			
+<span class="fc" id="L144">			loadEmployeeAssignmentNames();</span>
+		
+			// Load required Orgs
+<span class="fc" id="L147">			HashSet&lt;ID&gt; ownerOrgIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc bfc" id="L148" title="All 2 branches covered.">			for (Rotation rotation : rotations) {</span>
+<span class="fc" id="L149">				ID ownerOrgID = rotation.getOrganizationID();</span>
+<span class="pc bpc" id="L150" title="1 of 2 branches missed.">				if (ownerOrgID != null) ownerOrgIDs.add(rotation.getOrganizationID());</span>
+<span class="fc" id="L151">			}</span>
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">			if (selectedOrgID != null) ownerOrgIDs.add(selectedOrgID);</span>
+<span class="fc" id="L153">			orgsByID = ValueObjectUtil.getIDObjectMap(OrganizationModelHandler.getOrganizationsByIDs(m_context, ownerOrgIDs));</span>
+<span class="fc" id="L154">			pc_rotationList.setOrgMap(orgsByID);</span>
+			
+			// Set the TimeZone on the list PC
+<span class="fc" id="L157">			Organization o = orgsByID.get(selectedOrgID);</span>
+<span class="pc bpc" id="L158" title="3 of 6 branches missed.">			if (o != null &amp;&amp; o.getTimeZone() != null &amp;&amp; ! TimeZoneOverrideUtil.isTimeZoneOverridden(m_context)) { </span>
+<span class="fc" id="L159">				pc_rotationList.setViewTimeZone(o.getTimeZone());</span>
+			}
+		}
+<span class="fc" id="L162">	}</span>
+
+	/**
+	 * Loads the names of the assigned employees, formats the lists as strings, and stores them in the rotationEmpNameMap field.
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 * @throws BbmException
+	 */
+	private void loadEmployeeAssignmentNames() throws BbmFinderException, RemoteException, BbmException {
+		// First get the object representation of the assignment for the rotations
+<span class="fc" id="L172">		Map&lt;ID, ? extends Collection&lt;WorkResourceRotation&gt;&gt; rotationAssignmentMap = WorkRulesModelHandler.getRotationAssignmentsByRotationIDs(m_context, ValueObjectUtil.getIDFromObjects(rotations));</span>
+
+		// Now Collect the employee IDs so we can get the names
+<span class="fc" id="L175">		Set&lt;ID&gt; workResourceIDs = new HashSet&lt;ID&gt;();</span>
+<span class="pc bpc" id="L176" title="1 of 2 branches missed.">		for (Collection&lt;WorkResourceRotation&gt;  assignments : rotationAssignmentMap.values()) {</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">			for (WorkResourceRotation assignment: assignments) {</span>
+<span class="nc" id="L178">				workResourceIDs.add(assignment.getWorkResourceID());</span>
+<span class="nc" id="L179">			}</span>
+<span class="nc" id="L180">		}</span>
+		
+		// Get the Name abstraction for all the employees
+<span class="fc" id="L183">		HashMap&lt;ID, EmployeeName&gt; assignmentNames = WorkResourceModelHandler.getWorkResourceManager(m_context).getWorkResourceNamesByIDs(workResourceIDs);</span>
+		
+<span class="fc" id="L185">		rotationEmpNameMap = new HashMap&lt;ID, List&lt;String&gt;&gt;();</span>
+<span class="pc bpc" id="L186" title="1 of 2 branches missed.">		for (Entry&lt;ID, ? extends Collection&lt;WorkResourceRotation&gt;&gt;  assignmentEntry : rotationAssignmentMap.entrySet()) {</span>
+<span class="nc" id="L187">			ID rotationID = assignmentEntry.getKey();</span>
+<span class="nc" id="L188">			ArrayList&lt;String&gt; empNames = new ArrayList&lt;String&gt;(assignmentEntry.getValue().size());</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">			for (WorkResourceRotation assignment: assignmentEntry.getValue()) {</span>
+<span class="nc" id="L190">				empNames.add(assignmentNames.get(assignment.getWorkResourceID()).getDisplayName(m_localizer));</span>
+<span class="nc" id="L191">			}</span>
+<span class="nc" id="L192">			rotationEmpNameMap.put(rotationID, empNames);</span>
+<span class="nc" id="L193">		}</span>
+<span class="fc" id="L194">	}</span>
+	@Override
+	protected boolean isAbleToAdd(){
+<span class="fc" id="L197">		boolean canAdd = super.isAddActionEnabled(); </span>
+<span class="pc bpc" id="L198" title="2 of 4 branches missed.">		if (isByOrg &amp;&amp; selectedOrg == null) {</span>
+<span class="nc" id="L199">			canAdd = false;</span>
+<span class="pc bpc" id="L200" title="2 of 4 branches missed.">		} else if (isByOrg &amp;&amp; ! m_context.getUser().isAuthorized(PrivilegeKeys.FS_ADDROTATIONS_ID, new ScopeID(selectedOrg.getID(), Scope.ORG_SCOPE))) {</span>
+<span class="nc" id="L201">			canAdd = false;</span>
+<span class="pc bpc" id="L202" title="3 of 4 branches missed.">		} else if (!isByOrg &amp;&amp; ! m_context.getUser().isAuthorized(PrivilegeKeys.FS_ADDROTATIONS_ID)) {</span>
+<span class="nc" id="L203">			canAdd = false;</span>
+		}
+<span class="fc" id="L205">		return canAdd;</span>
+	}
+	protected void initToolbar() {
+<span class="fc" id="L208">		FindToolbarPageComponent findToolBar = new FindToolbarPageComponent(m_context, getToolbar(),</span>
+				FIND_ITEM_FN, WorkRulesRH.FIND_ACTION,
+<span class="fc" id="L210">				getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_FIND_ROTATIONS));	</span>
+<span class="fc" id="L211">		getToolbar().addToolbarComponent(findToolBar);</span>
+<span class="fc" id="L212">		getToolbar().addDivider(); </span>
+<span class="fc" id="L213">		super.initToolbar();</span>
+<span class="fc" id="L214">	}</span>
+	private boolean hasPrivileges(ID privilegeID) {
+<span class="pc bpc" id="L216" title="1 of 2 branches missed.">		if (isByOrg) {</span>
+<span class="pc bpc" id="L217" title="2 of 4 branches missed.">			return selectedOrg != null &amp;&amp; m_context.getUser().isAuthorized(privilegeID, new ScopeID(selectedOrg.getID(), Scope.ORG_SCOPE));</span>
+		}
+		else {
+<span class="nc" id="L220">			return m_context.getUser().isAuthorized(privilegeID);</span>
+		}
+	}
+	@Override
+	protected void setRowAttributes(MultiColumnNodeData rowData, ID orgID) {
+<span class="fc" id="L225">		HashMap&lt;String, String&gt; nodeAttributes = rowData.getNodeAttributes();</span>
+<span class="fc" id="L226">		boolean hasEditPrivs = hasPrivileges(PrivilegeKeys.FS_EDITROTATIONS_ID);</span>
+<span class="fc" id="L227">		boolean hasDeletePrivs = hasPrivileges(PrivilegeKeys.FS_DELETEROTATIONS_ID);</span>
+<span class="fc" id="L228">		boolean isEditable = isEditable(hasEditPrivs, orgID);</span>
+<span class="fc" id="L229">		boolean isDeleteable =isEditable(hasDeletePrivs, orgID);</span>
+<span class="fc" id="L230">		boolean isAddable = isEditable(hasPrivileges(PrivilegeKeys.FS_ADDROTATIONS_ID), orgID);</span>
+<span class="fc" id="L231">		nodeAttributes.put(IS_EDITABLE, String.valueOf(isEditable));</span>
+<span class="fc" id="L232">		nodeAttributes.put(IS_DELETEABLE, String.valueOf(isDeleteable));</span>
+<span class="fc" id="L233">		nodeAttributes.put(IS_ADDABLE, String.valueOf(isAddable));</span>
+<span class="fc" id="L234">		toggleBtnOnNodeSelect(rowData, WorkRulesRH.WORK_RULES_COPY_PAGE_ACTION, hasEditPrivs);</span>
+<span class="fc" id="L235">		rowData.setNodeAttributes(nodeAttributes);</span>
+<span class="fc" id="L236">	}</span>
+	@Override
+	protected void setDetailRowAttributes(MultiColumnNodeData mcnd, MultiColumnNodeData mcndDetail, ID orgID) {
+<span class="nc" id="L239">		HashMap&lt;String, String&gt; nodeAttributes = mcndDetail.getNodeAttributes();</span>
+<span class="nc" id="L240">		boolean hasEditPrivs = hasPrivileges(PrivilegeKeys.FS_EDITROTATIONS_ID);</span>
+<span class="nc" id="L241">		nodeAttributes.put(IS_EDITABLE, mcnd.getNodeAttributes().get(IS_EDITABLE));</span>
+<span class="nc" id="L242">		toggleBtnOnNodeSelect(mcndDetail, WorkRulesRH.WORK_RULES_COPY_PAGE_ACTION, hasEditPrivs);</span>
+<span class="nc" id="L243">		nodeAttributes.put(IS_COPYABLE, mcnd.getNodeAttributes().get(IS_COPYABLE));</span>
+<span class="nc" id="L244">		nodeAttributes.put(IS_DELETEABLE, mcnd.getNodeAttributes().get(IS_DELETEABLE));</span>
+<span class="nc" id="L245">		nodeAttributes.put(IS_ADDABLE, mcnd.getNodeAttributes().get(IS_ADDABLE));</span>
+<span class="nc" id="L246">		nodeAttributes.put(&quot;isDetail&quot;, &quot;true&quot;);</span>
+<span class="nc" id="L247">	}</span>
+	
+	@Override
+	protected void initHeader() {
+		// Do nothing. This is taken care of by the RotationListPC
+<span class="fc" id="L252">	}</span>
+	
+	@Override
+	protected void initSelectableItems() {
+		
+<span class="fc" id="L257">	}</span>
+	
+	@Override
+	protected void initContentTitle() {
+<span class="fc" id="L261">		super.initContentTitle();</span>
+<span class="fc" id="L262">		m_contentTitlePC.setPageTitle(m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_ROTATIONS));</span>
+<span class="fc" id="L263">	}</span>
+
+	public static RotationsListPM getInstance(RequestContext context) {
+<span class="fc" id="L266">		return (RotationsListPM) PageModel.getInstance(context, RotationsListPM.class);</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,369 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AppletPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.core.applet</a> &gt; <span class="el_source">AppletPM.java</span></div><h1>AppletPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.core.applet;
+
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.web.core.Log;
+import com.verint.web.wfm.keys.WfmJavaScriptFileID;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.pagemodel.WorkpanePageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.system.config.Screen;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.js.JSUtil;
+import com.witness.web.uif.util.reflection.ReflectionHelperManager;
+import com.witness.web.uif.PackageInfo;
+
+import java.util.ArrayList;
+import java.util.StringTokenizer;
+import java.util.Iterator;
+
+/**
+ * Title:					AppletPC.java
+ * Description:		This compoment creates the applet tags needed for the HTML page.
+ * Copyright:	  Copyright (c) 2003
+ * Company:		  Blue Pumpkin Software, Inc
+ * @author		  David Su
+ * @version 1.0
+ */
+@SuppressWarnings(&quot;serial&quot;)
+public class AppletPM extends WorkpanePageModel {
+<span class="fc" id="L31">	private static final Category m_log = Log.initCategory(AppletPM.class.getName());</span>
+	private static final String APPLET_PC_NAME = &quot;appletPC&quot;;
+	private static final String APPLET_COMMON_JAR = &quot;wfm-common-applet.jar&quot;;
+	private static final String RESOURCE_JAR = &quot;wfm-common-applet-lib.jar&quot;;
+
+<span class="fc" id="L36">	protected String m_appletPCClass = AppletPC.class.getName();</span>
+	protected AppletPC m_appletPC;
+	protected Screen m_appletScreen;
+<span class="fc" id="L39">	private boolean m_isStringID=false;</span>
+<span class="fc" id="L40">	private String m_stringIDs=&quot;&quot;;</span>
+<span class="fc" id="L41">	private ArrayList&lt;String&gt; jarFileList = new ArrayList&lt;String&gt;(5);</span>
+
+	public AppletPM(RequestContext context) {
+<span class="fc" id="L44">		super(context, AppletPM.FRAMED_MODEL);</span>
+
+		// getting rid of borders - applet handles on its own
+<span class="fc" id="L47">		setTemplateStyle(&quot;&quot;, &quot;&quot;, &quot;border:0px solid #7386AD;&quot;, &quot;border-bottom:0px solid white;&quot;, &quot;&quot;);</span>
+
+		// most applets handle their own toolbars and content title
+<span class="fc" id="L50">		m_toolbar = null;</span>
+<span class="fc" id="L51">		m_contentTitlePC = null;</span>
+
+<span class="fc" id="L53">		m_appletScreen = m_context.getScreen();</span>
+<span class="pc bpc" id="L54" title="1 of 2 branches missed.">		if (m_appletScreen!=null) {</span>
+<span class="fc" id="L55">			String idType = m_appletScreen.getParameterValue(AppletKeys.APPLET_ID_TYPE);</span>
+<span class="fc" id="L56">			m_isStringID = &quot;String&quot;.equalsIgnoreCase(idType);</span>
+		}
+
+<span class="fc" id="L59">		addRequiredJavaScriptFile(JavaScriptFileID.MEDIATOR_WORKPANE_GENERIC);</span>
+<span class="fc" id="L60">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="fc" id="L61">		setJSMediator(WfmJavaScriptFileID.MEDIATOR_APPLET_PAGE);</span>
+<span class="fc" id="L62">	}</span>
+
+	/**
+	 * Return an instance of Page Model
+	 *
+	 * @param context The Request Context
+	 */
+	public static PageModel getInstance(RequestContext context) throws Exception {
+<span class="fc" id="L70">		return getInstance(context, AppletPM.class);</span>
+	}
+
+	/**
+	 * Initialize Model with Data
+	 */
+	protected void initializeModel() {
+<span class="fc bfc" id="L77" title="All 2 branches covered.">		if (m_isInitialized) return; else m_isInitialized = true;</span>
+
+		try {
+			// Initialize AppletPC
+<span class="fc" id="L81">			initAppletPC();</span>
+
+			// Add Selected ID Field
+<span class="fc" id="L84">			String selectedIDF = HtmlUtil.makeHiddenInput(SELECTED_ID_FN, getSelectedID());</span>
+<span class="fc" id="L85">			addGenericHTML(selectedIDF);</span>
+<span class="nc" id="L86">		} catch (Exception ex) {</span>
+<span class="nc" id="L87">			handleUnableToLoadDataError(m_log, ex);</span>
+<span class="fc" id="L88">		}</span>
+<span class="fc" id="L89">	}</span>
+
+	// This is required to make sure that the applet jar version complies with xxxx.xxxx.xxxx.xxxx
+	private static String normalizeJarVerionItem(int num) {
+<span class="fc" id="L93">		final int ITEM_LIMIT=4;</span>
+<span class="fc" id="L94">		String result = String.valueOf(num);</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">		if (result.length()&gt;ITEM_LIMIT) {</span>
+<span class="fc" id="L96">			result = Integer.toHexString(num);</span>
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">			if (result.length()&gt;ITEM_LIMIT) {</span>
+<span class="nc" id="L98">				result = result.substring(0, ITEM_LIMIT);</span>
+			}
+		}
+
+<span class="fc" id="L102">		return result;</span>
+	}
+
+	// This is required to make sure that the applet jar version complies with xxxx.xxxx.xxxx.xxxx
+	private static String getAppletJarVersion() {
+<span class="fc" id="L107">		String major = normalizeJarVerionItem(PackageInfo.VERSION.getMajor());</span>
+<span class="fc" id="L108">		String minor = normalizeJarVerionItem(PackageInfo.VERSION.getMinor());</span>
+<span class="fc" id="L109">		String branch = normalizeJarVerionItem(PackageInfo.VERSION.getBranch());</span>
+<span class="fc" id="L110">		String build = normalizeJarVerionItem(PackageInfo.VERSION.getBuild());</span>
+
+<span class="fc" id="L112">		StringBuffer versionSB = new StringBuffer(125);</span>
+<span class="fc" id="L113">		versionSB.append(major).append(&quot;.&quot;).append(minor).append(&quot;.&quot;).append(branch).append(&quot;.&quot;).append(build);</span>
+<span class="fc" id="L114">		return versionSB.toString();</span>
+	}
+
+	/**
+	 * Initialize AppletPC
+	 * @throws Exception
+	 */
+	protected void initAppletPC() throws Exception {
+<span class="pc bpc" id="L122" title="1 of 2 branches missed.">		if (m_appletScreen==null) return;</span>
+
+		// Handle Applet PC
+<span class="fc" id="L125">		String appletPCClass = m_appletScreen.getParameterValue(AppletKeys.APPLET_PC);</span>
+<span class="fc bfc" id="L126" title="All 2 branches covered.">		if (!StringUtil.isEmpty(appletPCClass)) m_appletPCClass = appletPCClass;</span>
+<span class="fc" id="L127">		m_appletPC = (AppletPC)ReflectionHelperManager</span>
+<span class="fc" id="L128">				.newInstancePC(m_appletPCClass, m_context);</span>
+<span class="fc" id="L129">		m_appletPC.setName(APPLET_PC_NAME);</span>
+<span class="fc" id="L130">		addChildComponent(m_appletPC);</span>
+
+		// Handle Applet Class
+<span class="fc" id="L133">		String appletClass = getRequiredParamValue(m_appletScreen, AppletKeys.APPLET_CLASS);</span>
+<span class="fc" id="L134">		m_appletPC.setAppletClass(appletClass);</span>
+
+		// Handle Applet Request Handler
+<span class="fc" id="L137">		String appletRH = getRequiredParamValue(m_appletScreen, AppletKeys.APPLET_RH);</span>
+<span class="fc" id="L138">		m_appletPC.setAppletRequestHandler(appletRH);</span>
+
+		// Handle Applet Jar Files
+<span class="fc" id="L141">		jarFileList.add(RESOURCE_JAR);</span>
+<span class="fc" id="L142">		jarFileList.add(APPLET_COMMON_JAR);</span>
+
+		// Handle resource bundle jar.  The specific bundles for each language are packaged
+		//by the localization team, and we will load only the correct bundle for the current language. 
+<span class="fc" id="L146">		String localeStr = m_locale.toString();</span>
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">		if (!localeStr.startsWith(&quot;en&quot;)) {</span>
+<span class="nc" id="L148">			StringBuffer sb = new StringBuffer(50);</span>
+<span class="nc" id="L149">			sb.append(&quot;../StaticFiles_&quot;).append(localeStr).append(&quot;/&quot;)</span>
+<span class="nc" id="L150">					.append(&quot;appletbundle_&quot;).append(localeStr).append(&quot;.jar&quot;);</span>
+
+<span class="nc" id="L152">			jarFileList.add(sb.toString());</span>
+		}
+
+		// Need to load applet specific jar last since there seem to be a bug in JRE that it only load
+		// jars before applet specific jar.
+<span class="fc" id="L157">		String appletJar = getRequiredParamValue(m_appletScreen, AppletKeys.APPLET_JAR);</span>
+<span class="fc" id="L158">		StringTokenizer stk = new StringTokenizer(appletJar, &quot;,&quot;);</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">		while(stk.hasMoreTokens()) {</span>
+<span class="fc" id="L160">			jarFileList.add(stk.nextToken());</span>
+		}
+
+<span class="fc" id="L163">		StringBuffer cacheArchiveSB = new StringBuffer(256);</span>
+<span class="fc" id="L164">		StringBuffer cacheVersionSB = new StringBuffer(256);</span>
+<span class="fc" id="L165">		boolean isNotFirstItem=false;</span>
+<span class="fc" id="L166">		String jarVersion = getAppletJarVersion();</span>
+<span class="fc bfc" id="L167" title="All 2 branches covered.">		for(Iterator&lt;String&gt; it = jarFileList.iterator(); it.hasNext(); ) {</span>
+<span class="fc bfc" id="L168" title="All 2 branches covered.">			if (isNotFirstItem) {</span>
+<span class="fc" id="L169">				cacheArchiveSB.append(&quot;,&quot;);</span>
+<span class="fc" id="L170">				cacheVersionSB.append(&quot;,&quot;);</span>
+			}
+
+<span class="fc" id="L173">			cacheArchiveSB.append(it.next());</span>
+<span class="fc" id="L174">			cacheVersionSB.append(jarVersion);</span>
+
+<span class="fc" id="L176">			isNotFirstItem=true;</span>
+		}
+
+<span class="fc" id="L179">		m_appletPC.setAppletJarFiles(cacheArchiveSB.toString());</span>
+<span class="fc" id="L180">		m_appletPC.setAppletJarFileVersions(cacheVersionSB.toString());</span>
+
+		// Determine whether Applet supports Printing
+<span class="fc" id="L183">		String appletPrinting = m_appletScreen.getParameterValue(AppletKeys.APPLET_PRINTING);</span>
+<span class="pc bpc" id="L184" title="1 of 2 branches missed.">		if (&quot;true&quot;.equalsIgnoreCase(appletPrinting)) {</span>
+<span class="fc" id="L185">			addJSVariable(JSUtil.JS_VAR_IS_SELF_PRINTING, &quot;true&quot;);</span>
+		}
+
+		// Handle Applet PC JavaScript;
+<span class="fc" id="L189">		String jsFileStr = m_appletScreen.getParameterValue(AppletKeys.APPLET_PC_JS);</span>
+<span class="fc" id="L190">		String[] jsFiles = StringUtil.parseStringToArray(jsFileStr, &quot;,&quot;);</span>
+<span class="pc bpc" id="L191" title="1 of 2 branches missed.">		for(int i=0; i&lt;jsFiles.length; i++) {</span>
+<span class="nc" id="L192">			String jsFile = m_context.getStaticFileUrl(jsFiles[i]);</span>
+<span class="nc" id="L193">			m_appletPC.setAppletJS(jsFile);</span>
+		}
+
+		// Handle Applet Model Type
+<span class="fc" id="L197">		String appletModelType = m_appletScreen.getParameterValue(AppletKeys.APPLET_MODEL_TYPE);</span>
+<span class="pc bpc" id="L198" title="1 of 2 branches missed.">		if (!StringUtil.isEmpty(appletModelType)) {</span>
+<span class="nc" id="L199">			int type = Integer.parseInt(appletModelType);</span>
+<span class="nc" id="L200">			setPageModelType(type);</span>
+		}
+<span class="fc" id="L202">	}</span>
+
+	/**
+	 * Return Required Parameter Value
+	 *
+	 * @param screen - Screen Object
+	 * @param key - Paramter Key
+	 * @return Parameter Value
+	 * @throws RuntimeException if required parameter is missing
+	 */
+	private String getRequiredParamValue(Screen screen, String key)
+			throws RuntimeException {
+<span class="fc" id="L214">		String value = screen.getParameterValue(key);</span>
+
+<span class="pc bpc" id="L216" title="1 of 2 branches missed.">		if (StringUtil.isEmpty(value)) {</span>
+<span class="nc" id="L217">			String msg = &quot;Required Applet Paremeter not found: &quot; + key;</span>
+<span class="nc" id="L218">			throw new RuntimeException(msg);</span>
+		}
+
+<span class="fc" id="L221">		return value;</span>
+	}
+
+	/**
+	 * Set Selected IDs
+	 */
+	public void setSelectedID(String ids) {
+<span class="pc bpc" id="L228" title="1 of 2 branches missed.">		if (m_isStringID) {</span>
+<span class="fc" id="L229">			m_stringIDs = ids;</span>
+		} else {
+<span class="nc" id="L231">			super.setSelectedID(ids);</span>
+		}
+<span class="fc" id="L233">	}</span>
+
+	/**
+	 * Return Selected IDs
+	 */
+	public String getSelectedID() {
+<span class="pc bpc" id="L239" title="1 of 2 branches missed.">		if (m_isStringID) {</span>
+<span class="fc" id="L240">			return m_stringIDs;</span>
+		} else {
+<span class="nc" id="L242">			return super.getSelectedID();</span>
+		}
+	}
+
+	/**
+	 * Return Form Action
+	 */
+<span class="fc" id="L249">	public String getFormAction() {	return &quot;&quot;;	}</span>
+
+	/**
+	 * Return the Html code to render the display of the component
+	 */
+	public String getHtmlDisplay() {
+<span class="pc bpc" id="L255" title="1 of 2 branches missed.">		return (m_appletPC!=null) ? m_appletPC.getHtmlDisplay() + onDocReadyJavaScript() : &quot;&quot;;</span>
+	}
+	
+	private String onDocReadyJavaScript() {
+<span class="fc" id="L259">		StringBuilder sb = new StringBuilder();</span>
+		//sb.append(&quot;&lt;script type=\&quot;text/javascript\&quot;&gt;\n&quot;);
+		//sb.append(&quot;  $(window).resize(function() {\n&quot;);
+		//sb.append(&quot;    var $appletPC = jQuery(\&quot;#&quot; + APPLET_PC_NAME + &quot;\&quot;);\n&quot;);
+		//sb.append(&quot;    $appletPC.width($appletPC.parent().width());\n&quot;);
+		//sb.append(&quot;    $appletPC.height($appletPC.parent().height());\n&quot;);
+		//sb.append(&quot;  });\n&quot;);
+		//sb.append(&quot;&lt;/script&gt;\n&quot;);
+<span class="fc" id="L267">		return sb.toString();	</span>
+	}
+	
+    /**
+     * Return the custom JavaScript code for the Page model.
+     * The output of this method is added outside of the JavaScript main() function.
+     * The two JS functions defined here are used in order to fix two JavaScript errors 
+     * that happen on the Adherence and Pulse applet pages when clicking the Adherence 
+     * or Pulse tabs while using JRE 1.4.2 and IE8. (QC#56703/QA#98201). Apparently, the 
+     * applets are loading before the JavaScript main() function has completed, so the 
+     * window.pageMediator object doesn't exist yet, which results in JavaScript
+     * errors. The fix is to use setTimeout() to wait until the window.pageMediator
+     * object is defined before trying to access it.
+     */
+    public String getCustomJavaScript() 
+    {
+<span class="fc" id="L283">        StringBuffer sb = new StringBuffer(1024);</span>
+<span class="fc" id="L284">        sb.append(super.getCustomJavaScript());</span>
+        
+<span class="fc" id="L286">        sb.append(&quot;\n\n&quot;);</span>
+<span class="fc" id="L287">        sb.append(&quot;//This function will evaluate any JavaScript expression you pass-in. \n&quot;);</span>
+<span class="fc" id="L288">        sb.append(&quot;//If the expression results in an exception, the we set a timer to call this function after 50 miliseconds to try again. \n&quot;);</span>
+<span class="fc" id="L289">        sb.append(&quot;//If/when there is no exception, we return the result of the expression. \n&quot;);</span>
+<span class="fc" id="L290">        sb.append(&quot;function evalJSExpWithExceptionCheck(exp) \n&quot;);</span>
+<span class="fc" id="L291">        sb.append(&quot;{ \n&quot;);</span>
+<span class="fc" id="L292">        sb.append(&quot;    try { \n&quot;);</span>
+<span class="fc" id="L293">        sb.append(&quot;        var retVal = eval(exp); \n&quot;);</span>
+<span class="fc" id="L294">        sb.append(&quot;        return retVal; \n&quot;);</span>
+<span class="fc" id="L295">        sb.append(&quot;    } \n&quot;);</span>
+<span class="fc" id="L296">        sb.append(&quot;    catch (ex) {\n&quot;);</span>
+<span class="fc" id="L297">        sb.append(&quot;        console.log('evalJS(' + exp + ') failed: ' + ex);&quot;);</span>
+<span class="fc" id="L298">        sb.append(&quot;        setTimeout('evalJSExpWithExceptionCheck(\\'' + exp + '\\')', 1000); \n&quot;);</span>
+<span class="fc" id="L299">        sb.append(&quot;    } \n&quot;);        </span>
+<span class="fc" id="L300">        sb.append(&quot;}\n\n&quot;);</span>
+        
+<span class="fc" id="L302">        sb.append(&quot;\n\n&quot;);</span>
+<span class="fc" id="L303">        sb.append(&quot;//This function will set the context dates as soon as the pageMediator is available. \n&quot;);</span>
+<span class="fc" id="L304">        sb.append(&quot;function setWorkPaneContextDatesWhenReady(startDate, endDate) \n&quot;);</span>
+<span class="fc" id="L305">        sb.append(&quot;{ \n&quot;);</span>
+<span class="fc" id="L306">        sb.append(&quot;    if (typeof(window.pageMediator) != \&quot;undefined\&quot;) \n&quot;);</span>
+<span class="fc" id="L307">        sb.append(&quot;    { \n&quot;);</span>
+<span class="fc" id="L308">        sb.append(&quot;        window.pageMediator.setWorkPaneContextDates(startDate, endDate); \n&quot;);</span>
+<span class="fc" id="L309">        sb.append(&quot;    } \n&quot;);</span>
+<span class="fc" id="L310">        sb.append(&quot;    else \n&quot;);</span>
+<span class="fc" id="L311">        sb.append(&quot;    { \n&quot;);</span>
+<span class="fc" id="L312">        sb.append(&quot;        setTimeout('setWorkPaneContextDatesWhenReady(\\'' + startDate + '\\', \\'' + endDate + '\\')', 50); \n&quot;);</span>
+<span class="fc" id="L313">        sb.append(&quot;    } \n&quot;);        </span>
+<span class="fc" id="L314">        sb.append(&quot;}\n\n&quot;);</span>
+        
+<span class="fc" id="L316">        sb.append(&quot;//This function will return the selectedIDs if they are available. Otherwise, returns 'undefined'. \n&quot;);</span>
+<span class="fc" id="L317">        sb.append(&quot;function getSelectedIDsIfDefined() \n&quot;);</span>
+<span class="fc" id="L318">        sb.append(&quot;{  \n&quot;);</span>
+<span class="fc" id="L319">		sb.append(&quot;    try {\n&quot;);</span>
+<span class="fc" id="L320">        sb.append(&quot;        var ids = ''; \n&quot;);</span>
+<span class="fc" id="L321">        sb.append(&quot;        if (typeof(top.selectionMediator) != \&quot;undefined\&quot;) \n&quot;);</span>
+<span class="fc" id="L322">        sb.append(&quot;        { \n&quot;);</span>
+<span class="fc" id="L323">        sb.append(&quot;            return top.selectionMediator.getSelectedID(); \n&quot;);</span>
+<span class="fc" id="L324">        sb.append(&quot;        } \n&quot;);</span>
+<span class="fc" id="L325">        sb.append(&quot;        else \n&quot;);</span>
+<span class="fc" id="L326">        sb.append(&quot;        { \n&quot;);</span>
+<span class="fc" id="L327">        sb.append(&quot;            return 'undefined';\n&quot;);</span>
+<span class="fc" id="L328">        sb.append(&quot;        } \n&quot;);</span>
+<span class="fc" id="L329">		sb.append(&quot;    }\n&quot;);</span>
+<span class="fc" id="L330">		sb.append(&quot;    catch (ex) {\n&quot;);</span>
+<span class="fc" id="L331">		sb.append(&quot;        return 'undefined';\n&quot;);</span>
+<span class="fc" id="L332">		sb.append(&quot;    }\n&quot;);       </span>
+<span class="fc" id="L333">        sb.append(&quot;}\n\n&quot;);        </span>
+        
+<span class="fc" id="L335">        sb.append(&quot;//This function will return the selectedIDs if they are available. Otherwise, returns 'undefined' and \n&quot;);</span>
+<span class="fc" id="L336">        sb.append(&quot;//will call waitForSelectedIDs() to refresh workpane when the selectedIDs become available. \n&quot;);</span>
+<span class="fc" id="L337">        sb.append(&quot;function getSelectedIDsWhenDefined() \n&quot;);</span>
+<span class="fc" id="L338">        sb.append(&quot;{ \n&quot;);</span>
+<span class="fc" id="L339">        sb.append(&quot;    var ids = ''; \n&quot;);</span>
+<span class="fc" id="L340">        sb.append(&quot;    if (typeof(top.selectionMediator) != \&quot;undefined\&quot;) \n&quot;);</span>
+<span class="fc" id="L341">        sb.append(&quot;    { \n&quot;);</span>
+<span class="fc" id="L342">        sb.append(&quot;        return top.selectionMediator.getSelectedID(); \n&quot;);</span>
+<span class="fc" id="L343">        sb.append(&quot;    } \n&quot;);</span>
+<span class="fc" id="L344">        sb.append(&quot;    else \n&quot;);</span>
+<span class="fc" id="L345">        sb.append(&quot;    { \n&quot;);</span>
+<span class="fc" id="L346">        sb.append(&quot;        waitForSelectedIDs(); \n&quot;);</span>
+<span class="fc" id="L347">        sb.append(&quot;        return 'undefined';&quot;);</span>
+<span class="fc" id="L348">        sb.append(&quot;    } \n&quot;);        </span>
+<span class="fc" id="L349">        sb.append(&quot;}\n\n&quot;);</span>
+        
+<span class="fc" id="L351">        sb.append(&quot;//This private function will wait until the selectedIDs are available, then refreshes the workpane with the IDs. \n&quot;);</span>
+<span class="fc" id="L352">        sb.append(&quot;function waitForSelectedIDs() \n&quot;);</span>
+<span class="fc" id="L353">        sb.append(&quot;{ \n&quot;);</span>
+<span class="fc" id="L354">        sb.append(&quot;    if (typeof(top.selectionMediator) != \&quot;undefined\&quot;) \n&quot;);</span>
+<span class="fc" id="L355">        sb.append(&quot;    { \n&quot;);</span>
+<span class="fc" id="L356">        sb.append(&quot;        var ids = top.selectionMediator.getSelectedID(); \n&quot;);</span>
+<span class="fc" id="L357">        sb.append(&quot;        setTimeout('top.selectionMediator.submitTreeSelection()', 500); \n&quot;);</span>
+<span class="fc" id="L358">        sb.append(&quot;    } \n&quot;);</span>
+<span class="fc" id="L359">        sb.append(&quot;    else \n&quot;);</span>
+<span class="fc" id="L360">        sb.append(&quot;    { \n&quot;);</span>
+<span class="fc" id="L361">        sb.append(&quot;        setTimeout('waitForSelectedIDs()', 50); \n&quot;);</span>
+<span class="fc" id="L362">        sb.append(&quot;    } \n&quot;);        </span>
+<span class="fc" id="L363">        sb.append(&quot;}\n\n&quot;);</span>
+
+<span class="fc" id="L365">        return sb.toString();</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

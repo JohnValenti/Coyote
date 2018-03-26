@@ -1,0 +1,629 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RequestFilingRule.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.setup.filingrules.model</a> &gt; <span class="el_source">RequestFilingRule.java</span></div><h1>RequestFilingRule.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.setup.filingrules.model;
+
+import java.util.Date;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.util.BPMessageFormat;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectBase;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
+import com.bluepumpkin.ejb.rm.setup.RuleScope;
+
+
+/**
+ * A filing rule has an effectivity period and checks the request submission date for validity.
+ * &lt;p/&gt;
+ * &lt;p&gt; A Filing Rule example :
+ * &lt;pre&gt;
+ * Filing rule for TO Requests of type &quot;vacation&quot;.
+ * Rule applies during &quot;any time | weekends | monday | tuesday | ...&quot;.
+ * Rule states TO request must be filed by &quot;equals | lessthan | ...&quot;  &quot;fileByTime&quot;.
+ * &lt;/pre&gt;
+ * &lt;p/&gt;
+ * &lt;p&gt; Rule parameters:
+ * &lt;li&gt; a request activity type: for TO requests, this will be the activityID. Not used for other request types.
+ * &lt;li&gt; a FileRuleEffectivity == DAYRANGE_ALL_DAYS | DAYRANGE_DAY_TYPE | DAYRANGE_DATES
+ * &lt;li&gt; a FilingDate  which equals|less than|greater than  absoluteDate
+ * *** or *** equals|less than|greater than  daysInAdvance
+ * &lt;li&gt; a request sub type: for Custom Shift requests, this will be an integer telling us which shift change types 
+ * (OT/Regular, New Shift/Shift Change)are affected by the rule.
+ * &lt;p/&gt;
+ * &lt;p&gt; Description of important methods:
+ * &lt;li&gt; getDayRange(): DAYRANGE_ALL_DAYS | DAYRANGE_DAY_TYPE | DAYRANGE_DATES.
+ * &lt;li&gt; getDayType(): DAYTYPE_HOLIDAY | DAYTYPE_WEEKEND | DAYTYPE_WEEKEEND | DAYTYPE_MONDAY | ...
+ * &lt;li&gt; getTimeType(): absoluteDate | daysInAdvance
+ * &lt;li&gt; getFileByDate(): absoluteDate if timeType == absolute
+ * &lt;li&gt; getDateComparision(): equals|less than|greater than. Used for timeType == absolute
+ * &lt;li&gt; getIntervalDays(): number of days in advance if timeType == daysInAdvance.
+ * &lt;li&gt; getIntervalType: equals|less than|greater than.  Used for timeType == daysInAdvance.
+ * &lt;p/&gt;
+ * &lt;p&gt; Note: Filing rules (of type &quot;interval (daysInAdvance)&quot;) for SS and TO are
+ * worded a little differently than for ShiftBidRequests.
+ * &lt;li&gt; For TO and SS the wording is:
+ * &quot;When the request is filed by lessThan | equalTo | moreThan &lt;n&gt; days in advance&quot;
+ * &lt;li&gt; For shiftBid reqs the wording is:
+ * &quot;All bids must be submitted  Less than | Equal to | More than  day(s) before the auction deadline&quot;
+ * &lt;p/&gt;
+ * Title:        RequestFilingRule
+ * Description:  Represents a RequestFilingRule
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, Inc.
+ *
+ * @author Shailendra Sharma
+ * @version 1.0
+ */
+
+public class RequestFilingRule extends ValueObjectBase implements RuleScope {
+	public static final String OBJECT_TYPE_FILINGRULE_SS = &quot;FILINGRULE_SS&quot;;
+	public static final String OBJECT_TYPE_FILINGRULE_SB = &quot;FILINGRULE_SB&quot;;
+	public static final String OBJECT_TYPE_FILINGRULE_TOM = &quot;FILINGRULE_TOM&quot;;
+	public static final String OBJECT_TYPE_FILINGRULE_CS = &quot;FILINGRULE_CS&quot;;
+	public static final String OBJECT_TYPE_FILINGRULE_FT = &quot;FILINGRULE_FT&quot;;
+
+	public static final int TIMELINE_IN_ADVANCE = 0;
+	public static final int TIMELINE_IN_THE_PAST = 1;
+	
+	//The Shift Request subtypes are stored in the integer's bits
+<span class="fc" id="L74">	public static final int REQUEST_SUB_TYPE_REG_NEW_SHIFT = CustShiftReq.REQUEST_SUB_TYPE_REG_NEW_SHIFT.toInt();</span>
+<span class="fc" id="L75">	public static final int REQUEST_SUB_TYPE_REG_SHIFT_CHANGE = CustShiftReq.REQUEST_SUB_TYPE_REG_SHIFT_CHANGE.toInt();</span>
+<span class="fc" id="L76">	public static final int REQUEST_SUB_TYPE_OT_NEW_SHIFT = CustShiftReq.REQUEST_SUB_TYPE_OT_NEW_SHIFT.toInt();</span>
+<span class="fc" id="L77">	public static final int REQUEST_SUB_TYPE_OT_SHIFT_CHANGE = CustShiftReq.REQUEST_SUB_TYPE_OT_SHIFT_CHANGE.toInt();</span>
+
+	//The Flex Time Request subtypes
+	public static final int REQUEST_SUB_TYPE_TIMEOFF_BEFORE_MAKEUP = 0;
+	public static final int REQUEST_SUB_TYPE_MAKEUP_BEFORE_TIMEOFF = 1;
+
+
+	//**********************************************************************
+	// Any changes to these DATECOMPARISION_XXXX and INTERVALTYPE_XXXX 
+	// constants must be accompanied
+	// by a corresponding change to FR_FILEBYTYPE_XXXXX constants in RmEjbBundleKey.java.
+	//************************************************************************ 
+	/**
+	 * Request must be filed on 'date'.
+	 */
+	public static final String DATECOMPARISION_ON_DATE = &quot;on-date&quot;;
+	/**
+	 * Request must be filed before 'date'.
+	 */
+	public static final String DATECOMPARISION_BEFORE_DATE = &quot;before-date&quot;;
+	/**
+	 * Request must be filed after 'date'.
+	 */
+	public static final String DATECOMPARISION_AFTER_DATE = &quot;after-date&quot;;
+
+    
+    /**
+     * Filing rule applies to this org only.
+     */
+    public static final String SCOPE_THIS_ORG_ONLY = &quot;thisOrgOnly&quot;;
+    /**
+     * Filing rule applies to this org and its children, and children cannot unapply it.
+     */
+    public static final String SCOPE_SUB_ORGS_NO_OVERRIDE = &quot;subOrgNoOverride&quot;;
+    /**
+     * Filing rule applies to this org and its children, and children can unapply it.
+     */
+    public static final String SCOPE_SUB_ORGS_ALLOW_OVERRIDE = &quot;subOrgAllowOverride&quot;;
+    
+    
+
+    
+	//**********************************************************************
+	// Any changes to these DATECOMPARISION_XXXX and INTERVALTYPE_XXXX 
+	// constants must be accompanied
+	// by a corresponding change to FR_FILEBYTYPE_XXXXX constants in RmEjbBundleKey.java.
+	//************************************************************************ 
+	/**
+	 * Request must be filed less-than 'n' days
+	 */
+	public static final String INTERVALTYPE_LESSTHAN = &quot;less-than&quot;;
+	/**
+	 * Request must be filed equal-to 'n' days
+	 */
+	public static final String INTERVALTYPE_EQUALTO = &quot;equal-to&quot;;
+	/**
+	 * Request must be filed more-than 'n' days
+	 */
+	public static final String INTERVALTYPE_MORETHAN = &quot;more-than&quot;;
+
+    
+	/**
+	 * Request must by filed on|before|after 'givenDate'.
+	 */
+	public static final String TIMETYPE_BYDATE = &quot;by-date&quot;;
+	/**
+	 * Request must be filed on|less-than|more-than 'n' days.
+	 */
+	public static final String TIMETYPE_INTERVAL = &quot;by-interval&quot;;
+
+
+    
+    
+	//FieldInfo for the class used for database operations.
+<span class="fc" id="L151">	private static FieldInfo m_fieldInfo = new RequestFilingRuleFieldInfo();</span>
+
+	//m_applied status indicates if the rule is applied or not.
+	// its value is set if applied otherwise false.
+<span class="fc" id="L155">	private boolean m_applied = false;</span>
+    
+    //m_canChangeApply status indicates if the user can change the applied flag for the rule.
+    // its value is set depending on how the org scope is defined for the rule.
+<span class="fc" id="L159">    private boolean m_canChangeApply = true;</span>
+
+	/* Default constructor for the RequestFilingRule.
+	 */
+	public RequestFilingRule() {
+<span class="fc" id="L164">		super();</span>
+<span class="fc" id="L165">	}</span>
+
+	/* Returns the  FieldInfo  RequestFilingRule.
+	 * @return FieldInfo for the class.
+	 */
+	@Override
+<span class="fc" id="L171">	protected FieldInfo getFieldInfo() { return m_fieldInfo; }</span>
+
+	// getters
+
+	/* Returns the  OrganizationID.
+	 * @return ID Object as OrganizationId for the class.
+	 */
+	@Override
+	public ID getOrganizationId() {
+<span class="fc" id="L180">		return getFieldValueID(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_I_ORGANIZATIONID);</span>
+	}
+
+	/* Returns the  Activity Id for the class.
+	 * @return ID Object as Activity Id for the class.
+	 */
+	@Override
+	public ID getActivityId() {
+<span class="fc" id="L188">		return getFieldValueID(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_I_ACTIVITYID);</span>
+	}
+
+	/* Returns the  string values as Request Type for the class.
+	 * valid values for Request Type are 'time-off', 'shift-swap' and  'shift-bid'
+	 * @return String  Object as Request Type for the class.
+	 */
+	@Override
+	public String getRequestType() {
+<span class="fc" id="L197">		return getFormattedFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_REQUESTTYPE);</span>
+	}
+
+	/* Returns the  string values as Day Type for the class.
+	 * valid values for DAYTYPE are 'sunday', 'monday', 'tuesday',
+	 * 'wednesday', 'thursday', 'friday', 'saturday', 'weekend',
+	 * 'workingholiday' and  'weekday'.
+	 * @return String  Object as Day Type for the class.
+	 */
+	@Override
+	public String getDayType() {
+<span class="fc" id="L208">		return getFormattedFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_DAYTYPE);</span>
+	}
+
+	/* Returns the  start of the date range for requests affected by this rule
+	 * @return Date Object as Start Date for the Filing Rule.
+	 */
+	@Override
+	public Date getStartDate() {
+<span class="fc" id="L216">		return getFieldValueDate(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_D_STARTDATE);</span>
+	}
+
+	/* Returns the  end of the date range for requests affected by this rule
+	 * @return Date End Date is Date Object the Request Filing Rule.
+	 */
+	@Override
+	public Date getEndDate() {
+<span class="fc" id="L224">		return getFieldValueDate(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_D_ENDDATE);</span>
+	}
+
+	/* Returns TimeType  values as String. Valid values are 'by-date' or
+	 * 'by-interval'.
+	 * @return String TimeType for the class.
+	 */
+	public String getTimeType() {
+<span class="fc" id="L232">		return getFormattedFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_TIMETYPE);</span>
+	}
+
+	/* Returns the String value for the DateComparision. Valid valeus are
+	 * 'on-date', 'before-date' and  'after-date'.
+	 * @return String value for the Date comparision for request filing rule.
+	 **/
+	public String getDateComparision() {
+<span class="fc" id="L240">		return getFormattedFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_DATECOMPARISON);</span>
+	}
+
+	/* If the rule time type is absolute date i.e 'by-date', the Date and Time
+	 * referred to by the Date Operator. The filing must be done before,
+	 * on or after this date.
+	 * @return Date value of FileByDate for the request filing rule.
+	 **/
+	public Date getFileByDate() {
+<span class="fc" id="L249">		return getFieldValueDate(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_D_FILEBYDATE);</span>
+	}
+
+	/* If the rule time type is interval, Interval type is the Comparison
+	 * Operator for comparing two numbers, or referring to a reference number.
+	 * valid values for the INTERVALTYPE are 'less-than', 'equal-to' and
+	 * 'more-than'.
+	 * @return String value of IntervalType attribute for request filing rule.
+	 **/
+	public String getIntervalType() {
+<span class="fc" id="L259">		return getFormattedFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_INTERVALTYPE);</span>
+	}
+
+	/* If the RequestFiling Rule's rule time type attribute value is
+	 * 'by-interval', the interval days is the number or days referred to in
+	 * the interval type. The filing deadline can be more than, less than or
+	 * equal to the number of days in this field.
+	 * @return int value of IntervalDays attribute for request filing rule.
+	 **/
+	public int getIntervalDays() {
+<span class="fc" id="L269">		return getFieldValueInt(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_N_INTERVALDAYS);</span>
+	}
+
+	public int getTimeLine() {
+<span class="fc" id="L273">		return getFieldValueInt(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_N_TIMELINE);</span>
+	}
+
+
+	/* The range of days affected by the rule with following values :
+	 * 'alldays' - All days,
+	 * 'day type' - specific day(s) specified by the type-of-days field,
+	 * 'dates' - the from and to dates in the rule start and end date fields.
+	 * @return string as the DayRange attribuet for the request filing rule.
+	 **/
+	@Override
+	public String getDayRange() {
+<span class="fc" id="L285">		return getFormattedFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_DAYRANGE);</span>
+	}
+
+	/* Returns the boolean value as the status indicating if the rule
+	 * is applied or not.
+	 * @return boolean value  applied status for the request filing rule.
+	*/
+	@Override
+	public boolean getApplied() {
+<span class="fc" id="L294">		return m_applied;</span>
+	}
+
+	@Override
+	public boolean isApplied() {
+<span class="nc" id="L299">		return m_applied;</span>
+	}
+
+	// setters
+	/* Set the  OrganizationID for the request filing rule.
+	 * @Param ID Object as OrganizationId.
+	 */
+	@Override
+	public void setOrganizationId(ID pOrganizationId) {
+<span class="fc" id="L308">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_I_ORGANIZATIONID, pOrganizationId);</span>
+<span class="fc" id="L309">	}</span>
+
+	/* Set the  Activity Id for the class.
+	 * @param ID Object as Activity Id for the Request filing Rule.
+	 */
+	@Override
+	public void setActivityId(ID pActivityId) {
+<span class="fc" id="L316">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_I_ACTIVITYID, pActivityId);</span>
+<span class="fc" id="L317">	}</span>
+
+	/* Set the  Request Type for the class.
+	 * valid values for Request Type are 'time-off', 'shift-swap' and  'shift-bid'
+	 * @param String  Object as Request Type for the class.
+	 */
+	@Override
+	public void setRequestType(String pRequestType) {
+<span class="fc" id="L325">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_REQUESTTYPE, pRequestType);</span>
+<span class="fc" id="L326">	}</span>
+
+
+	/* Set the  string values as Day Type for the request filing rule.
+	 * valid values for DAYTYPE are 'sunday', 'monday', 'tuesday',
+	 * 'wednesday', 'thursday', 'friday', 'saturday', 'weekend',
+	 * 'workingholiday' and  'weekday'.
+	 * @param String  Object as Day Type for the request filing.
+	 */
+	@Override
+	public void setDayType(String pDayType) {
+<span class="fc" id="L337">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_DAYTYPE, pDayType);</span>
+<span class="fc" id="L338">	}</span>
+
+	/* Set the  start of the date range for requests affected by this rule
+	* @param Date Object as Start Date for the Filing Rule.
+	*/
+	@Override
+	public void setStartDate(Date pStartDate) {
+<span class="fc" id="L345">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_D_STARTDATE, pStartDate);</span>
+<span class="fc" id="L346">	}</span>
+
+	/* Set the  end of the date range for requests affected by this rule
+	* @param Date End Date is Date Object the Request Filing Rule.
+	*/
+	@Override
+	public void setEndDate(Date pEndDate) {
+<span class="fc" id="L353">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_D_ENDDATE, pEndDate);</span>
+<span class="fc" id="L354">	}</span>
+
+	/* Set TimeType  values as String. Valid values are 'by-date' or
+	 * 'by-interval'.
+	 * @param String TimeType for the request filing rule.
+	 */
+	public void setTimeType(String pTimeType) {
+<span class="fc" id="L361">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_TIMETYPE, pTimeType);</span>
+<span class="fc" id="L362">	}</span>
+
+	/* Set the String value for the DateComparision. Valid valeus are
+	 * 'on-date', 'before-date' and  'after-date'.
+	 * @param String value for the Date comparision for request filing rule.
+	 **/
+	public void setDateComparision(String pDateComparision) {
+<span class="fc" id="L369">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_DATECOMPARISON, pDateComparision);</span>
+<span class="fc" id="L370">	}</span>
+
+	/* If the rule time type is absolute date i.e 'by-date', the Date and Time
+	 * referred to by the Date Operator. The filing must be done before,
+	 * on or after this date.
+	 * @param Date value of FileByDate for the request filing rule.
+	 **/
+	public void setFileByDate(Date pFileByDate) {
+<span class="fc" id="L378">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_D_FILEBYDATE, pFileByDate);</span>
+<span class="fc" id="L379">	}</span>
+
+	/* If the rule time type is interval, Interval type is the Comparison
+	 * Operator for comparing two numbers, or referring to a reference number.
+	 * valid values for the INTERVALTYPE are 'less-than', 'equal-to' and
+	 * 'more-than'.
+	 * @param String value of IntervalType attribute for request filing rule.
+	 **/
+	public void setIntervalType(String pIntervalType) {
+<span class="fc" id="L388">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_INTERVALTYPE, pIntervalType);</span>
+<span class="fc" id="L389">	}</span>
+
+	/* If the RequestFiling Rule's rule time type attribute value is
+	 * 'by-interval', the interval days is the number or days referred to in
+	 * the interval type. The filing deadline can be more than, less than or
+	 * equal to the number of days in this field.
+	 * @param int value of IntervalDays attribute for request filing rule.
+	 **/
+	public void setIntervalDays(int pIntervalDays) {
+<span class="fc" id="L398">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_N_INTERVALDAYS, pIntervalDays);</span>
+<span class="fc" id="L399">	}</span>
+
+	public void setTimeLine(int timeLine) {
+<span class="fc" id="L402">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_N_TIMELINE, timeLine);</span>
+<span class="fc" id="L403">	}</span>
+
+	/* The range of days affected by the rule with following values :
+	 * 'alldays' - All days,
+	 * 'day type' - specific day(s) specified by the type-of-days field,
+	 * 'dates' - the from and to dates in the rule start and end date fields.
+	 * @param String as the DayRange attribuet for the request filing rule.
+	 **/
+	@Override
+	public void setDayRange(String pDayRange) {
+<span class="fc" id="L413">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_DAYRANGE, pDayRange);</span>
+<span class="fc" id="L414">	}</span>
+
+
+	/* Returns the boolean value as the status indicating if the rule
+	 * is applied or not.
+	 * @return boolean value as applied status for the request filing rule.
+	 */
+	@Override
+	public void setApplied(boolean pApplied) {
+<span class="fc" id="L423">		m_applied = pApplied;</span>
+<span class="fc" id="L424">	}</span>
+
+	/**
+	 * Gives a description of the current rule.  Used to display the rule in the UI.
+	 *
+	 * @param locale
+	 * @return
+	 */
+	public String getSentence(Localizer localizer, Organization org) {
+		/*
+		Time off type  jhgf Unavailable Vacation
+		All requests of this type
+		For  Weekend Sunday Monday Tuesday Wednesday Thursday Friday Saturday Working Holiday
+		For &lt;from date&gt; to &lt;toDate&gt;
+
+		When the request is filed by
+		On Before After &lt;date&gt;
+		Less than Equal to More than &lt;n&gt; days in advance
+	*/
+
+<span class="nc" id="L444">		String sent = localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, RmEjbBundleKey.FR_RULE_SENTENCE,</span>
+<span class="nc" id="L445">		        new Object[]{org.getName(), getRequestType(), getDayRangeFormatted(localizer, org),</span>
+<span class="nc" id="L446">		                     getTimeTypeFormatted(localizer, org)});</span>
+
+<span class="nc" id="L448">		return sent;</span>
+	}
+
+	/**
+	 * @param locale
+	 * @param org
+	 * @return
+	 */
+	private Object getTimeTypeFormatted(Localizer localizer, Organization org) {
+
+		// RmEjbBundleKey.UNLOCALIZED_MESSAGE
+<span class="nc" id="L459">		String fileByTimeType = getTimeType();</span>
+<span class="nc bnc" id="L460" title="All 2 branches missed.">		if (fileByTimeType.equals(TIMETYPE_BYDATE)) {</span>
+			// before|on|after &lt;specifiedDate&gt;
+<span class="nc" id="L462">			String strBeforeOnAfter = localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, getDateComparision());</span>
+<span class="nc" id="L463">			TimeZone orgTZ = org.getTimeZone();</span>
+<span class="nc" id="L464">			String strDate = localizer.formatDateTime(getFileByDate(), orgTZ);</span>
+<span class="nc" id="L465">			String template = localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, RmEjbBundleKey.FR_ON_BEFORE_AFTER);</span>
+<span class="nc" id="L466">			Object args[] = new Object[]{strBeforeOnAfter, strDate};</span>
+<span class="nc" id="L467">			return localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, RmEjbBundleKey.FR_ON_BEFORE_AFTER, args);</span>
+
+<span class="nc bnc" id="L469" title="All 2 branches missed.">		} else if (fileByTimeType.equals(TIMETYPE_INTERVAL)) {</span>
+			// less-than|equal-to|more-than &lt;interval&gt; {days|hours} in advance.
+<span class="nc" id="L471">			String selectLabel = localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, getIntervalType());</span>
+
+<span class="nc" id="L473">			boolean isFlexTime = Request.REQUESTTYPE_FLEXTIME.equals(getRequestType());</span>
+<span class="nc" id="L474">			StringsPair intervalCountAndUnit = RequestUtil.getIntervalCountAndUnit(getIntervalDays(), isFlexTime);</span>
+<span class="nc" id="L475">			String intervalCount = intervalCountAndUnit.getKey();</span>
+<span class="nc" id="L476">			String sUnits = intervalCountAndUnit.getValue();</span>
+
+<span class="nc" id="L478">			String template = localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, RmEjbBundleKey.PHRASE_DAYSINADV);</span>
+<span class="nc bnc" id="L479" title="All 2 branches missed.">			if (sUnits.equals(RequestUtil.HOURS)) {</span>
+<span class="nc" id="L480">				template = localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, RmEjbBundleKey.PHRASE_HOURSINADV);</span>
+<span class="nc bnc" id="L481" title="All 2 branches missed.">			} else if (sUnits.equals(RequestUtil.MINUTES)) {</span>
+<span class="nc" id="L482">				template = localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, RmEjbBundleKey.PHRASE_MINUTESINADV);</span>
+			}
+
+<span class="nc" id="L485">			Object args[] = new Object[]{selectLabel, intervalCount};</span>
+<span class="nc" id="L486">			return BPMessageFormat.format(template, args);</span>
+
+		} else {
+<span class="nc" id="L489">			throw new IllegalArgumentException(getID().toString() + ',' + fileByTimeType);</span>
+		}
+	}
+
+	/**
+	 * @return
+	 */
+	private String getDayRangeFormatted(Localizer localizer, Organization org) {
+
+		// RmEjbBundleKey.UNLOCALIZED_MESSAGE
+<span class="nc" id="L499">		String dayRangeType = getDayRange();</span>
+<span class="nc bnc" id="L500" title="All 2 branches missed.">		if (dayRangeType.equals(DAYRANGE_ALL_DAYS)) {</span>
+<span class="nc" id="L501">			return localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, RmEjbBundleKey.RS_ANY_DAY);</span>
+<span class="nc bnc" id="L502" title="All 2 branches missed.">		} else if (dayRangeType.equals(DAYRANGE_DATES)) {</span>
+<span class="nc" id="L503">			TimeZone orgTZ = org.getTimeZone();	</span>
+			//@TODO: message format				
+<span class="nc" id="L505">			return localizer.formatDateTime(getStartDate(), orgTZ) +</span>
+<span class="nc" id="L506">			        localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, RmEjbBundleKey.PHRASE_TO) +</span>
+<span class="nc" id="L507">			        localizer.formatDateTime(getEndDate(), orgTZ);</span>
+<span class="nc bnc" id="L508" title="All 2 branches missed.">		} else if (dayRangeType.equals(DAYRANGE_DAY_TYPE)) {</span>
+<span class="nc" id="L509">			return localizer.i18n(RmEjbBundleKey.BUNDLE_NAME, getDayType());</span>
+		} else {
+<span class="nc" id="L511">			throw RequestUtil.createIllegalArgumentException(getID().toString() + ',' + getDayRange(), null);</span>
+		}
+	}
+    
+    
+    /**
+     * Return the organization scope for this filing rule.
+     * @return one of: SCOPE_THIS_ORG_ONLY, SCOPE_SUB_ORGS_NO_OVERRIDE, SCOPE_SUB_ORGS_ALLOW_OVERRIDE.
+     */
+    public String getOrgScope() {
+<span class="fc" id="L521">        return getFormattedFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_ORGSCOPE);</span>
+    }
+    /**
+     * Set the organization scope for this filing rule.
+     * @param orgScope - Must be one of: SCOPE_THIS_ORG_ONLY, SCOPE_SUB_ORGS_NO_OVERRIDE, SCOPE_SUB_ORGS_ALLOW_OVERRIDE.
+     */
+    public void setOrgScope(String orgScope) {
+<span class="fc" id="L528">        setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_S_ORGSCOPE, orgScope);</span>
+<span class="fc" id="L529">    }</span>
+    
+    /**
+     * Sets the boolean value indicating if the user can change the applied flag for this rule.
+     */
+    public void setCanChangeApply(boolean pCanChangeApply) {
+<span class="fc" id="L535">        m_canChangeApply = pCanChangeApply;</span>
+<span class="fc" id="L536">    }</span>
+    
+    /**
+     * Returns the boolean value indicating if the user can change the applied flag for this rule.
+     */
+    public boolean getCanChangeApply() {
+<span class="fc" id="L542">        return m_canChangeApply;</span>
+    }
+
+    /**
+     * Returns the boolean value indicating if the user can change the applied flag for this rule.
+     */
+    public boolean isCanChangeApply() {
+<span class="nc" id="L549">        return m_canChangeApply;</span>
+    }
+    
+    /**
+     * Get the request sub type.
+     * @return the request sub type. This is used to differentiate different types of rules for the 
+     * same request type.
+     */
+	public int getRequestSubType() {
+<span class="nc" id="L558">		return getFieldValueInt(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_N_REQUESTSUBTYPE);</span>
+	}
+	
+    /**
+     * Set the request sub type.
+     * @param requestSubType - the request sub type. This is used to differentiate different types of rules for the 
+     * same request type.
+     */
+	public void setRequestSubType(int requestSubType) {
+<span class="nc" id="L567">		setFieldValue(RequestFilingRuleFieldInfo.REQUESTFILINGRULE_N_REQUESTSUBTYPE, requestSubType);</span>
+<span class="nc" id="L568">	}</span>
+	
+	/**
+	 * Returns true of this filing rule includes the &quot;Regular New Shift&quot; custom shift request sub-type. 
+	 */
+	public boolean getRequestSubTypeRegNewShift()
+	{
+<span class="nc bnc" id="L575" title="All 2 branches missed.">		return (getRequestSubType() &amp; REQUEST_SUB_TYPE_REG_NEW_SHIFT) == REQUEST_SUB_TYPE_REG_NEW_SHIFT;</span>
+	}    
+	/**
+	 * Returns true of this filing rule includes the &quot;Regular Shift Change&quot; custom shift request sub-type. 
+	 */
+	public boolean getRequestSubTypeRegShiftChange()
+	{
+<span class="nc bnc" id="L582" title="All 2 branches missed.">		return (getRequestSubType() &amp; REQUEST_SUB_TYPE_REG_SHIFT_CHANGE) == REQUEST_SUB_TYPE_REG_SHIFT_CHANGE;</span>
+	}    
+	/**
+	 * Returns true of this filing rule includes the &quot;OT New Shift&quot; custom shift request sub-type. 
+	 */
+	public boolean getRequestSubTypeOTNewShift()
+	{
+<span class="nc bnc" id="L589" title="All 2 branches missed.">		return (getRequestSubType() &amp; REQUEST_SUB_TYPE_OT_NEW_SHIFT) == REQUEST_SUB_TYPE_OT_NEW_SHIFT;</span>
+	}    
+	/**
+	 * Returns true of this filing rule includes the &quot;OT Shift Change&quot; custom shift request sub-type. 
+	 */
+	public boolean getRequestSubTypeOTShiftChange()
+	{
+<span class="nc bnc" id="L596" title="All 2 branches missed.">		return (getRequestSubType() &amp; REQUEST_SUB_TYPE_OT_SHIFT_CHANGE) == REQUEST_SUB_TYPE_OT_SHIFT_CHANGE;</span>
+	}
+    
+	/**
+	 * Sets whether this filing rule includes the &quot;Regular New Shift&quot; custom shift request sub-type. 
+	 */
+	public void setRequestSubTypeRegNewShift(boolean isSet)
+	{
+<span class="nc" id="L604">		setRequestSubType(getRequestSubType() | REQUEST_SUB_TYPE_REG_NEW_SHIFT);</span>
+<span class="nc" id="L605">	}</span>
+	/**
+	 * Sets whether this filing rule includes the &quot;Regular Shift Change&quot; custom shift request sub-type. 
+	 */
+	public void setRequestSubTypeRegShiftChange(boolean isSet)
+	{
+<span class="nc" id="L611">		setRequestSubType(getRequestSubType() | REQUEST_SUB_TYPE_REG_SHIFT_CHANGE);</span>
+<span class="nc" id="L612">	}</span>
+	/**
+	 * Sets whether this filing rule includes the &quot;OT New Shift&quot; custom shift request sub-type. 
+	 */
+	public void setRequestSubTypeOTNewShift(boolean isSet)
+	{
+<span class="nc" id="L618">		setRequestSubType(getRequestSubType() | REQUEST_SUB_TYPE_OT_NEW_SHIFT);</span>
+<span class="nc" id="L619">	}</span>
+	/**
+	 * Sets whether this filing rule includes the &quot;OT Shift Change&quot; custom shift request sub-type. 
+	 */
+	public void setRequestSubTypeOTShiftChange(boolean isSet)
+	{
+<span class="nc" id="L625">		setRequestSubType(getRequestSubType() | REQUEST_SUB_TYPE_OT_SHIFT_CHANGE);</span>
+<span class="nc" id="L626">	}</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

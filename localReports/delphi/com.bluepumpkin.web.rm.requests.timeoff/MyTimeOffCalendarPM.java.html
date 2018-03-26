@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>MyTimeOffCalendarPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.requests.timeoff</a> &gt; <span class="el_source">MyTimeOffCalendarPM.java</span></div><h1>MyTimeOffCalendarPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.requests.timeoff;
+
+import java.util.ArrayList;
+import java.util.ResourceBundle;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPool;
+import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.ejb.rm.util.LicenseUtil;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.keys.RmPageAction;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.requests.RequestUtil;
+import com.bluepumpkin.web.rm.requests.RequestsMH;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.model.User;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.container.ContainerPC;
+import com.witness.web.uif.pagecomponent.contenttitle.ContentTitlePC;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.pagemodel.WorkpanePageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.js.JSUtil;
+
+/**
+ * Title:        MyTimeOffCalendarPM
+ * Description:  My Time Off Calendar
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, inc
+ * @author       David Su
+ * @version      1.0
+ */
+public class MyTimeOffCalendarPM extends WorkpanePageModel {
+<span class="nc" id="L40">    private static Category m_log	= Log.initCategory(MyTimeOffCalendarPM.class.getName());</span>
+
+    private static final String VIEW_MODE_KEY = &quot;MyTOCalViewMode&quot;;
+    private static final String FORM_ACTION = &quot;my_timeoff_calendar&quot;;
+    private static final String VIEW_MODE_FN = &quot;viewMode&quot;;
+
+    private static final String HOURS_MODE_KEY = &quot;MyTOCalHoursMode&quot;;
+    private static final String HOURS_MODE_FN = &quot;hoursMode&quot;;
+
+    // VIEW RANGE MODES
+    public static final String TWO_MONTH_VIEW = &quot;TWO_MONTH_VIEW&quot;;
+    public static final String YEAR_VIEW = &quot;YEAR_VIEW&quot;;
+    public static final String INTERVAL_VIEW = &quot;INTERVAL_VIEW&quot;;
+
+    // HOURS TYPE MODES
+    public static final String SHOW_TIME_OFF_POOL_VIEW = &quot;SHOW_TIME_OFF_POOL_VIEW&quot;;
+    public static final String SHOW_PERSONAL_VIEW = &quot;SHOW_PERSONAL_VIEW&quot;;
+
+    private final TimeOffCalendarPC m_timeOffCalPC;
+    private ContainerPC m_interDayPC;
+    private final ResourceBundle m_bundle;
+
+    private String m_viewRangeMode; //TWO_MONTH_VIEW or YEAR_VIEW
+    private String m_hoursMode; //SHOW_TIME_OFF_POOL_VIEW or SHOW_PERSONAL_VIEW
+
+    private OrganizationSetting m_orgSetting;
+    private final User m_user;
+    private final ID m_empID;
+<span class="nc" id="L68">    private boolean m_isAuthToView = false;</span>
+<span class="nc" id="L69">    private boolean m_isTOActive = true;</span>
+<span class="nc" id="L70">	private boolean hasAdvancedRMLicense = false;</span>
+	
+
+    /**
+     * Constructs a schedule view page model shell.
+     */
+    public MyTimeOffCalendarPM(RequestContext context)	{
+<span class="nc" id="L77">        super(context, BASIC_MODEL);</span>
+
+<span class="nc" id="L79">        m_bundle = m_localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L80">        m_user = context.getUser();</span>
+<span class="nc" id="L81">        m_empID = RequestUtil.getEmpIDAndAddMsgIfNotAvailable(context, this);</span>
+<span class="nc" id="L82">        setJSMediator(JavaScriptFileID.MEDIATOR_WORKPANE_GENERIC);</span>
+
+<span class="nc" id="L84">        m_timeOffCalPC = new TimeOffCalendarPC(m_context, m_toolbar);</span>
+<span class="nc" id="L85">        addChildComponent(m_timeOffCalPC);</span>
+
+
+<span class="nc" id="L88">        m_isAuthToView = isAuthToView();</span>
+<span class="nc" id="L89">        initViewMode();</span>
+<span class="nc" id="L90">        initHoursMode();</span>
+<span class="nc" id="L91">        hasAdvancedRMLicense = LicenseUtil.isAdvancedRMLicense();</span>
+<span class="nc" id="L92">    }</span>
+
+    private void initViewMode() {
+<span class="nc" id="L95">        m_viewRangeMode = (String)m_context.getAttribute(RequestContext.SESSION_SCOPE,</span>
+                VIEW_MODE_KEY);
+<span class="nc bnc" id="L97" title="All 2 branches missed.">        if (m_viewRangeMode==null)</span>
+		 {
+<span class="nc" id="L99">			m_viewRangeMode = TWO_MONTH_VIEW;//YEAR_VIEW (changed in 7.6.2 for performance)</span>
+		}
+<span class="nc" id="L101">    }</span>
+
+    private void initHoursMode() {
+<span class="nc" id="L104">        m_hoursMode = (String)m_context.getAttribute(RequestContext.SESSION_SCOPE,</span>
+                HOURS_MODE_KEY);
+<span class="nc bnc" id="L106" title="All 2 branches missed.">        if (m_hoursMode==null) {</span>
+<span class="nc" id="L107">			m_hoursMode = SHOW_PERSONAL_VIEW;</span>
+		}
+<span class="nc" id="L109">    }</span>
+
+    /**
+     * Initialize For Display
+     */
+    @Override
+	public void initForDisplay() {
+<span class="nc bnc" id="L116" title="All 2 branches missed.">        if (m_isInitializedForDisplay) {</span>
+<span class="nc" id="L117">			return;</span>
+		} else {
+<span class="nc" id="L119">            super.initForDisplay();</span>
+
+<span class="nc bnc" id="L121" title="All 2 branches missed.">            if (!m_isTOActive) {</span>
+<span class="nc" id="L122">				TimeOffRequestUtil.addTONotActiveMsg(this);</span>
+			}
+
+            // Popup TimeOff Request Window
+<span class="nc" id="L126">            addPopupArgs(RmPageAction.POPUP_TIMEOFF_REQUEST_FORM_ACTION, &quot;timeoff_request_form&quot;,</span>
+                    null, null, &quot;800,600,ctr,ctr&quot;, true, 1);
+        }
+<span class="nc" id="L129">    }</span>
+
+    /**
+     * Return instance of Model which is ready to be rendered
+     */
+    public static PageModel getInstance(RequestContext context) {
+<span class="nc" id="L135">        MyTimeOffCalendarPM model = null;</span>
+
+<span class="nc" id="L137">        PageModel cachedModel = context.getPageModel();</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">        if (cachedModel instanceof MyTimeOffCalendarPM) {</span>
+<span class="nc" id="L139">            model = (MyTimeOffCalendarPM)cachedModel;</span>
+        } else {
+<span class="nc" id="L141">            model = new MyTimeOffCalendarPM(context);</span>
+<span class="nc" id="L142">            model.extractParameters(context.getRequest());</span>
+<span class="nc" id="L143">            context.setPageModel(model);</span>
+        }
+
+        // Make sure model is populated
+<span class="nc" id="L147">        model.populateModel();</span>
+
+<span class="nc" id="L149">        return model;</span>
+    }
+
+    /**
+     * Populate Model
+     */
+    private void populateModel() {
+<span class="nc bnc" id="L156" title="All 2 branches missed.">        if (m_isInitialized) {</span>
+<span class="nc" id="L157">			return;</span>
+		} else {
+<span class="nc" id="L159">			m_isInitialized = true;</span>
+		}
+
+        try {
+<span class="nc bnc" id="L163" title="All 2 branches missed.">            if (m_isAuthToView) {</span>
+<span class="nc" id="L164">            	ID orgID = OrganizationModelHandler.getEmployeeOrgID(m_context, m_empID);</span>
+
+<span class="nc" id="L166">                m_orgSetting = RequestsMH.getOrgSetting(orgID);</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">                if (m_orgSetting == null){</span>
+<span class="nc" id="L168">                	this.addPageMessage(Message.ERROR_TYPE, RmWebBundleKey.EMP_NO_ORG,</span>
+        					RmWebBundleKey.BUNDLE_NAME);
+<span class="nc" id="L170">                	return;</span>
+                }
+<span class="nc" id="L172">                m_isTOActive = m_orgSetting.getAgentTimeOffWorkflowActive();</span>
+
+<span class="nc" id="L174">                initCalendarForDataFetch();</span>
+<span class="nc" id="L175">                m_timeOffCalPC.setOrgSetting(m_orgSetting);</span>
+<span class="nc" id="L176">                m_timeOffCalPC.setIsAgentCal(true);</span>
+                //fetch data based on selection
+<span class="nc bnc" id="L178" title="All 2 branches missed.">				if (shouldGetPool()) { </span>
+<span class="nc" id="L179">                    TOPool toPool = TimeOffRequestsMH.getEmpPool(m_context, m_empID);</span>
+<span class="nc bnc" id="L180" title="All 2 branches missed.">                    ID toPoolID = toPool ==null ? null : toPool.getID();</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">					m_timeOffCalPC.fetchData(m_empID, toPoolID != null, toPoolID, getAllocationType());</span>
+<span class="nc" id="L182">                } else {</span>
+<span class="nc" id="L183">					m_timeOffCalPC.fetchData(m_empID, false, null, getAllocationType());</span>
+                }
+            }
+<span class="nc" id="L186">        } catch (Exception ex) {</span>
+<span class="nc" id="L187">            handleUnableToLoadDataError(m_log, ex);</span>
+        } finally {
+<span class="nc" id="L189">            initToolbar();</span>
+<span class="nc" id="L190">        }</span>
+<span class="nc" id="L191">    }</span>
+
+	private boolean shouldGetPool() {
+<span class="nc bnc" id="L194" title="All 4 branches missed.">		if (m_hoursMode == null || !m_hoursMode.equals(SHOW_TIME_OFF_POOL_VIEW)) {</span>
+<span class="nc" id="L195">			return false;</span>
+		}
+<span class="nc bnc" id="L197" title="All 4 branches missed.">		return m_timeOffCalPC.isDetailEnabled() || getAllocationType() == TimeOffCalendarPC.INTERVAL_ALLOCATION;</span>
+	}
+
+	private int getAllocationType() {
+<span class="nc bnc" id="L201" title="All 4 branches missed.">		if (INTERVAL_VIEW.equals(m_viewRangeMode) &amp;&amp; hasAdvancedRMLicense) {</span>
+<span class="nc" id="L202">			return TimeOffCalendarPC.INTERVAL_ALLOCATION;</span>
+		}
+<span class="nc" id="L204">		return TimeOffCalendarPC.DAILY_ALLOCATION;</span>
+	}
+
+	/**
+     * Return the content title
+     */
+    @Override
+	public ContentTitlePC getContentTitle()	{
+        // Initialize Content Title
+<span class="nc" id="L213">        String pageTitle = i18n(m_bundle, RmWebBundleKey.RM_MYSCHEDULE_TIMEOFFCAL);</span>
+<span class="nc" id="L214">        m_contentTitlePC.setPageTitle(pageTitle);</span>
+
+<span class="nc bnc" id="L216" title="All 2 branches missed.">        if (isDisplayEnabled()) {</span>
+            // Calendar Navigation
+<span class="nc" id="L218">            String calendarNav = m_timeOffCalPC.getNavigationControl();</span>
+<span class="nc" id="L219">            m_contentTitlePC.setItemName(calendarNav);</span>
+
+            // View Options
+<span class="nc" id="L222">            String viewLabel = i18n(m_common_bundle, UIFWebBundleKey.VIEW);</span>
+<span class="nc" id="L223">            m_contentTitlePC.addActiveComponent(viewLabel, makeViewDropDown(), true);</span>
+
+            //Hours options (only relevant for details mode)
+<span class="nc bnc" id="L226" title="All 2 branches missed.">            if (!YEAR_VIEW.equals(m_viewRangeMode))</span>
+            {
+<span class="nc" id="L228">                String hoursLabel = i18n(m_bundle, RmWebBundleKey.HOURS_TYPE);</span>
+<span class="nc" id="L229">            	m_contentTitlePC.addActiveComponent(&quot;&amp;nbsp;&amp;nbsp;&quot; + hoursLabel, makeHoursDropDown() + &quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&quot;, true);</span>
+            }
+        }
+<span class="nc" id="L232">        return m_contentTitlePC;</span>
+    }
+
+    /**
+     * Initialize Calendar for Data Fetch
+     */
+    private void initCalendarForDataFetch() {
+<span class="nc bnc" id="L239" title="All 2 branches missed.">        if (YEAR_VIEW.equals(m_viewRangeMode)) {</span>
+<span class="nc" id="L240">            m_timeOffCalPC.setNumOfCals(12);</span>
+        }
+<span class="nc bnc" id="L242" title="All 4 branches missed.">        else if(INTERVAL_VIEW.equals(m_viewRangeMode)&amp;&amp; hasAdvancedRMLicense) {</span>
+<span class="nc" id="L243">        	m_timeOffCalPC.setTimeOffAllocationType(TimeOffCalendarPC.INTERVAL_ALLOCATION_DROPDOWN_VALUE);</span>
+        }
+        else {
+<span class="nc" id="L246">            m_timeOffCalPC.setNumOfCals(2);</span>
+<span class="nc" id="L247">            m_timeOffCalPC.setIsDetailEnabled(true);</span>
+<span class="nc" id="L248">            m_timeOffCalPC.setShowAvailableHours(SHOW_PERSONAL_VIEW.equals(m_hoursMode));</span>
+        }
+<span class="nc" id="L250">    }</span>
+
+    /**
+     * Initialize Toolbar
+     */
+    @Override
+	protected void initToolbar() {
+<span class="nc" id="L257">        boolean isBtnEnabled = isDisplayEnabled();</span>
+
+<span class="nc" id="L259">        String newRequestLabel = i18n(m_bundle, RmWebBundleKey.CREATE_NEW_REQUEST);</span>
+<span class="nc" id="L260">        m_toolbar.addPopupWindowTextButton(RmPageAction.POPUP_TIMEOFF_REQUEST_FORM_ACTION,</span>
+                newRequestLabel, isBtnEnabled);
+<span class="nc" id="L262">    }</span>
+
+    /** Return URL for HTML Form Action
+     */
+    @Override
+	public String getFormAction() {
+<span class="nc" id="L268">        return FORM_ACTION;</span>
+    }
+
+    /**
+     * Create a dropdown Option
+     */
+    private StringsPair createDDOption(String value, String rbKey) {
+<span class="nc" id="L275">        return new StringsPair(value, i18n(m_bundle, rbKey));</span>
+    }
+
+    /**
+     * Create HTML for Drop down for View selection
+     */
+    private String makeViewDropDown() {
+<span class="nc" id="L282">        String onChangeJS = JSUtil.REFRESH_PAGE;</span>
+
+<span class="nc" id="L284">        ArrayList options = new ArrayList();</span>
+<span class="nc" id="L285">        options.add(createDDOption(YEAR_VIEW, RmWebBundleKey.VIEW_YEAR_AT_A_GLANCE));</span>
+<span class="nc" id="L286">        options.add(createDDOption(TWO_MONTH_VIEW, RmWebBundleKey.VIEW_TWO_MONTHS));</span>
+<span class="nc bnc" id="L287" title="All 4 branches missed.">        if(hasAdvancedRMLicense &amp;&amp;isAuthToViewInterval()) {</span>
+<span class="nc" id="L288">			options.add(createDDOption(INTERVAL_VIEW, RmWebBundleKey.TIMEOFF_POOL_INTERVAL_VIEW));</span>
+		}
+
+<span class="nc" id="L291">        return HtmlUtil.makeSelectInput(VIEW_MODE_FN, m_viewRangeMode, onChangeJS, options, false);</span>
+    }
+
+    /**
+     * Create HTML for Drop down for Allocated/Available Hours selection
+     */
+    private String makeHoursDropDown() {
+<span class="nc" id="L298">        String onChangeJS = JSUtil.REFRESH_PAGE;</span>
+
+<span class="nc" id="L300">        ArrayList options = new ArrayList();</span>
+<span class="nc" id="L301">        options.add(createDDOption(SHOW_TIME_OFF_POOL_VIEW, RmWebBundleKey.MY_TOPOOL_VIEW));</span>
+<span class="nc" id="L302">        options.add(createDDOption(SHOW_PERSONAL_VIEW, RmWebBundleKey.PERSONAL_VIEW));</span>
+
+<span class="nc" id="L304">        return HtmlUtil.makeSelectInput(HOURS_MODE_FN, m_hoursMode, onChangeJS, options, false);</span>
+    }
+
+    /**
+     * Set View Mode
+     */
+    public void setViewMode(String mode) {
+<span class="nc" id="L311">        m_viewRangeMode = mode;</span>
+<span class="nc" id="L312">        m_context.setAttribute(RequestContext.SESSION_SCOPE, VIEW_MODE_KEY, mode);</span>
+<span class="nc" id="L313">    }</span>
+
+    /**
+     * Return View Mode
+     */
+    public String getViewMode() {
+<span class="nc" id="L319">        return m_viewRangeMode;</span>
+    }
+
+    /**
+     * Set Hours Mode
+     */
+    public void setHoursMode(String mode) {
+<span class="nc" id="L326">        m_hoursMode = mode;</span>
+<span class="nc" id="L327">        m_context.setAttribute(RequestContext.SESSION_SCOPE, HOURS_MODE_KEY, mode);</span>
+<span class="nc" id="L328">    }</span>
+
+    /**
+     * Return Hours Mode
+     */
+    public String getHoursMode() {
+<span class="nc" id="L334">        return m_hoursMode;</span>
+    }
+
+    /**
+     * Return True if Employee is Valid
+     */
+    protected boolean isValidEmployee() {
+<span class="nc bnc" id="L341" title="All 2 branches missed.">        return m_empID!=null;</span>
+    }
+
+    /**
+     * Return true if Authorized to this Page
+     */
+    public boolean isAuthToView() {
+<span class="nc bnc" id="L348" title="All 2 branches missed.">        return isValidEmployee() &amp;&amp;</span>
+<span class="nc bnc" id="L349" title="All 2 branches missed.">        m_user.isAuthorized(PrivilegeKeys.TOM_VIEWPERSONALCALENDAR);</span>
+    }
+    /**
+     * Return true if Authorized to show the option Interval view
+     */
+    public boolean isAuthToViewInterval() {
+<span class="nc bnc" id="L355" title="All 2 branches missed.">        return isValidEmployee() &amp;&amp; </span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">        m_user.isAuthorized(PrivilegeKeys.TOM_VIEWPERSONALINTERVALCALENDAR);</span>
+    }
+
+    /**
+     * Return Html Display
+     */
+    @Override
+	public String getHtmlDisplay() {
+<span class="nc bnc" id="L364" title="All 2 branches missed.">        if (!isDisplayEnabled()) {</span>
+<span class="nc" id="L365">			return &quot;&quot;;</span>
+		}
+
+<span class="nc" id="L368">        return m_timeOffCalPC.getHtmlDisplay();</span>
+    }
+
+    /**
+     * Return true if Display is Enabled
+     */
+    private boolean isDisplayEnabled() {
+<span class="nc bnc" id="L375" title="All 4 branches missed.">        return (m_isTOActive &amp;&amp; m_isAuthToView);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

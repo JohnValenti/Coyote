@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AllocationAppletRH.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.optimization.allocation</a> &gt; <span class="el_source">AllocationAppletRH.java</span></div><h1>AllocationAppletRH.java</h1><pre class="source lang-java linenums">/*
+ * � 2011-2012 Verint Systems, Inc.
+ */
+package com.verint.web.fs.optimization.allocation;
+
+import java.rmi.RemoteException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmTimeSeriesException;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignHOO;
+import com.bluepumpkin.ejb.bbm.campaign.model.SPQueue;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.timeseries.ejb.TimeSeriesManager;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ForecastTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.util.OpenHoursMissingException;
+import com.bluepumpkin.ejb.bbm.timeseries.util.TraceOperator;
+import com.bluepumpkin.ejb.bbm.workload.ejb.WorkloadManager;
+import com.bluepumpkin.ejb.bbm.workload.model.Queue;
+import com.bluepumpkin.ejb.core.CoreEJBCreateException;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.core.l10n.CoreWebBundleKey;
+import com.bluepumpkin.web.core.l10n.CoreWebLogBundleKey;
+import com.bluepumpkin.web.fs.calendar.allocation.CalendarAllocationAppletRH;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.ejb.bbm.forecast.ejb.ForecastTimeSeriesManager;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.web.fs.optimization.OptimizationAppletRequestHandler;
+import com.verint.web.fs.optimization.OptimizationKeys;
+import com.verint.web.fs.optimization.Response;
+import com.verint.web.fs.optimization.SingleQueuePartialResponse;
+import com.witness.ejb.core.base.CoreFinderException;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.system.RequestContext;
+
+/**
+ * The applet request handler for the Forecast Allocation applet.  The related calendar
+ * Allocation Tool applet uses the {@link CalendarAllocationAppletRH} instead for its
+ * request handler.
+ * 
+ * @see CalendarAllocationAppletRH
+ */
+<span class="fc" id="L54">public class AllocationAppletRH extends OptimizationAppletRequestHandler {</span>
+	@Override
+	protected void processAppletRequest(RequestContext context, Map request, Map response) {
+		try {
+<span class="fc bfc" id="L58" title="All 2 branches covered.">			if (isAppletAction(request, AllocationAppletKeys.PROC_GET_ALLOCATION_SINGLE_QUEUE_APPLET_DATA)) {</span>
+<span class="fc" id="L59">				getAllocationSingleQueueAppletData(context, request, response);</span>
+<span class="fc bfc" id="L60" title="All 2 branches covered.">			} else if (isAppletAction(request, AllocationAppletKeys.PROC_SAVE_ALLOCATIONS)) {</span>
+<span class="fc" id="L61">				saveForecastAllocationsForSpQueue(context, request, response);</span>
+			} else {
+<span class="fc" id="L63">				super.processAppletRequest(context, request, response);</span>
+			}
+<span class="nc" id="L65">		} catch (Exception e) {</span>
+<span class="nc" id="L66">				handleError(context, e,</span>
+				CoreWebLogBundleKey.APPLET_PROCESS_REQUEST_ERROR,
+				CoreWebBundleKey.APPLET_PROCESS_REQUEST_ERROR,
+				CoreWebBundleKey.BUNDLE_NAME);
+<span class="fc" id="L70">		}</span>
+<span class="fc" id="L71">	}</span>
+
+	/**
+	 * Populates the specified response with an allocation DTO object wrapped in a
+	 * response object.
+	 * 
+	 * @param context
+	 * @param request
+	 * @param response
+	 */
+	private void getAllocationSingleQueueAppletData(RequestContext context, Map request, Map response) {
+		try {
+<span class="fc" id="L83">			Response&lt;AllocationSingleQueueDTO&gt; fullResponse = getFullResponseForSingleQueue(context, request, response);</span>
+<span class="fc" id="L84">			response.put(AllocationAppletKeys.RETVAL_ALLOCATION_APPLET_DATA, fullResponse);</span>
+<span class="nc" id="L85">		} catch (OpenHoursMissingException hooex) {</span>
+<span class="nc" id="L86">			notifyError(context, response, new Message(Message.ERROR_TYPE,</span>
+				FsWebBundleKey.SP_MISSING_OPEN_HOURS_MESSAGE, FsWebBundleKey.BUNDLE_NAME), hooex);
+<span class="nc" id="L88">		} catch (Exception e) {</span>
+<span class="nc" id="L89">			notifyError(context, response, e);</span>
+<span class="pc" id="L90">		}</span>
+<span class="fc" id="L91">	}</span>
+
+	/**
+	 * Saves child forecast allocations, applies them to the child forecasts, and
+	 * saves the updated child forecasts.
+	 * 
+	 * @param context
+	 * @param request
+	 * @param response
+	 */
+	private void saveForecastAllocationsForSpQueue(RequestContext context, Map&lt;?,?&gt; request, Map&lt;?,?&gt; response) {
+<span class="fc" id="L102">		Campaign campaign = (Campaign)request.get(AllocationAppletKeys.CAMPAIGN);</span>
+<span class="fc" id="L103">		SPQueue spQueue = (SPQueue)request.get(AllocationAppletKeys.SP_QUEUE);</span>
+<span class="fc" id="L104">		SchedulingPeriod schedulingPeriod = (SchedulingPeriod)request.get(AllocationAppletKeys.SP);</span>
+<span class="fc" id="L105">		Map&lt;ID, double[]&gt; childAllocations = (Map&lt;ID, double[]&gt;)request.get(AllocationAppletKeys.PARAM_CHILD_ALLOCATIONS_BY_SPQUEUEID);</span>
+
+		try
+		{
+<span class="fc" id="L109">			ForecastTimeSeriesManager forecastTimeSeriesManager = WfmManagerFactory.getForecastTimeSeriesManager(context.isInWhatIfMode());</span>
+
+			// Save child allocations
+<span class="fc" id="L112">			forecastTimeSeriesManager.saveChildForecastAllocationsForDistributedSpQueue(spQueue.getID(), childAllocations);</span>
+
+			// Apply allocations to forecast and save child forecasts
+<span class="fc" id="L115">			forecastTimeSeriesManager.allocateParentForecastAmongChildren(spQueue, schedulingPeriod, campaign, childAllocations);</span>
+		}
+<span class="nc" id="L117">		catch (RemoteException re){</span>
+<span class="nc" id="L118">			notifyError(context, response, re);</span>
+		}
+<span class="nc" id="L120">		catch (BbmEJBCreateException bece){</span>
+<span class="nc" id="L121">			notifyError(context, response, bece);</span>
+		}
+<span class="nc" id="L123">		catch (BbmFinderException bfe) {</span>
+<span class="nc" id="L124">			notifyError(context, response, bfe);</span>
+<span class="pc" id="L125">		}</span>
+<span class="fc" id="L126">	}</span>
+
+	/**
+	 * Returns a response wrapper object around an allocation DTO object that contains
+	 * parent forecast data, existing child queue allocations, and child HOOs.
+	 * 
+	 * @param context
+	 * @param request
+	 * @param response
+	 * @return
+	 * @throws RemoteException
+	 * @throws CoreFinderException
+	 * @throws CoreEJBCreateException
+	 * @throws BbmException
+	 * @throws BbmFinderException
+	 */
+	private Response&lt;AllocationSingleQueueDTO&gt; getFullResponseForSingleQueue(RequestContext context, Map&lt;?,?&gt; request, Map&lt;?,?&gt; response)
+    		throws RemoteException, CoreFinderException, CoreEJBCreateException,
+    				BbmException, BbmFinderException {
+<span class="fc" id="L145">		ID queueId = (ID)request.get(OptimizationKeys.PARAM_QUEUE_ID);</span>
+<span class="fc" id="L146">		SingleQueuePartialResponse partialResponse = createSingleQueuePartialResponse(context, request);</span>
+<span class="fc" id="L147">		Date spStart = partialResponse.getSp().getStartTime();</span>
+<span class="fc" id="L148">		Date spEnd = partialResponse.getSp().getEndTime();</span>
+
+		// Get parent forecast
+<span class="fc" id="L151">		TimeSeriesManager timeSeriesManager = WfmManagerFactory.getTimeSeriesManager(context.isInWhatIfMode());</span>
+<span class="fc" id="L152">		ForecastTraceCube meta = new ForecastTraceCube(new short[] {Trace.CV});</span>
+<span class="fc" id="L153">		Collection&lt;TraceCube&gt; forecast = timeSeriesManager.getRawMultipleQueuesTimeSeries(</span>
+				meta,
+<span class="fc" id="L155">				partialResponse.getCampaign().getID(), </span>
+<span class="fc" id="L156">				Collections.singleton(queueId),</span>
+				spStart,
+				spEnd);
+		ForecastTraceCube forecastCube;
+<span class="pc bpc" id="L160" title="1 of 2 branches missed.">		if (forecast.isEmpty()) {</span>
+<span class="nc" id="L161">			forecastCube = createZeroForecast(queueId, spStart, spEnd);</span>
+		} else {
+<span class="fc" id="L163">			forecastCube = (ForecastTraceCube)forecast.iterator().next();</span>
+<span class="fc" id="L164">			Collection&lt;CampaignHOO&gt; hoo = CampaignModelHandler.getCampaignHOOAssignments(</span>
+		    		context,
+<span class="fc" id="L166">		    		partialResponse.getCampaign().getID(),</span>
+		    		spStart,
+		    		spEnd);
+<span class="fc" id="L169">			TraceOperator.setOffHours(forecastCube, partialResponse.getCampaign().getTimeZone(), hoo);</span>
+		}
+
+		// Get child allocations.  For the forecast allocation applet the
+		// child allocations are the percent of volume allotted to each child
+		// queue over each 15-minute interval; for the calendar Allocation
+		// Tool applet the child allocations are the predicted volume and the
+		// predicted staffing for each child queue over each 15-minute interval.
+<span class="fc" id="L177">		Map&lt;ID, double[]&gt; childAllocations = getChildAllocations(context, request, partialResponse.getSPQueue().getID());</span>
+
+<span class="fc" id="L179">		Map&lt;ID, double[]&gt; childStaffing = getChildStaffing(context, partialResponse.getSPQueue().getID());</span>
+
+		// Get child campaign HOOs.
+		// We then map every SP queue in the child campaign with the correct media type to the HOOs to simplify
+		// retrieving them later.
+<span class="fc" id="L184">		Map&lt;ID, Collection&lt;CampaignHOO&gt;&gt; childSpQueueHOOs = new HashMap&lt;ID, Collection&lt;CampaignHOO&gt;&gt;();</span>
+<span class="fc" id="L185">		Map&lt;ID, Campaign&gt; childCampaigns = new HashMap&lt;ID, Campaign&gt;();</span>
+<span class="fc" id="L186">		Map&lt;ID, String&gt; childNames = new HashMap&lt;ID, String&gt;();</span>
+<span class="fc" id="L187">		CampaignManager campaignManager = WfmManagerFactory.getCampaignManager();</span>
+<span class="fc" id="L188">		WorkloadManager workloadManager = WfmManagerFactory.getWorkloadManager();</span>
+<span class="fc" id="L189">		Collection&lt;ID&gt; childSpIds = campaignManager.getSubSPIDsFromParentSPID(partialResponse.getSp().getID());</span>
+<span class="fc bfc" id="L190" title="All 2 branches covered.">		for (ID spId : childSpIds) {</span>
+<span class="fc" id="L191">			SchedulingPeriod childSp = campaignManager.getSchedulingPeriodByID(spId);</span>
+<span class="fc" id="L192">			ID campaignId = childSp.getCampaignID();</span>
+<span class="fc" id="L193">			Campaign childCampaign = campaignManager.getCampaignByID(campaignId);</span>
+<span class="fc" id="L194">		    Collection&lt;CampaignHOO&gt; hoo = CampaignModelHandler.getCampaignHOOAssignments(</span>
+		    		context,
+		    		campaignId,
+		    		spStart,
+		    		spEnd);
+<span class="fc" id="L199">			Collection&lt;SPQueue&gt; spQueues = campaignManager.getSPQueuesBySPID(spId);</span>
+<span class="fc bfc" id="L200" title="All 2 branches covered.">			for (SPQueue childSpQueue : spQueues) {</span>
+<span class="fc" id="L201">				childSpQueueHOOs.put(childSpQueue.getID(), hoo);</span>
+<span class="fc" id="L202">				childCampaigns.put(childSpQueue.getID(), childCampaign);</span>
+<span class="fc" id="L203">				Queue queue = workloadManager.getQueueByID(childSpQueue.getQueueID());</span>
+<span class="fc" id="L204">				childNames.put(childSpQueue.getID(), queue.getName());</span>
+<span class="fc" id="L205">			}</span>
+<span class="fc" id="L206">		}</span>
+<span class="fc" id="L207">		AllocationSingleQueueDTO dto = new AllocationSingleQueueDTO(</span>
+<span class="fc" id="L208">				partialResponse.getQueue(),</span>
+<span class="fc" id="L209">				partialResponse.getSPQueue(),</span>
+				forecastCube,
+				childAllocations,
+				childStaffing,
+				childSpQueueHOOs,
+				childCampaigns,
+				childNames);
+<span class="fc" id="L216">		Response&lt;AllocationSingleQueueDTO&gt; fullResponse = new Response&lt;AllocationSingleQueueDTO&gt;(</span>
+<span class="fc" id="L217">				partialResponse.getMedia(), </span>
+<span class="fc" id="L218">				partialResponse.getCampaign(), </span>
+<span class="fc" id="L219">				partialResponse.getSp(),</span>
+				dto,
+<span class="fc" id="L221">				partialResponse.getHoursOfOperation());</span>
+<span class="fc" id="L222">		return fullResponse;</span>
+	}
+
+	/**
+	 * Returns the forecast child queue allocations for the specified SpQueue ID.
+	 */
+	protected Map&lt;ID, double[]&gt; getChildAllocations(RequestContext context, Map request, ID spQueueId)
+			throws RemoteException, CoreEJBCreateException, BbmException {
+<span class="fc" id="L230">		ForecastTimeSeriesManager forecastTimeSeriesManager = WfmManagerFactory.getForecastTimeSeriesManager(context.isInWhatIfMode());</span>
+<span class="fc" id="L231">		return forecastTimeSeriesManager.getChildForecastAllocationsForDistributedSpQueue(spQueueId);</span>
+	}
+
+	/**
+	 * Returns an empty map because the Forecast Allocation applet doesn't use
+	 * staffing.
+	 * 
+	 * @param context
+	 * @param spQueueId
+	 * @return an empty map
+	 * @throws RemoteException
+	 * @throws CoreEJBCreateException
+	 * @throws BbmException
+	 */
+	protected Map&lt;ID, double[]&gt; getChildStaffing(RequestContext context, ID spQueueId)
+			throws RemoteException, CoreEJBCreateException, BbmException {
+<span class="fc" id="L247">		return Collections.emptyMap();</span>
+	}
+
+	private static ForecastTraceCube createZeroForecast(ID queueId, Date start, Date end) throws BbmTimeSeriesException {
+<span class="nc" id="L251">		short[] types = new short[] {Trace.CV, Trace.AHT, Trace.CV_VH};</span>
+<span class="nc" id="L252">		ForecastTraceCube result = new ForecastTraceCube(queueId, start, end, types);</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">		for (short type : types) {</span>
+<span class="nc" id="L254">			result.initTraceValue(type, 0);</span>
+		}
+<span class="nc" id="L256">		return result;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

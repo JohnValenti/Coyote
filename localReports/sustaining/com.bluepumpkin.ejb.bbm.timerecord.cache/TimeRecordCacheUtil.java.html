@@ -1,0 +1,798 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeRecordCacheUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.timerecord.cache</a> &gt; <span class="el_source">TimeRecordCacheUtil.java</span></div><h1>TimeRecordCacheUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.timerecord.cache;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.ListIterator;
+
+import com.bluepumpkin.common.cache.Cache;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.ObjectDeepCloneUtil;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.Log;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.timerecord.ejb.TimeRecordDAO;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeRecord;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeRecordEntry;
+
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  TimeRecordManager EJB implementation
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, Inc.
+ * @author       Sheng Song
+ * @version 1.0
+ */
+
+<span class="nc" id="L30">public class TimeRecordCacheUtil {</span>
+<span class="fc" id="L31">	private static Category m_cat = Log.initCategory(TimeRecordCacheUtil.class.getName());</span>
+<span class="fc" id="L32">	private static int m_CachedMilliSeconds = TimeZoneUtil.DAY_IN_MILLISECONDS;</span>
+
+	/**
+	 * Check if a time record fits in the default cache time window.
+	 * &lt;p&gt;
+	 * @param tr a time record to check
+	 * &lt;p&gt;
+	 * @return true if the time record fits in the given time window, otherwise return false
+	 */
+	public static boolean fitsInCache(TimeRecord tr) {
+<span class="nc" id="L42">		Date[] cacheWindow = getCurrentCacheWindow();</span>
+<span class="nc" id="L43">		return fitsInCache(tr, cacheWindow[0], cacheWindow[1]);</span>
+	}
+
+	/**
+	 * Check if a time record fits in the given time window.
+	 * &lt;p&gt;
+	 * @param tr a time record to check
+	 * @param dtStart the start date of the time window to check
+	 * @param dtEnd the end date of the time window to check
+	 * &lt;p&gt;
+	 * @return true if the time record fits in the given time window, otherwise return false
+	 */
+	public static boolean fitsInCache(TimeRecord tr, Date dtStart, Date dtEnd) {
+<span class="pc bpc" id="L56" title="1 of 2 branches missed.">		if (tr == null) {</span>
+<span class="nc" id="L57">			return false;</span>
+		}
+
+<span class="fc" id="L60">		ID empID = tr.getEmployeeID();</span>
+		// for TimeCollection, it will create a blank TimeRecord first (with ID)
+		// and append entry to it later, we need keep this blank TimeRecord
+		// the dummy record has no ID, so it will be filtered out
+<span class="pc bpc" id="L64" title="2 of 4 branches missed.">		if (empID == null || tr.getID() == null) {</span>
+<span class="nc" id="L65">			return false;</span>
+		}
+
+<span class="pc bpc" id="L68" title="2 of 6 branches missed.">		if (tr.isOpenShift() || tr.getStartTime() == null || !tr.getStartTime().before(dtEnd)) {</span>
+<span class="pc bpc" id="L69" title="6 of 8 branches missed.">			if (m_cat.isDebugEnabled() &amp;&amp; tr.getStartTime() != null &amp;&amp; dtEnd != null &amp;&amp; !tr.getStartTime().before(dtEnd)) {</span>
+<span class="nc" id="L70">				m_cat.debug(&quot;Found a timerecord starts in future, still keeps it &quot; + tr + &quot; starts after &quot; + dtStart);</span>
+			}
+<span class="fc" id="L72">			return true;</span>
+		}
+<span class="fc" id="L74">		return TimeZoneUtil.periodsOverlap(dtStart, dtEnd, tr.getStartTime(), tr.getEndTime());</span>
+	}
+
+	/**
+	 * Creates a new {@code TimeRecord} in the cache: Time Collection will create an empty record with ID, UI will create a full {@code TimeRecord}.
+	 * &lt;p&gt;
+	 * @param trCache a final cache
+	 * @param tr a time record to enter into the cache
+	 */
+	public static void createInCache(final Cache trCache, final TimeRecord tr) {
+<span class="fc" id="L84">		final Date[] cacheWindow = getCurrentCacheWindow();</span>
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">		if (!fitsInCache(tr, cacheWindow[0], cacheWindow[1])) {</span>
+<span class="nc" id="L86">			return;</span>
+		}
+<span class="fc" id="L88">		tr.unChainEntry();</span>
+<span class="fc" id="L89">		final ID empID = tr.getEmployeeID();</span>
+<span class="pc bpc" id="L90" title="1 of 2 branches missed.">		if (empID != null) {	</span>
+<span class="fc" id="L91">					TimeRecord[] records = (TimeRecord[])trCache.get(empID);</span>
+<span class="pc bpc" id="L92" title="1 of 2 branches missed.">					if (records != null) {</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">						for (int i=0; i&lt;records.length; i++) {</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">							if (records[i].getID() == null) {</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">								if (m_cat.isDebugEnabled()){</span>
+<span class="nc" id="L96">									m_cat.debug(&quot;Inside createInCache, there is a dummy Time Record &quot;+records[i]+&quot;, just ignore it.&quot;);</span>
+								}
+								continue;
+							}
+<span class="nc bnc" id="L100" title="All 2 branches missed.">							if (records[i].getID().equals(tr.getID())) {</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">								if (m_cat.isDebugEnabled()){</span>
+<span class="nc" id="L102">									m_cat.debug(&quot;Inside createInCache, TimeRecord already exist for &quot;+tr+&quot;, switch to updateCache.&quot;);</span>
+								}
+<span class="nc" id="L104">								updateInCache(trCache, tr);</span>
+<span class="nc" id="L105">								return;</span>
+							}
+						}
+<span class="nc" id="L108">						TimeRecord[] expandedRecords = new TimeRecord[records.length+1];</span>
+<span class="nc" id="L109">						expandedRecords[records.length] = tr;</span>
+<span class="nc" id="L110">						System.arraycopy(records, 0, expandedRecords, 0, records.length);</span>
+<span class="nc" id="L111">						records = resortFilterTimeRecords(expandedRecords, cacheWindow[0]);</span>
+<span class="nc bnc" id="L112" title="All 2 branches missed.">							if (m_cat.isDebugEnabled()){</span>
+<span class="nc" id="L113">								m_cat.debug(&quot;Inside createInCache, new Cache content is &quot;+convertToArrayList(records));</span>
+							}
+					}
+<span class="fc" id="L116">					trCache.put(empID, records);</span>
+<span class="pc bpc" id="L117" title="1 of 2 branches missed.">					if (m_cat.isDebugEnabled()) {</span>
+<span class="fc" id="L118">						m_cat.debug(&quot;new cache method used&quot;);</span>
+<span class="fc" id="L119">						TimeRecord[] recordFromCache = (TimeRecord[])trCache.get(empID);</span>
+<span class="pc bpc" id="L120" title="1 of 2 branches missed.">						if (null != recordFromCache){</span>
+<span class="nc" id="L121">							m_cat.debug(&quot;records[0]:\n &quot;+recordFromCache[0].toString());</span>
+						}
+					}
+		}
+<span class="fc" id="L125">	}</span>
+
+	/**
+	 * Simply sorts records.
+	 * &lt;p&gt;
+	 * @param records an array of time records to sort
+	 * &lt;p&gt;
+	 * @return a sorted time record array
+	 */
+	public static TimeRecord[] resortTimeRecords(TimeRecord[] records) {
+<span class="nc bnc" id="L135" title="All 2 branches missed.">		if (records != null) {</span>
+<span class="nc" id="L136">			ArrayList recCol = convertToArrayList(records);</span>
+<span class="nc" id="L137">			Collections.sort(recCol);</span>
+<span class="nc" id="L138">			records = convertToArray(recCol);</span>
+		}
+<span class="nc" id="L140">		return records;</span>
+	}
+
+	/**
+	 * Sorts the records and filter them based on the window, used by Cache operation.
+	 * &lt;p&gt;
+	 * @param records an array of time records
+	 * @param dtStart the window start date
+	 * &lt;p&gt;
+	 * @return a sorted, filtered array of time records
+	 */
+	public static TimeRecord[] resortFilterTimeRecords(TimeRecord[] records, Date dtStart) {
+<span class="nc bnc" id="L152" title="All 2 branches missed.">		if (records != null) {</span>
+<span class="nc" id="L153">			ArrayList recCol = convertToArrayList(records);</span>
+<span class="nc" id="L154">			Collections.sort(recCol);</span>
+<span class="nc" id="L155">			records = convertToArray(filterTimeRecords(recCol, dtStart, true));</span>
+		}
+<span class="nc" id="L157">		return records;</span>
+	}
+
+	/**
+	 * A util method to filter out obsolete records for other cache operations.
+	 * &lt;p&gt;
+	 * @param trArray an array of time records to check for obsolete records
+	 * &lt;p&gt;
+	 * @return an array of filtered time records
+	 */
+	private static TimeRecord[] filterTimeRecords(TimeRecord[] trArray) {
+<span class="nc" id="L168">		return convertToArray(filterTimeRecords(convertToArrayList(trArray), getCurrentCacheWindow()[0], true));</span>
+	}
+	
+	/**
+	 * Filters a collection of time records on a given window: assumes records are sorted.
+	 * For Cache usage, it must keep at least one dummy record, so it is easy
+	 * to differentiate records are loaded at least once or never loaded.
+	 * For other usage, if no record falls in window, just return empty list
+	 * &lt;p&gt;
+	 * @param trCol a collection of time records
+	 * @param dtStart the window start date
+	 * @param needLatest flag to keep dummy record or not
+	 * &lt;p&gt;
+	 * @return a collection of filtered time records
+	 */
+	public static ArrayList filterTimeRecords(ArrayList trCol, Date dtStart, boolean needLatest) {
+<span class="nc bnc" id="L184" title="All 4 branches missed.">		if (trCol == null || trCol.isEmpty()) {</span>
+<span class="nc" id="L185">			return trCol;</span>
+		}
+
+<span class="nc bnc" id="L188" title="All 2 branches missed.">		if (trCol.size() == 1) {</span>
+<span class="nc" id="L189">			TimeRecord trCandidate = (TimeRecord)trCol.get(0);</span>
+<span class="nc bnc" id="L190" title="All 2 branches missed.">			if (trCandidate == null) {</span>
+<span class="nc bnc" id="L191" title="All 2 branches missed.">				if (needLatest) {</span>
+<span class="nc" id="L192">					ArrayList newTrCol = new ArrayList(1);</span>
+<span class="nc" id="L193">					newTrCol.add(new TimeRecord());</span>
+<span class="nc" id="L194">					return newTrCol;</span>
+				}
+<span class="nc" id="L196">				return new ArrayList(1);</span>
+			}
+			// For dummy record, return blank
+<span class="nc bnc" id="L199" title="All 2 branches missed.">			if (trCandidate.getID() == null) {</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">				if (needLatest) {</span>
+<span class="nc" id="L201">					return trCol;</span>
+				}
+<span class="nc" id="L203">				return new ArrayList(1);</span>
+			}
+
+<span class="nc bnc" id="L206" title="All 4 branches missed.">			if (trCandidate.getStartTime() == null || trCandidate.isOpenShift()) {</span>
+<span class="nc" id="L207">				return trCol;</span>
+			}
+
+<span class="nc bnc" id="L210" title="All 2 branches missed.">			if (trCandidate.getStartTime().before(dtStart)) {</span>
+<span class="nc bnc" id="L211" title="All 4 branches missed.">				if (trCandidate.getEndTime() != null &amp;&amp; trCandidate.getEndTime().before(dtStart)) {</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">					if (needLatest) {</span>
+<span class="nc" id="L213">						ArrayList newTrCol = new ArrayList(1);</span>
+<span class="nc" id="L214">						newTrCol.add(new TimeRecord());</span>
+<span class="nc" id="L215">						return newTrCol;</span>
+					}
+<span class="nc" id="L217">					return new ArrayList(1);</span>
+				}
+			}
+<span class="nc" id="L220">			return trCol;</span>
+		} else {
+<span class="nc bnc" id="L222" title="All 2 branches missed.">			for (ListIterator lit = trCol.listIterator(trCol.size()); lit.hasPrevious();) {</span>
+<span class="nc" id="L223">				TimeRecord trCandidate = (TimeRecord)lit.previous();</span>
+				// If candidate has no start time, it is a dummy record, just remove
+<span class="nc bnc" id="L225" title="All 2 branches missed.">				if (trCandidate.getID() == null) {</span>
+<span class="nc" id="L226">					lit.remove();</span>
+<span class="nc" id="L227">					continue;</span>
+				}
+
+<span class="nc bnc" id="L230" title="All 2 branches missed.">				if (trCandidate.getStartTime() == null) {</span>
+<span class="nc" id="L231">					continue;</span>
+				}
+				// We only care about if the TimeRecord starts before the start time
+				// If it ends before start time,
+				// If it has no endtime, it is an valid openshift keep it,
+				// Exit check, remove all remainging previous entries
+				// Invoke isOpenShift() will reopen the TimeRecord, so this is avoided
+<span class="nc bnc" id="L238" title="All 2 branches missed.">				if (trCandidate.getStartTime().before(dtStart)) {</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">					if (trCandidate.getEndTime() == null ||</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">						trCandidate.isOpenShift() ||</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">						!trCandidate.getEndTime().before(dtStart)) {</span>
+						// If there are still some timerecords before, remove them
+<span class="nc bnc" id="L243" title="All 2 branches missed.">						if (lit.hasPrevious()) {</span>
+<span class="nc" id="L244">							return new ArrayList(trCol.subList(lit.previousIndex() + 1, trCol.size()));</span>
+						}
+					} else {
+						// Remove this timerecord and all previouse also
+<span class="nc" id="L248">						ArrayList newTrCol = new ArrayList(1);</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">						if (lit.nextIndex() + 1 &lt; trCol.size()) {</span>
+<span class="nc" id="L250">							newTrCol = new ArrayList(trCol.subList(lit.nextIndex() + 1, trCol.size()));</span>
+						}
+
+<span class="nc bnc" id="L253" title="All 4 branches missed.">						if (newTrCol.isEmpty() &amp;&amp; needLatest) {</span>
+<span class="nc" id="L254">							newTrCol.add(new TimeRecord());</span>
+						}
+<span class="nc" id="L256">						return newTrCol;</span>
+					}
+				}
+<span class="nc" id="L259">			}</span>
+		}
+<span class="nc" id="L261">		return trCol;</span>
+	}
+
+	/**
+	 * TimeRecord supports open shift, but to Adherence function, it needs a closed shift time record.
+	 * Iterate each TimeRecod from the latest to the oldest and close it with the previous time record
+	 * start time, for the latest one use specified lastEntryCloseDate.  Modified time records won't be
+	 * set back into Cache.
+	 * &lt;p&gt;
+	 * @param records a collection of time records
+	 * @param lastEntryCloseDate the end time of the latest shift
+	 * &lt;p&gt;
+	 * @return a collection of the closed Time Record
+	 * @throws java.lang.Exception
+	 */
+	public static ArrayList closeOpenTimeRecords(ArrayList records, Date lastEntryCloseDate)
+			throws Exception {
+		// Iterate the TimeRecordEntries to set the open shift
+<span class="nc bnc" id="L279" title="All 4 branches missed.">		if (records != null &amp;&amp; !records.isEmpty()) {</span>
+			// Clone to a new ArrayList
+<span class="nc" id="L281">			ArrayList closedRecords = (ArrayList)ObjectDeepCloneUtil.cloneObject(records);</span>
+			// filter out zero entry timerecord first, it happens if record is just created while entry is not put yet
+<span class="nc bnc" id="L283" title="All 2 branches missed.">			for (Iterator it = closedRecords.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L284">				TimeRecord tr = (TimeRecord)it.next();</span>
+<span class="nc bnc" id="L285" title="All 4 branches missed.">				if (tr.getChild() == null || tr.getChild().isEmpty()) {</span>
+<span class="nc bnc" id="L286" title="All 2 branches missed.">					if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L287">						m_cat.debug(&quot;Find an empty record, just remove it &quot; + tr);</span>
+					}
+<span class="nc" id="L289">					it.remove();</span>
+				}
+<span class="nc" id="L291">			}</span>
+			// In-Memory sort is a MUST step to guarantee Open-Shift closure
+<span class="nc" id="L293">			Collections.sort(closedRecords);</span>
+<span class="nc" id="L294">			TimeRecordEntry candidate = null;</span>
+<span class="nc" id="L295">			int recordSize = closedRecords.size();</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">			for (int i = 0; i &lt; recordSize; i++) {</span>
+<span class="nc" id="L297">				TimeRecord tr = (TimeRecord)closedRecords.get(i);</span>
+				// new step to chain up the entries
+<span class="nc" id="L299">				tr.chainEntry();</span>
+<span class="nc bnc" id="L300" title="All 2 branches missed.">				if (candidate != null) {</span>
+					// Prevention check, shouldn't adjust it to the time before start time
+					// This might happen if the timerecords have overlap
+<span class="nc bnc" id="L303" title="All 2 branches missed.">					if (candidate.getStartTime().before(tr.getStartTime())) {</span>
+<span class="nc" id="L304">						candidate.setEndTime(tr.getStartTime());</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">						if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L306">							m_cat.debug(&quot;Inside closeOpenTimeRecords, fix entry &quot; + candidate + &quot; as it is overlapping &quot; + tr);</span>
+						}
+					} else {
+						// if the entry is open after the next record start, just set it with current time or next record's end time
+<span class="nc bnc" id="L310" title="All 4 branches missed.">						if (tr.getEndTime() != null &amp;&amp; candidate.getStartTime().before(tr.getEndTime())) {</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">							if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L312">								m_cat.debug(&quot;The open entry starts even after next record's start time but before end time, just close it with next record's end time.&quot;);</span>
+							}
+<span class="nc" id="L314">							candidate.setEndTime(tr.getEndTime());</span>
+						} else {
+							// iterate the remaining records, 
+<span class="nc bnc" id="L317" title="All 2 branches missed.">							for (int j = i; j &lt; recordSize; j++) {</span>
+<span class="nc" id="L318">								TimeRecord nextTR = (TimeRecord)closedRecords.get(j);</span>
+<span class="nc bnc" id="L319" title="All 2 branches missed.">								if (candidate.getStartTime().before(nextTR.getStartTime())) {</span>
+<span class="nc" id="L320">									candidate.setEndTime(nextTR.getStartTime());</span>
+<span class="nc" id="L321">									candidate = null;</span>
+<span class="nc bnc" id="L322" title="All 2 branches missed.">									if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L323">										m_cat.debug(&quot;Inside closeOpenTimeRecords, fix entry &quot; + candidate + &quot; as it contains &quot; + tr + &quot; but starts before start of &quot; + nextTR);</span>
+									}
+									break;
+<span class="nc bnc" id="L326" title="All 4 branches missed.">								} else if (nextTR.getEndTime() != null &amp;&amp; candidate.getStartTime().before(nextTR.getEndTime())) {</span>
+<span class="nc" id="L327">									candidate.setEndTime(nextTR.getEndTime());</span>
+<span class="nc" id="L328">									candidate = null;</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">									if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L330">										m_cat.debug(&quot;Inside closeOpenTimeRecords, fix entry &quot; + candidate + &quot; as it contains &quot; + tr + &quot; but starts before end of &quot; + nextTR);</span>
+									}
+									break;
+								}
+							}
+<span class="nc bnc" id="L335" title="All 2 branches missed.">							if (candidate != null) {</span>
+<span class="nc bnc" id="L336" title="All 2 branches missed.">								if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L337">									m_cat.debug(&quot;The open entry starts even after next record's end time, just close it with specified time/current time.&quot;);</span>
+								}
+<span class="nc" id="L339">								fixEntry(lastEntryCloseDate, candidate);</span>
+							}
+						}
+					}
+<span class="nc" id="L343">					candidate = null;</span>
+				}
+<span class="nc" id="L345">				ArrayList entries = tr.getChild();</span>
+<span class="nc bnc" id="L346" title="All 4 branches missed.">				if (entries == null || entries.isEmpty()) {</span>
+<span class="nc" id="L347">					continue;</span>
+				}
+				// Get last entry
+<span class="nc" id="L350">				TimeRecordEntry entry = (TimeRecordEntry)entries.get(entries.size() - 1);</span>
+<span class="nc bnc" id="L351" title="All 2 branches missed.">				if (entry.getActivityID().equals(Activity.ACTIVITY_NONE)) {</span>
+<span class="nc" id="L352">					continue;</span>
+				}
+<span class="nc" id="L354">				candidate = entry;</span>
+<span class="nc" id="L355">				tr.setNeedCal();</span>
+			}
+			// If there is an open shift, with no new shift after it
+			// Adjust it to the time window's end time
+<span class="nc bnc" id="L359" title="All 2 branches missed.">			if (candidate != null) {</span>
+<span class="nc" id="L360">				fixEntry(lastEntryCloseDate, candidate);</span>
+			}
+<span class="nc" id="L362">			return closedRecords;</span>
+		}
+<span class="nc" id="L364">		return records;</span>
+	}
+
+	/**
+	 * This method attempts to fix time record entries where the start and end times might be incorrect.
+	 * &lt;p&gt;
+	 * @param lastEntryCloseDate the end time of the latest shift
+	 * @param candidate a time record entry to try to fix
+	 */
+	private static void fixEntry(Date lastEntryCloseDate, TimeRecordEntry candidate) {
+<span class="nc bnc" id="L374" title="All 2 branches missed.">		if (candidate.getStartTime().before(lastEntryCloseDate)) {</span>
+<span class="nc" id="L375">			candidate.setEndTime(lastEntryCloseDate);</span>
+<span class="nc bnc" id="L376" title="All 2 branches missed.">			if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L377">				m_cat.debug(&quot;Inside closeOpenTimeRecords, find last open entry &quot; + candidate + &quot; fix it with time &quot; + lastEntryCloseDate);</span>
+			}
+		} else {
+<span class="nc" id="L380">			Date curTime = new Date();</span>
+<span class="nc bnc" id="L381" title="All 2 branches missed.">			if (!candidate.getStartTime().after(curTime)) {</span>
+<span class="nc" id="L382">				candidate.setEndTime(curTime);</span>
+<span class="nc bnc" id="L383" title="All 2 branches missed.">				if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L384">					m_cat.debug(&quot;Given lastEntryCloseDate &quot; + lastEntryCloseDate + &quot; is before last entry's starttime &quot; + candidate + &quot; so use cur time to close it &quot; + curTime);</span>
+				}
+			} else {
+<span class="nc" id="L387">				candidate.setEndTime(candidate.getStartTime());</span>
+<span class="nc bnc" id="L388" title="All 2 branches missed.">				if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L389">					m_cat.debug(&quot;Given lastEntryCloseDate &quot; + lastEntryCloseDate + &quot; is before last entry's starttime &quot; + candidate + &quot; and even after curtime &quot; + curTime + &quot;, so use start time to close it &quot; + candidate.getStartTime());</span>
+				}
+			}
+		}
+<span class="nc" id="L393">	}</span>
+
+	/**
+	 * Removes a time record from a cache, based on an Employee ID and a time record ID.
+	 * &lt;p&gt;
+	 * @param trCache a cache to remove records from
+	 * @param empID an employee ID
+	 * @param trID a time record ID
+	 */
+	public static void removeInCache(final Cache trCache, final ID empID, final ID trID) {
+		
+<span class="nc" id="L404">			TimeRecord[] records = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc bnc" id="L405" title="All 2 branches missed.">				if (records != null) {</span>
+<span class="nc bnc" id="L406" title="All 2 branches missed.">					for (int i=records.length; --i&gt;=0; ) {</span>
+<span class="nc" id="L407">						TimeRecord record = records[i];</span>
+<span class="nc bnc" id="L408" title="All 2 branches missed.">						if (record.getID() == null)</span>
+<span class="nc" id="L409">							continue;</span>
+<span class="nc bnc" id="L410" title="All 2 branches missed.">						if (record.getID().equals(trID)) {</span>
+<span class="nc bnc" id="L411" title="All 2 branches missed.">							if (records.length == 1) {</span>
+<span class="nc" id="L412">								records = new TimeRecord[1];</span>
+<span class="nc" id="L413">								records[0] = new TimeRecord();</span>
+<span class="nc bnc" id="L414" title="All 2 branches missed.">								if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L415">									m_cat.debug(&quot;Inside removeInCache, for workresource ID &quot; + empID + &quot;, there is no valid record left. A dummy record is created.&quot;);</span>
+								}
+							} else {
+<span class="nc" id="L418">								TimeRecord[] shrinkedArray = new TimeRecord[records.length-1];</span>
+<span class="nc bnc" id="L419" title="All 2 branches missed.">								if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L420">									m_cat.debug(&quot;Inside removeInCache, for workresource ID &quot; + empID + &quot;, shrink records.&quot;);</span>
+								}
+<span class="nc" id="L422">								System.arraycopy(records, 0, shrinkedArray, 0, i);</span>
+<span class="nc" id="L423">								System.arraycopy(records, i+1, shrinkedArray, i, shrinkedArray.length-i);</span>
+<span class="nc" id="L424">								records = shrinkedArray;</span>
+<span class="nc" id="L425">								record = null;</span>
+							}
+<span class="nc" id="L427">							break;</span>
+						}
+<span class="nc" id="L429">					}</span>
+<span class="nc" id="L430">					trCache.put(empID, filterTimeRecords(records));</span>
+<span class="nc bnc" id="L431" title="All 2 branches missed.">					if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L432">						m_cat.debug(&quot;new cache method used&quot;);</span>
+<span class="nc" id="L433">						TimeRecord[] recordFromCache = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc bnc" id="L434" title="All 2 branches missed.">						if (null != recordFromCache) {</span>
+<span class="nc" id="L435">							m_cat.debug(&quot;records[0]:\n &quot; + recordFromCache[0].toString());</span>
+						}
+					}
+				}		
+
+<span class="nc" id="L440">	}</span>
+
+	/**
+	 * Only refresh the activity ID and IsPaid info, to support quickUpdate function for Time Collection.
+	 * &lt;p&gt;
+	 * @param trCache a cache to refresh items in
+	 * @param entry a time record entry to refresh
+	 */
+	public static void refreshInCache(final Cache trCache, final TimeRecordEntry entry) {
+<span class="nc" id="L449">		final ID empID = entry.getEmployeeID();</span>
+<span class="nc bnc" id="L450" title="All 2 branches missed.">		if (empID != null) {</span>
+			
+<span class="nc" id="L452">					TimeRecord[] records = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc bnc" id="L453" title="All 2 branches missed.">					if (records != null) {</span>
+<span class="nc bnc" id="L454" title="All 2 branches missed.">						for (int i=records.length; --i&gt;=0; ) {</span>
+<span class="nc" id="L455">							TimeRecord record = records[i];</span>
+<span class="nc bnc" id="L456" title="All 2 branches missed.">							if (record.getID() == null) {</span>
+<span class="nc" id="L457">								continue;</span>
+							}
+<span class="nc bnc" id="L459" title="All 4 branches missed.">							if (entry.getParentID() != null &amp;&amp; record.getID().equals(entry.getParentID())) {</span>
+<span class="nc" id="L460">								record.refreshEntry(entry);</span>
+<span class="nc" id="L461">								break;</span>
+							} 
+<span class="nc bnc" id="L463" title="All 2 branches missed.">							if (record.refreshEntry(entry)) {</span>
+<span class="nc" id="L464">								break;</span>
+							}
+<span class="nc" id="L466">						}</span>
+<span class="nc" id="L467">						Date[] cacheWindow = getCurrentCacheWindow();</span>
+<span class="nc" id="L468">						records = resortFilterTimeRecords(records, cacheWindow[0]);</span>
+					}
+<span class="nc" id="L470">					trCache.put(empID, records);</span>
+<span class="nc bnc" id="L471" title="All 2 branches missed.">					if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L472">						m_cat.debug(&quot;new cache method used&quot;);</span>
+<span class="nc" id="L473">						TimeRecord[] recordFromCache = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc bnc" id="L474" title="All 2 branches missed.">						if (null != recordFromCache) {</span>
+<span class="nc" id="L475">							m_cat.debug(&quot;records[0]:\n &quot; + recordFromCache[0].toString());</span>
+						}
+					}
+		}
+<span class="nc" id="L479">	}</span>
+
+	/**
+	 * Refresh time record is just update time record information, to support updateTimeRecordOnly UI function (set comments on TimeRecord).
+	 * &lt;p&gt;
+	 * @param trCache a time record cache
+	 * @param tr a time record
+	 */
+	public static void refreshInCache(final Cache trCache, final TimeRecord tr) {
+<span class="nc" id="L488">		final ID empID = tr.getEmployeeID();</span>
+<span class="nc bnc" id="L489" title="All 2 branches missed.">		if (empID != null) {</span>
+<span class="nc" id="L490">			tr.unChainEntry();</span>
+			
+<span class="nc" id="L492">					TimeRecord[] records = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc" id="L493">					Date[] cacheWindow = getCurrentCacheWindow();</span>
+<span class="nc bnc" id="L494" title="All 2 branches missed.">					if (records != null) {</span>
+<span class="nc bnc" id="L495" title="All 2 branches missed.">						for (int i=records.length; --i&gt;=0; ) {</span>
+<span class="nc" id="L496">							TimeRecord record = records[i];</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">							if (record.getID() == null)</span>
+<span class="nc" id="L498">								continue;</span>
+<span class="nc bnc" id="L499" title="All 2 branches missed.">							if (record.getID().equals(tr.getID())) {</span>
+<span class="nc bnc" id="L500" title="All 2 branches missed.">								if (fitsInCache(record, cacheWindow[0], cacheWindow[1])) {</span>
+<span class="nc bnc" id="L501" title="All 2 branches missed.">									if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L502">										m_cat.debug(&quot;Inside refreshInCache, for workresource ID &quot; + empID + &quot;, refresh existing record &quot; + record + &quot; ,with &quot; + tr);</span>
+									}
+<span class="nc" id="L504">									record.setRemarkEmployeeID(tr.getRemarkEmployeeID());</span>
+<span class="nc" id="L505">									record.setDescription(tr.getDescription());</span>
+<span class="nc" id="L506">									record.setLastModifiedTime(new Date());</span>
+<span class="nc" id="L507">									record.setApprove(tr.getApprove());</span>
+								}
+								break;
+							}
+<span class="nc" id="L511">						}</span>
+<span class="nc" id="L512">						records = resortFilterTimeRecords(records, cacheWindow[0]);</span>
+					}
+<span class="nc" id="L514">					trCache.put(empID, records);</span>
+<span class="nc bnc" id="L515" title="All 2 branches missed.">					if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L516">						m_cat.debug(&quot;new cache method used&quot;);</span>
+<span class="nc" id="L517">						TimeRecord[] recordFromCache = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">						if (null != recordFromCache) {</span>
+<span class="nc" id="L519">							m_cat.debug(&quot;records[0]:\n &quot; + recordFromCache[0].toString());</span>
+						}
+					}
+		}
+<span class="nc" id="L523">	}</span>
+
+	/**
+	 * Append an entry to a time record in the cache, mostly happens when time collection creates a new entry. The entry must be created first with an ID.
+	 * &lt;p&gt;
+	 * @param trCache a time record cache
+	 * @param entry a time record entry, with Employee ID and TimeRecord ID information
+	 */
+	public static void createInCache(final Cache trCache, final TimeRecordEntry entry) {
+		
+<span class="fc" id="L533">				TimeRecord[] records = (TimeRecord[])trCache.get(entry.getEmployeeID());</span>
+<span class="fc" id="L534">				boolean created = false;</span>
+<span class="pc bpc" id="L535" title="1 of 2 branches missed.">				if (records != null) {</span>
+<span class="nc bnc" id="L536" title="All 2 branches missed.">					for (int i=records.length; --i&gt;=0; ) {</span>
+<span class="nc" id="L537">						TimeRecord record = records[i];</span>
+<span class="nc bnc" id="L538" title="All 2 branches missed.">						if (record.getID() == null)</span>
+<span class="nc" id="L539">							continue;</span>
+<span class="nc bnc" id="L540" title="All 2 branches missed.">						if (record.getID().equals(entry.getParentID())) {</span>
+<span class="nc" id="L541">							created = true;</span>
+<span class="nc bnc" id="L542" title="All 2 branches missed.">							if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L543">								m_cat.debug(&quot;Inside createInCache with entry, for workresource ID &quot; + entry.getEmployeeID() + &quot;, update existing record &quot; + record + &quot; ,with &quot; + entry);</span>
+							}
+<span class="nc" id="L545">							record.getChild().add(entry);</span>
+<span class="nc" id="L546">							record.setNeedCal();</span>
+<span class="nc" id="L547">							break;</span>
+						}
+<span class="nc" id="L549">					}</span>
+<span class="nc bnc" id="L550" title="All 2 branches missed.">					if (!created) {</span>
+<span class="nc bnc" id="L551" title="All 2 branches missed.">						if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L552">							m_cat.debug(&quot;Trying to insert Entry &quot;+entry+&quot; but the record is not found in Cache. Now try to load record &quot;+entry.getTimeRecordID());</span>
+						}
+						try {
+<span class="nc" id="L555">							TimeRecord record = TimeRecordDAO.getTimeRecordByID(entry.getTimeRecordID());							</span>
+<span class="nc" id="L556">							record.getChild().add(entry);</span>
+<span class="nc" id="L557">							record.setNeedCal();</span>
+<span class="nc" id="L558">							TimeRecord[] expandedRecords = new TimeRecord[records.length+1];</span>
+<span class="nc" id="L559">							expandedRecords[records.length] = record;</span>
+<span class="nc" id="L560">							System.arraycopy(records, 0, expandedRecords, 0, records.length);</span>
+<span class="nc" id="L561">							trCache.put(entry.getEmployeeID(), filterTimeRecords(expandedRecords));</span>
+<span class="nc" id="L562">						} catch(Exception e) {</span>
+<span class="nc bnc" id="L563" title="All 2 branches missed.">							if (m_cat.isInfoEnabled()){</span>
+<span class="nc" id="L564">								m_cat.debug(&quot;Failed to load record &quot;+entry.getTimeRecordID()+&quot;, Exception is &quot;+e);</span>
+							}
+<span class="nc" id="L566">						}</span>
+					}
+				}
+<span class="pc bpc" id="L569" title="1 of 2 branches missed.">				if (created)</span>
+<span class="nc" id="L570">					trCache.put(entry.getEmployeeID(), filterTimeRecords(records));		</span>
+<span class="pc bpc" id="L571" title="1 of 2 branches missed.">				if (m_cat.isDebugEnabled()) {</span>
+<span class="fc" id="L572">					m_cat.debug(&quot;new cache method used&quot;);</span>
+<span class="fc" id="L573">					TimeRecord[] recordFromCache = (TimeRecord[])trCache.get(entry.getEmployeeID());</span>
+<span class="pc bpc" id="L574" title="1 of 2 branches missed.">					if (null != recordFromCache){</span>
+<span class="nc" id="L575">						m_cat.debug(&quot;records[0]:\n &quot;+recordFromCache[0].toString());</span>
+					}
+
+				}
+<span class="fc" id="L579">	}</span>
+
+	/**
+	 * Append an entry to a time record in the cache, this mostly happens when time collection creates a new entry. The entry must be created first with an ID.
+	 * &lt;p&gt;
+	 * @param trCache a time record cache
+	 * @param entryList a list of time record entries, with same Employee ID and TimeRecord ID information
+	 * @param empID an employee ID
+	 * @param recordID a time record ID
+	 */
+	public static void createInCache(final Cache trCache, final ArrayList entryList, final ID empID, final ID recordID) {
+		
+<span class="nc" id="L591">				TimeRecord[] records = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc" id="L592">				boolean created = false;</span>
+<span class="nc bnc" id="L593" title="All 2 branches missed.">				if (records != null) {</span>
+<span class="nc bnc" id="L594" title="All 2 branches missed.">					for (int i=records.length; --i&gt;=0; ) {</span>
+<span class="nc" id="L595">						TimeRecord record = records[i];</span>
+<span class="nc bnc" id="L596" title="All 2 branches missed.">						if (record.getID() == null) {</span>
+<span class="nc" id="L597">							continue;</span>
+						}
+<span class="nc bnc" id="L599" title="All 2 branches missed.">						if (record.getID().equals(recordID)) {</span>
+<span class="nc" id="L600">							created = true;</span>
+<span class="nc bnc" id="L601" title="All 2 branches missed.">							if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L602">								m_cat.debug(&quot;Inside createInCache with entry, for workresource ID &quot; + empID + &quot;, update existing record &quot; + record + &quot; ,with &quot; + entryList);</span>
+							}
+<span class="nc bnc" id="L604" title="All 2 branches missed.">							for (Iterator it = entryList.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L605">								TimeRecordEntry entry = (TimeRecordEntry)it.next();</span>
+<span class="nc" id="L606">								record.getChild().add(entry);</span>
+<span class="nc" id="L607">								record.setNeedCal();</span>
+<span class="nc" id="L608">							}</span>
+<span class="nc" id="L609">							break;</span>
+						}
+<span class="nc" id="L611">					}</span>
+				}
+<span class="nc bnc" id="L613" title="All 2 branches missed.">				if (created)</span>
+<span class="nc" id="L614">					trCache.put(empID, filterTimeRecords(records));</span>
+				
+<span class="nc bnc" id="L616" title="All 2 branches missed.">				if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L617">					m_cat.debug(&quot;new cache method used&quot;);</span>
+<span class="nc" id="L618">					TimeRecord[] recordFromCache = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc bnc" id="L619" title="All 2 branches missed.">					if (null != recordFromCache) {</span>
+<span class="nc" id="L620">						m_cat.debug(&quot;records[0]:\n &quot; + recordFromCache[0].toString());</span>
+					}
+				}
+<span class="nc" id="L623">	}</span>
+
+	/**
+	 * Updates a time record entry in the cache, this is mostly used by time collection to update an entry directly.
+	 * Time Record need find the corresponding entry and position, go through full logic to update the entry.
+	 * &lt;p&gt;
+	 * @param trCache a time record cache
+	 * @param entry a time record entry with ID, Employee ID, Time Record ID
+	 */
+	public static void updateInCache(final Cache trCache, final TimeRecordEntry entry) {
+		
+<span class="nc" id="L634">				TimeRecord[] records = (TimeRecord[])trCache.get(entry.getEmployeeID());</span>
+<span class="nc" id="L635">				boolean updated = false;</span>
+<span class="nc bnc" id="L636" title="All 2 branches missed.">				if (records != null) {</span>
+<span class="nc" id="L637">					Date[] cacheWindow = getCurrentCacheWindow();</span>
+<span class="nc bnc" id="L638" title="All 2 branches missed.">					for (int i=records.length; --i&gt;=0; ) {</span>
+<span class="nc" id="L639">						TimeRecord record = records[i];</span>
+<span class="nc bnc" id="L640" title="All 2 branches missed.">						if (record.getID() == null) {</span>
+<span class="nc" id="L641">							continue;</span>
+						}
+<span class="nc bnc" id="L643" title="All 2 branches missed.">						if (record.getID().equals(entry.getParentID())) {</span>
+<span class="nc" id="L644">							updated = true;</span>
+<span class="nc bnc" id="L645" title="All 2 branches missed.">							if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L646">								m_cat.debug(&quot;Inside updateInCache with entry, for workresource ID &quot; + entry.getEmployeeID() + &quot;, update existing record &quot; + record + &quot; ,with &quot; + entry);</span>
+							}
+							try {
+<span class="nc" id="L649">								record.updateEntry(entry);</span>
+<span class="nc" id="L650">							} catch(Exception e) {</span>
+<span class="nc bnc" id="L651" title="All 2 branches missed.">								if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L652">									m_cat.debug(&quot;Inside updateInCache with entry, for workresource ID &quot; + entry.getEmployeeID() + &quot;, fail to update TimeRecord &quot; + record + &quot; with entry &quot; + entry);</span>
+								}
+<span class="nc" id="L654">								return;</span>
+<span class="nc" id="L655">							}</span>
+							break;
+						}
+<span class="nc" id="L658">					}</span>
+<span class="nc" id="L659">					records = resortFilterTimeRecords(records, cacheWindow[0]);</span>
+				}
+<span class="nc bnc" id="L661" title="All 2 branches missed.">				if (updated) {</span>
+<span class="nc" id="L662">					trCache.put(entry.getEmployeeID(), records);</span>
+				}
+				
+<span class="nc bnc" id="L665" title="All 2 branches missed.">				if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L666">					m_cat.debug(&quot;new cache method used&quot;);</span>
+<span class="nc" id="L667">					TimeRecord[] recordFromCache = (TimeRecord[])trCache.get(entry.getEmployeeID());</span>
+<span class="nc bnc" id="L668" title="All 2 branches missed.">					if (null != recordFromCache) {</span>
+<span class="nc" id="L669">						m_cat.debug(&quot;records[0]:\n &quot; + recordFromCache[0].toString());</span>
+					}
+				}
+<span class="nc" id="L672">	}</span>
+
+	/**
+	 * Update a full Time Record in Cache, mostly used in UI initiated operation. The EJB will load full time record and validate entry first, then the full
+	 * time record is passed back to Cache. User may update an old record into new time window, so it may become add record into cache operation.
+	 * &lt;p&gt;
+	 * @param trCache a time record cache
+	 * @param tr a time record
+	 */
+	public static void updateInCache(final Cache trCache, final TimeRecord tr) {
+<span class="nc" id="L682">		final ID empID = tr.getEmployeeID();</span>
+<span class="nc bnc" id="L683" title="All 2 branches missed.">		if (empID != null) {</span>
+<span class="nc" id="L684">				tr.unChainEntry();</span>
+<span class="nc" id="L685">					TimeRecord[] records = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc" id="L686">					boolean updated = false;</span>
+<span class="nc bnc" id="L687" title="All 2 branches missed.">					if (records != null) {</span>
+<span class="nc" id="L688">						Date[] cacheWindow = getCurrentCacheWindow();</span>
+<span class="nc bnc" id="L689" title="All 2 branches missed.">						for (int i=records.length; --i&gt;=0; ) {</span>
+<span class="nc" id="L690">							TimeRecord record = records[i];</span>
+<span class="nc bnc" id="L691" title="All 2 branches missed.">							if (record.getID() == null) {</span>
+<span class="nc" id="L692">								continue;</span>
+							}
+<span class="nc bnc" id="L694" title="All 2 branches missed.">							if (record.getID().equals(tr.getID())) {</span>
+<span class="nc" id="L695">								updated = true;							</span>
+<span class="nc bnc" id="L696" title="All 2 branches missed.">								if (fitsInCache(tr, cacheWindow[0], cacheWindow[1])) {</span>
+<span class="nc bnc" id="L697" title="All 2 branches missed.">									if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L698">										m_cat.debug(&quot;Inside updateInCache, for workresource ID &quot; + empID + &quot;, replace existing record &quot; + record + &quot; ,with &quot; + tr);</span>
+									}
+<span class="nc" id="L700">									records[i] = tr;</span>
+								} 
+								break;
+							}
+<span class="nc" id="L704">						}</span>
+<span class="nc" id="L705">						records = resortFilterTimeRecords(records, cacheWindow[0]);</span>
+					}
+<span class="nc bnc" id="L707" title="All 2 branches missed.">					if (!updated) {</span>
+						// if fail to update, implies record might need be created in cache
+<span class="nc bnc" id="L709" title="All 2 branches missed.">						if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L710">							m_cat.debug(&quot;Inside updateInCache, for workresource ID &quot; + empID + &quot;, try to add record &quot; + tr + &quot; into cachce&quot;);</span>
+						}
+<span class="nc" id="L712">						createInCache(trCache, tr);</span>
+					} else {
+<span class="nc" id="L714">						trCache.put(empID, records);</span>
+					}
+<span class="nc bnc" id="L716" title="All 2 branches missed.">					if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L717">						m_cat.debug(&quot;new cache method used&quot;);</span>
+<span class="nc" id="L718">						TimeRecord[] recordFromCache = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc bnc" id="L719" title="All 2 branches missed.">						if (null != recordFromCache) {</span>
+<span class="nc" id="L720">							m_cat.debug(&quot;records[0]:\n &quot; + recordFromCache[0].toString());</span>
+						}
+					}
+		}
+<span class="nc" id="L724">	}</span>
+
+	/**
+	 * Clean the cache of old records before a given start time.
+	 * &lt;p&gt;
+	 * @param trCache a time record cache
+	 * @param empID an employee ID
+	 * @param start a start date before which to clean
+	 */
+	public static void purgeCache(final Cache trCache, final ID empID, final Date start) {
+		
+<span class="nc" id="L735">				TimeRecord[] records = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc" id="L736">				trCache.put(empID, convertToArray(filterTimeRecords(convertToArrayList(records), start, true)));</span>
+<span class="nc bnc" id="L737" title="All 2 branches missed.">				if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L738">					m_cat.debug(&quot;new cache method used&quot;);</span>
+<span class="nc" id="L739">					TimeRecord[] recordFromCache = (TimeRecord[])trCache.get(empID);</span>
+<span class="nc bnc" id="L740" title="All 2 branches missed.">					if (null != recordFromCache) {</span>
+<span class="nc" id="L741">						m_cat.debug(&quot;records[0]:\n &quot; + recordFromCache[0].toString());</span>
+					}
+				}
+<span class="nc" id="L744">	}</span>
+	
+	/**
+	 * Util function to return Cached window, based on window size.
+	 * &lt;p&gt;
+	 * @param windowSize the cache window size
+	 * &lt;p&gt;
+	 * @return a date array, [0] is Start Date, [1] is End Date (should be current System time)
+	 */
+	public static Date[] getCurrentCacheWindow(int windowSize) {
+<span class="fc" id="L754">		long currentTime = System.currentTimeMillis();</span>
+<span class="fc" id="L755">		long cacheStartTime = currentTime - windowSize;</span>
+<span class="fc" id="L756">		Date[] window = new Date[2];</span>
+<span class="fc" id="L757">		window[0] = new Date(cacheStartTime);</span>
+<span class="fc" id="L758">		window[1] = new Date(currentTime);</span>
+<span class="fc" id="L759">		return window;</span>
+	}
+
+	/**
+	 * Util function to return Cached window, based on a default size.
+	 * &lt;p&gt;
+	 * @return a date array, [0] is Start Date, [1] is End Date (should be current System time)
+	 */
+	public static Date[] getCurrentCacheWindow() {
+<span class="fc" id="L768">		long currentTime = System.currentTimeMillis();</span>
+<span class="fc" id="L769">		long cacheStartTime = currentTime - m_CachedMilliSeconds;</span>
+<span class="fc" id="L770">		Date[] window = new Date[2];</span>
+<span class="fc" id="L771">		window[0] = new Date(cacheStartTime);</span>
+<span class="fc" id="L772">		window[1] = new Date(currentTime);</span>
+<span class="fc" id="L773">		return window;</span>
+	}
+
+	/**
+	 * Util function to convert a time record array into an ArrayList.
+	 * &lt;p&gt;
+	 * @param records a time record array
+	 * &lt;p&gt;
+	 * @return an ArrayList of time records
+	 */
+	public static ArrayList convertToArrayList(TimeRecord[] records) {
+<span class="nc" id="L784">		return new ArrayList(Arrays.asList(records));</span>
+	}
+
+	/**
+	 * Util function to convert a time record ArrayList into an array of time records.
+	 * &lt;p&gt;
+	 * @param trCol a collection of time records
+	 * &lt;p&gt;
+	 * @return TimeRecord[]
+	 */
+	public static TimeRecord[] convertToArray(ArrayList trCol) {
+<span class="nc" id="L795">		return (TimeRecord[])trCol.toArray(new TimeRecord[trCol.size()]);</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

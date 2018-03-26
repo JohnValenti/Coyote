@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ReferenceScheduleTransform.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.ejb</a> &gt; <span class="el_source">ReferenceScheduleTransform.java</span></div><h1>ReferenceScheduleTransform.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.ejb;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.TimeZone;
+import java.util.concurrent.TimeUnit;
+
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.util.ScheduleUtil;
+import com.bluepumpkin.ejb.rm.util.DateUtil;
+
+/**
+ * Shifts the dates of a reference schedule to the given date range and time zone 
+ * 
+ */
+<span class="nc bnc" id="L21" title="All 2 branches missed.">public class ReferenceScheduleTransform {</span>
+
+	private ShiftAssignment[] referenceShiftByDow;
+	private final Calendar shiftTimeZoneCalendar;
+
+<span class="nc" id="L26">	public ReferenceScheduleTransform(Collection&lt;ShiftAssignment&gt; shifts, TimeZone shiftTimeZone) {</span>
+<span class="nc" id="L27">		shiftTimeZoneCalendar = Calendar.getInstance(shiftTimeZone);</span>
+
+<span class="nc bnc" id="L29" title="All 4 branches missed.">		if (shifts != null &amp;&amp; !shifts.isEmpty()) {</span>
+<span class="nc" id="L30">			referenceShiftByDow = getReferenceShiftByDow(shifts);</span>
+		}
+<span class="nc" id="L32">	}</span>
+
+
+	ShiftAssignment[] getReferenceShiftByDow(Collection&lt;ShiftAssignment&gt; shifts) {
+<span class="nc" id="L36">		ShiftAssignment[] byDow = new ShiftAssignment[7];</span>
+<span class="nc bnc" id="L37" title="All 2 branches missed.">		for (ShiftAssignment shift : shifts) {</span>
+<span class="nc" id="L38">			shiftTimeZoneCalendar.setTime(shift.getStartTime());</span>
+<span class="nc" id="L39">			int dowIndex = getDayOfWeekIndex(shiftTimeZoneCalendar);</span>
+<span class="nc" id="L40">			byDow[dowIndex] = shift;</span>
+<span class="nc" id="L41">		}</span>
+<span class="nc" id="L42">		return byDow;</span>
+	}
+
+	ShiftAssignment getShiftAssignmentForDayOfWeek(Calendar cal) {
+<span class="nc" id="L46">		int dowIndex = getDayOfWeekIndex(cal);</span>
+<span class="nc" id="L47">		return referenceShiftByDow[dowIndex];</span>
+	}
+
+	/**
+	 * Transforms reference shifts that this class was created with into the date range [start,end) 
+	 * The time zone is transformed from the shift time zone to the specified time zone.  
+	 */
+	public List&lt;ShiftAssignment&gt; transform(Date start, Date end, TimeZone timeZone) {
+		
+<span class="nc bnc" id="L56" title="All 2 branches missed.">		if (referenceShiftByDow == null) {</span>
+<span class="nc" id="L57">			return Collections.emptyList();</span>
+		}
+
+<span class="nc" id="L60">		List&lt;ShiftAssignment&gt; result = new ArrayList&lt;ShiftAssignment&gt;(getApproximateNumberOfDays(start, end));</span>
+		
+<span class="nc" id="L62">		Calendar cal = Calendar.getInstance(timeZone);</span>
+		//set calendar to start of day for the specified time zone
+<span class="nc" id="L64">		DateUtil.getDayStart(start, cal);</span>
+		//move one day back to pick up shifts that might cross over to [start,end)
+<span class="nc" id="L66">		cal.add(Calendar.DATE, -1);</span>
+<span class="nc" id="L67">		Date dayStart = cal.getTime();</span>
+		
+<span class="nc" id="L69">		int dowIndex = getDayOfWeekIndex(cal);</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">		while (dayStart.getTime() &lt; end.getTime()) {</span>
+			
+<span class="nc" id="L72">			ShiftAssignment shift = transformShift(dayStart, dowIndex, timeZone);</span>
+			
+<span class="nc bnc" id="L74" title="All 2 branches missed.">			if (isShiftEligible(shift, start, end)) {</span>
+<span class="nc" id="L75">				result.add(shift);</span>
+			}
+			
+<span class="nc" id="L78">			cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L79">			dayStart = cal.getTime();</span>
+<span class="nc" id="L80">			dowIndex = (dowIndex + 1) % 7;</span>
+<span class="nc" id="L81">		}</span>
+
+		
+<span class="nc" id="L84">		return result;</span>
+	}
+
+	private static boolean isShiftEligible(ShiftAssignment shift, Date start, Date end) {
+<span class="nc bnc" id="L88" title="All 2 branches missed.">		if (shift == null) {</span>
+<span class="nc" id="L89">			return false;</span>
+		}
+
+<span class="nc" id="L92">		return DateUtil.intervalsIntersect(start, end, shift.getStartTime(), shift.getEndTime());</span>
+	}
+
+	//get day of week as index into the array [0,6]
+	//Calendar.SUNDAY and other day of week values are documented, so this should be safe
+	//See: http://docs.oracle.com/javase/8/docs/api/constant-values.html#java.util.Calendar.ALL_STYLES
+	private static int getDayOfWeekIndex(Calendar cal) {
+		//subtract 1 since Calendar.SUNDAY is 1 
+<span class="nc" id="L100">		int dow = cal.get(Calendar.DAY_OF_WEEK) - 1;</span>
+<span class="nc bnc" id="L101" title="All 6 branches missed.">		assert dow &gt;= 0 &amp;&amp; dow &lt;= 6 : &quot;Day of week returned an unexpected value&quot;;</span>
+<span class="nc" id="L102">		return dow;</span>
+	}
+
+	// get the reference schedule for this day of week and transform it so that falls into the 
+	// specified day and time zone
+	private ShiftAssignment transformShift(Date dayStart, int dowIndex, TimeZone tranformToTz) {
+
+<span class="nc" id="L109">		ShiftAssignment referenceShift = referenceShiftByDow[dowIndex];</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">		if (referenceShift == null) {</span>
+<span class="nc" id="L111">			return null;</span>
+		}
+
+<span class="nc" id="L114">		ShiftAssignment shift = ScheduleUtil.deepCloneShiftAssigment(referenceShift);</span>
+<span class="nc" id="L115">		Date origShiftStart = shift.getStartTime();</span>
+
+		//get the shift start in the destination day and time zone 
+<span class="nc" id="L118">		Date shiftStartTime = getDestinationShiftStart(dayStart, origShiftStart, tranformToTz);</span>
+<span class="nc" id="L119">		shift.setStartTime(shiftStartTime);</span>
+
+<span class="nc bnc" id="L121" title="All 2 branches missed.">		for (ShiftEventAssignment shiftEvent : shift.getChildren()) {</span>
+<span class="nc" id="L122">			long deltaFromShiftStart = shiftEvent.getStartTime().getTime() - origShiftStart.getTime();</span>
+<span class="nc" id="L123">			Date start = new Date(shiftStartTime.getTime() + deltaFromShiftStart);</span>
+<span class="nc" id="L124">			shiftEvent.setStartTime(start);</span>
+<span class="nc" id="L125">		}</span>
+<span class="nc" id="L126">		return shift;</span>
+	}
+
+
+	Date getDestinationShiftStart(Date destinationStartOfDay, Date shiftStart, TimeZone destinationTz) {
+<span class="nc" id="L131">		shiftTimeZoneCalendar.setTime(shiftStart);</span>
+<span class="nc" id="L132">		int shiftStartHours = shiftTimeZoneCalendar.get(Calendar.HOUR_OF_DAY);</span>
+<span class="nc" id="L133">		int shiftStartMinutes = shiftTimeZoneCalendar.get(Calendar.MINUTE);</span>
+
+<span class="nc" id="L135">		Calendar cal = Calendar.getInstance(destinationTz);</span>
+<span class="nc" id="L136">		cal.setTime(destinationStartOfDay);</span>
+<span class="nc" id="L137">		cal.set(Calendar.HOUR_OF_DAY, shiftStartHours);</span>
+<span class="nc" id="L138">		cal.set(Calendar.MINUTE, shiftStartMinutes);</span>
+<span class="nc" id="L139">		return cal.getTime();</span>
+	}
+
+	private static int getApproximateNumberOfDays(Date start, Date end) {
+<span class="nc" id="L143">		return (int) ((end.getTime() - start.getTime()) / TimeUnit.DAYS.toMillis(1)) + 1;</span>
+	}
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

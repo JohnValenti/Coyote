@@ -1,0 +1,1380 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TrackingManagerEJB.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.pulse.ejb</a> &gt; <span class="el_source">TrackingManagerEJB.java</span></div><h1>TrackingManagerEJB.java</h1><pre class="source lang-java linenums">/**
+ * Copyright 2004, 2011 Verint Systems, Inc.
+ * Title:        Blue Pumpkin Software Forecast&amp;Schedule
+ * Description:  TrackingManagerEJB EJB implementation
+ * @author       Sheng Song
+ * @version 2.0
+ */
+
+package com.bluepumpkin.ejb.bbm.pulse.ejb;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import javax.naming.Context;
+import javax.naming.InitialContext;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.Log;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateDuplicateKeyException;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateDuplicateKeyException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignHOO;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignHOOPeriod;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignQueue;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.dao.DAOBase;
+import com.bluepumpkin.ejb.bbm.dao.DAOEJBUtil;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriod;
+import com.bluepumpkin.ejb.bbm.l10n.BbmEjbLogBundleKey;
+import com.bluepumpkin.ejb.bbm.pulse.model.ForecastUsage;
+import com.bluepumpkin.ejb.bbm.pulse.model.HistoryTrackingView;
+import com.bluepumpkin.ejb.bbm.pulse.model.PulseNote;
+import com.bluepumpkin.ejb.bbm.pulse.model.PulseNoteBO;
+import com.bluepumpkin.ejb.bbm.pulse.model.PulseNoteQueue;
+import com.bluepumpkin.ejb.bbm.pulse.model.TrackingView;
+import com.bluepumpkin.ejb.bbm.pulse.model.TrendingConfig;
+import com.bluepumpkin.ejb.bbm.timeseries.ejb.TimeSeriesManager;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ServiceGoalTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.util.TraceOperatorAdapter;
+import com.bluepumpkin.ejb.bbm.timeseries.util.TraceUtil;
+import com.bluepumpkin.ejb.bbm.workload.ejb.WorkloadManager;
+import com.bluepumpkin.ejb.bbm.workload.model.CombinedQueueStaffing;
+import com.bluepumpkin.ejb.bbm.workload.model.Queue;
+import com.bluepumpkin.ejb.core.base.SessionEJBBase;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+<span class="fc" id="L68">public class TrackingManagerEJB extends SessionEJBBase</span>
+{
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+<span class="fc" id="L74">	private static Category m_cat = Log.initCategory(TrackingManagerEJB.class.getName());</span>
+<span class="fc" id="L75">	private static final ID comQueID = new ID(-1);</span>
+	private TimeSeriesManager m_timeSeriesManager;
+
+	private CampaignManager m_CampaignManager;
+	private WorkloadManager m_WorkloadManager;
+	
+<span class="fc" id="L81">	private boolean WhatIfMode = false;</span>
+
+
+	// override the base class to provide the appropriate logging category
+<span class="fc" id="L85">	protected Category getCategory() { return m_cat; }</span>
+
+	{
+<span class="fc" id="L88">		super.init(TrackingManagerEJB.class.getName());</span>
+<span class="fc" id="L89">	}</span>
+	/**
+	* &lt;B&gt;ejbCreate&lt;/B&gt;
+	*
+	* creates ejb managers during ejb create
+	*
+	*/
+	public void ejbCreate() {
+		try {
+			// First query environment to get WIF setting from DD
+<span class="fc" id="L99">			Context initialContext = new InitialContext();</span>
+<span class="fc" id="L100">			Boolean WIF = (Boolean)initialContext.lookup(&quot;java:comp/env/WIF&quot;);</span>
+<span class="fc" id="L101">			WhatIfMode = false;</span>
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">			if (WIF != null)</span>
+<span class="fc" id="L103">				WhatIfMode = WIF.booleanValue();</span>
+<span class="fc" id="L104">			m_CampaignManager = WfmManagerFactory.getCampaignManager(WhatIfMode);</span>
+<span class="fc" id="L105">			m_WorkloadManager = WfmManagerFactory.getWorkloadManager(WhatIfMode);</span>
+<span class="fc" id="L106">			m_timeSeriesManager = WfmManagerFactory.getTimeSeriesManager(WhatIfMode);</span>
+<span class="nc" id="L107">		} catch (Exception e) {</span>
+<span class="nc" id="L108">			handleException(e,false);</span>
+<span class="fc" id="L109">		}</span>
+<span class="fc" id="L110">	}</span>
+
+	/**
+	 * Create the TrackingView object
+	 * @param TrackingView
+	 * @return ID
+	 */
+	public ID createTrackingView(TrackingView objValue) throws BbmCreateException {
+<span class="nc" id="L118">		methodStart(&quot;createTrackingView&quot;, objValue);</span>
+<span class="nc" id="L119">		DAOBase&lt;TrackingView&gt; dao = null;</span>
+		try
+		{
+<span class="nc" id="L122">			objValue.saveChartDef();</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">			if (objValue instanceof HistoryTrackingView) {</span>
+<span class="nc" id="L124">				dao = new HistoryTrackingViewDAO();</span>
+<span class="nc" id="L125">				TrackingView exObj = ((HistoryTrackingViewDAO)dao).getHistoryTrackingView(objValue.getUserID());</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">				if (exObj != null) {</span>
+					// switch to update
+<span class="nc" id="L128">					objValue.setID(exObj.getID());</span>
+<span class="nc" id="L129">					dao.updateObject(objValue);</span>
+<span class="nc" id="L130">					return objValue.getID();</span>
+				}
+<span class="nc" id="L132">			} else {</span>
+<span class="nc" id="L133">				dao = new TrackingViewDAO();</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">				if (((TrackingViewDAO)dao).checkSameName(objValue))</span>
+<span class="nc" id="L135">					throw new BbmCreateDuplicateKeyException(BbmEjbLogBundleKey.DUPLICATE_TRACKINGVIEWNAME);</span>
+			}
+<span class="nc" id="L137">			ID sgID = DAOEJBUtil.createObject(dao, objValue, this, &quot;createTrackingView&quot;);</span>
+<span class="nc" id="L138">			return sgID;</span>
+<span class="nc" id="L139">		} catch(JdmoException e) {</span>
+<span class="nc" id="L140">			handleException(e);</span>
+<span class="nc" id="L141">			throw new BbmCreateException(e);</span>
+<span class="nc" id="L142">		} catch(BbmCreateException e) {</span>
+<span class="nc" id="L143">			handleException(e);</span>
+<span class="nc" id="L144">			throw e;</span>
+<span class="nc" id="L145">		} catch(Exception e) {</span>
+<span class="nc" id="L146">			handleException(e);</span>
+<span class="nc" id="L147">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="nc bnc" id="L149" title="All 6 branches missed.">			if (dao != null)</span>
+<span class="nc" id="L150">				dao.cleanUp();</span>
+<span class="nc" id="L151">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * Return TrackingView objects for a user
+	 * @param ID, user ID
+	 * @return Collection, TrackingView objects
+	 */
+	public Collection getTrackingViews(ID userID) throws BbmFinderException {
+<span class="nc" id="L161">		methodStart(&quot;getTrackingViews&quot;, userID);</span>
+<span class="nc" id="L162">		TrackingViewDAO dao = new TrackingViewDAO();</span>
+		try
+		{
+<span class="nc" id="L165">			return dao.getTrackingViews(userID);</span>
+<span class="nc" id="L166">		} catch(BbmFinderException e) {</span>
+<span class="nc" id="L167">			handleException(e);</span>
+<span class="nc" id="L168">			throw e;</span>
+		} finally {
+<span class="nc" id="L170">			dao.cleanUp();</span>
+<span class="nc" id="L171">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * Return all the private (non-global) TrackingView objects which are not visible to the user.
+	 * @param ID, user ID
+	 * @return Collection, TrackingView objects
+	 */
+	public Collection getInvisibleTrackingViews(ID userID) throws BbmFinderException
+	{
+<span class="nc" id="L182">		methodStart(&quot;getInvisibleTrackingViews&quot;, userID);</span>
+<span class="nc" id="L183">		TrackingViewDAO dao = new TrackingViewDAO();</span>
+		try
+		{
+<span class="nc" id="L186">			return dao.getInvisibleTrackingViews(userID);</span>
+<span class="nc" id="L187">		} catch(BbmFinderException e) {</span>
+<span class="nc" id="L188">			handleException(e);</span>
+<span class="nc" id="L189">			throw e;</span>
+		} finally {
+<span class="nc" id="L191">			dao.cleanUp();</span>
+<span class="nc" id="L192">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * Return TrackingView object for a given ID
+	 * @param ID, TrackingView ID
+	 * @return TrackingView
+	 */
+	public TrackingView getTrackingViewByID(ID tvID) throws BbmFinderException {
+<span class="nc" id="L202">		methodStart(&quot;getTrackingViewByID&quot;, tvID);</span>
+<span class="nc" id="L203">		TrackingViewDAO dao = new TrackingViewDAO();</span>
+		try
+		{
+<span class="nc" id="L206">			return dao.getTrackingViewByID(tvID);</span>
+<span class="nc" id="L207">		} catch(BbmFinderException e) {</span>
+<span class="nc" id="L208">			handleException(e);</span>
+<span class="nc" id="L209">			throw e;</span>
+		} finally {
+<span class="nc" id="L211">			dao.cleanUp();</span>
+<span class="nc" id="L212">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * Return HistoryTrackingView object for a given ID
+	 * @param ID, TrackingView ID
+	 * @return TrackingView
+	 */
+	public HistoryTrackingView getHistoryTrackingViewByID(ID tvID) throws BbmFinderException {
+<span class="nc" id="L222">		methodStart(&quot;getHistoryTrackingViewByID&quot;, tvID);</span>
+<span class="nc" id="L223">		HistoryTrackingViewDAO dao = new HistoryTrackingViewDAO();</span>
+		try
+		{
+<span class="nc" id="L226">			return dao.getHistoryTrackingViewByID(tvID);</span>
+<span class="nc" id="L227">		} catch(BbmFinderException e) {</span>
+<span class="nc" id="L228">			handleException(e);</span>
+<span class="nc" id="L229">			throw e;</span>
+		} finally {
+<span class="nc" id="L231">			dao.cleanUp();</span>
+<span class="nc" id="L232">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * Return TrackingView object for a given ID
+	 * @param ID, User ID
+	 * @return HistoryTrackingView
+	 */
+	public HistoryTrackingView getHistoryTrackingViewByUserID(ID userID) throws BbmFinderException {
+<span class="nc" id="L242">		methodStart(&quot;getHistoryTrackingViewByUserID&quot;, userID);</span>
+<span class="nc" id="L243">		HistoryTrackingViewDAO dao = new HistoryTrackingViewDAO();</span>
+		try
+		{
+<span class="nc" id="L246">			return dao.getHistoryTrackingView(userID);</span>
+<span class="nc" id="L247">		} catch(BbmFinderException e) {</span>
+<span class="nc" id="L248">			handleException(e);</span>
+<span class="nc" id="L249">			throw e;</span>
+		} finally {
+<span class="nc" id="L251">			dao.cleanUp();</span>
+<span class="nc" id="L252">			methodFinish();</span>
+		}
+	}
+	/**
+	 * Update an existing TrackingView object
+	 * @param TrackingView, tv
+	 */
+	public void updateTrackingView(TrackingView tv) throws BbmUpdateException {
+<span class="nc" id="L260">		methodStart(&quot;updatTrackingView&quot;, tv);</span>
+<span class="nc" id="L261">		DAOBase&lt;TrackingView&gt; dao = null;</span>
+		try
+		{
+<span class="nc" id="L264">			tv.saveChartDef();</span>
+<span class="nc bnc" id="L265" title="All 2 branches missed.">			if (tv instanceof HistoryTrackingView) {</span>
+<span class="nc" id="L266">				dao = new HistoryTrackingViewDAO();</span>
+			} else {
+<span class="nc" id="L268">				dao = new TrackingViewDAO();</span>
+<span class="nc bnc" id="L269" title="All 2 branches missed.">				if (((TrackingViewDAO)dao).checkSameName(tv))</span>
+<span class="nc" id="L270">					throw new BbmUpdateDuplicateKeyException(BbmEjbLogBundleKey.DUPLICATE_TRACKINGVIEWNAME);</span>
+			}
+<span class="nc" id="L272">			dao.updateObject(tv);</span>
+<span class="nc" id="L273">		} catch(BbmUpdateDuplicateKeyException e) {</span>
+<span class="nc" id="L274">			handleException(e);</span>
+<span class="nc" id="L275">			throw e;</span>
+<span class="nc" id="L276">		} catch(Exception e) {</span>
+<span class="nc" id="L277">			handleException(e);</span>
+<span class="nc" id="L278">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc bnc" id="L280" title="All 4 branches missed.">			if (dao != null)</span>
+<span class="nc" id="L281">				dao.cleanUp();</span>
+<span class="nc" id="L282">			methodFinish();</span>
+<span class="nc" id="L283">		}</span>
+<span class="nc" id="L284">	}</span>
+
+	/**
+	 * Remove a TrackingView object
+	 * @param ID, tvID
+	 */
+	public void removeTrackingView(ID tvID) throws BbmRemoveException {
+<span class="nc" id="L291">		methodStart(&quot;removeTrackingView&quot;, tvID);</span>
+<span class="nc" id="L292">		TrackingViewDAO dao = new TrackingViewDAO();</span>
+		try
+		{
+<span class="nc" id="L295">			dao.deleteObject(tvID);</span>
+<span class="nc" id="L296">		} catch(Exception e) {</span>
+<span class="nc" id="L297">			handleException(e);</span>
+<span class="nc" id="L298">			throw new BbmRemoveException(e);</span>
+		} finally {
+<span class="nc" id="L300">			dao.cleanUp();</span>
+<span class="nc" id="L301">			methodFinish();</span>
+<span class="nc" id="L302">		}</span>
+<span class="nc" id="L303">	}</span>
+
+	/**
+	 * Retrieve TrendingConfig for a given SP ID
+	 * @param spID
+	 * @return
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 */
+	public TrendingConfig getTrendingConfigBySP(ID spID) throws BbmFinderException {
+<span class="nc" id="L313">		methodStart(&quot;getTrendingConfigBySP&quot;, spID);</span>
+<span class="nc" id="L314">		TrendingConfigDAO dao = new TrendingConfigDAO();</span>
+		try
+		{
+<span class="nc" id="L317">			return dao.getTrendingConfig(spID);</span>
+<span class="nc" id="L318">		} catch(Exception e) {</span>
+<span class="nc" id="L319">			handleException(e);</span>
+<span class="nc" id="L320">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L322">			dao.cleanUp();</span>
+<span class="nc" id="L323">			methodFinish();</span>
+		}
+	}
+	/**
+	 * Retrieve TrendingConfig by its ID
+	 * @param id
+	 * @return
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 */
+	public TrendingConfig getTrendingConfig(ID id) throws BbmFinderException {
+<span class="nc" id="L334">		methodStart(&quot;getTrendingConfig&quot;, id);</span>
+<span class="nc" id="L335">		TrendingConfigDAO dao = new TrendingConfigDAO();</span>
+		try
+		{
+<span class="nc" id="L338">			return (TrendingConfig)dao.getObjectByID(id);</span>
+<span class="nc" id="L339">		} catch(Exception e) {</span>
+<span class="nc" id="L340">			handleException(e);</span>
+<span class="nc" id="L341">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L343">			dao.cleanUp();</span>
+<span class="nc" id="L344">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * Create a new TrendingConfig for an associated SP
+	 * @param config
+	 * @throws BbmCreateException
+	 * @throws RemoteException
+	 */
+	public void createTrendingConfig(TrendingConfig config) throws BbmCreateException {
+<span class="nc" id="L355">		methodStart(&quot;creatTrendingConfig&quot;, config);</span>
+<span class="nc" id="L356">		TrendingConfigDAO dao = new TrendingConfigDAO();</span>
+		try
+		{
+<span class="nc" id="L359">			dao.createTrendingConfig(config);</span>
+<span class="nc" id="L360">		} catch(Exception e) {</span>
+<span class="nc" id="L361">			handleException(e);</span>
+<span class="nc" id="L362">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="nc" id="L364">			dao.cleanUp();</span>
+<span class="nc" id="L365">			methodFinish();</span>
+<span class="nc" id="L366">		}</span>
+<span class="nc" id="L367">	}</span>
+
+	/**
+	 * Update a TrendingConfig for an existing SP
+	 * @param config
+	 * @throws BbmUpdateException
+	 * @throws RemoteException
+	 */
+	public void updateTrendingConfig(TrendingConfig config) throws BbmUpdateException {
+<span class="nc" id="L376">		methodStart(&quot;updateTrendingConfig&quot;, config);</span>
+<span class="nc" id="L377">		TrendingConfigDAO dao = new TrendingConfigDAO();</span>
+		try
+		{
+<span class="nc" id="L380">			dao.updateTrendingConfig(config);</span>
+<span class="nc" id="L381">		} catch(Exception e) {</span>
+<span class="nc" id="L382">			handleException(e);</span>
+<span class="nc" id="L383">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L385">			dao.cleanUp();</span>
+<span class="nc" id="L386">			methodFinish();</span>
+<span class="nc" id="L387">		}</span>
+<span class="nc" id="L388">	}</span>
+
+	/**
+	 * Retrieve multiple queues TraceCubes based on TrackingView object
+	 * @param TrackingView, tv
+	 * @param ID, campaignID if provided it is under Campaign mode can apply HOO
+	 * @param Collection, Queue IDs
+	 * @param Date, start
+	 * @param Date, end
+	 * @return TraceCube[], First element is Actual, Second is Forecast, Third is Predict, Forth is ServiceGoal, Fifth is Required
+	 */
+	public HashMap&lt;ID, TraceCube[]&gt; getTraceCubesByTrackingView(TrackingView tv, ID campaignID,
+			Collection&lt;ID&gt; queueCol,
+			Date start,
+			Date end) throws BbmFinderException {
+<span class="fc" id="L403">		methodStart(&quot;getTraceCubesByTrackingView&quot;, tv, campaignID, queueCol, start, end);</span>
+		try {
+<span class="pc bpc" id="L405" title="1 of 2 branches missed.">			TraceCube[] metaCubes = tv.getMetaTCForLoad(campaignID!=null);</span>
+<span class="fc" id="L406">			HashSet&lt;ID&gt; realQueCol = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L407">			realQueCol.addAll(queueCol);</span>
+<span class="fc" id="L408">			int qType = Queue.QUEUE_TYPE_NORMAL;</span>
+<span class="fc" id="L409">			ID nrQueID = null;</span>
+<span class="fc" id="L410">			ID orgNrQueID = null;</span>
+<span class="fc" id="L411">			Collection&lt;Queue&gt; queuesCol = new ArrayList&lt;Queue&gt;();</span>
+<span class="pc bpc" id="L412" title="1 of 2 branches missed.">			if (!queueCol.isEmpty()) {</span>
+<span class="fc" id="L413">				queuesCol = m_WorkloadManager.getQueuesByIDs(queueCol);</span>
+<span class="pc bpc" id="L414" title="1 of 4 branches missed.">				if (queueCol.size() == 1 &amp;&amp; !queuesCol.isEmpty()) {</span>
+<span class="fc" id="L415">					nrQueID = queueCol.iterator().next();</span>
+<span class="fc" id="L416">					orgNrQueID = nrQueID;</span>
+<span class="fc" id="L417">					Queue q = queuesCol.iterator().next();</span>
+<span class="fc bfc" id="L418" title="All 2 branches covered.">					if (q.doesQueueHaveSubQs()) {</span>
+<span class="fc" id="L419">						qType = q.getQueueType();</span>
+<span class="fc" id="L420">						realQueCol.clear();</span>
+<span class="fc" id="L421">						realQueCol.addAll(m_WorkloadManager.getSubQueues(Collections.singletonList(q.getID())));</span>
+<span class="fc" id="L422">						queuesCol = m_WorkloadManager.getQueuesByIDs(realQueCol);</span>
+					}
+<span class="pc bpc" id="L424" title="3 of 4 branches missed.">				} else if (queueCol.size() == 1 &amp;&amp; queuesCol.isEmpty()) {</span>
+					// to prevent requesting a non-existing queue's data
+<span class="nc" id="L426">					return new HashMap&lt;ID, TraceCube[]&gt;();</span>
+				}
+			}
+<span class="fc" id="L429">			HashMap&lt;ID, TraceCube[]&gt; queueCubeMap = new HashMap&lt;ID, TraceCube[]&gt;(realQueCol.size());</span>
+<span class="fc" id="L430">			Collection&lt;TimePeriod&gt; mergedClosedPeriod = null;</span>
+<span class="pc bpc" id="L431" title="2 of 4 branches missed.">			if (campaignID != null &amp;&amp; tv.useHOO()) {</span>
+				// Find HOO
+<span class="nc" id="L433">				Campaign cpg = m_CampaignManager.getCampaignByID(campaignID);</span>
+<span class="nc" id="L434">				Collection&lt;CampaignHOO&gt; cpgHOOCol = m_CampaignManager.getCampaignHOOAssignments(campaignID, start, end);</span>
+<span class="nc" id="L435">				CampaignHOOPeriod cpgPeriod = new CampaignHOOPeriod(start, end, cpg.getTimeZone(), cpgHOOCol);</span>
+<span class="nc" id="L436">				mergedClosedPeriod = cpgPeriod.getClosePeriods(start, end);</span>
+			}
+<span class="fc" id="L438">			HashMap&lt;ID, ArrayList&lt;CampaignQueue&gt;&gt; queueCpgMap = new HashMap&lt;ID, ArrayList&lt;CampaignQueue&gt;&gt;(realQueCol.size());</span>
+<span class="pc bpc" id="L439" title="1 of 2 branches missed.">			if (campaignID != null) {</span>
+				// load Campaign Queue Assignment, if queue is partially assigned with campaign, need set the value to -1
+<span class="fc" id="L441">				Collection&lt;CampaignQueue&gt; cpgQueCol = m_CampaignManager.getCampaignQueueAndLinkedSubQueueAssignments(campaignID, start, end);</span>
+<span class="fc" id="L442">				Map&lt;ID, CampaignQueue&gt; cpgQueMap = new HashMap&lt;ID, CampaignQueue&gt;(cpgQueCol.size());</span>
+<span class="fc bfc" id="L443" title="All 2 branches covered.">				for (Iterator&lt;CampaignQueue&gt; i = cpgQueCol.iterator(); i.hasNext(); ) {</span>
+<span class="fc" id="L444">					CampaignQueue cq = i.next();</span>
+<span class="fc" id="L445">					cpgQueMap.put(cq.getQueueID(), cq);</span>
+<span class="fc bfc" id="L446" title="All 2 branches covered.">					if (queueCol.contains(cq.getQueueID())) {</span>
+<span class="fc" id="L447">						ArrayList&lt;CampaignQueue&gt; cqList = queueCpgMap.get(cq.getQueueID());</span>
+<span class="pc bpc" id="L448" title="1 of 2 branches missed.">						if (cqList == null) {</span>
+<span class="fc" id="L449">							cqList = new ArrayList&lt;CampaignQueue&gt;();</span>
+						}
+<span class="fc" id="L451">						cqList.add(cq);</span>
+<span class="fc" id="L452">						queueCpgMap.put(cq.getQueueID(), cqList);</span>
+					}
+<span class="fc" id="L454">				}</span>
+<span class="fc bfc" id="L455" title="All 2 branches covered.">				for (Iterator&lt;Queue&gt; it = queuesCol.iterator(); it.hasNext(); ) {</span>
+<span class="fc" id="L456">					Queue queue = it.next();</span>
+					//for sub queue of a virtual queue, check the campaign queue assignment of parent only
+					//since the sub queue pf a virtual queue is never assigned to a campaign.
+<span class="fc" id="L459">					boolean isSubQofVQ = false;</span>
+<span class="fc" id="L460">					ID partialCheckQID = queue.getID();</span>
+<span class="fc bfc" id="L461" title="All 2 branches covered.">					if (queue.getParentID() != null) {</span>
+<span class="fc" id="L462">						Queue parent = m_WorkloadManager.getQueueByID(queue.getParentID());</span>
+<span class="pc bpc" id="L463" title="1 of 2 branches missed.">						if (parent.getQueueType() == Queue.QUEUE_TYPE_VIRTUAL) {</span>
+<span class="nc" id="L464">							partialCheckQID = parent.getID();</span>
+<span class="nc" id="L465">							isSubQofVQ = true;</span>
+						}
+					}
+<span class="pc bpc" id="L468" title="1 of 2 branches missed.">					if (cpgQueMap.containsKey(partialCheckQID)) {</span>
+						// pass the partial check
+<span class="fc" id="L470">						CampaignQueue cq = cpgQueMap.get(partialCheckQID);</span>
+<span class="pc bpc" id="L471" title="1 of 2 branches missed.">						if (isSubQofVQ) {</span>
+<span class="nc" id="L472">							cq.setQueueID(queue.getID());</span>
+						}
+<span class="fc" id="L474">						ArrayList&lt;CampaignQueue&gt; cqList = queueCpgMap.get(queue.getID());</span>
+<span class="fc bfc" id="L475" title="All 2 branches covered.">						if (cqList == null) {</span>
+<span class="fc" id="L476">							cqList = new ArrayList&lt;CampaignQueue&gt;();</span>
+						}
+<span class="fc" id="L478">						cqList.add(cq);</span>
+<span class="fc" id="L479">						queueCpgMap.put(queue.getID(), cqList);</span>
+					}
+<span class="fc" id="L481">				}</span>
+			}
+<span class="fc" id="L483">			int cubeLen = metaCubes.length;</span>
+<span class="fc bfc" id="L484" title="All 2 branches covered.">			for (int i=0; i&lt;cubeLen; i++) {</span>
+<span class="fc bfc" id="L485" title="All 2 branches covered.">				if (metaCubes[i] != null) {</span>
+<span class="fc" id="L486">					Collection&lt;TraceCube&gt; cubeCol = null;</span>
+<span class="pc bpc" id="L487" title="1 of 2 branches missed.">					if (i==0) {</span>
+<span class="nc" id="L488">						cubeCol = m_timeSeriesManager.getRawMultipleQueuesTimeSeries(metaCubes[i], campaignID,  realQueCol, start, end);</span>
+					} else {
+						// for other than actual types it diffs from Virtual Queue to Distributed Queue
+						//Bug # 91372, Feb 2006 Sameet
+						//Will look for individual Service Goal TraceCube for sub queues of a distributed Queue
+						// since individual Service Goal TraceCubes are required when trending is enabled for DQ.
+<span class="pc bpc" id="L494" title="1 of 6 branches missed.">						if (qType == Queue.QUEUE_TYPE_VIRTUAL || (qType != Queue.QUEUE_TYPE_DISTRIBUTED &amp;&amp; metaCubes[i] instanceof ServiceGoalTraceCube)) {</span>
+							// always direct load for virtual queue
+<span class="fc" id="L496">							cubeCol = m_timeSeriesManager.getRawMultipleQueuesTimeSeries(metaCubes[i], campaignID,  queueCol, start, end, false, true, tv.isNoPhantoms()); </span>
+						} else {
+							// otherwise always combine from child
+<span class="fc" id="L499">							cubeCol = m_timeSeriesManager.getRawMultipleQueuesTimeSeries(metaCubes[i], campaignID,  realQueCol, start, end, false, true, tv.isNoPhantoms()); </span>
+						}
+					}
+					// First process partial assignment, VQ no need to check
+<span class="pc bpc" id="L503" title="3 of 6 branches missed.">					if (cubeCol != null &amp;&amp; campaignID != null &amp;&amp; qType != Queue.QUEUE_TYPE_VIRTUAL) {</span>
+<span class="fc bfc" id="L504" title="All 2 branches covered.">						for (Iterator&lt;TraceCube&gt; cubeIt = cubeCol.iterator(); cubeIt.hasNext(); ) {</span>
+<span class="fc" id="L505">							TraceCube cube = cubeIt.next();</span>
+<span class="fc" id="L506">							short[] types = cube.getTraceTypes();</span>
+<span class="fc" id="L507">							ID qID = cube.getQueueID();</span>
+<span class="fc" id="L508">							List&lt;CampaignQueue&gt; cqList = queueCpgMap.get(qID);</span>
+<span class="pc bpc" id="L509" title="1 of 2 branches missed.">							if (cqList != null) {</span>
+<span class="fc" id="L510">								CampaignQueue cq = cqList.get(0);</span>
+<span class="fc" id="L511">								Date cubeStart = TraceUtil.snapDate(cube.getRawStartDate());</span>
+<span class="fc" id="L512">								Date cubeEnd = TraceUtil.snapDate(cube.getRawEndDate());</span>
+<span class="fc bfc" id="L513" title="All 2 branches covered.">								if (cqList.size() == 1) {</span>
+<span class="pc bpc" id="L514" title="2 of 4 branches missed.">									if (!cq.getStartTime().after(cubeStart) &amp;&amp; !cq.getEndTime().before(cubeEnd)) {</span>
+<span class="fc" id="L515">										continue;</span>
+									}
+								}
+<span class="fc" id="L518">								TraceCube fixedCube = cube.cloneTraceCube();</span>
+<span class="fc" id="L519">								fixedCube.setQueueID(qID);</span>
+<span class="fc bfc" id="L520" title="All 2 branches covered.">								for (Iterator&lt;CampaignQueue&gt; cqIt = cqList.iterator(); cqIt.hasNext(); ) {</span>
+<span class="fc" id="L521">									cq = cqIt.next();</span>
+<span class="pc bpc" id="L522" title="1 of 2 branches missed.">									Date cqStart = cq.getStartTime().before(cubeStart)?cubeStart:cq.getStartTime();</span>
+<span class="pc bpc" id="L523" title="1 of 2 branches missed.">									Date cqEnd = cq.getEndTime().after(cubeEnd)?cubeEnd:cq.getEndTime();</span>
+<span class="fc bfc" id="L524" title="All 2 branches covered.">									for (int t=0; t&lt;types.length; t++) {</span>
+<span class="fc" id="L525">										fixedCube.setTraceValue(types[t], cube.getTraceValueD(types[t], cqStart, cqEnd), cqStart);</span>
+									}
+<span class="fc" id="L527">									cube = fixedCube;</span>
+<span class="fc" id="L528">								}</span>
+<span class="fc" id="L529">							} else {</span>
+<span class="nc bnc" id="L530" title="All 2 branches missed.">								for (int t=0; t&lt;types.length; t++)</span>
+<span class="nc" id="L531">									cube.initTraceValue(types[t], Trace.TRACENA);</span>
+							}
+<span class="fc" id="L533">						}</span>
+					}
+<span class="fc" id="L535">					int[] OFFCHUNK = new int[metaCubes[i].getTraceTypes().length];</span>
+<span class="fc" id="L536">					Arrays.fill(OFFCHUNK, Trace.TRACEOFF);</span>
+					// Now normalize them based on Campaign HOO definition, if it is necessary
+<span class="pc bpc" id="L538" title="4 of 6 branches missed.">					if (cubeCol != null &amp;&amp; mergedClosedPeriod != null &amp;&amp; !mergedClosedPeriod.isEmpty()) {</span>
+						// now normalize any chunk in the closedPeriod window
+<span class="nc bnc" id="L540" title="All 2 branches missed.">						for (Iterator&lt;TimePeriod&gt; it = mergedClosedPeriod.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L541">							TimePeriod period = it.next();</span>
+<span class="nc" id="L542">							Date pStart = TraceUtil.snapDate(period.getStartTime());</span>
+<span class="nc" id="L543">							Date pEnd = period.getEndTime();</span>
+							// BUG # 92895 :Sameet March 2007
+							// this should not be snaped since it will cause the last time interval to be ignored.
+							do {
+								// for each queue normalize with HOO
+<span class="nc bnc" id="L548" title="All 2 branches missed.">								for (Iterator&lt;TraceCube&gt; cubeIt = cubeCol.iterator(); cubeIt.hasNext(); ) {</span>
+<span class="nc" id="L549">									TraceCube cube = cubeIt.next();</span>
+									// clean non-HOO time value, if needed can put special value here
+<span class="nc" id="L551">									cube.setTraceValue(metaCubes[i].getTraceTypes(), OFFCHUNK, pStart);</span>
+<span class="nc" id="L552">								}</span>
+<span class="nc" id="L553">								pStart = new Date(pStart.getTime() + Trace.INTERVAL * TimeZoneUtil.MINUTE_IN_MILLISECONDS);</span>
+<span class="nc bnc" id="L554" title="All 2 branches missed.">							} while (pStart.before(pEnd));</span>
+<span class="nc" id="L555">						}</span>
+					}
+					// first save each real queue's information first
+<span class="pc bpc" id="L558" title="1 of 2 branches missed.">					if (cubeCol != null)</span>
+					{
+<span class="fc bfc" id="L560" title="All 2 branches covered.">						for (Iterator&lt;TraceCube&gt; it = cubeCol.iterator(); it.hasNext(); ) {</span>
+<span class="fc" id="L561">							TraceCube cube = it.next();</span>
+<span class="fc" id="L562">							TraceCube[] realCubes = queueCubeMap.get(cube.getQueueID());</span>
+<span class="fc bfc" id="L563" title="All 2 branches covered.">							if (realCubes == null) {</span>
+<span class="fc" id="L564">								realCubes = new TraceCube[5];</span>
+							}
+<span class="fc" id="L566">							realCubes[i] = cube;</span>
+<span class="fc" id="L567">							queueCubeMap.put(cube.getQueueID(), realCubes);</span>
+<span class="fc" id="L568">						}</span>
+					}
+				}
+			}
+<span class="fc bfc" id="L572" title="All 2 branches covered.">			if (Queue.doesQueueHaveSubQs(qType)) {</span>
+				// -1 for DQ
+<span class="fc" id="L574">				ID dqID = nrQueID;</span>
+<span class="pc bpc" id="L575" title="3 of 4 branches missed.">				if (tv.useTrending() &amp;&amp; qType == Queue.QUEUE_TYPE_DISTRIBUTED)</span>
+<span class="nc" id="L576">					nrQueID = comQueID;</span>
+<span class="pc bpc" id="L577" title="1 of 2 branches missed.">				boolean keepCombineOnly = !tv.useTrending();</span>
+<span class="pc bpc" id="L578" title="1 of 2 branches missed.">				if (qType == Queue.QUEUE_TYPE_VIRTUAL)</span>
+<span class="nc" id="L579">					keepCombineOnly = true;</span>
+<span class="fc" id="L580">				TraceOperatorAdapter.combineCubeMap(queueCubeMap, metaCubes, keepCombineOnly, nrQueID, true, WhatIfMode);</span>
+<span class="pc bpc" id="L581" title="3 of 4 branches missed.">				if (tv.useTrending() &amp;&amp; qType == Queue.QUEUE_TYPE_DISTRIBUTED) {</span>
+					// remove DQ ID again
+<span class="nc" id="L583">					queueCubeMap.remove(dqID);</span>
+				}
+			}
+			//	need merge in Combined Staffing directly for VQ/DQ now
+<span class="fc" id="L587">			TraceCube[] nrQueCubes = queueCubeMap.get(nrQueID);</span>
+<span class="pc bpc" id="L588" title="3 of 6 branches missed.">			if (orgNrQueID != null &amp;&amp; metaCubes[0] != null &amp;&amp; TraceUtil.containTraceType(metaCubes[0], Trace.STAFFING)) {</span>
+				// need actual staffing inserted by Calc Engine.
+<span class="nc" id="L590">				Collection&lt;TraceCube&gt; cubeCol = m_timeSeriesManager.getRawMultipleQueuesTimeSeries(TraceUtil.META_ACTUAL_STAFFING, campaignID, Collections.singletonList(orgNrQueID), start, end);</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">				if (nrQueCubes[0] == null)</span>
+<span class="nc" id="L592">					nrQueCubes[0] = metaCubes[0].newInstance(nrQueID, start, end, metaCubes[0].getTraceTypes());</span>
+<span class="nc bnc" id="L593" title="All 2 branches missed.">				if (!cubeCol.isEmpty()) {</span>
+<span class="nc" id="L594">					TraceCube stfCube = cubeCol.iterator().next();</span>
+<span class="nc" id="L595">					nrQueCubes[0].setTraceValue(Trace.STAFFING, stfCube.getTraceValueD(Trace.STAFFING));</span>
+				}
+			}
+			//need to do the computations here fo all trace cubes  second element = forcast &amp; third is predict
+<span class="fc bfc" id="L599" title="All 2 branches covered.">			for (Iterator&lt;TraceCube[]&gt; iterator = queueCubeMap.values().iterator(); iterator.hasNext();) {</span>
+<span class="fc" id="L600">				TraceCube[] queCubes =  iterator.next();</span>
+<span class="fc" id="L601">				TraceOperatorAdapter.calcComputedValuesForAggrForcastTraceCubes(queCubes);</span>
+<span class="fc" id="L602">			}</span>
+<span class="fc" id="L603">			return queueCubeMap;</span>
+<span class="nc" id="L604">		} catch(Exception e) {</span>
+<span class="nc" id="L605">			handleException(e);</span>
+<span class="nc" id="L606">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="pc" id="L608">			methodFinish();</span>
+		}
+	}
+	/**
+	 * Retrieve multiple queues TraceCubes based on TrackingView object
+	 * @param TrackingView, tv
+	 * @param ID, campaignID
+	 * @param ID, mediaID
+	 * @param Date, start
+	 * @param Date, end
+	 * @return TraceCube[], First element is Actual, Second is Forecast, Third is Predict, Forth is ServiceGoal, Fifth is Required
+	 */
+	public HashMap&lt;ID, TraceCube[]&gt; getTraceCubesByTrackingView(TrackingView tv, ID campaignID,
+			ID mediaID,
+			Date start,
+			Date end) throws BbmFinderException {
+<span class="nc" id="L624">		return getCombineTraceCubesByTrackingView(tv, campaignID, mediaID, start, end);</span>
+	}
+	/**
+	 * Retrieve multiple queues TraceCubes based on TrackingView object, if QueueID is -1, it means the combined queue's cubes
+	 * @param TrackingView, tv
+	 * @param ID, campaignID
+	 * @param ID, mediaID
+	 * @param Date, start
+	 * @param Date, end
+	 * @return TraceCube[], First element is Actual, Second is Forecast, Third is Predict, Forth is ServiceGoal, Fifth is Required
+	 */
+	public HashMap&lt;ID, TraceCube[]&gt; getCombineTraceCubesByTrackingView(TrackingView tv, ID campaignID,
+			ID mediaID,
+			Date start,
+			Date end) throws BbmFinderException {
+<span class="fc" id="L639">		return getCombineTraceCubesByTrackingView(tv, campaignID,mediaID,start,end, true);</span>
+	}
+	/**
+	 * Retrieve multiple queues TraceCubes based on TrackingView object, if QueueID is -1, it means the combined queue's cubes
+	 * @param TrackingView, tv
+	 * @param ID, campaignID
+	 * @param ID, mediaID
+	 * @param Date, start
+	 * @param Date, end
+	 * @param boolean, needAllValid
+	 * @return TraceCube[], First element is Actual, Second is Forecast, Third is Predict, Forth is ServiceGoal, Fifth is Required
+	 */
+	//Overloaded method for QA99997 to add a flag which will stop converting null value to TRACEINCOMP
+	public HashMap&lt;ID, TraceCube[]&gt; getCombineTraceCubesByTrackingView(TrackingView tv, ID campaignID,
+			ID mediaID,
+			Date start,
+			Date end, boolean needAllValid) throws BbmFinderException {	
+<span class="fc" id="L656">		methodStart(&quot;getCombineTraceCubesByTrackingView&quot;, tv, campaignID, mediaID, start, end);</span>
+		try {
+<span class="fc" id="L658">			Map&lt;ID, Map&lt;ID, TraceCube[]&gt;&gt; finalqueueCubeMap = new HashMap&lt;ID, Map&lt;ID, TraceCube[]&gt;&gt;();</span>
+<span class="fc" id="L659">			TraceCube[] metaCubes = tv.getMetaTCForLoad(true);</span>
+<span class="fc" id="L660">			Collection&lt;TimePeriod&gt; mergedClosedPeriod = null;</span>
+<span class="pc bpc" id="L661" title="1 of 2 branches missed.">			if (tv.useHOO()) {</span>
+				// find HOO, then normalize the result
+				// for each campaign, fetch the HOO, convert to HOOPeriod, then normalize the result
+<span class="nc" id="L664">				Campaign cpg = m_CampaignManager.getCampaignByID(campaignID);</span>
+<span class="nc" id="L665">				Collection&lt;CampaignHOO&gt; cpgHOOCol = m_CampaignManager.getCampaignHOOAssignments(campaignID, start, end);</span>
+<span class="nc" id="L666">				CampaignHOOPeriod cpgPeriod = new CampaignHOOPeriod(start, end, cpg.getTimeZone(), cpgHOOCol);</span>
+<span class="nc" id="L667">				mergedClosedPeriod = cpgPeriod.getClosePeriods(start, end);</span>
+			}
+			// need special handle multi-site issue
+<span class="fc" id="L670">			Collection&lt;ID&gt; subCpgIDs = m_CampaignManager.getSubCampaignIDs(campaignID);</span>
+<span class="fc bfc" id="L671" title="All 2 branches covered.">			boolean multiSiteMode = !subCpgIDs.isEmpty();</span>
+<span class="fc bfc" id="L672" title="All 2 branches covered.">			if (subCpgIDs.isEmpty()) {</span>
+<span class="fc" id="L673">				subCpgIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="fc" id="L674">				subCpgIDs.add(campaignID);</span>
+			}
+<span class="fc" id="L676">			boolean skillBased = true;</span>
+<span class="fc bfc" id="L677" title="All 2 branches covered.">			if (multiSiteMode) {</span>
+				//&amp;&amp; tv.useTrending()) {
+				// if trending is used under Multisite, the logic will depend on SP mode
+<span class="fc" id="L680">				Collection&lt;SchedulingPeriod&gt; spCol = m_CampaignManager.getSchedulingPeriods(campaignID, start, end);</span>
+<span class="pc bpc" id="L681" title="1 of 2 branches missed.">				for (Iterator&lt;SchedulingPeriod&gt; it = spCol.iterator(); it.hasNext(); ) {</span>
+<span class="fc" id="L682">					SchedulingPeriod sp = it.next();</span>
+<span class="fc" id="L683">					skillBased = sp.getSkillBased();</span>
+<span class="fc" id="L684">					break;</span>
+				}
+			}
+			// now iterate each campaign
+<span class="fc bfc" id="L688" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; cpgIT = subCpgIDs.iterator(); cpgIT.hasNext(); ) {</span>
+<span class="fc" id="L689">				ID cpgID = cpgIT.next();</span>
+<span class="fc" id="L690">				Map&lt;ID, TraceCube[]&gt; queueCubeMap = new HashMap&lt;ID, TraceCube[]&gt;();</span>
+<span class="fc bfc" id="L691" title="All 2 branches covered.">				for (int i=0; i&lt;metaCubes.length; i++) {</span>
+<span class="fc bfc" id="L692" title="All 2 branches covered.">					if (metaCubes[i] != null) {</span>
+<span class="fc" id="L693">						Collection&lt;TraceCube&gt; cubeCol = m_timeSeriesManager.getRawCombinedQueuesTimeSeries(metaCubes[i], cpgID,  mediaID, start, end, false, tv.isNoPhantoms()); </span>
+						// Now normalize them based on Campaign HOO definition
+<span class="pc bpc" id="L695" title="4 of 6 branches missed.">						if (cubeCol != null &amp;&amp; mergedClosedPeriod != null &amp;&amp; !mergedClosedPeriod.isEmpty()) {</span>
+<span class="nc" id="L696">							int[] OFFCHUNK = new int[metaCubes[i].getTraceTypes().length];</span>
+<span class="nc" id="L697">							Arrays.fill(OFFCHUNK, Trace.TRACEOFF);</span>
+							// now normalize any chunk in the closedPeriod window
+<span class="nc bnc" id="L699" title="All 2 branches missed.">							for (Iterator&lt;TimePeriod&gt; it = mergedClosedPeriod.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L700">								TimePeriod period = it.next();</span>
+<span class="nc" id="L701">								Date pStart = TraceUtil.snapDate(period.getStartTime());</span>
+<span class="nc" id="L702">								Date pEnd = period.getEndTime();</span>
+								do {
+									// for each queue normalize with HOO
+<span class="nc bnc" id="L705" title="All 2 branches missed.">									for (Iterator&lt;TraceCube&gt; cubeIt = cubeCol.iterator(); cubeIt.hasNext(); ) {</span>
+<span class="nc" id="L706">										TraceCube cube = cubeIt.next();</span>
+										// clean non-HOO time value, if needed can put special value here
+<span class="nc" id="L708">										cube.setTraceValue(metaCubes[i].getTraceTypes(), OFFCHUNK, pStart);</span>
+<span class="nc" id="L709">									}</span>
+<span class="nc" id="L710">									pStart = new Date(pStart.getTime() + Trace.INTERVAL * TimeZoneUtil.MINUTE_IN_MILLISECONDS);</span>
+<span class="nc bnc" id="L711" title="All 2 branches missed.">								} while (pStart.before(pEnd));</span>
+<span class="nc" id="L712">							}</span>
+						}
+<span class="pc bpc" id="L714" title="1 of 2 branches missed.">						if (cubeCol != null) {</span>
+<span class="fc bfc" id="L715" title="All 2 branches covered.">							for (Iterator&lt;TraceCube&gt; it = cubeCol.iterator(); it.hasNext(); ) {</span>
+<span class="fc" id="L716">								TraceCube cube = it.next();</span>
+<span class="fc" id="L717">								TraceCube[] realCubes = queueCubeMap.get(cube.getQueueID());</span>
+<span class="fc bfc" id="L718" title="All 2 branches covered.">								if (realCubes == null) {</span>
+<span class="fc" id="L719">									realCubes = new TraceCube[5];</span>
+								}
+<span class="fc" id="L721">								realCubes[i] = cube;</span>
+<span class="fc" id="L722">								queueCubeMap.put(cube.getQueueID(), realCubes);</span>
+<span class="fc" id="L723">							}</span>
+						}
+					}
+				}
+				//need to do the computations here for all trace cubes  second element = forecast &amp; third is predict
+<span class="fc bfc" id="L728" title="All 2 branches covered.">				for (Iterator&lt;TraceCube[]&gt; iterator = queueCubeMap.values().iterator(); iterator.hasNext();) {</span>
+<span class="fc" id="L729">					TraceCube[] queCubes = iterator.next();</span>
+<span class="fc" id="L730">					TraceOperatorAdapter.calcComputedValuesForAggrForcastTraceCubes(queCubes);</span>
+<span class="fc" id="L731">				}</span>
+				// save each cubeMap for each campaign
+				try {
+<span class="fc" id="L734">					finalqueueCubeMap.put(cpgID, TraceOperatorAdapter.combineCubeMap(queueCubeMap, metaCubes, false, comQueID, needAllValid, WhatIfMode));//QA99997 pass flag needAllValid</span>
+<span class="nc" id="L735">				} catch(Exception e) {</span>
+<span class="nc bnc" id="L736" title="All 2 branches missed.">					if (queueCubeMap != null) {</span>
+<span class="nc" id="L737">						StringBuffer cubeMapStr = new StringBuffer(2000);</span>
+<span class="nc bnc" id="L738" title="All 2 branches missed.">						for (Iterator&lt;ID&gt; keyIt = queueCubeMap.keySet().iterator(); keyIt.hasNext(); ) {</span>
+<span class="nc" id="L739">							ID queID = keyIt.next();</span>
+<span class="nc" id="L740">							cubeMapStr.append(&quot;QueueID &quot;).append(queID);</span>
+<span class="nc" id="L741">							TraceCube[] realCubes = queueCubeMap.get(queID);</span>
+<span class="nc bnc" id="L742" title="All 2 branches missed.">							if (realCubes != null) {</span>
+<span class="nc bnc" id="L743" title="All 2 branches missed.">								for (int i=0; i&lt;realCubes.length; i++)</span>
+<span class="nc" id="L744">									cubeMapStr.append(&quot; Element&quot;).append(i).append(&quot;: &quot;).append(realCubes[i]);</span>
+							}
+<span class="nc" id="L746">						}</span>
+<span class="nc" id="L747">						m_cat.debug(&quot;Queue CubeMap &quot;+cubeMapStr);</span>
+					}
+<span class="nc" id="L749">					throw e;</span>
+<span class="fc" id="L750">				}</span>
+				// last step check if need fix CombinedQueue Staffing
+<span class="pc bpc" id="L752" title="3 of 4 branches missed.">				if (metaCubes[0] != null &amp;&amp; TraceUtil.containTraceType(metaCubes[0], Trace.STAFFING)) {</span>
+				    // go to DB load Staffing
+<span class="nc" id="L754">				    Collection&lt;SchedulingPeriod&gt; spCol = m_CampaignManager.getSchedulingPeriods(cpgID, start, end);</span>
+<span class="nc" id="L755">				    Set&lt;ID&gt; spIDSet = new HashSet&lt;ID&gt;(spCol.size());</span>
+<span class="nc bnc" id="L756" title="All 2 branches missed.">				    for (Iterator&lt;SchedulingPeriod&gt; itSp=spCol.iterator(); itSp.hasNext(); ) {</span>
+<span class="nc" id="L757">				        SchedulingPeriod sp = itSp.next();</span>
+<span class="nc" id="L758">				        spIDSet.add(sp.getID());</span>
+<span class="nc" id="L759">				    }</span>
+<span class="nc bnc" id="L760" title="All 2 branches missed.">				    if (!spIDSet.isEmpty()) {</span>
+<span class="nc" id="L761">				    	Collection&lt;CombinedQueueStaffing&gt; stfCol = m_timeSeriesManager.getCombinedQueueStaffing(cpgID, mediaID, spIDSet, start, end);</span>
+<span class="nc bnc" id="L762" title="All 2 branches missed.">				    	if (!stfCol.isEmpty()) {</span>
+<span class="nc" id="L763">					        Map&lt;ID, TraceCube[]&gt; cubeMap = finalqueueCubeMap.get(cpgID);</span>
+<span class="nc" id="L764">					        TraceCube[] cmbCubes = cubeMap.get(comQueID);</span>
+<span class="nc bnc" id="L765" title="All 2 branches missed.">					        if (cmbCubes[0] == null) {</span>
+<span class="nc" id="L766">					        	cmbCubes[0] = TraceUtil.newInstance(metaCubes[0], null, start, end);</span>
+<span class="nc" id="L767">					        	short[] actTypes = metaCubes[0].getTraceTypes();</span>
+<span class="nc bnc" id="L768" title="All 2 branches missed.">					        	for (int t = 0; t&lt;actTypes.length; t++)</span>
+<span class="nc" id="L769">					        		cmbCubes[0].initTraceValue(actTypes[t] , Trace.TRACENA);</span>
+					        }
+<span class="nc bnc" id="L771" title="All 2 branches missed.">				            for (Iterator&lt;CombinedQueueStaffing&gt; stfIt=stfCol.iterator(); stfIt.hasNext(); ) {</span>
+<span class="nc" id="L772">				                CombinedQueueStaffing stf = stfIt.next();</span>
+<span class="nc" id="L773">				                cmbCubes[0].setTraceValue(Trace.STAFFING, TraceUtil.roundDouble(stf.getStaffing()), stf.getTimeInterval(), true);</span>
+<span class="nc" id="L774">				            }</span>
+				    	}
+				    }
+				}
+<span class="fc" id="L778">			}</span>
+			// if not in multi-site mode, just return the map
+<span class="fc" id="L780">			Map&lt;ID, TraceCube[]&gt; cpgMap =null;</span>
+<span class="fc bfc" id="L781" title="All 2 branches covered.">			if (!multiSiteMode) {</span>
+<span class="fc" id="L782">				cpgMap = finalqueueCubeMap.get(campaignID);</span>
+<span class="pc bpc" id="L783" title="1 of 2 branches missed.">				if (!tv.useTrending()) {</span>
+<span class="fc" id="L784">					TraceCube[] cmbCubes = cpgMap.get(comQueID);</span>
+<span class="fc" id="L785">					cpgMap.clear();</span>
+<span class="fc" id="L786">					cpgMap.put(comQueID, cmbCubes);</span>
+<span class="fc" id="L787">				}</span>
+			}else {
+<span class="fc" id="L789">				cpgMap = new HashMap&lt;ID, TraceCube[]&gt;();</span>
+				// now may need combine cube from sub campaigns, base on SP mode, skill based, need keep real queue;otherwise, keep combined
+<span class="fc bfc" id="L791" title="All 2 branches covered.">				for (Iterator&lt;ID&gt; cpgIT = subCpgIDs.iterator(); cpgIT.hasNext();) {</span>
+<span class="fc" id="L792">					ID cpgID = cpgIT.next();</span>
+<span class="fc" id="L793">					Map&lt;ID, TraceCube[]&gt; queueCubeMap = finalqueueCubeMap.get(cpgID);</span>
+<span class="fc bfc" id="L794" title="All 2 branches covered.">					if (skillBased) {</span>
+						// keep each real queue cube
+<span class="fc" id="L796">						queueCubeMap.remove(comQueID);</span>
+<span class="fc" id="L797">						cpgMap.putAll(queueCubeMap);</span>
+					} else {
+						// keep combined sub-campaign cube only
+<span class="fc" id="L800">						cpgMap.put(cpgID, queueCubeMap.get(comQueID));</span>
+					}
+<span class="fc" id="L802">				}</span>
+				// if no Trending is needed, no need to return extra queue's cubes
+<span class="pc bpc" id="L804" title="1 of 2 branches missed.">				TraceOperatorAdapter.combineCubeMap(cpgMap, metaCubes, !tv.useTrending(), comQueID, true, WhatIfMode);</span>
+				//Bug# 91174; Combined Q for Distributed Queue is blank;Feb 2006. Sameet
+				// as per Vinod's suggestion get combined staffing at the campaign level for Skill based Distributed campaign
+<span class="pc bpc" id="L807" title="3 of 4 branches missed.">				if (metaCubes[0] != null &amp;&amp; TraceUtil.containTraceType(metaCubes[0], Trace.STAFFING)) {</span>
+<span class="nc" id="L808">					Collection&lt;SchedulingPeriod&gt; spCol = m_CampaignManager.getSchedulingPeriods(campaignID, start, end);</span>
+<span class="nc" id="L809">					Set&lt;ID&gt; spIDSet = new HashSet&lt;ID&gt;(spCol.size());</span>
+<span class="nc bnc" id="L810" title="All 2 branches missed.">					for (Iterator&lt;SchedulingPeriod&gt; itSp = spCol.iterator(); itSp.hasNext();) {</span>
+<span class="nc" id="L811">						SchedulingPeriod sp = itSp.next();</span>
+<span class="nc" id="L812">						spIDSet.add(sp.getID());</span>
+<span class="nc" id="L813">					}</span>
+<span class="nc" id="L814">					Collection&lt;CombinedQueueStaffing&gt; stfCol = m_timeSeriesManager.getCombinedQueueStaffing(campaignID, mediaID, spIDSet, start, end);</span>
+<span class="nc bnc" id="L815" title="All 2 branches missed.">					if (!stfCol.isEmpty()) {</span>
+<span class="nc" id="L816">						TraceCube[] cmbCubes = cpgMap.get(comQueID);</span>
+<span class="nc bnc" id="L817" title="All 2 branches missed.">						if (cmbCubes[0] == null) {</span>
+<span class="nc" id="L818">							cmbCubes[0] = TraceUtil.newInstance(metaCubes[0], null, start, end);</span>
+<span class="nc" id="L819">							short[] actTypes = metaCubes[0].getTraceTypes();</span>
+<span class="nc bnc" id="L820" title="All 2 branches missed.">							for (int t = 0; t &lt; actTypes.length; t++)</span>
+<span class="nc" id="L821">								cmbCubes[0].initTraceValue(actTypes[t], Trace.TRACENA);</span>
+						}
+<span class="nc bnc" id="L823" title="All 2 branches missed.">						for (Iterator&lt;CombinedQueueStaffing&gt; stfIt = stfCol.iterator(); stfIt.hasNext();) {</span>
+<span class="nc" id="L824">							CombinedQueueStaffing stf = stfIt.next();</span>
+<span class="nc" id="L825">							cmbCubes[0].setTraceValue(Trace.STAFFING, TraceUtil.roundDouble(stf.getStaffing()), stf.getTimeInterval(), true);</span>
+<span class="nc" id="L826">						}</span>
+					}
+				}//End of Fix Sameet Feb 2006    Bug# 91174; Combined Q for Distributed Queue is blank
+
+				//Bug 90141, [4.6] Alert when viewing the combined - phone of a distributed campaign, Sameet, March 2006
+				//Fix for case where the campaignId (numeric int value) also exists for underlying queue ids of the same campaign.
+				//multiplying the campaign id with -1 to eliminate any chance of collision with Queue SID.
+<span class="pc bpc" id="L833" title="1 of 2 branches missed.">				if(tv.useTrending()){</span>
+<span class="nc bnc" id="L834" title="All 2 branches missed.">					for (Iterator&lt;ID&gt; iterator = subCpgIDs.iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L835">						ID id = iterator.next();</span>
+<span class="nc bnc" id="L836" title="All 2 branches missed.">						if(id.toInt()!= -1){</span>
+<span class="nc" id="L837">							TraceCube[] obj = cpgMap.remove(id);</span>
+<span class="nc bnc" id="L838" title="All 2 branches missed.">                            if(obj!=null){ //need to add the Object only if was already present in the cpgMap.</span>
+                                // Data is passed for distributed campaigns using a hack.
+                                // the campaign_id *-1 is put as a queue id. this is applicable to NON_SKILL DIST campaigns only.
+<span class="nc" id="L841">                                cpgMap.put(new ID(id.toInt()*-1),obj);</span>
+                            }
+                        }
+<span class="nc" id="L844">					}</span>
+				}
+			}
+<span class="fc" id="L847">			return (HashMap&lt;ID, TraceCube[]&gt;)cpgMap;</span>
+<span class="nc" id="L848">		} catch(Exception e) {</span>
+<span class="nc" id="L849">			handleException(e);</span>
+<span class="nc" id="L850">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="pc" id="L852">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * Support Auto Refresh feature in Pulse screen, given start/end(usually one day range)
+	 * Because of the difference of viewing timezone, backend caches now plus/minus one day data
+	 * if QueueCol is specified, it is multiple queue mode, mediaID is ignored
+	 * otherwise, it is Campaign Queue or Campaign Media Queue
+	 * All returned results are keyed by each Queue's ID, and if there is changes, the whole period is returned
+	 * otherwise, it won't appear in the map
+	 * @param tv
+	 * @param campaignID
+	 * @param mediaID
+	 * @param queueCol
+	 * @param start
+	 * @param end
+	 * @param lastFetch
+	 * @return TraceCube[], First element is Actual, Second is Forecast, Third is Predict, Forth is ServiceGoal, Fifth is Required
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 */
+	public HashMap&lt;ID, TraceCube[]&gt; getRefreshedTraceCubes(TrackingView tv, ID campaignID, ID mediaID, Collection&lt;ID&gt; queueCol, Date start, Date end, Date lastCheck) throws BbmFinderException
+	{
+<span class="nc bnc" id="L876" title="All 2 branches missed.">		if (queueCol == null)</span>
+<span class="nc" id="L877">			methodStart(&quot;getRefreshedTraceCubes&quot;, tv, campaignID, mediaID, start, end);</span>
+		else
+<span class="nc" id="L879">			methodStart(&quot;getRefreshedTraceCubes&quot;, tv, campaignID, queueCol, start, end);</span>
+		try {
+<span class="nc" id="L881">			HashMap&lt;ID, TraceCube[]&gt; queueCubeMap = new HashMap&lt;ID, TraceCube[]&gt;();</span>
+<span class="nc" id="L882">			Collection&lt;TimePeriod&gt; mergedClosedPeriod = null;</span>
+<span class="nc bnc" id="L883" title="All 4 branches missed.">			if (tv.useHOO() &amp;&amp; campaignID != null) {</span>
+				// find HOO, then normalize the result
+				// for each campaign, fetch the HOO, convert to HOOPeriod, then normalize the result
+<span class="nc" id="L886">				Campaign cpg = m_CampaignManager.getCampaignByID(campaignID);</span>
+<span class="nc" id="L887">				Collection&lt;CampaignHOO&gt; cpgHOOCol = m_CampaignManager.getCampaignHOOAssignments(campaignID, start, end);</span>
+<span class="nc" id="L888">				CampaignHOOPeriod cpgPeriod = new CampaignHOOPeriod(start, end, cpg.getTimeZone(), cpgHOOCol);</span>
+<span class="nc" id="L889">				mergedClosedPeriod = cpgPeriod.getClosePeriods(start, end);</span>
+			}
+<span class="nc" id="L891">			ID nrQueID = null;</span>
+<span class="nc bnc" id="L892" title="All 4 branches missed.">			if (queueCol != null &amp;&amp; !queueCol.isEmpty()) {</span>
+<span class="nc" id="L893">				HashSet&lt;ID&gt; realQueCol = new HashSet&lt;ID&gt;();</span>
+<span class="nc" id="L894">				realQueCol.addAll(queueCol);</span>
+<span class="nc" id="L895">				int qType = Queue.QUEUE_TYPE_NORMAL;</span>
+<span class="nc bnc" id="L896" title="All 2 branches missed.">				if (!queueCol.isEmpty()) {</span>
+<span class="nc bnc" id="L897" title="All 2 branches missed.">					if (queueCol.size() == 1) {</span>
+<span class="nc" id="L898">						Collection&lt;Queue&gt; queuesCol = m_WorkloadManager.getQueuesByIDs(queueCol);</span>
+<span class="nc" id="L899">						Queue q = queuesCol.iterator().next();</span>
+<span class="nc bnc" id="L900" title="All 2 branches missed.">						if (q.doesQueueHaveSubQs()) {</span>
+<span class="nc" id="L901">							qType = q.getQueueType();</span>
+<span class="nc" id="L902">							nrQueID = queueCol.iterator().next();</span>
+<span class="nc" id="L903">							realQueCol.clear();</span>
+<span class="nc" id="L904">							realQueCol.addAll(m_WorkloadManager.getSubQueues(Collections.singletonList(q.getID())));</span>
+						}
+					}
+				}
+<span class="nc bnc" id="L908" title="All 2 branches missed.">				if (!Queue.doesQueueHaveSubQs(qType)) {</span>
+<span class="nc" id="L909">					queueCubeMap = m_timeSeriesManager.getRefreshedRawMultipleQueuesTimeSeries(tv, campaignID, realQueCol, start, end, lastCheck);</span>
+				} else {
+					// for virtual/distributed queue it is more complicated
+<span class="nc" id="L912">					TraceCube[] cubes = m_timeSeriesManager.getRefreshedRawNonRealQueueTimeSeries(tv, campaignID, nrQueID, qType, realQueCol, start, end, lastCheck);</span>
+<span class="nc" id="L913">					queueCubeMap.put(nrQueID, cubes);</span>
+				}
+<span class="nc" id="L915">			} else {</span>
+<span class="nc" id="L916">				queueCubeMap = m_timeSeriesManager.getRefreshedRawCombinedQueuesTimeSeries(tv, campaignID, mediaID, start, end, lastCheck);</span>
+			}
+			// Now normalize them based on Campaign HOO definition
+<span class="nc bnc" id="L919" title="All 4 branches missed.">			if (mergedClosedPeriod != null &amp;&amp; !mergedClosedPeriod.isEmpty()) {</span>
+<span class="nc bnc" id="L920" title="All 2 branches missed.">				for (Iterator&lt;ID&gt; itQueue=queueCubeMap.keySet().iterator(); itQueue.hasNext(); ) {</span>
+<span class="nc" id="L921">					TraceCube[] cubes = queueCubeMap.get(itQueue.next());</span>
+<span class="nc bnc" id="L922" title="All 2 branches missed.">					for (int i=0; i&lt;cubes.length; i++) {</span>
+<span class="nc" id="L923">						TraceCube cube = cubes[i];</span>
+<span class="nc bnc" id="L924" title="All 2 branches missed.">						if (cube == null)</span>
+<span class="nc" id="L925">							continue;</span>
+<span class="nc" id="L926">						int[] OFFCHUNK = new int[cube.getTraceTypes().length];</span>
+<span class="nc" id="L927">						Arrays.fill(OFFCHUNK, Trace.TRACEOFF);</span>
+						// now normalize any chunk in the closedPeriod window
+<span class="nc bnc" id="L929" title="All 2 branches missed.">						for (Iterator&lt;TimePeriod&gt; it = mergedClosedPeriod.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L930">							TimePeriod period = (TimePeriod)it.next();</span>
+<span class="nc" id="L931">							Date pStart = TraceUtil.snapDate(period.getStartTime());</span>
+<span class="nc" id="L932">							Date pEnd = period.getEndTime();</span>
+							do {
+								// for each queue normalize with HOO
+								// clean non-HOO time value, if needed can put special value here
+<span class="nc" id="L936">								cube.setTraceValue(cube.getTraceTypes(), OFFCHUNK, pStart);</span>
+<span class="nc" id="L937">								pStart = new Date(pStart.getTime() + Trace.INTERVAL * TimeZoneUtil.MINUTE_IN_MILLISECONDS);</span>
+<span class="nc bnc" id="L938" title="All 2 branches missed.">							} while (pStart.before(pEnd));</span>
+<span class="nc" id="L939">						}</span>
+					}
+<span class="nc" id="L941">				}</span>
+			}
+<span class="nc" id="L943">			return queueCubeMap;</span>
+<span class="nc" id="L944">		} catch(Exception e) {</span>
+<span class="nc" id="L945">			handleException(e);</span>
+<span class="nc" id="L946">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L948">			methodFinish();</span>
+		}
+	}
+
+
+	////////////////////////////// BEGIN PULSE NOTES CODE /////////////////
+
+	public static final int ADD_PULSE_NOTE 		= 0;
+	public static final int UPDATE_PULSE_NOTE 	= 1;
+	public static final int DELETE_PULSE_NOTE 	= 2;
+	/**
+	 * get pulse notes for the given queueIds with the start and end time period
+	 * @param queueIds
+	 * @param starttime
+	 * @param endtime
+	 * @return Collection of PulseNoteBO
+	 * @exception BbmFinderException
+	 */
+	public Collection&lt;PulseNoteBO&gt; getPulseNotes(Collection&lt;ID&gt; queueIds, Date starttime, Date endtime) throws BbmFinderException {
+<span class="nc" id="L967">		methodStart(&quot;getPulseNotes&quot;, queueIds, starttime, endtime);</span>
+<span class="nc" id="L968">		PulseNoteDAO pulseNoteDao = new PulseNoteDAO();</span>
+<span class="nc" id="L969">		PulseNoteQueueDAO pulseNoteQueueDao = new PulseNoteQueueDAO();</span>
+
+		try
+		{
+<span class="nc" id="L973">			ArrayList&lt;PulseNoteBO&gt; pulseNoteBOCol = new ArrayList&lt;PulseNoteBO&gt;();</span>
+<span class="nc" id="L974">			Collection&lt;PulseNote&gt; notes = pulseNoteDao.getPulseNotes(queueIds, starttime, endtime);</span>
+<span class="nc bnc" id="L975" title="All 4 branches missed.">			if (notes != null &amp;&amp; notes.size() &gt; 0) {</span>
+<span class="nc" id="L976">				ArrayList&lt;ID&gt; noteIds = new ArrayList&lt;ID&gt;();</span>
+				//fill note ids
+<span class="nc" id="L978">				Iterator&lt;PulseNote&gt; notesIt = notes.iterator();</span>
+<span class="nc bnc" id="L979" title="All 2 branches missed.">				while (notesIt.hasNext()) {</span>
+<span class="nc" id="L980">					PulseNote pnote = notesIt.next();</span>
+<span class="nc" id="L981">					noteIds.add(pnote.getID());</span>
+<span class="nc" id="L982">				}</span>
+				//get the note-&gt;queues assignments
+<span class="nc" id="L984">				HashMap&lt;ID, ArrayList&lt;ID&gt;&gt; queueAssignments = new HashMap&lt;ID, ArrayList&lt;ID&gt;&gt;();</span>
+<span class="nc" id="L985">				Collection&lt;PulseNoteQueue&gt; pulseNoteQueues = pulseNoteQueueDao.getPulseNoteQueues(noteIds);</span>
+<span class="nc bnc" id="L986" title="All 4 branches missed.">				if (pulseNoteQueues != null &amp;&amp; pulseNoteQueues.size()&gt;0) {</span>
+<span class="nc" id="L987">					Iterator&lt;PulseNoteQueue&gt; queueIt = pulseNoteQueues.iterator();</span>
+<span class="nc bnc" id="L988" title="All 2 branches missed.">					while (queueIt.hasNext()) {</span>
+<span class="nc" id="L989">						PulseNoteQueue pnq = queueIt.next();</span>
+<span class="nc" id="L990">						ID pnId = pnq.getPulseNoteId();</span>
+<span class="nc" id="L991">						ArrayList&lt;ID&gt; queueList = queueAssignments.get(pnId);</span>
+<span class="nc bnc" id="L992" title="All 2 branches missed.">						if (queueList == null) {</span>
+<span class="nc" id="L993">							queueList = new ArrayList&lt;ID&gt;();</span>
+						}
+<span class="nc" id="L995">						queueList.add(pnq.getQueueId());</span>
+<span class="nc" id="L996">						queueAssignments.put(pnId, queueList);</span>
+<span class="nc" id="L997">					}</span>
+				}
+				// fill the PulseNoteBO objects
+<span class="nc" id="L1000">				notesIt = notes.iterator();</span>
+<span class="nc bnc" id="L1001" title="All 2 branches missed.">				while (notesIt.hasNext()) {</span>
+<span class="nc" id="L1002">					PulseNote pnote = (PulseNote) notesIt.next();</span>
+					//create the new PulseNoteBO
+<span class="nc" id="L1004">					PulseNoteBO pulseNoteBO = new PulseNoteBO(pnote);</span>
+<span class="nc" id="L1005">					ID noteId = pnote.getID();</span>
+					//get the queueIds
+<span class="nc" id="L1007">					Collection&lt;ID&gt; noteQueueIds = queueAssignments.get(noteId);</span>
+<span class="nc" id="L1008">					Collection&lt;Queue&gt; queues = m_WorkloadManager.getQueuesByIDs(noteQueueIds);</span>
+<span class="nc" id="L1009">					HashMap&lt;ID, Queue&gt; queuesMap = new HashMap&lt;ID, Queue&gt;();</span>
+<span class="nc bnc" id="L1010" title="All 2 branches missed.">					if (queues != null) {</span>
+<span class="nc" id="L1011">						Iterator&lt;Queue&gt; qIt = queues.iterator();</span>
+<span class="nc bnc" id="L1012" title="All 2 branches missed.">						while (qIt.hasNext()) {</span>
+<span class="nc" id="L1013">							Queue q = qIt.next();</span>
+<span class="nc" id="L1014">							queuesMap.put(q.getID(), q);</span>
+<span class="nc" id="L1015">						}</span>
+					}
+
+<span class="nc" id="L1018">					pulseNoteBO.setQueues(new HashMap&lt;ID, Queue&gt;(queuesMap));</span>
+
+					//add to return list
+<span class="nc" id="L1021">					pulseNoteBOCol.add(pulseNoteBO);</span>
+<span class="nc" id="L1022">				}</span>
+			}
+<span class="nc" id="L1024">			return pulseNoteBOCol;</span>
+<span class="nc" id="L1025">		} catch(Exception e) {</span>
+<span class="nc" id="L1026">			handleException(e);</span>
+<span class="nc" id="L1027">			throw new BbmFinderException(e);</span>
+		}
+		finally {
+<span class="nc" id="L1030">			pulseNoteDao.cleanUp();</span>
+<span class="nc" id="L1031">			pulseNoteQueueDao.cleanUp();</span>
+<span class="nc" id="L1032">			methodFinish();</span>
+		}
+	}
+
+	/**
+	 * return a new instance of PulseNote with the needed information
+	 * according to the action type
+	 * @param noteBo
+	 * @param actionType
+	 * @return
+	 */
+	private PulseNote getPulseNote(PulseNoteBO noteBo, int actionType) {
+<span class="nc bnc" id="L1044" title="All 2 branches missed.">		if (noteBo == null) return null;</span>
+<span class="nc" id="L1045">		PulseNote newNote = new PulseNote();</span>
+<span class="nc bnc" id="L1046" title="All 4 branches missed.">		switch (actionType) {</span>
+			case ADD_PULSE_NOTE:
+<span class="nc" id="L1048">				newNote.setCreatedDate(noteBo.getCreatedDate());</span>
+<span class="nc" id="L1049">				newNote.setCreatedBy(noteBo.getCreatedBy());</span>
+<span class="nc" id="L1050">				newNote.setModifiedDate(noteBo.getModifiedDate());</span>
+<span class="nc" id="L1051">				newNote.setModifiedBy(noteBo.getModifiedBy());</span>
+<span class="nc" id="L1052">				newNote.setStartTime(noteBo.getStartTime());</span>
+<span class="nc" id="L1053">				newNote.setEndTime(noteBo.getEndTime());</span>
+<span class="nc bnc" id="L1054" title="All 2 branches missed.">				newNote.setForecastUsageId(noteBo.getExcludeFromForeCast() != null ? noteBo.getExcludeFromForeCast() : ForecastUsage.NONE);</span>
+<span class="nc" id="L1055">				newNote.setNote(noteBo.getNote());</span>
+<span class="nc" id="L1056">				break;</span>
+			case UPDATE_PULSE_NOTE:
+<span class="nc" id="L1058">				newNote.setID(noteBo.getID());</span>
+<span class="nc" id="L1059">				newNote.setModifiedDate(noteBo.getModifiedDate());</span>
+<span class="nc" id="L1060">				newNote.setModifiedBy(noteBo.getModifiedBy());</span>
+<span class="nc" id="L1061">				newNote.setStartTime(noteBo.getStartTime());</span>
+<span class="nc" id="L1062">				newNote.setEndTime(noteBo.getEndTime());</span>
+<span class="nc bnc" id="L1063" title="All 2 branches missed.">				newNote.setForecastUsageId(noteBo.getExcludeFromForeCast() != null ? noteBo.getExcludeFromForeCast() : ForecastUsage.NONE);</span>
+<span class="nc" id="L1064">				newNote.setNote(noteBo.getNote());</span>
+<span class="nc" id="L1065">				break;</span>
+			case DELETE_PULSE_NOTE:
+<span class="nc" id="L1067">				newNote.setID(noteBo.getID());</span>
+<span class="nc" id="L1068">				break;</span>
+			default:
+				break;
+		}
+
+<span class="nc" id="L1073">		return newNote;</span>
+	}
+
+	/**
+	 * get a new instance of PulseNoteQueue with given noteId and queueid
+	 * @param noteId
+	 * @param queueId
+	 * @return Collection, of PulseNoteQueue
+	 */
+	private Collection&lt;PulseNoteQueue&gt; getPulseNoteQueues(ID noteId, Collection&lt;ID&gt; queueIds) {
+<span class="nc bnc" id="L1083" title="All 4 branches missed.">		if (noteId == null || queueIds == null) return null;</span>
+
+<span class="nc" id="L1085">		ArrayList&lt;PulseNoteQueue&gt; pulseNoteQueues = new ArrayList&lt;PulseNoteQueue&gt;();</span>
+<span class="nc" id="L1086">		Iterator&lt;ID&gt; queueIt = queueIds.iterator();</span>
+<span class="nc bnc" id="L1087" title="All 2 branches missed.">		while (queueIt.hasNext()) {</span>
+<span class="nc" id="L1088">			ID queueId = queueIt.next();</span>
+<span class="nc" id="L1089">			PulseNoteQueue pnq = new  PulseNoteQueue();</span>
+<span class="nc" id="L1090">			pnq.setPulseNoteId(noteId);</span>
+<span class="nc" id="L1091">			pnq.setQueueId(queueId);</span>
+<span class="nc" id="L1092">			pulseNoteQueues.add(pnq);</span>
+<span class="nc" id="L1093">		}</span>
+<span class="nc" id="L1094">		return pulseNoteQueues;</span>
+	}
+
+	/**
+	 * save pulse notes by adding the new notes, updaing and
+	 * deleting exisitng notes, all based on the action type of the note
+	 * @param notes
+	 * @throws BbmException
+	 */
+	public void savePulseNotes (Collection&lt;PulseNoteBO&gt; notes) throws BbmException {
+<span class="nc bnc" id="L1104" title="All 2 branches missed.">		if (notes == null) return;</span>
+<span class="nc" id="L1105">		methodStart(&quot;savePulseNotes&quot;, notes);</span>
+<span class="nc" id="L1106">		ArrayList&lt;PulseNoteBO&gt; addedNotes = new ArrayList&lt;PulseNoteBO&gt;();</span>
+<span class="nc" id="L1107">		ArrayList&lt;PulseNoteBO&gt; updatedNotes = new ArrayList&lt;PulseNoteBO&gt;();</span>
+<span class="nc" id="L1108">		ArrayList&lt;PulseNoteBO&gt; deletedNotes = new ArrayList&lt;PulseNoteBO&gt;();</span>
+
+		try {
+<span class="nc" id="L1111">			Iterator&lt;PulseNoteBO&gt; noteIt = notes.iterator();</span>
+<span class="nc bnc" id="L1112" title="All 2 branches missed.">			while (noteIt.hasNext()) {</span>
+<span class="nc" id="L1113">				PulseNoteBO note = noteIt.next();</span>
+<span class="nc bnc" id="L1114" title="All 5 branches missed.">				switch (note.getActionType()) {</span>
+					case PulseNoteBO.ACTION_ADDED:
+<span class="nc" id="L1116">						addedNotes.add(note);</span>
+<span class="nc" id="L1117">						break;</span>
+					case PulseNoteBO.ACTION_UPDATED:
+<span class="nc" id="L1119">						updatedNotes.add(note);</span>
+<span class="nc" id="L1120">						break;</span>
+					case PulseNoteBO.ACTION_DELETED:
+<span class="nc" id="L1122">						deletedNotes.add(note);</span>
+<span class="nc" id="L1123">						break;</span>
+					case PulseNoteBO.ACTION_NONE:
+<span class="nc" id="L1125">						break;</span>
+					default:
+						break;
+				}
+<span class="nc" id="L1129">			}</span>
+
+			//add the added
+<span class="nc bnc" id="L1132" title="All 2 branches missed.">			if (addedNotes.size() &gt; 0)</span>
+<span class="nc" id="L1133">				addPulseNotes(addedNotes);</span>
+			//update the updated
+<span class="nc bnc" id="L1135" title="All 2 branches missed.">			if (updatedNotes.size() &gt; 0)</span>
+<span class="nc" id="L1136">				updatePulseNotes(updatedNotes);</span>
+			//delete the deleted
+<span class="nc bnc" id="L1138" title="All 2 branches missed.">			if (deletedNotes.size() &gt; 0)</span>
+<span class="nc" id="L1139">				deletePulseNotes(deletedNotes);</span>
+
+<span class="nc" id="L1141">		} catch(Exception e) {</span>
+<span class="nc" id="L1142">			handleException(e);</span>
+<span class="nc" id="L1143">			throw new BbmException(e);</span>
+		} finally {
+<span class="nc" id="L1145">				methodFinish();</span>
+<span class="nc" id="L1146">		}</span>
+<span class="nc" id="L1147">	}</span>
+
+	/**
+	 * batch insert pulse notes
+	 * @param notes, Collection of PulseNoteBO
+	 * @throws BbmCreateException
+	 */
+	public void addPulseNotes (Collection&lt;PulseNoteBO&gt; notes) throws BbmCreateException {
+<span class="nc bnc" id="L1155" title="All 2 branches missed.">		if (notes == null) return;</span>
+<span class="nc" id="L1156">		methodStart(&quot;addPulseNotes&quot;, notes);</span>
+		try {
+<span class="nc" id="L1158">			Iterator&lt;PulseNoteBO&gt; noteIt = notes.iterator();</span>
+<span class="nc bnc" id="L1159" title="All 2 branches missed.">			while (noteIt.hasNext()) {</span>
+<span class="nc" id="L1160">				addPulseNote(noteIt.next());</span>
+			}
+<span class="nc" id="L1162">		} catch(Exception e) {</span>
+<span class="nc" id="L1163">			handleException(e);</span>
+<span class="nc" id="L1164">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="nc" id="L1166">				methodFinish();</span>
+<span class="nc" id="L1167">		}</span>
+<span class="nc" id="L1168">	}</span>
+
+	/**
+	 * add a new note
+	 * @param note
+	 * @throws BbmFinderException
+	 */
+	public void addPulseNote (PulseNoteBO note) throws BbmCreateException {
+<span class="nc bnc" id="L1176" title="All 2 branches missed.">		if(note == null) return;</span>
+<span class="nc" id="L1177">		methodStart(&quot;addPulseNote&quot;, note);</span>
+<span class="nc" id="L1178">		PulseNoteDAO pulseNoteDao = new PulseNoteDAO();</span>
+<span class="nc" id="L1179">		PulseNoteQueueDAO pulseNoteQueueDao = new PulseNoteQueueDAO();</span>
+
+		try
+		{
+			//get the new note
+<span class="nc" id="L1184">			PulseNote newNote = getPulseNote(note, ADD_PULSE_NOTE);</span>
+			//save now note
+<span class="nc" id="L1186">			ID newNoteId = pulseNoteDao.createPulseNote(newNote);</span>
+			//save queue assignemnts
+<span class="nc" id="L1188">			Map&lt;ID, Queue&gt; queues = note.getQueues();</span>
+<span class="nc" id="L1189">			List&lt;ID&gt; queueIds = new ArrayList&lt;ID&gt;(queues.keySet());</span>
+<span class="nc" id="L1190">			Collection&lt;PulseNoteQueue&gt; pulseNoteQueues = getPulseNoteQueues(newNoteId, queueIds);</span>
+<span class="nc" id="L1191">			pulseNoteQueueDao.createObjects(pulseNoteQueues);</span>
+
+<span class="nc" id="L1193">		} catch(Exception e) {</span>
+<span class="nc" id="L1194">			handleException(e);</span>
+<span class="nc" id="L1195">			throw new BbmCreateException(e);</span>
+		} finally {
+<span class="nc" id="L1197">			pulseNoteDao.cleanUp();</span>
+<span class="nc" id="L1198">			pulseNoteQueueDao.cleanUp();</span>
+<span class="nc" id="L1199">			methodFinish();</span>
+<span class="nc" id="L1200">		}</span>
+<span class="nc" id="L1201">	}</span>
+
+	/**
+	 * batch update pulse notes
+	 * @param notes, Collection of PulseNoteBO
+	 * @throws BbmUpdateException
+	 */
+	public void updatePulseNotes (Collection&lt;PulseNoteBO&gt; notes) throws BbmUpdateException {
+<span class="nc bnc" id="L1209" title="All 2 branches missed.">		if (notes == null) return;</span>
+<span class="nc" id="L1210">		methodStart(&quot;updatePulseNotes&quot;, notes);</span>
+<span class="nc" id="L1211">		PulseNoteDAO pulseNoteDao = new PulseNoteDAO();</span>
+
+		try {
+<span class="nc" id="L1214">			Iterator&lt;PulseNoteBO&gt; noteIt = notes.iterator();</span>
+<span class="nc bnc" id="L1215" title="All 2 branches missed.">			while (noteIt.hasNext()) {</span>
+<span class="nc" id="L1216">				updatePulseNote(noteIt.next());</span>
+			}
+<span class="nc" id="L1218">		} catch(Exception e) {</span>
+<span class="nc" id="L1219">			handleException(e);</span>
+<span class="nc" id="L1220">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L1222">			pulseNoteDao.cleanUp();</span>
+<span class="nc" id="L1223">			methodFinish();</span>
+<span class="nc" id="L1224">		}</span>
+<span class="nc" id="L1225">	}</span>
+
+	/**
+	 * update a pulse note
+	 * @param note
+	 * @throws BbmUpdateException
+	 */
+	public void updatePulseNote (PulseNoteBO note) throws BbmUpdateException {
+<span class="nc bnc" id="L1233" title="All 2 branches missed.">		if (note == null) {</span>
+<span class="nc" id="L1234">			return;</span>
+		}
+<span class="nc" id="L1236">		methodStart(&quot;updatePulseNote&quot;, note);</span>
+<span class="nc" id="L1237">		PulseNoteDAO pulseNoteDao = new PulseNoteDAO();</span>
+<span class="nc" id="L1238">		PulseNoteQueueDAO pulseNoteQueueDao = new PulseNoteQueueDAO();</span>
+		try {
+			//get the updated note
+<span class="nc" id="L1241">			PulseNote updNote = getPulseNote(note, UPDATE_PULSE_NOTE);</span>
+			//save updated note
+<span class="nc" id="L1243">			pulseNoteDao.updatePulseNote(updNote);</span>
+			// update queue assignments
+			//get the current assignments
+<span class="nc" id="L1246">			ArrayList&lt;ID&gt; noteIdList = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L1247">			noteIdList.add(note.getID());</span>
+<span class="nc" id="L1248">			Collection&lt;PulseNoteQueue&gt; curPnqs = pulseNoteQueueDao.getPulseNoteQueues(noteIdList);</span>
+<span class="nc" id="L1249">			Map&lt;ID, Queue&gt; queues = note.getQueues();</span>
+<span class="nc" id="L1250">			List&lt;ID&gt; queueIds = new ArrayList&lt;ID&gt;(queues.keySet());</span>
+<span class="nc" id="L1251">			Collection&lt;PulseNoteQueue&gt; updPnqs = getPulseNoteQueues(note.getID(), queueIds);</span>
+<span class="nc" id="L1252">			ArrayList&lt;PulseNoteQueue&gt; addedPnqs = null;</span>
+<span class="nc" id="L1253">			ArrayList&lt;ID&gt; deletedPnqs = null;</span>
+
+<span class="nc bnc" id="L1255" title="All 6 branches missed.">			if (updPnqs != null &amp;&amp; updPnqs.size() &gt; 0 &amp;&amp;</span>
+<span class="nc bnc" id="L1256" title="All 2 branches missed.">				curPnqs != null &amp;&amp; curPnqs.size() &gt; 0) {</span>
+<span class="nc" id="L1257">				addedPnqs = new ArrayList&lt;PulseNoteQueue&gt;();</span>
+<span class="nc" id="L1258">				deletedPnqs = new ArrayList&lt;ID&gt;();</span>
+				Iterator&lt;PulseNoteQueue&gt; updIt, curIt;
+<span class="nc" id="L1260">				boolean found = false;</span>
+
+				//go over updPnqs - if not in curPnqs, add to added
+<span class="nc" id="L1263">				updIt = updPnqs.iterator();</span>
+<span class="nc bnc" id="L1264" title="All 2 branches missed.">				while (updIt.hasNext()) {</span>
+<span class="nc" id="L1265">					PulseNoteQueue upnq = updIt.next();</span>
+<span class="nc" id="L1266">					curIt = curPnqs.iterator();</span>
+<span class="nc" id="L1267">					found = false;</span>
+<span class="nc bnc" id="L1268" title="All 2 branches missed.">					while (curIt.hasNext()) {</span>
+<span class="nc" id="L1269">						PulseNoteQueue cpnq = curIt.next();</span>
+<span class="nc bnc" id="L1270" title="All 2 branches missed.">						if (cpnq.getPulseNoteId().equals(upnq.getPulseNoteId()) &amp;&amp;</span>
+<span class="nc bnc" id="L1271" title="All 2 branches missed.">							cpnq.getQueueId().equals(upnq.getQueueId())) {</span>
+<span class="nc" id="L1272">							found = true;</span>
+<span class="nc" id="L1273">							break;</span>
+						}
+<span class="nc" id="L1275">					}</span>
+<span class="nc bnc" id="L1276" title="All 2 branches missed.">					if (!found) {</span>
+<span class="nc" id="L1277">						addedPnqs.add(upnq);</span>
+					}
+<span class="nc" id="L1279">				}</span>
+				//go over curPnqs - if not in updPnqs, add to deleted
+<span class="nc" id="L1281">				curIt = curPnqs.iterator();</span>
+<span class="nc bnc" id="L1282" title="All 2 branches missed.">				while (curIt.hasNext()) {</span>
+<span class="nc" id="L1283">					PulseNoteQueue cpnq = curIt.next();</span>
+<span class="nc" id="L1284">					updIt = updPnqs.iterator();</span>
+<span class="nc" id="L1285">					found = false;</span>
+<span class="nc bnc" id="L1286" title="All 2 branches missed.">					while (updIt.hasNext()) {</span>
+<span class="nc" id="L1287">						PulseNoteQueue upnq = updIt.next();</span>
+<span class="nc bnc" id="L1288" title="All 2 branches missed.">						if (cpnq.getPulseNoteId().equals(upnq.getPulseNoteId()) &amp;&amp;</span>
+<span class="nc bnc" id="L1289" title="All 2 branches missed.">							cpnq.getQueueId().equals(upnq.getQueueId())) {</span>
+<span class="nc" id="L1290">							found = true;</span>
+<span class="nc" id="L1291">							break;</span>
+						}
+<span class="nc" id="L1293">					}</span>
+<span class="nc bnc" id="L1294" title="All 2 branches missed.">					if (!found) {</span>
+<span class="nc" id="L1295">						deletedPnqs.add(cpnq.getID());</span>
+					}
+<span class="nc" id="L1297">				}</span>
+
+				//add added
+<span class="nc" id="L1300">				pulseNoteQueueDao.createObjects(addedPnqs);</span>
+				//delete deleted
+<span class="nc" id="L1302">				pulseNoteQueueDao.deleteObjects(deletedPnqs);</span>
+			}
+<span class="nc" id="L1304">		} catch(Exception e) {</span>
+<span class="nc" id="L1305">			handleException(e);</span>
+<span class="nc" id="L1306">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L1308">			pulseNoteDao.cleanUp();</span>
+<span class="nc" id="L1309">			pulseNoteQueueDao.cleanUp();</span>
+<span class="nc" id="L1310">			methodFinish();</span>
+<span class="nc" id="L1311">		}</span>
+<span class="nc" id="L1312">	}</span>
+
+	/**
+	 * batch delete pulse notes
+	 * @param notes, Collection of PulseNoteBO
+	 * @throws BbmUpdateException
+	 */
+	public void deletePulseNotes (Collection&lt;PulseNoteBO&gt; notes) throws BbmUpdateException {
+<span class="nc bnc" id="L1320" title="All 2 branches missed.">		if (notes == null) return;</span>
+<span class="nc" id="L1321">		methodStart(&quot;deletePulseNotes&quot;, notes);</span>
+<span class="nc" id="L1322">		PulseNoteDAO pulseNoteDao = new PulseNoteDAO();</span>
+<span class="nc" id="L1323">		PulseNoteQueueDAO pulseNoteQueueDao = new PulseNoteQueueDAO();</span>
+
+		try {
+<span class="nc" id="L1326">			ArrayList&lt;ID&gt; delPulseNoteIds = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L1327">			Iterator&lt;PulseNoteBO&gt; noteIt = notes.iterator();</span>
+<span class="nc bnc" id="L1328" title="All 2 branches missed.">			while (noteIt.hasNext()) {</span>
+<span class="nc" id="L1329">				delPulseNoteIds.add(noteIt.next().getID());</span>
+			}
+			//delete queue assignments
+<span class="nc" id="L1332">			pulseNoteQueueDao.deleteByPulseNoteIds(delPulseNoteIds);</span>
+			//delete notes
+<span class="nc" id="L1334">			pulseNoteDao.deleteObjects(delPulseNoteIds);</span>
+
+
+<span class="nc" id="L1337">		} catch(Exception e) {</span>
+<span class="nc" id="L1338">			handleException(e);</span>
+<span class="nc" id="L1339">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L1341">			pulseNoteDao.cleanUp();</span>
+<span class="nc" id="L1342">			pulseNoteQueueDao.cleanUp();</span>
+<span class="nc" id="L1343">			methodFinish();</span>
+<span class="nc" id="L1344">		}</span>
+<span class="nc" id="L1345">	}</span>
+
+	/**
+	 * delete a pulse note
+	 * @param note
+	 * @throws BbmUpdateException
+	 */
+	public void deletePulseNote (PulseNoteBO note) throws BbmUpdateException {
+<span class="nc bnc" id="L1353" title="All 2 branches missed.">		if(note == null) return;</span>
+<span class="nc" id="L1354">		methodStart(&quot;deletePulseNote&quot;, note);</span>
+<span class="nc" id="L1355">		PulseNoteDAO 		pulseNoteDao 		= new PulseNoteDAO();</span>
+<span class="nc" id="L1356">		PulseNoteQueueDAO 	pulseNoteQueueDao 	= new PulseNoteQueueDAO();</span>
+
+		try
+		{
+<span class="nc" id="L1360">			PulseNote delNote = getPulseNote(note, DELETE_PULSE_NOTE);</span>
+			//delete queue assignemnts
+<span class="nc" id="L1362">			pulseNoteQueueDao.deleteByPulseNoteId(delNote.getID());</span>
+			//delete note
+<span class="nc" id="L1364">			pulseNoteDao.deleteObject(delNote.getID());</span>
+
+<span class="nc" id="L1366">		} catch(Exception e) {</span>
+<span class="nc" id="L1367">			handleException(e);</span>
+<span class="nc" id="L1368">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L1370">			pulseNoteDao.cleanUp();</span>
+<span class="nc" id="L1371">			pulseNoteQueueDao.cleanUp();</span>
+<span class="nc" id="L1372">			methodFinish();</span>
+<span class="nc" id="L1373">		}</span>
+<span class="nc" id="L1374">	}</span>
+
+
+
+	////////////////////////////// END PULSE NOTES CODE ///////////////////
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

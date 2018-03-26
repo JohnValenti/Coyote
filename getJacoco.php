@@ -13,17 +13,26 @@ if(empty($teamName))
     echo("You didn't select any apartment!.");
 } 
 else{
-
-    if($teamName === 'QueueX'){
+    // Change to switch statement when refactoring
+    
+    if($teamName === 'AllTeams'){
   header( 'Location: https:\\localhost\Coyote\localReports\queuex\index.html' ) ;
     }
-    if($teamName === 'Delphi'){
-
-        //pclose(popen("start /B C:\xampp\htdocs\Coyote\Scripts\dltestres.bat", "r")); die();
-        //exec('c:\WINDOWS\system32\cmd.exe /c START C:\xampp\htdocs\Coyote\Scripts\dltestres.bat');
-        exec('cmd /c C:\xampp\htdocs\Coyote\Scripts\dltestres.bat');
+    else if($teamName === 'Delphi'){
+  header( 'Location: https:\\localhost\Coyote\localReports\delphi\index.html' ) ;
     }
-
+    else if($teamName === 'QueueX'){
+  header( 'Location: https:\\localhost\Coyote\localReports\queuex\index.html' ) ;
+    }
+    else if($teamName === 'Firebirds'){
+  header( 'Location: https:\\localhost\Coyote\localReports\sustaining\index.html' ) ;
+    }
+    else if($teamName === 'Fis'){
+  header( 'Location: https:\\localhost\Coyote\localReports\queuex\index.html' ) ;
+    }
+    else if($teamName === 'Sustaining'){
+  header( 'Location: https:\\localhost\Coyote\localReports\sustaining\index.html' ) ;
+    }
 }
 echo("You picked ('$teamName')");
 echo("Come back soon for more jacoco fun!");

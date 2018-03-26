@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>OutboundForecastCalculator.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.ejb.bbm.forecast.ejb.calculator</a> &gt; <span class="el_source">OutboundForecastCalculator.java</span></div><h1>OutboundForecastCalculator.java</h1><pre class="source lang-java linenums">/*
+ * (c) 2011 Verint Systems, Inc.
+ */
+package com.verint.ejb.bbm.forecast.ejb.calculator;
+
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.Duration;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeContext;
+import com.bluepumpkin.ejb.bbm.base.BbmTimeSeriesException;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ClientForecastTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ForecastTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.util.DSTConversionUtil;
+import com.bluepumpkin.ejb.bbm.timeseries.util.ForecastAlgorithm;
+import com.bluepumpkin.ejb.bbm.time.TimeInterval;
+import com.bluepumpkin.ejb.bbm.time.TimeIntervalAtTime;
+import com.bluepumpkin.ejb.bbm.time.TimeUnits;
+import com.verint.ejb.bbm.forecast.model.Profile;
+import com.verint.ejb.bbm.forecast.model.history.ProfileEntry;
+import com.verint.ejb.bbm.forecast.model.history.ProfileEntryHistoryPeriod;
+
+/**
+ * Returns a tracecube of forecast data calculated for the given forecast profile / queue model.
+ * The returned trace cube will span the length of the profile (defined by Profile.getInterval()).
+ */
+<span class="nc" id="L34">public class OutboundForecastCalculator implements IForecastCalculator {</span>
+
+	public TraceCube calculate(Profile p, SchedulingPeriod sp, boolean modelHasForecastData, TraceCube forecastData,
+			TraceCube strategicForecast, Map&lt;ID, Map&lt;ProfileEntryHistoryPeriod, TraceCube&gt;&gt; historyData,
+			boolean useSFWeight, boolean useUnknownVolumeInForecast, boolean useWeightedSmoothing) {
+
+<span class="nc" id="L40">		TimeIntervalAtTime spWeek = p.getInterval();</span>
+<span class="nc" id="L41">		TimeContext timeContext = spWeek.getDuration().getTimeContext();</span>
+<span class="nc" id="L42">		ID queueID = p.getQueue().getID();</span>
+<span class="nc" id="L43">		int numDataPointsInSPWeek = p.getInterval().getDuration().getIntervalSubdivisions(p.getInterval().getStartTime(),</span>
+<span class="nc" id="L44">				new TimeInterval(TimeUnits.Minute, 15, p.getInterval().getDuration().getTimeContext())).size();</span>
+<span class="nc" id="L45">		double[] ahtForecast = new double[numDataPointsInSPWeek];</span>
+<span class="nc" id="L46">		Arrays.fill(ahtForecast, 0);</span>
+<span class="nc" id="L47">		double[] crateForecast = new double[numDataPointsInSPWeek];</span>
+<span class="nc" id="L48">		Arrays.fill(crateForecast, 0);</span>
+<span class="nc" id="L49">		double[] rpcahtForecast = new double[numDataPointsInSPWeek];</span>
+<span class="nc" id="L50">		Arrays.fill(rpcahtForecast, 0);</span>
+<span class="nc" id="L51">		double[] rpcrateForecast = new double[numDataPointsInSPWeek];</span>
+<span class="nc" id="L52">		Arrays.fill(rpcrateForecast, 0);</span>
+<span class="nc bnc" id="L53" title="All 4 branches missed.">		if (p.isModified() &amp;&amp; modelHasForecastData)  {</span>
+<span class="nc" id="L54">			TraceCube ftc = forecastData;</span>
+<span class="nc bnc" id="L55" title="All 2 branches missed.">			if (ftc != null) {</span>
+<span class="nc" id="L56">				ahtForecast = ftc.getTraceValueD(Trace.FORECASTING_AHT);</span>
+<span class="nc" id="L57">				crateForecast = ftc.getTraceValueD(Trace.FORECASTING_CRATE);</span>
+<span class="nc" id="L58">				rpcahtForecast = ftc.getTraceValueD(Trace.FORECASTING_RPCAHT);</span>
+<span class="nc" id="L59">				rpcrateForecast = ftc.getTraceValueD(Trace.FORECASTING_RPCRATE);</span>
+			}
+<span class="nc" id="L61">		} else {</span>
+<span class="nc bnc" id="L62" title="All 2 branches missed.">			if (p.getProfileEntries().size() &gt; 0) {</span>
+				// Run forecast algorithm
+				// Create objects needed for forecast algorithm
+<span class="nc" id="L65">				Collection&lt;ForecastAlgorithm.ProfileEntry&gt; crateEntries = new HashSet&lt;ForecastAlgorithm.ProfileEntry&gt;();</span>
+<span class="nc" id="L66">				Collection&lt;ForecastAlgorithm.ProfileEntry&gt; ahtEntries = new HashSet&lt;ForecastAlgorithm.ProfileEntry&gt;();</span>
+<span class="nc" id="L67">				Collection&lt;ForecastAlgorithm.ProfileEntry&gt; rpcrateEntries = new HashSet&lt;ForecastAlgorithm.ProfileEntry&gt;();</span>
+<span class="nc" id="L68">				Collection&lt;ForecastAlgorithm.ProfileEntry&gt; rpcahtEntries = new HashSet&lt;ForecastAlgorithm.ProfileEntry&gt;();</span>
+
+<span class="nc bnc" id="L70" title="All 2 branches missed.">				for (ProfileEntry pe : p.getProfileEntries()) {</span>
+<span class="nc" id="L71">					TraceCube dataForHistoryWeek = historyData.get(p.getQueue().getID()).get(pe.getHistoryPeriod());</span>
+
+					//CRATE
+<span class="nc" id="L74">					double[] crateData = dataForHistoryWeek.getTraceValueD(Trace.CRATE,</span>
+<span class="nc" id="L75">							pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getStartTime(),</span>
+<span class="nc" id="L76">							new Date(pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getEndTime().getTime() - 1));</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">					if (crateData.length != numDataPointsInSPWeek) {</span>
+						//If the length of the history data does not equal the length of the SP week (in other words the two do not have the
+						//same number of 15 minute intervals) then this means there is a DST transition in one but not the other.  We then need
+						//to change the size of the history data (either by adding 15 minute intervals or subtracting 15 minute intervals representing the
+						//extra or subtracted hour from the DST interval) so that it matches the size of the sp week.
+<span class="nc" id="L82">						crateData = DSTConversionUtil.convertFromDSTAwareTimeToIdealTime(crateData, Trace.TRACENA,</span>
+<span class="nc" id="L83">								pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getStartTime(), Duration.fromMinutes(Trace.INTERVAL), timeContext);</span>
+<span class="nc" id="L84">						crateData = DSTConversionUtil.convertFromIdealTimeToDSTAwareTime(crateData, Trace.TRACENA,</span>
+<span class="nc" id="L85">								spWeek.getStartTime(), Duration.fromMinutes(Trace.INTERVAL), timeContext);</span>
+					}
+<span class="nc" id="L87">					crateEntries.add(new ForecastAlgorithm.ProfileEntry(crateData, pe.getWeight()));</span>
+
+					//AHT
+<span class="nc" id="L90">					double[] ahtData = dataForHistoryWeek.getTraceValueD(Trace.AHT, pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getStartTime(),</span>
+<span class="nc" id="L91">							new Date(pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getEndTime().getTime() - 1));</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">					if (ahtData.length != numDataPointsInSPWeek) {</span>
+<span class="nc" id="L93">						ahtData = DSTConversionUtil.convertFromDSTAwareTimeToIdealTime(ahtData, Trace.TRACENA,</span>
+<span class="nc" id="L94">								pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getStartTime(), Duration.fromMinutes(Trace.INTERVAL), timeContext);</span>
+<span class="nc" id="L95">						ahtData = DSTConversionUtil.convertFromIdealTimeToDSTAwareTime(ahtData, Trace.TRACENA,</span>
+<span class="nc" id="L96">								spWeek.getStartTime(), Duration.fromMinutes(Trace.INTERVAL), timeContext);</span>
+					}
+<span class="nc" id="L98">					ahtEntries.add(new ForecastAlgorithm.ProfileEntry(ahtData, crateData, pe.getWeight()));</span>
+
+					//RPC
+<span class="nc" id="L101">					double[] rpcrateData = dataForHistoryWeek.getTraceValueD(Trace.RPCRATE, pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getStartTime(),</span>
+<span class="nc" id="L102">							new Date(pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getEndTime().getTime() - 1));</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">					if (rpcrateData.length != numDataPointsInSPWeek) {</span>
+<span class="nc" id="L104">						rpcrateData = DSTConversionUtil.convertFromDSTAwareTimeToIdealTime(rpcrateData, Trace.TRACENA,</span>
+<span class="nc" id="L105">								pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getStartTime(), Duration.fromMinutes(Trace.INTERVAL), timeContext);</span>
+<span class="nc" id="L106">						rpcrateData = DSTConversionUtil.convertFromIdealTimeToDSTAwareTime(rpcrateData, Trace.TRACENA,</span>
+<span class="nc" id="L107">								spWeek.getStartTime(), Duration.fromMinutes(Trace.INTERVAL), timeContext);</span>
+					}
+<span class="nc" id="L109">					rpcrateEntries.add(new ForecastAlgorithm.ProfileEntry(rpcrateData, pe.getWeight()));</span>
+
+					//RPCAHT
+<span class="nc" id="L112">					double[] rpcahtData = dataForHistoryWeek.getTraceValueD(Trace.RPCAHT,</span>
+<span class="nc" id="L113">							pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getStartTime(),</span>
+<span class="nc" id="L114">							new Date(pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getEndTime().getTime() - 1));</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">					if (rpcahtData.length != numDataPointsInSPWeek) {</span>
+<span class="nc" id="L116">						rpcahtData = DSTConversionUtil.convertFromDSTAwareTimeToIdealTime(rpcahtData, Trace.TRACENA,</span>
+<span class="nc" id="L117">								pe.getHistoryPeriod().getTimeIntervalRepresentingPeriod().getStartTime(), Duration.fromMinutes(Trace.INTERVAL), timeContext);</span>
+<span class="nc" id="L118">						rpcahtData = DSTConversionUtil.convertFromIdealTimeToDSTAwareTime(rpcahtData, Trace.TRACENA,</span>
+<span class="nc" id="L119">								spWeek.getStartTime(), Duration.fromMinutes(Trace.INTERVAL), timeContext);</span>
+					}
+<span class="nc" id="L121">					rpcahtEntries.add(new ForecastAlgorithm.ProfileEntry(rpcahtData, rpcrateData, pe.getWeight()));</span>
+<span class="nc" id="L122">				}</span>
+				// Get forecasted values
+<span class="nc" id="L124">				ahtForecast = ForecastAlgorithm.getPointWeightedAverageForecastWithSmoothing(ahtEntries, false, useWeightedSmoothing);</span>
+<span class="nc" id="L125">				crateForecast = ForecastAlgorithm.getSeriesWeightedAverageForecastWithCarryover(crateEntries, false);</span>
+<span class="nc" id="L126">				rpcahtForecast = ForecastAlgorithm.getPointWeightedAverageForecastWithSmoothing(rpcahtEntries, false, useWeightedSmoothing);</span>
+<span class="nc" id="L127">				rpcrateForecast = ForecastAlgorithm.getSeriesWeightedAverageForecastWithCarryover(rpcrateEntries, false);</span>
+			}
+		}
+		//Update the forecast trace cube in the model with the calculated forecast.  Create a new forecast trace cube for the
+		//SP if one does not yet exist in the model.
+<span class="nc" id="L132">		TraceCube ftc = forecastData;</span>
+<span class="nc bnc" id="L133" title="All 2 branches missed.">		if (ftc == null) {</span>
+			try {
+<span class="nc" id="L135">				ForecastTraceCube blankForecastCube = new ForecastTraceCube(queueID, spWeek.getStartTime(),</span>
+<span class="nc" id="L136">						new Date(spWeek.getEndTime().getTime() - 1),</span>
+						new short[] {Trace.CRATE, Trace.AHT, Trace.RPCRATE, Trace.RPCAHT});
+
+<span class="nc" id="L139">				ftc = new ClientForecastTraceCube(blankForecastCube);</span>
+<span class="nc" id="L140">			} catch (BbmTimeSeriesException e) {</span>
+<span class="nc" id="L141">				throw new RuntimeException(e);</span>
+<span class="nc" id="L142">			}</span>
+		}
+<span class="nc" id="L144">		ftc.setTraceValue(Trace.FORECASTING_CRATE, crateForecast, spWeek.getStartTime());</span>
+<span class="nc" id="L145">		ftc.setTraceValue(Trace.FORECASTING_AHT, ahtForecast, spWeek.getStartTime());</span>
+<span class="nc" id="L146">		ftc.setTraceValue(Trace.FORECASTING_RPCRATE, rpcrateForecast, spWeek.getStartTime());</span>
+<span class="nc" id="L147">		ftc.setTraceValue(Trace.FORECASTING_RPCAHT, rpcahtForecast, spWeek.getStartTime());</span>
+<span class="nc" id="L148">		return ftc;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

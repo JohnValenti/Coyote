@@ -1,0 +1,1307 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AgentsRequestsPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.requests</a> &gt; <span class="el_source">AgentsRequestsPM.java</span></div><h1>AgentsRequestsPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.requests;
+
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.IDStringPair;
+import com.bluepumpkin.common.l10n.RegionalFormatBundleKey;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TOCalcUtil;
+import com.bluepumpkin.ejb.bbm.workresource.OrganizationScopeManagerProxy;
+import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.commonrequestmanager.model.RequestCollection;
+import com.bluepumpkin.ejb.rm.requests.commonrequestmanager.model.RequestFilter;
+import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.util.LicenseUtil;
+import com.bluepumpkin.ejb.rm.util.TORequestUtil;
+import com.bluepumpkin.web.core.pagecomponent.CheckBoxPC;
+import com.bluepumpkin.web.rm.keys.RmKeys;
+import com.bluepumpkin.web.rm.keys.RmPageAction;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.requests.filter.RequestsFilterBoxPC;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.data.wrapper.DateWrapper;
+import com.witness.web.uif.data.wrapper.NumberWrapper;
+import com.witness.web.uif.keys.ImageFileID;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.keys.PageKeys;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.listconfig.ListConfig;
+import com.witness.web.uif.listconfig.ListConfigFP;
+import com.witness.web.uif.listconfig.ListConfigSelectorPC;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.MultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.dialog.DialogToolbarMenuPC;
+import com.witness.web.uif.pagecomponent.picker.date.DatePickerPC;
+import com.witness.web.uif.pagecomponent.picker.date.DateRangePickerPC;
+import com.witness.web.uif.pagecomponent.table.GenericHeaderData;
+import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.system.manager.impl.DefaultVerticalizationManager;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.js.JSUtil;
+import com.witness.web.uif.util.reflection.ParameterUtil;
+
+/**
+ * Title:        AgentsRequestsPM
+ * Description:  Handle Agents Requests
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, inc
+ * @author       David Su
+ * @version      1.0
+ */
+public class AgentsRequestsPM extends RequestsPM {
+	protected static final String GROUP_ACTION_MENU_NAME = &quot;DIALOG_GROUP_ACTIONS&quot;;
+	protected static final String GROUP_ACTION_WARN_JS_VAR = &quot;GRP_ACTION_WARN&quot;;
+	private static final String DATE_CHOICE_FN = &quot;dateChoice&quot;;
+	private static final String ALERTS_CHECKBOX_STATE = &quot;isAlertsCheckedOnPage&quot;;
+	private static final String ALERTS_TOGGLED_STATE = &quot;isAlertsToggledOnPage&quot;;
+	public static final String IS_ON_SAME_PAGE_FN = &quot;isOnSamePage&quot;;
+	public static final String IS_ON_SAME_PAGE_FOR_EDIT_FN = &quot;isOnSamePageForEdit&quot;;
+	
+	protected DialogToolbarMenuPC m_groupActionDialogMenuPC;
+	protected DialogToolbarMenuPC m_newRequestMenuPC;
+
+	protected RequestsFilterBoxPC m_rfilterBoxPC;
+	protected ListConfigSelectorPC m_lcSelectorPC;
+	protected RequestCollection m_reqCollection;
+<span class="fc" id="L90">	protected Map m_eOrgMap = Collections.emptyMap();</span>
+<span class="fc" id="L91">	protected Map m_eNameMap = Collections.emptyMap();</span>
+<span class="fc" id="L92">	protected Collection m_pageRequestsObjVer = Collections.emptyList();</span>
+<span class="fc" id="L93">	protected boolean m_isReqCollectionLoaded = false;</span>
+<span class="fc" id="L94">	protected boolean m_isBlankFilterSelected = false;</span>
+<span class="fc" id="L95">	private Map&lt;ID, Boolean&gt; m_auctionMap = new HashMap&lt;ID, Boolean&gt;();</span>
+	protected RequestFilter m_requestFilter;
+	protected DateRangePickerPC m_dateRangePickerPC;
+	protected CheckBoxPC m_checkBoxPC;
+
+	private boolean m_isDPAction;
+
+<span class="fc" id="L102">	protected boolean m_isConfigNetStaffingValidationEnabled = true; // flag to indicate if the Net staffing validation is to be run on requests;</span>
+																		// by default, this rule is enabled to run on requests	as they load
+<span class="fc" id="L104">	protected String m_alertsCheckedOnPage = &quot;&quot;; // records alert checkbox's checked state via actions on page</span>
+<span class="fc" id="L105">	protected boolean m_configuredCheckboxState = true; // records alert checkbox's checked state via database configuration;</span>
+														// by default, alerts are enabled, so all validations will be run on requests as they load
+
+<span class="fc" id="L108">	protected String m_alertsToggledOnPage = Boolean.FALSE.toString(); // records if the alerts checkbox was toggled on page; by default, its toggle state is false.</span>
+	private boolean shouldBeOnSamePage;
+	private boolean shouldBeOnSamePageForEdit;
+
+	/**
+	 * Constructor
+	 */
+	public AgentsRequestsPM(RequestContext context) {
+<span class="fc" id="L116">		this(context, Request.REQUESTTYPE_ALL, true);</span>
+<span class="fc" id="L117">	}</span>
+
+	/**
+	 * Constructor
+	 */
+	public AgentsRequestsPM(RequestContext context, String requestType) {
+<span class="nc" id="L123">		this(context, requestType, true);</span>
+<span class="nc" id="L124">	}</span>
+
+	/**
+	 * Constructor
+	 */
+	public AgentsRequestsPM(RequestContext context, String requestType, boolean showFilter) {
+<span class="fc" id="L130">		super(context, requestType, showFilter);</span>
+
+<span class="pc bpc" id="L132" title="1 of 2 branches missed.">		if (showFilter) {</span>
+<span class="fc" id="L133">			m_rfilterBoxPC = new RequestsFilterBoxPC(context);</span>
+<span class="fc" id="L134">			m_filterBoxPC = m_rfilterBoxPC;</span>
+<span class="fc" id="L135">			addChildComponent(m_filterBoxPC);</span>
+		}
+
+<span class="fc" id="L138">		m_lcSelectorPC = createListConfigSelectorPC();</span>
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">		if (showFilter) {</span>
+<span class="fc" id="L140">			addChildComponent(m_lcSelectorPC);</span>
+		}
+
+		// Create the alert check-box and set its checked state to enable or disable all validations on requests as they load.
+
+		// Alerts check-box checked/unchecked state is always driven by what�s configured in BPCONFIG for first time page loads.
+		// Configured check box state is overridden for page action changes to the check-box state.
+<span class="fc" id="L147">		readAlertsCheckboxConfig(); // read configured alerts check-box state</span>
+
+<span class="fc" id="L149">		String pageAlertCheckBoxAction = ParameterUtil.getParameter(context.getRequest(), ALERTS_CHECKBOX_STATE); // page action's alert check-box state</span>
+<span class="fc" id="L150">		String sessionAlertCheckBoxAction = (String) context.getAttribute(RequestContext.SESSION_SCOPE, ALERTS_CHECKBOX_STATE); // session scope alert checkbox state</span>
+
+		// if check-box state is passed as a request parameter, use that and store in session.
+		// if check-box state is not a request parameter, check session and use value in session if present;
+		// else use the BPCONFIG value.
+<span class="fc bfc" id="L155" title="All 4 branches covered.">		if (StringUtil.isEmpty(pageAlertCheckBoxAction) &amp;&amp; StringUtil.isEmpty(sessionAlertCheckBoxAction)) {</span>
+<span class="fc" id="L156">			m_alertsCheckedOnPage = String.valueOf(m_configuredCheckboxState);</span>
+<span class="pc bpc" id="L157" title="1 of 4 branches missed.">		} else if (StringUtil.isEmpty(pageAlertCheckBoxAction) &amp;&amp; !StringUtil.isEmpty(sessionAlertCheckBoxAction)) {</span>
+<span class="fc" id="L158">			m_alertsCheckedOnPage = sessionAlertCheckBoxAction;</span>
+		} else {
+<span class="fc" id="L160">			m_alertsCheckedOnPage = pageAlertCheckBoxAction;</span>
+<span class="fc" id="L161">			context.setAttribute(RequestContext.SESSION_SCOPE, ALERTS_CHECKBOX_STATE, pageAlertCheckBoxAction);</span>
+		}
+
+<span class="fc" id="L164">		m_checkBoxPC = new CheckBoxPC(m_context, getName() + &quot;_checkboxPC&quot;, Boolean.parseBoolean(m_alertsCheckedOnPage),</span>
+<span class="fc" id="L165">				getCheckboxCheckedJS(), getCheckboxUncheckedJS());</span>
+<span class="fc bfc" id="L166" title="All 2 branches covered.">		for (String js : m_checkBoxPC.getRequireJavaScriptFiles()) {</span>
+<span class="fc" id="L167">			addRequiredJavaScriptFile(js);</span>
+<span class="fc" id="L168">		}</span>
+<span class="fc" id="L169">		m_checkBoxPC.setEnabled(true);</span>
+<span class="fc" id="L170">		m_checkBoxPC.setLabel(m_context.getLocalizer().i18n(m_bundle, RmWebBundleKey.ALERTS));</span>
+<span class="fc" id="L171">		addChildComponent(m_checkBoxPC);</span>
+
+<span class="fc" id="L173">		m_dateRangePickerPC = new DateRangePickerPC(m_context, DATE_CHOICE_FN);</span>
+<span class="fc" id="L174">		m_dateRangePickerPC.setOnChangeJS(JSUtil.REFRESH_PAGE);</span>
+<span class="fc" id="L175">		addChildComponent(m_dateRangePickerPC);</span>
+
+<span class="fc" id="L177">		setDefaultPageIDSize(10);</span>
+<span class="fc" id="L178">		readNetStaffingValidationConfig();</span>
+<span class="fc" id="L179">	}</span>
+
+	/**
+	 * Initialize JavaScript Variables
+	 */
+	@Override
+	public void initJSVariables() {
+<span class="fc" id="L186">		super.initJSVariables();</span>
+<span class="fc" id="L187">		addJSVariableAsString(RmKeys.PAGE_MODE_FN, RmKeys.RP_MODE_MGR);</span>
+<span class="fc" id="L188">		addJSVariable(GROUP_ACTION_WARN_JS_VAR, m_bundle, RmWebBundleKey.GROUP_ACTION_WARNING);</span>
+
+<span class="fc" id="L190">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;isDPAction&quot;, &quot;false&quot;));</span>
+<span class="fc" id="L191">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(ALERTS_CHECKBOX_STATE, m_alertsCheckedOnPage));</span>
+
+<span class="fc" id="L193">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(ALERTS_TOGGLED_STATE, m_alertsToggledOnPage));</span>
+<span class="fc" id="L194">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(IS_ON_SAME_PAGE_FN, false));</span>
+<span class="fc" id="L195">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(IS_ON_SAME_PAGE_FOR_EDIT_FN, false));</span>
+<span class="fc" id="L196">	}</span>
+
+	/**
+	 * Return an instance of AgentsRequestsPM ready to be rendered in JSP
+	 */
+	public static PageModel getInstance(RequestContext context) throws Exception {
+<span class="fc" id="L202">		return getInstance(context, AgentsRequestsPM.class);</span>
+	}
+
+	/**
+	 * Populate Model
+	 */
+	@Override
+	protected void loadData() throws Exception {
+<span class="fc" id="L210">		m_lcSelectorPC.init();</span>
+<span class="pc bpc" id="L211" title="1 of 2 branches missed.">		if (m_empID == null) {</span>
+<span class="nc" id="L212">			return;</span>
+		}
+
+<span class="fc" id="L215">		m_orgSetting = RequestsMH.getOrgSettingForEmployee(m_context, m_empID);</span>
+
+<span class="fc" id="L217">		initRequestFilter();</span>
+<span class="fc" id="L218">		initDateRangePickerPC();</span>
+
+<span class="fc" id="L220">		loadSpecifyData();</span>
+<span class="fc" id="L221">		initRequestCollection();</span>
+<span class="fc" id="L222">		loadOrgMap();</span>
+<span class="fc" id="L223">	}</span>
+
+	/**
+	 * Initialize Model with specified Data
+	 */
+	public void init(RequestCollection reqCollection) {
+<span class="fc" id="L229">		m_reqCollection = reqCollection;</span>
+<span class="fc" id="L230">		m_eNameMap = reqCollection.getNameMap();</span>
+<span class="fc" id="L231">		m_isReqCollectionLoaded = true;</span>
+
+		//Port for QA 84438:The list of requestID of a page is
+		//not set value when view the pending request from the TO calendar
+<span class="fc bfc" id="L235" title="All 2 branches covered.">		if (getPageIDs().isEmpty()) {</span>
+<span class="fc" id="L236">			initPaginationIDs(reqCollection.getIds());</span>
+		}
+<span class="fc" id="L238">	}</span>
+
+	/**
+	 * JS onClick handler for alert checkbox's checked state
+	 * @return js
+	 */
+	private String getCheckboxCheckedJS() {
+		//return &quot;document.oFormMain.&quot; + ALERTS_CHECKBOX_STATE + &quot;.value = \'true\';&quot; + JSUtil.RESET_PAGEDIRTY + JSUtil.REFRESH_PAGE_NO_CONFIRM;
+<span class="fc" id="L246">		StringBuilder sb = new StringBuilder();</span>
+<span class="fc" id="L247">		sb.append(&quot;var prevToggle = document.oFormMain.isAlertsCheckedOnPage.value;&quot;)</span>
+<span class="fc" id="L248">				.append(&quot;if (prevToggle != \'true\') document.oFormMain.&quot;).append(ALERTS_TOGGLED_STATE).append(&quot;.value = \'true\';&quot;)</span>
+<span class="fc" id="L249">				.append(&quot;document.oFormMain.&quot;).append(ALERTS_CHECKBOX_STATE).append(&quot;.value = \'true\';&quot;).append(JSUtil.RESET_PAGEDIRTY)</span>
+<span class="fc" id="L250">				.append(JSUtil.REFRESH_PAGE_NO_CONFIRM);</span>
+<span class="fc" id="L251">		return sb.toString();</span>
+	}
+
+	/**
+	 * JS onClick handler for alert checkbox's unchecked state
+	 * @return js
+	 */
+	private String getCheckboxUncheckedJS() {
+		//return &quot;document.oFormMain.&quot; + ALERTS_CHECKBOX_STATE + &quot;.value = \'false\';&quot; + JSUtil.RESET_PAGEDIRTY + JSUtil.REFRESH_PAGE_NO_CONFIRM;
+<span class="fc" id="L260">		StringBuilder sb = new StringBuilder();</span>
+<span class="fc" id="L261">		sb.append(&quot;var prevToggle = document.oFormMain.isAlertsCheckedOnPage.value;&quot;)</span>
+<span class="fc" id="L262">				.append(&quot;if (prevToggle != \'false\') document.oFormMain.&quot;).append(ALERTS_TOGGLED_STATE).append(&quot;.value = \'true\';&quot;)</span>
+<span class="fc" id="L263">				.append(&quot;document.oFormMain.&quot;).append(ALERTS_CHECKBOX_STATE).append(&quot;.value = \'false\';&quot;).append(JSUtil.RESET_PAGEDIRTY)</span>
+<span class="fc" id="L264">				.append(JSUtil.REFRESH_PAGE_NO_CONFIRM);</span>
+<span class="fc" id="L265">		return sb.toString();</span>
+	}
+
+	/**
+	 * Create and add Date Range Picker as Child Component
+	 */
+	private void initDateRangePickerPC() {
+		// initialize date pickers properties
+<span class="fc" id="L273">		DatePickerPC startDatePC = m_dateRangePickerPC.getStartDatePickerPC();</span>
+<span class="fc" id="L274">		DatePickerPC endDatePC = m_dateRangePickerPC.getEndDatePickerPC();</span>
+
+		// set upper date limit to 12/31/2078
+<span class="fc" id="L277">		Calendar cal = Calendar.getInstance(m_context.getViewingTimeZone());</span>
+<span class="fc" id="L278">		cal.set(2078, 11, 31, 23, 59, 59);</span>
+<span class="fc" id="L279">		endDatePC.setUpperLimit(cal.getTime());</span>
+<span class="fc" id="L280">		addChildComponent(m_dateRangePickerPC);</span>
+<span class="fc" id="L281">		m_dateRangePickerPC.setOnChangeJS(&quot;document.oFormMain.isDPAction.value = \'true\';&quot; + JSUtil.RESET_PAGEDIRTY</span>
+				+ JSUtil.REFRESH_PAGE_NO_CONFIRM);
+
+<span class="fc bfc" id="L284" title="All 2 branches covered.">		Date sDate = startDatePC.getDate() != null ? startDatePC.getDate() : null;</span>
+<span class="fc bfc" id="L285" title="All 2 branches covered.">		Date eDate = endDatePC.getDate() != null ? endDatePC.getDate() : null;</span>
+<span class="fc bfc" id="L286" title="All 2 branches covered.">		if (!m_isDPAction) {</span>
+<span class="fc" id="L287">			List dates = null;</span>
+<span class="pc bpc" id="L288" title="1 of 2 branches missed.">			if (m_requestFilter != null) {</span>
+<span class="nc" id="L289">				dates = (List) m_requestFilter.getValueForKey(RequestFilter.REQUEST_DATE_RANGE_KEY);</span>
+<span class="nc bnc" id="L290" title="All 4 branches missed.">				if (dates != null &amp;&amp; !dates.isEmpty()) {</span>
+<span class="nc" id="L291">					sDate = (Date) dates.get(0);</span>
+<span class="nc" id="L292">					eDate = (Date) dates.get(1);</span>
+				}
+			}
+
+<span class="fc bfc" id="L296" title="All 2 branches covered.">			if (sDate == null) {</span>
+				//get from profile
+<span class="fc" id="L298">				String sDateDtr = m_context.getUserProperty(RmKeys.REQUEST_FILTER_START_DATE);</span>
+<span class="fc" id="L299">				String eDateDtr = m_context.getUserProperty(RmKeys.REQUEST_FILTER_END_DATE);</span>
+
+<span class="fc bfc" id="L301" title="All 2 branches covered.">				if (sDateDtr != null) {</span>
+<span class="fc" id="L302">					sDate = new Date(Long.valueOf(sDateDtr).longValue());</span>
+				} else {
+<span class="fc" id="L304">					sDate = new Date();</span>
+				}
+
+<span class="fc bfc" id="L307" title="All 2 branches covered.">				if (eDateDtr != null) {</span>
+<span class="fc" id="L308">					eDate = new Date(Long.valueOf(eDateDtr).longValue());</span>
+				} else {
+<span class="fc" id="L310">					eDate = new Date();</span>
+					//set to current date + 30 days
+<span class="fc" id="L312">					Calendar aCal = Calendar.getInstance();</span>
+<span class="fc" id="L313">					aCal.setTime(sDate);</span>
+					//add 30 days
+<span class="fc" id="L315">					TOCalcUtil.addDaysToCalendar(aCal, 30);</span>
+					//aCal.add(Calendar.DAY_OF_MONTH, 30);
+<span class="fc" id="L317">					eDate.setTime(aCal.getTime().getTime());</span>
+				}
+			}
+		}
+
+		//now save the user properties
+<span class="fc" id="L323">		m_dateRangePickerPC.getStartDatePickerPC().setDate(sDate);</span>
+<span class="fc" id="L324">		m_dateRangePickerPC.getEndDatePickerPC().setDate(eDate);</span>
+
+<span class="fc" id="L326">		HashMap propMap = new HashMap(2);</span>
+<span class="pc bpc" id="L327" title="1 of 2 branches missed.">		if (sDate != null) {</span>
+<span class="fc" id="L328">			propMap.put(RmKeys.REQUEST_FILTER_START_DATE, String.valueOf(sDate.getTime()));</span>
+		}
+<span class="pc bpc" id="L330" title="1 of 2 branches missed.">		if (eDate != null) {</span>
+<span class="fc" id="L331">			propMap.put(RmKeys.REQUEST_FILTER_END_DATE, String.valueOf(eDate.getTime()));</span>
+		}
+
+		//set dates to the profile
+<span class="fc" id="L335">		m_context.setUserProperties(propMap);</span>
+<span class="fc" id="L336">	}</span>
+
+	/**
+	 * Return true if no Requests are available
+	 */
+	protected boolean isEmptyRequests() {
+<span class="pc bpc" id="L342" title="1 of 4 branches missed.">		return m_reqCollection == null || m_reqCollection.isEmpty();</span>
+	}
+
+	/**
+	 * Initialize Request Collection
+	 */
+	protected void initRequestCollection() throws Exception {
+<span class="pc bpc" id="L349" title="3 of 6 branches missed.">		if (m_empID != null &amp;&amp; !m_isReqCollectionLoaded &amp;&amp; m_isPageEnabled) {</span>
+<span class="fc" id="L350">			init(getRequestCollection());</span>
+		}
+<span class="fc" id="L352">	}</span>
+
+	/**
+	 * Return Request Collection
+	 */
+	protected RequestCollection getRequestCollection() throws Exception {
+<span class="fc" id="L358">		boolean isSoftValEnabled = isSoftValEanbled();</span>
+<span class="fc" id="L359">		boolean isNetStaffingSoftValEnabled = isNetStaffingSoftValEnabled();</span>
+<span class="fc" id="L360">		RequestCollection result = null;</span>
+		try {
+<span class="pc bpc" id="L362" title="1 of 2 branches missed.">			ID reqFilterID = m_rfilterBoxPC != null ? m_rfilterBoxPC.getSelectedFilterID() : null;</span>
+		
+<span class="pc bpc" id="L364" title="4 of 8 branches missed.">			if (isPaginationNavPressed() || (isAlertsToggledOnPage() &amp;&amp; getEditIndex() &gt; 0) || checkIfShouldStandOnSamePage()) {</span>
+<span class="fc" id="L365">				result = RequestsMH.getNextRequestsForManager(m_empID, reqFilterID, getPageIDs(), isSoftValEnabled,</span>
+						isNetStaffingSoftValEnabled);
+			} else {
+<span class="fc" id="L368">				String requestIDStr = m_context.getRequest().getParameter(&quot;reqID&quot;);</span>
+<span class="fc" id="L369">				ID requestID = null;</span>
+<span class="pc bpc" id="L370" title="1 of 2 branches missed.">				if (!StringUtil.isEmpty(requestIDStr)) {</span>
+<span class="nc" id="L371">					requestID = new ID(requestIDStr);</span>
+				}
+
+<span class="fc" id="L374">				String requestTypeStr = m_context.getRequest().getParameter(&quot;requestType&quot;);</span>
+
+<span class="pc bpc" id="L376" title="1 of 2 branches missed.">				if (requestID != null) {</span>
+<span class="nc" id="L377">					result = RequestsMH.getRequestCollectionForRequest(requestID, requestTypeStr, m_context);</span>
+					//request not found
+<span class="nc bnc" id="L379" title="All 2 branches missed.">					if (result.isEmpty()) {</span>
+<span class="nc" id="L380">						addPageMessage(Message.INFO_TYPE, RmWebBundleKey.REQUEST_NOT_FOUND_ERROR, RmWebBundleKey.BUNDLE_NAME);</span>
+					} else {
+<span class="nc" id="L382">						addPageMessage(Message.INFO_TYPE, RmWebBundleKey.REQUEST_FROM_DRILLTHROUGH_VIEW, RmWebBundleKey.BUNDLE_NAME);</span>
+					}
+				} else {
+					//get the start and end date range
+<span class="pc bpc" id="L386" title="1 of 2 branches missed.">					Date sDate = m_dateRangePickerPC != null ? m_dateRangePickerPC.getStartDatePickerPC().getDate() : null;</span>
+<span class="pc bpc" id="L387" title="1 of 2 branches missed.">					Date eDate = m_dateRangePickerPC != null ? m_dateRangePickerPC.getEndDatePickerPC().getDate() : null;</span>
+<span class="pc bpc" id="L388" title="1 of 2 branches missed.">					String allFilterName = reqFilterID == null ? m_context.getUserProperty(RmKeys.REQUEST_FILTER_NAME) : &quot;&quot;;</span>
+<span class="fc" id="L389">					result = RequestsMH.getRequestsForManager(m_empID, reqFilterID, getFindName(), getSortColumn(), isSortAscending(),</span>
+<span class="fc" id="L390">							getPageIDSize(), isSoftValEnabled, isNetStaffingSoftValEnabled, sDate, eDate, allFilterName);</span>
+<span class="fc" id="L391">					initPaginationIDs(result.getIds());</span>
+				}
+			}
+<span class="pc bpc" id="L394" title="1 of 2 branches missed.">			if (isAlertsToggledOnPage()) { // reset toggle state once the request ids to load are known</span>
+<span class="nc" id="L395">				m_alertsToggledOnPage = Boolean.FALSE.toString();</span>
+			}
+
+<span class="nc" id="L398">		} catch (RmHardValidationException ex) {</span>
+<span class="nc" id="L399">			Message msg = handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L400">			msg.setAssociatedMessage(ex.getLocalizedMessage(m_localizer, m_context.getViewingTimeZone()));</span>
+<span class="fc" id="L401">		}</span>
+<span class="fc" id="L402">		return result;</span>
+	}
+	
+	/**
+	 * Returns True if Soft validation is enabled
+	 * @return
+	 */
+	protected boolean isSoftValEanbled() {
+<span class="fc" id="L410">		ListConfig lc = m_lcSelectorPC.getListConfig();</span>
+<span class="fc" id="L411">		ListConfigFP fp = lc.getListConfigFP(UIFWebBundleKey.ALERTS);</span>
+<span class="fc" id="L412">		boolean isSelected = lc.getSelectedFPs().contains(fp);</span>
+
+<span class="pc bpc" id="L414" title="2 of 4 branches missed.">		return Boolean.parseBoolean(getIsAlertsCheckedOnPage()) &amp;&amp; isSelected;</span>
+	}
+
+	/**
+	 * Returns true if either the page action is a group action, or if
+	 * the configured BPCONFIG value enables net staffing validation.
+	 * @return
+	 */
+	protected boolean isNetStaffingSoftValEnabled() {
+<span class="fc" id="L423">		boolean netStaffingValEnabled = false;</span>
+
+<span class="pc bpc" id="L425" title="1 of 2 branches missed.">		if (isPageActionGroupAction()) {</span>
+<span class="nc" id="L426">			netStaffingValEnabled = true;</span>
+<span class="pc bpc" id="L427" title="1 of 2 branches missed.">		} else if (m_isConfigNetStaffingValidationEnabled) {</span>
+<span class="fc" id="L428">			netStaffingValEnabled = true;</span>
+		}
+<span class="fc" id="L430">		return netStaffingValEnabled;</span>
+	}
+
+	protected void readNetStaffingValidationConfig() {
+		try {
+<span class="fc" id="L435">			String config = BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.RM_NETSTAFFING_VALIDATION_ENABLED);</span>
+<span class="pc bpc" id="L436" title="3 of 4 branches missed.">			if (config != null &amp;&amp; StringUtil.isEqual(config, &quot;false&quot;)) {</span>
+<span class="nc" id="L437">				m_isConfigNetStaffingValidationEnabled = false;</span>
+			}
+<span class="nc" id="L439">		} catch (Exception ex) {</span>
+<span class="fc" id="L440">		}</span>
+<span class="fc" id="L441">	}</span>
+
+	protected void readAlertsCheckboxConfig() {
+		try {
+<span class="fc" id="L445">			String config = BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.RM_ALERTSCHECKBOX_CHECKED);</span>
+<span class="pc bpc" id="L446" title="3 of 4 branches missed.">			if (config != null &amp;&amp; StringUtil.isEqual(config, &quot;false&quot;)) {</span>
+<span class="nc" id="L447">				m_configuredCheckboxState = false;</span>
+			}
+<span class="nc" id="L449">		} catch (Exception ex) {</span>
+<span class="fc" id="L450">		}</span>
+<span class="fc" id="L451">	}</span>
+
+	private boolean isPageActionGroupAction() {
+<span class="fc bfc" id="L454" title="All 2 branches covered.">		if (pageAction != null</span>
+<span class="pc bpc" id="L455" title="1 of 2 branches missed.">				&amp;&amp; (pageAction.equals(RmPageAction.APPROVE_ALL_WO_VIOLATIONS_ACTION)</span>
+<span class="pc bpc" id="L456" title="1 of 2 branches missed.">						|| pageAction.equals(RmPageAction.CONFIRM_ALL_TNTV_APPROVALS_ACTION)</span>
+<span class="pc bpc" id="L457" title="1 of 2 branches missed.">						|| pageAction.equals(RmPageAction.DENY_ANY_W_VIOLATIONS_ACTION)</span>
+<span class="pc bpc" id="L458" title="1 of 2 branches missed.">						|| pageAction.equals(RmPageAction.REMOVE_ALL_TNTV_APPROVALS_ACTION)</span>
+<span class="pc bpc" id="L459" title="1 of 2 branches missed.">						|| pageAction.equals(RmPageAction.TENTV_APPROVE_ALL_WO_VIOLATIONS_ACTION) || pageAction</span>
+<span class="pc bpc" id="L460" title="1 of 2 branches missed.">							.equals(RmPageAction.APPROVE_TO_CHOICE_WO_VIOLATIONS_ACTION))) {</span>
+<span class="nc" id="L461">			return true;</span>
+		}
+<span class="fc" id="L463">		return false;</span>
+	}
+
+	/**
+	 * Load Organiation Map
+	 */
+	protected void loadOrgMap() throws Exception {
+<span class="fc bfc" id="L470" title="All 2 branches covered.">		if (isEmptyRequests()) {</span>
+<span class="fc" id="L471">			return;</span>
+		}
+
+<span class="fc" id="L474">		Collection requests = m_reqCollection.getRequests();</span>
+<span class="fc" id="L475">		Collection empIDList = getUniqueEmpIDs(requests);</span>
+<span class="fc" id="L476">		m_eOrgMap = RequestsMH.getEmpOrgMap(m_context, empIDList);</span>
+<span class="fc" id="L477">	}</span>
+
+	/**
+	 * Return Unique Employee IDs for the specified Requests
+	 */
+	protected Collection getUniqueEmpIDs(Collection requests) {
+<span class="fc" id="L483">		return RequestsMH.getUniqueEmpIDs(requests);</span>
+	}
+
+	/**
+	 * To be overwritten to load Page specific data
+	 */
+	protected void loadSpecifyData() throws Exception {
+<span class="fc" id="L490">	}</span>
+
+	/**
+	 * Create Instanse of ListConfigSelectedPC
+	 */
+	protected ListConfigSelectorPC createListConfigSelectorPC() {
+<span class="fc" id="L496">		return new ListConfigSelectorPC(m_context, AgentsRequestsListConfig.class);</span>
+	}
+
+	/**
+	 * Initialize Request Filter
+	 */
+	protected void initRequestFilter() throws Exception {
+<span class="fc" id="L503">		ID userID = m_context.getUser().getID();</span>
+<span class="pc bpc" id="L504" title="2 of 4 branches missed.">		if (m_rfilterBoxPC != null &amp;&amp; m_rfilterBoxPC.getSelectedFilterID() != null) {</span>
+
+			try {
+<span class="nc" id="L507">				m_requestFilter = RequestsMH.getRequestFilterById(m_rfilterBoxPC.getSelectedFilterID()); //ESR3001270 fix -- catch the exception if filter doesn't exists</span>
+
+<span class="nc" id="L509">			} catch (Exception e) {</span>
+<span class="nc" id="L510">				log.info(&quot;unable to load the request filter because filter has been deleted&quot;);</span>
+<span class="nc" id="L511">				e.printStackTrace();</span>
+
+<span class="nc" id="L513">			}</span>
+		}
+
+<span class="fc" id="L516">		IDStringPair[] filterNames = RequestsMH.getRequestFilterNamesByUserID(userID);</span>
+<span class="pc bpc" id="L517" title="1 of 2 branches missed.">		if (m_showFilterAndActiveComponent) {</span>
+<span class="fc" id="L518">			String selectedFilterName = getSelectedFilterName();</span>
+<span class="fc" id="L519">			m_rfilterBoxPC.initFilter(filterNames, selectedFilterName, m_isBlankFilterSelected);</span>
+		}
+<span class="fc" id="L521">	}</span>
+
+	/**
+	 * Get Selected Filter. To be overridden by subclasses.
+	 * Subclasses should return m_rfilterBoxPC.getSelectedFilterName().
+	 * @return One of the following values. Subclasses may return an actual filter ID.
+	 * &quot;All Active&quot; = PageKeys.DEFAULT_ALL
+	 * &quot;No Filter&quot; = RequestUtil.ALL_FILTER
+	 * or some other filter ID which is a user-created &quot;all&quot; filter (request type is Request.REQUESTTYPE_ALL)
+	 */
+	public String getSelectedFilterName() {
+<span class="fc" id="L532">		String filterName = m_rfilterBoxPC.getSelectedFilterName();</span>
+
+<span class="pc bpc" id="L534" title="2 of 4 branches missed.">		if (filterName == null || filterName.isEmpty()) {</span>
+<span class="nc" id="L535">			filterName = PageKeys.DEFAULT_ALL;</span>
+<span class="fc bfc" id="L536" title="All 2 branches covered.">		} else if (filterName.equals(PageKeys.DEFAULT_ALL)</span>
+<span class="pc bpc" id="L537" title="1 of 2 branches missed.">				|| filterName.equals(com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil.ALL_FILTER)) {</span>
+			; //keep filterName as it is because this page can handle it
+<span class="nc bnc" id="L539" title="All 4 branches missed.">		} else if (m_requestFilter == null || m_requestFilter.getValueForKey(RequestFilter.REQUEST_TYPE_KEY) == null) {</span>
+<span class="nc" id="L540">			filterName = PageKeys.DEFAULT_ALL;</span>
+<span class="nc bnc" id="L541" title="All 2 branches missed.">		} else if (m_requestFilter.getValueForKey(RequestFilter.REQUEST_TYPE_KEY).equals(Request.REQUESTTYPE_ALL)) {</span>
+			; //keep filterName as it is because this page can handle it
+		} else {
+<span class="nc" id="L544">			filterName = PageKeys.DEFAULT_ALL;</span>
+		}
+
+<span class="fc" id="L547">		m_rfilterBoxPC.setSelectedFilterName(filterName);</span>
+<span class="fc" id="L548">		return filterName;</span>
+	}
+
+	/**
+	 * Enable Blank Filter to be Selected, used by adhoc filter
+	 */
+	public void setIsBlankFilterSelected(boolean bSwitch) {
+<span class="nc" id="L555">		m_isBlankFilterSelected = bSwitch;</span>
+<span class="nc" id="L556">	}</span>
+
+	/**
+	 * Return true if Blank Filter is Selected, used by adhoc filter
+	 */
+	public boolean isBlankFilterSelected() {
+<span class="nc" id="L562">		return m_isBlankFilterSelected;</span>
+	}
+
+	/**
+	 * Return Filter Box Find Name
+	 */
+	public String getFindName() {
+<span class="pc bpc" id="L569" title="1 of 2 branches missed.">		return m_rfilterBoxPC != null ? m_rfilterBoxPC.getFindName() : null;</span>
+	}
+
+	/**
+	 * Initialize content title
+	 */
+	@Override
+	protected void initContentTitle() {
+		// Initialize Content Title
+<span class="fc" id="L578">		String title = i18n(m_bundle, RmWebBundleKey.RM_AGENTS_REQUESTS);</span>
+
+<span class="fc" id="L580">		Object[] args = new Object[1];</span>
+<span class="fc" id="L581">		args[0] = m_context.getSystemManagerFactory().getVerticalizationManager()</span>
+<span class="fc" id="L582">				.getVerticalizedString(m_context, DefaultVerticalizationManager.WORKER);</span>
+<span class="fc" id="L583">		String formatted = MessageFormat.format(title, args);</span>
+
+<span class="fc" id="L585">		m_contentTitlePC.setPageTitle(formatted);</span>
+
+<span class="fc" id="L587">		String itemName = getContentTitleItemName();</span>
+<span class="fc" id="L588">		m_contentTitlePC.setItemName(itemName);</span>
+
+<span class="pc bpc" id="L590" title="1 of 2 branches missed.">		if (m_showFilterAndActiveComponent) {</span>
+			// compare the state of alert checkbox at this point to display state
+			// change accurately if there's been a page action change to it.
+<span class="pc bpc" id="L593" title="1 of 2 branches missed.">			if (m_checkBoxPC.isChecked() != new Boolean(getIsAlertsCheckedOnPage())) {</span>
+<span class="nc" id="L594">				m_checkBoxPC.setIsChecked(new Boolean(getIsAlertsCheckedOnPage()));</span>
+			}
+<span class="fc" id="L596">			m_contentTitlePC.addActiveComponent(m_checkBoxPC.getLabel(), m_checkBoxPC, true);</span>
+<span class="fc" id="L597">			m_contentTitlePC.addActiveComponent(m_lcSelectorPC.getLabel(), m_lcSelectorPC, true);</span>
+<span class="fc" id="L598">			m_contentTitlePC.addActiveComponent(m_dateRangePickerPC.getLabel(), m_dateRangePickerPC, true); //ESR#4234460</span>
+<span class="fc" id="L599">			m_contentTitlePC.getHtmlDisplay();</span>
+		}
+<span class="fc" id="L601">	}</span>
+
+	/**
+	 * Return Content Title Item Name
+	 */
+	protected String getContentTitleItemName() {
+<span class="fc" id="L607">		return i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_ALL);</span>
+	}
+
+	/**
+	 * Initialize Selectable Items
+	 */
+	@Override
+	protected void initSelectableItems() {
+		// Handle case where there are no requests found
+<span class="fc bfc" id="L616" title="All 2 branches covered.">		if (isEmptyRequests()) {</span>
+<span class="fc" id="L617">			return;</span>
+		}
+
+<span class="fc" id="L620">		initPageRequestObjVer();</span>
+<span class="fc" id="L621">		initGroupActionMenu();</span>
+
+<span class="fc" id="L623">		ArrayList listModel = new ArrayList();</span>
+<span class="fc" id="L624">		List selectedFPs = m_lcSelectorPC.getListConfig().getSelectedFPs();</span>
+<span class="fc bfc" id="L625" title="All 2 branches covered.">		for (Iterator it = m_reqCollection.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L626">			RequestAggregate request = (RequestAggregate) it.next();</span>
+
+			// Create and Add row data
+<span class="fc" id="L629">			MultiColumnNodeData row_data = createRowData(request, selectedFPs);</span>
+<span class="fc" id="L630">			listModel.add(row_data);</span>
+<span class="fc" id="L631">		}</span>
+
+<span class="fc" id="L633">		m_list.setListModel(listModel);</span>
+<span class="fc" id="L634">	}</span>
+
+	/**
+	 * Initialize List Header
+	 */
+	@Override
+	protected void initHeader() {
+<span class="fc" id="L641">		TableHeaderPC header = m_list.getHeader();</span>
+<span class="fc" id="L642">		header.setPartialSortable(true);</span>
+
+<span class="fc" id="L644">		List selectedFPs = m_lcSelectorPC.getListConfig().getSelectedFPs();</span>
+<span class="fc bfc" id="L645" title="All 2 branches covered.">		for (Iterator it = selectedFPs.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L646">			ListConfigFP fp = (ListConfigFP) it.next();</span>
+<span class="fc" id="L647">			addHeaderData(fp, header);</span>
+<span class="fc" id="L648">		}</span>
+<span class="fc" id="L649">	}</span>
+
+	/**
+	 * Convenient method to add Header Data for specified List Config
+	 * Field Property
+	 */
+	protected void addHeaderData(ListConfigFP fp, TableHeaderPC header) {
+		//header.addColumnHeaderData(fp);
+<span class="fc" id="L657">		GenericHeaderData hdrData = header.addColumnHeaderData(fp);</span>
+<span class="fc bfc" id="L658" title="All 2 branches covered.">		if (hdrData.getSortable()) {</span>
+			// 508: Table header page component handles focus behavior for sortable columns,
+			// removed user injection of anchor tag around display name here.
+<span class="fc" id="L661">			String displayName = hdrData.getDisplayName();</span>
+<span class="fc" id="L662">			hdrData.setDisplayName(displayName);</span>
+		}
+<span class="fc" id="L664">	}</span>
+
+	/**
+	 * Create Row Data From Request
+	 */
+	protected MultiColumnNodeData createRowData(RequestAggregate request, List selectedFPs) {
+<span class="fc" id="L670">		String rowID = request.getID().toString();</span>
+<span class="fc" id="L671">		DefaultMultiColumnNodeData row_data = new DefaultMultiColumnNodeData(rowID);</span>
+
+<span class="fc bfc" id="L673" title="All 2 branches covered.">		for (Iterator it = selectedFPs.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L674">			ListConfigFP fp = (ListConfigFP) it.next();</span>
+<span class="fc" id="L675">			addCellData(rowID, request, fp, row_data);</span>
+<span class="fc" id="L676">		}</span>
+
+<span class="fc" id="L678">		return row_data;</span>
+	}
+
+	/**
+	 * Add Cell Data for the specified List Config Field Property
+	 */
+	protected void addCellData(String rowID, RequestAggregate request, ListConfigFP fp, DefaultMultiColumnNodeData row_data) {
+<span class="fc bfc" id="L685" title="All 2 branches covered.">		if (fp.hasFieldName(Request.SORT_LAST_NAME_FIRST)) {</span>
+<span class="fc" id="L686">			row_data.add(createAgentName(request));</span>
+<span class="fc bfc" id="L687" title="All 2 branches covered.">		} else if (fp.hasFieldName(Request.SORT_STATUS)) {</span>
+<span class="fc" id="L688">			row_data.add(createStatusIcon(request, false));</span>
+<span class="fc bfc" id="L689" title="All 2 branches covered.">		} else if (fp.hasFieldName(Request.SORT_TYPE)) {</span>
+<span class="fc" id="L690">			row_data.add(getLocalizedRequestType(request));</span>
+<span class="fc bfc" id="L691" title="All 2 branches covered.">		} else if (fp.hasFieldName(Request.SORT_CREATED)) {</span>
+<span class="fc" id="L692">			row_data.add(createDataWrapper(request.getSubmittedOn()));</span>
+<span class="fc bfc" id="L693" title="All 2 branches covered.">		} else if (fp.hasFieldName(Request.SORT_MODIFIED)) {</span>
+<span class="fc" id="L694">			row_data.add(createDataWrapper(request.getLastModifiedAt()));</span>
+<span class="fc bfc" id="L695" title="All 2 branches covered.">		} else if (fp.hasFieldName(Request.SORT_TO_SENIORITY)) {</span>
+<span class="fc" id="L696">			Date date = null;</span>
+<span class="pc bpc" id="L697" title="1 of 2 branches missed.">			if (request.isTimeOffRequest()) {</span>
+<span class="fc" id="L698">				date = ((TORequest) request).getEmployeeStartDate(); //DL_EMPLOYEE_REQUEST_CHILD</span>
+			} else {
+<span class="nc" id="L700">				Employee emp = getEmployee(request);</span>
+<span class="nc bnc" id="L701" title="All 2 branches missed.">				date = (emp == null) ? new Date() : emp.getStartTime();</span>
+			}
+<span class="fc" id="L703">			row_data.add(new DateWrapper(date, m_localizer, m_view_tz, RegionalFormatBundleKey.DATE_FORMAT));</span>
+
+<span class="fc bfc" id="L705" title="All 2 branches covered.">		} else if (fp.hasFieldName(Request.SORT_EMP_RANK)) {</span>
+<span class="fc" id="L706">			int rank = 1;</span>
+<span class="pc bpc" id="L707" title="1 of 2 branches missed.">			if (request.isTimeOffRequest()) {</span>
+<span class="fc" id="L708">				rank = ((TORequest) request).getEmployeeRank();</span>
+			} else {
+<span class="nc" id="L710">				Employee emp = getEmployee(request);</span>
+<span class="nc bnc" id="L711" title="All 2 branches missed.">				rank = (emp == null) ? rank : emp.getRank();</span>
+			}
+<span class="fc" id="L713">			row_data.add(new NumberWrapper(rank, m_localizer));</span>
+<span class="fc bfc" id="L714" title="All 2 branches covered.">		} else if (fp.hasFieldName(UIFWebBundleKey.EXPIRED)) {</span>
+<span class="fc" id="L715">			row_data.add(m_localizer.formatYesNo(request.hasExpired()));</span>
+<span class="fc bfc" id="L716" title="All 2 branches covered.">		} else if (fp.hasFieldName(UIFWebBundleKey.COMMENTS)) {</span>
+<span class="fc" id="L717">			row_data.add(renderComments(request));</span>
+<span class="fc bfc" id="L718" title="All 2 branches covered.">		} else if (fp.hasFieldName(UIFWebBundleKey.ALERTS)) {</span>
+<span class="fc" id="L719">			String alerts = RequestUtil.createUniqueAlertIcons(request, m_localizer);</span>
+<span class="fc" id="L720">			row_data.add(alerts);</span>
+<span class="pc bpc" id="L721" title="1 of 2 branches missed.">		} else if (fp.hasFieldName(UIFWebBundleKey.ACTIONS)) {</span>
+<span class="fc" id="L722">			row_data.add(createItemActions(request, rowID));</span>
+		}
+<span class="fc" id="L724">	}</span>
+
+	/**
+	 * Get an employee using a detail Level of Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY
+	 * @param request
+	 * @return
+	 */
+	protected Employee getEmployee(RequestAggregate request) {
+<span class="nc" id="L732">		Employee emp = null;</span>
+<span class="nc bnc" id="L733" title="All 2 branches missed.">		if (request.isShiftBidRequest()) {</span>
+<span class="nc" id="L734">			ShiftBidRequest sbRequest = (ShiftBidRequest) request;</span>
+<span class="nc" id="L735">			emp = sbRequest.getOptMethods().getEmployee();</span>
+<span class="nc" id="L736">		} else {</span>
+			//Employee emp = request.getAggregatedRequest().getOptMethods().getEmployee();
+<span class="nc" id="L738">			ID empID = request.getEmployeeID();</span>
+			try {
+<span class="nc" id="L740">				emp = ValidationUtil.getEmployeeByID(empID, null, Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY);</span>
+<span class="nc" id="L741">			} catch (Exception ex) {</span>
+<span class="nc" id="L742">			}</span>
+		}
+<span class="nc" id="L744">		return emp;</span>
+	}
+
+	/**
+	 * Return Agent name for specified Request
+	 */
+	protected String createAgentName(RequestAggregate request) {
+<span class="fc" id="L751">		String name = &quot;&quot;;</span>
+
+<span class="pc bpc" id="L753" title="1 of 2 branches missed.">		if (!isEmptyRequests()) {</span>
+<span class="fc" id="L754">			ID empID = request.getEmployeeID();</span>
+<span class="fc" id="L755">			EmployeeName eName = m_reqCollection.get(empID);</span>
+<span class="pc bpc" id="L756" title="1 of 2 branches missed.">			name = eName == null ? empID.toString() : m_localizer.formatName(eName);</span>
+		}
+
+<span class="fc" id="L759">		return name;</span>
+	}
+
+	/**
+	 * Append Item Action if enabled
+	 */
+	@Override
+	protected void appendItemAction(RequestAggregate request, String action, String rowID, StringBuffer sb) {
+<span class="fc" id="L767">		String itemAction = &quot;&quot;;</span>
+
+<span class="fc bfc" id="L769" title="All 2 branches covered.">		if (isItemActionEnabled(request, action)) {</span>
+<span class="fc" id="L770">			itemAction = createActionIcon(action, request, rowID);</span>
+<span class="fc bfc" id="L771" title="All 4 branches covered.">		} else if (RmPageAction.ADD_TO_WAITLIST_ACTION.equals(action) || RmPageAction.ADD_TO_MAN_WAITLIST_ACTION.equals(action)) {</span>
+<span class="pc bpc" id="L772" title="1 of 2 branches missed.">			if (!isItemActionEnabled(request, RmPageAction.ADD_TO_WAITLIST_ACTION)</span>
+<span class="fc bfc" id="L773" title="All 2 branches covered.">					&amp;&amp; !isItemActionEnabled(request, RmPageAction.ADD_TO_MAN_WAITLIST_ACTION)) {</span>
+<span class="fc" id="L774">				itemAction = createIconButton(ImageFileID.BLANK_SPACER, null, null);</span>
+			}
+		} else {
+<span class="fc" id="L777">			itemAction = createIconButton(ImageFileID.BLANK_SPACER, null, null);</span>
+		}
+<span class="fc" id="L779">		sb.append(itemAction);</span>
+<span class="fc" id="L780">	}</span>
+
+	/**
+	 * Return true if the Action is valid for the specified Request
+	 */
+	@Override
+	protected boolean isValidAction(String action, RequestAggregate request) {
+<span class="fc" id="L787">		String rType = request.getRequestType();</span>
+<span class="fc" id="L788">		String status = request.getRequestStatus();</span>
+
+		// Prevent Manager from tentatively approving Shift Bid or Custom Shift or Flex Time Requests
+<span class="fc bfc" id="L791" title="All 2 branches covered.">		if (PageAction.TENTATIVELY_APPROVE.equals(action)</span>
+<span class="pc bpc" id="L792" title="2 of 4 branches missed.">				&amp;&amp; (Request.REQUESTTYPE_SHIFTBID.equals(rType) || Request.REQUESTTYPE_CUSTSHIFT.equals(rType) || Request.REQUESTTYPE_FLEXTIME</span>
+<span class="pc bpc" id="L793" title="1 of 2 branches missed.">						.equals(rType))) {</span>
+<span class="nc" id="L794">			return false;</span>
+		}
+
+		//see if it withdraw for an approved shiftbidrequest after auction is closed
+<span class="pc bpc" id="L798" title="1 of 2 branches missed.">		if (request.getRequestType().equals(Request.REQUESTTYPE_SHIFTBID)</span>
+<span class="nc bnc" id="L799" title="All 2 branches missed.">				&amp;&amp; request.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED)) {</span>
+<span class="nc bnc" id="L800" title="All 4 branches missed.">			if (m_auctionMap != null &amp;&amp; m_auctionMap.size() == 0) {</span>
+				//get the auctionlist for approved requests to get auction
+				try {
+<span class="nc" id="L803">					m_auctionMap = RequestUtil.getAuctionmapForApprovedSBRequests(m_reqCollection.getRequests());</span>
+<span class="nc" id="L804">				} catch (Exception ex) {</span>
+<span class="nc" id="L805">				}</span>
+			}
+<span class="nc bnc" id="L807" title="All 2 branches missed.">			boolean isClosed = !((Boolean) m_auctionMap.get(((ShiftBidRequest) request).getShiftBidAuctionID())).booleanValue();</span>
+<span class="nc bnc" id="L808" title="All 6 branches missed.">			if (RequestAuditTrail.STATUS_APPROVED.equals(status) &amp;&amp; PageAction.WITHDRAW.equals(action) &amp;&amp; isClosed) {</span>
+<span class="nc" id="L809">				return false;</span>
+			}
+		}
+
+<span class="fc bfc" id="L813" title="All 2 branches covered.">		return super.isValidAction(action, request)</span>
+<span class="pc bpc" id="L814" title="1 of 2 branches missed.">				|| !request.hasExpired()</span>
+<span class="pc bpc" id="L815" title="1 of 4 branches missed.">				&amp;&amp; (((RequestAuditTrail.STATUS_WAITLIST.equals(status) || RequestAuditTrail.STATUS_PENDING.equals(status)</span>
+<span class="pc bpc" id="L816" title="2 of 4 branches missed.">						|| RequestAuditTrail.STATUS_TENTATIVE.equals(status) || RequestAuditTrail.STATUS_ESCALATED.equals(status)) &amp;&amp; (PageAction.APPROVE</span>
+<span class="fc bfc" id="L817" title="All 4 branches covered.">						.equals(action) || PageAction.DENY.equals(action)))</span>
+<span class="pc bpc" id="L818" title="1 of 4 branches missed.">						|| ((RequestAuditTrail.STATUS_WAITLIST.equals(status) || RequestAuditTrail.STATUS_PENDING.equals(status) || RequestAuditTrail.STATUS_ESCALATED</span>
+<span class="pc bpc" id="L819" title="1 of 4 branches missed.">								.equals(status)) &amp;&amp; PageAction.TENTATIVELY_APPROVE.equals(action))</span>
+
+<span class="pc bpc" id="L821" title="2 of 4 branches missed.">						|| (request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest()</span>
+<span class="pc bpc" id="L822" title="1 of 4 branches missed.">								&amp;&amp; RmPageAction.ADD_TO_WAITLIST_ACTION.equals(action) &amp;&amp; ((TORequest) request).isEligibleForWaitlist())</span>
+
+<span class="pc bpc" id="L824" title="2 of 4 branches missed.">						|| (request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest()</span>
+<span class="pc bpc" id="L825" title="1 of 4 branches missed.">								&amp;&amp; RmPageAction.ADD_TO_MAN_WAITLIST_ACTION.equals(action) &amp;&amp; ((TORequest) request).isWaitlistEnabled()</span>
+<span class="fc bfc" id="L826" title="All 2 branches covered.">								&amp;&amp; RequestAuditTrail.WAITLIST_ELIGIBLE_STATES.contains(request.getRequestStatus())</span>
+<span class="pc bpc" id="L827" title="1 of 2 branches missed.">								&amp;&amp; !((TORequest) request).isEligibleForWaitlist() &amp;&amp; !TORequestUtil</span>
+<span class="pc bpc" id="L828" title="1 of 2 branches missed.">									.isAnyTimeOffChoiceForPastDate((TORequest) request))</span>
+
+<span class="pc bpc" id="L830" title="2 of 6 branches missed.">						|| (request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest() &amp;&amp; PageAction.REJECT_WITHDRAW_ACTION.equals(action) &amp;&amp; ((TORequest) request)</span>
+<span class="pc bpc" id="L831" title="1 of 2 branches missed.">								.isEligibleForRejectWithdrawAction())</span>
+<span class="pc bpc" id="L832" title="2 of 6 branches missed.">						|| (request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest() &amp;&amp; PageAction.ACCEPT_WITHDRAW_ACTION.equals(action) &amp;&amp; ((TORequest) request)</span>
+<span class="pc bpc" id="L833" title="1 of 2 branches missed.">								.isEligibleForAcceptWithdrawAction())</span>
+<span class="pc bpc" id="L834" title="2 of 6 branches missed.">						|| (request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest() &amp;&amp; PageAction.CANCEL_WITHDRAW_ACTION.equals(action) &amp;&amp; ((TORequest) request)</span>
+<span class="pc bpc" id="L835" title="1 of 2 branches missed.">								.isEligibleForCancelWithdrawAction())</span>
+<span class="pc bpc" id="L836" title="2 of 6 branches missed.">						|| (request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest() &amp;&amp; PageAction.WITHDRAW.equals(action) &amp;&amp; ((TORequest) request)</span>
+<span class="fc bfc" id="L837" title="All 2 branches covered.">								.isEligibleForWithdraw())</span>
+
+<span class="pc bpc" id="L839" title="3 of 4 branches missed.">						|| (request.isShiftSwapRequest() &amp;&amp; PageAction.REJECT_WITHDRAW_ACTION.equals(action) &amp;&amp; ((ShiftSwapRequest) request)</span>
+<span class="pc bnc" id="L840" title="All 2 branches missed.">								.isEligibleForRejectWithdrawAction())</span>
+<span class="pc bpc" id="L841" title="3 of 4 branches missed.">						|| (request.isShiftSwapRequest() &amp;&amp; PageAction.ACCEPT_WITHDRAW_ACTION.equals(action) &amp;&amp; ((ShiftSwapRequest) request)</span>
+<span class="pc bnc" id="L842" title="All 2 branches missed.">								.isEligibleForAcceptWithdrawAction())</span>
+<span class="pc bpc" id="L843" title="3 of 4 branches missed.">						|| (request.isShiftSwapRequest() &amp;&amp; PageAction.CANCEL_WITHDRAW_ACTION.equals(action) &amp;&amp; ((ShiftSwapRequest) request)</span>
+<span class="pc bpc" id="L844" title="3 of 4 branches missed.">								.isEligibleForCancelWithdrawAction()) || (request.isShiftSwapRequest()</span>
+<span class="pc bnc" id="L845" title="All 4 branches missed.">						&amp;&amp; PageAction.WITHDRAW.equals(action) &amp;&amp; ((ShiftSwapRequest) request).isEligibleForWithdraw()));</span>
+	}
+
+	/**
+	 * Add Refresh Toolbar Button
+	 */
+	protected void addRefreshToolbarButton() {
+<span class="nc" id="L852">		String refreshLabel = i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_REFRESH);</span>
+<span class="nc" id="L853">		m_toolbar.addSubmitTextButton(PageAction.FORCE_REFRESH, refreshLabel, isCommonButtonsEnabled());</span>
+<span class="nc" id="L854">	}</span>
+
+	/**
+	 * Initialize Toolbar
+	 */
+	@Override
+	protected void initToolbar() {
+<span class="pc bpc" id="L861" title="2 of 6 branches missed.">		boolean isBtnEnabled = isCommonButtonsEnabled() &amp;&amp; isAuthToEditAnyRqts() &amp;&amp; !isEmptyRequests();</span>
+<span class="fc" id="L862">		String grpActionLabel = i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_GROUP_ACTIONS);</span>
+<span class="fc" id="L863">		m_toolbar.addPopupDialogTextButton(GROUP_ACTION_MENU_NAME, grpActionLabel, isBtnEnabled);</span>
+
+<span class="fc" id="L865">		addCommonToolbarButtons();</span>
+<span class="fc" id="L866">		enableToolbarPagination();</span>
+<span class="fc" id="L867">		m_toolbar.setLimitingPageSize(m_limitingPageSize);</span>
+<span class="fc" id="L868">	}</span>
+
+	/**
+	 * Add Create Request Button
+	 */
+	@Override
+	protected void addCreateRequestButton() {
+<span class="pc bpc" id="L875" title="3 of 6 branches missed.">		boolean isTimeOffCreateEnabled = m_orgSetting != null &amp;&amp; m_orgSetting.getManagerTimeOffWorkflowActive() &amp;&amp; isAuthToEditTORqts();</span>
+<span class="pc bpc" id="L876" title="3 of 4 branches missed.">		boolean isFlexTimeCreateEnabled = LicenseUtil.isAdvancedRMLicense() &amp;&amp; m_orgSetting != null</span>
+<span class="pc bnc" id="L877" title="All 4 branches missed.">				&amp;&amp; m_orgSetting.getManagerTimeOffWorkflowActive() &amp;&amp; isAuthToEditFTRqts();</span>
+<span class="pc bpc" id="L878" title="2 of 4 branches missed.">		boolean isCustShiftCreateEnabled = m_orgSetting != null &amp;&amp; isAuthToEditCSRqts()</span>
+<span class="pc bpc" id="L879" title="3 of 4 branches missed.">				&amp;&amp; (m_orgSetting.getEnableCustomShiftRequests() || m_orgSetting.getAllowShiftChangeRequests());</span>
+
+<span class="fc" id="L881">		String newRequestLabel = i18n(m_bundle, RmWebBundleKey.CREATE_NEW_REQUEST);</span>
+
+<span class="pc bpc" id="L883" title="10 of 12 branches missed.">		if (isTimeOffCreateEnabled &amp;&amp; isCustShiftCreateEnabled || isTimeOffCreateEnabled &amp;&amp; isFlexTimeCreateEnabled</span>
+				|| isCustShiftCreateEnabled &amp;&amp; isFlexTimeCreateEnabled) {
+<span class="fc" id="L885">			m_toolbar.addPopupDialogTextButton(CREATE_NEW_REQUEST, newRequestLabel, isAuthToEditAnyRqts());</span>
+<span class="nc bnc" id="L886" title="All 2 branches missed.">		} else if (isTimeOffCreateEnabled) {</span>
+<span class="nc" id="L887">			m_toolbar.addPopupWindowTextButton(RmPageAction.POPUP_TIMEOFF_REQUEST_FORM_ACTION, newRequestLabel, isTimeOffCreateEnabled);</span>
+<span class="nc bnc" id="L888" title="All 2 branches missed.">		} else if (isFlexTimeCreateEnabled) {</span>
+<span class="nc" id="L889">			m_toolbar.addPopupWindowTextButton(RmPageAction.POPUP_FLEXTIME_REQUEST_FORM_ACTION, newRequestLabel, isFlexTimeCreateEnabled);</span>
+<span class="nc bnc" id="L890" title="All 2 branches missed.">		} else if (isCustShiftCreateEnabled) {</span>
+<span class="nc" id="L891">			m_toolbar.addPopupWindowTextButton(RmPageAction.POPUP_CUSTSHIFT_REQUEST_FORM_ACTION, newRequestLabel, isCustShiftCreateEnabled);</span>
+		}
+<span class="fc" id="L893">	}</span>
+
+	/**
+	 * Initialize Group Action Menu
+	 */
+	protected void initGroupActionMenu() {
+<span class="fc" id="L899">		m_groupActionDialogMenuPC = new DialogToolbarMenuPC(m_context, m_toolbar);</span>
+<span class="fc" id="L900">		m_groupActionDialogMenuPC.setName(GROUP_ACTION_MENU_NAME);</span>
+<span class="fc" id="L901">		addChildComponent(m_groupActionDialogMenuPC);</span>
+		// Initialize Title
+<span class="fc" id="L903">		String title = i18n(m_common_bundle, UIFWebBundleKey.GROUP_ACTIONS);</span>
+<span class="fc" id="L904">		m_groupActionDialogMenuPC.setHeader(title);</span>
+
+<span class="fc" id="L906">		boolean isTentvActionEnabled = isTentativeActionEnabled();</span>
+
+		// Initialize Menu Buttons
+<span class="fc" id="L909">		m_groupActionDialogMenuPC.addSubmitButton(RmPageAction.APPROVE_ALL_WO_VIOLATIONS_ACTION,</span>
+<span class="fc" id="L910">				i18n(m_bundle, RmWebBundleKey.APPROVE_ALL_WO_VIOLATIONS), true);</span>
+
+<span class="pc bpc" id="L912" title="1 of 2 branches missed.">		if (isTentvActionEnabled) {</span>
+<span class="fc" id="L913">			m_groupActionDialogMenuPC.addSubmitButton(RmPageAction.TENTV_APPROVE_ALL_WO_VIOLATIONS_ACTION,</span>
+<span class="fc" id="L914">					i18n(m_bundle, RmWebBundleKey.TENTV_APPROVE_ALL_WO_VIOLATIONS), true);</span>
+		}
+<span class="pc bpc" id="L916" title="3 of 4 branches missed.">		if (LicenseUtil.isAdvancedRMLicense() &amp;&amp; hasGroupActionForTimeOffChoice()) {</span>
+<span class="nc" id="L917">			m_groupActionDialogMenuPC.addSubmitButton(RmPageAction.APPROVE_TO_CHOICE_WO_VIOLATIONS_ACTION,</span>
+<span class="nc" id="L918">					i18n(m_bundle, RmWebBundleKey.APPROVE_TO_CHOICE_WO_VIOLATIONS_ACTION), true);</span>
+		}
+
+<span class="fc" id="L921">		m_groupActionDialogMenuPC.addSubmitButton(RmPageAction.DENY_ANY_W_VIOLATIONS_ACTION,</span>
+<span class="fc" id="L922">				i18n(m_bundle, RmWebBundleKey.DENY_ANY_W_VIOLATIONS), true);</span>
+
+<span class="pc bpc" id="L924" title="1 of 2 branches missed.">		if (isTentvActionEnabled) {</span>
+<span class="fc" id="L925">			m_groupActionDialogMenuPC.addSubmitButton(RmPageAction.CONFIRM_ALL_TNTV_APPROVALS_ACTION,</span>
+<span class="fc" id="L926">					i18n(m_bundle, RmWebBundleKey.CONFIRM_ALL_TNTV_APPROVALS), true);</span>
+
+<span class="fc" id="L928">			m_groupActionDialogMenuPC.addSubmitButton(RmPageAction.REMOVE_ALL_TNTV_APPROVALS_ACTION,</span>
+<span class="fc" id="L929">					i18n(m_bundle, RmWebBundleKey.REMOVE_ALL_TNTV_APPROVALS), true);</span>
+		}
+<span class="fc" id="L931">	}</span>
+
+	/**
+	 * Initialize New Request Menu
+	 */
+	@Override
+	protected void initNewRequestMenu() {
+<span class="fc" id="L938">		m_newRequestMenuPC = new DialogToolbarMenuPC(m_context, m_toolbar);</span>
+<span class="fc" id="L939">		m_newRequestMenuPC.setName(CREATE_NEW_REQUEST);</span>
+<span class="fc" id="L940">		addChildComponent(m_newRequestMenuPC);</span>
+
+		// Initialize Title
+<span class="fc" id="L943">		String title = i18n(m_bundle, RmWebBundleKey.CREATE_NEW_REQUEST);</span>
+<span class="fc" id="L944">		m_newRequestMenuPC.setHeader(title);</span>
+
+		// Initialize Menu Buttons
+<span class="fc" id="L947">		m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_TIMEOFF_REQUEST_FORM_ACTION,</span>
+<span class="fc" id="L948">				i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_TIME_OFF), isAuthToEditTORqts());</span>
+
+<span class="pc bpc" id="L950" title="1 of 2 branches missed.">		if (LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L951">			m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_FLEXTIME_REQUEST_FORM_ACTION,</span>
+<span class="nc" id="L952">					i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME), isAuthToEditFTRqts());</span>
+		}
+
+<span class="fc" id="L955">		m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_CUSTSHIFT_REQUEST_FORM_ACTION,</span>
+<span class="fc" id="L956">				i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_CUSTOM_SHIFT), isAuthToEditCSRqts());</span>
+<span class="fc" id="L957">	}</span>
+
+	/**
+	 * Return true if Tentative Actions are enabled
+	 */
+	protected boolean isTentativeActionEnabled() {
+<span class="fc" id="L963">		return true;</span>
+	}
+
+	/**
+	 * Return URL for HTML Form Action
+	 */
+	@Override
+	public String getFormAction() {
+<span class="fc" id="L971">		return RmKeys.RH_AG_REQUEST_ALL_LIST;</span>
+	}
+
+	private void initPageRequestObjVer() {
+<span class="fc" id="L975">		StringBuffer objVerSB = new StringBuffer(100);</span>
+<span class="fc bfc" id="L976" title="All 2 branches covered.">		for (Iterator it = m_reqCollection.getRequests().iterator(); it.hasNext();) {</span>
+<span class="fc" id="L977">			RequestAggregate request = (RequestAggregate) it.next();</span>
+<span class="fc bfc" id="L978" title="All 2 branches covered.">			if (objVerSB.length() != 0) {</span>
+<span class="fc" id="L979">				objVerSB.append(&quot;,&quot;);</span>
+			}
+<span class="fc" id="L981">			objVerSB.append(request.getObjectVersionNumber());</span>
+<span class="fc" id="L982">		}</span>
+<span class="fc" id="L983">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;pageRequestsObjVer&quot;, objVerSB.toString()));</span>
+<span class="fc" id="L984">	}</span>
+
+	public void setPageRequestsObjVer(String ver) {
+<span class="fc" id="L987">		m_pageRequestsObjVer = StringUtil.parseStringToCollection(ver, &quot;,&quot;);</span>
+<span class="fc" id="L988">	}</span>
+
+	public Collection getPageRequestsObjVer() {
+<span class="nc" id="L991">		return m_pageRequestsObjVer;</span>
+	}
+
+	public void setIsDPAction(boolean isDPAction) {
+<span class="fc" id="L995">		m_isDPAction = isDPAction;</span>
+<span class="fc" id="L996">	}</span>
+
+	public boolean getIsDPActionr() {
+<span class="nc" id="L999">		return m_isDPAction;</span>
+	}
+
+	public void setIsAlertsCheckedOnPage(String isAlertsCheckedOnPage) {
+<span class="fc" id="L1003">		m_alertsCheckedOnPage = isAlertsCheckedOnPage;</span>
+<span class="fc" id="L1004">	}</span>
+
+	public String getIsAlertsCheckedOnPage() {
+<span class="fc" id="L1007">		return m_alertsCheckedOnPage;</span>
+	}
+
+	public void setIsAlertsToggledOnPage(String isAlertsToggledOnPage) {
+<span class="fc" id="L1011">		m_alertsToggledOnPage = isAlertsToggledOnPage;</span>
+
+<span class="fc" id="L1013">	}</span>
+
+	public String getIsAlertsToggledOnPage() {
+<span class="fc" id="L1016">		return m_alertsToggledOnPage;</span>
+	}
+
+	public boolean isAlertsToggledOnPage() {
+<span class="pc bpc" id="L1020" title="1 of 2 branches missed.">		if (!StringUtil.isEmpty(getIsAlertsToggledOnPage())) {</span>
+<span class="fc" id="L1021">			return Boolean.parseBoolean(getIsAlertsToggledOnPage());</span>
+		} else {
+<span class="nc" id="L1023">			return false;</span>
+		}
+	}
+
+	public void setIsOnSamePage(boolean value) {
+<span class="fc" id="L1028">		shouldBeOnSamePage = value;</span>
+<span class="fc" id="L1029">	}</span>
+	public void setIsOnSamePageForEdit(boolean value) {
+<span class="fc" id="L1031">		shouldBeOnSamePageForEdit = value;</span>
+<span class="fc" id="L1032">	}</span>
+
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Privilege helpers
+	//////////////////////////////////////////////////////////////////////////////
+	/**
+	 * Return true if the Action is allowed for the specified Request
+	 */
+	@Override
+	protected boolean isAllowedAction(String action, RequestAggregate request) {
+
+<span class="fc" id="L1044">		String status = request.getRequestStatus();</span>
+<span class="fc" id="L1045">		boolean isApproved = RequestAuditTrail.STATUS_APPROVED.equals(status);</span>
+<span class="pc bpc" id="L1046" title="1 of 6 branches missed.">		return ((PageAction.EDIT.equals(action) &amp;&amp; isAuthToUpdateRqt(request))</span>
+
+<span class="pc bpc" id="L1048" title="1 of 6 branches missed.">				|| (!isApproved &amp;&amp; PageAction.WITHDRAW.equals(action) &amp;&amp; isAuthToUpdateRqt(request))</span>
+
+<span class="pc bpc" id="L1050" title="1 of 6 branches missed.">				|| (isApproved &amp;&amp; (PageAction.WITHDRAW.equals(action) || PageAction.CANCEL_WITHDRAW_ACTION.equals(action)) &amp;&amp; isAuthToWithdrawApprovedRequest(request))</span>
+
+<span class="pc bpc" id="L1052" title="1 of 4 branches missed.">				|| ((RmPageAction.ADD_TO_WAITLIST_ACTION.equals(action) || RmPageAction.ADD_TO_MAN_WAITLIST_ACTION.equals(action))</span>
+<span class="pc bpc" id="L1053" title="2 of 4 branches missed.">						&amp;&amp; isAuthToViewRqt(request) &amp;&amp; isAuthToWaitlistRqt(request))</span>
+
+<span class="pc bpc" id="L1055" title="1 of 4 branches missed.">				|| (PageAction.VIEW_DETAIL.equals(action) &amp;&amp; isAuthToViewRqt(request))</span>
+
+<span class="pc bpc" id="L1057" title="1 of 8 branches missed.">				|| ((PageAction.DENY.equals(action) || PageAction.APPROVE.equals(action) || PageAction.TENTATIVELY_APPROVE.equals(action)) &amp;&amp; isAuthToApproveRqt(request))</span>
+
+<span class="pc bpc" id="L1059" title="1 of 4 branches missed.">				|| (PageAction.REJECT_WITHDRAW_ACTION.equals(action) &amp;&amp; isAuthToProcessRejectWithdrawRequest(request))</span>
+
+<span class="pc bpc" id="L1061" title="2 of 4 branches missed.">				|| (PageAction.ACCEPT_WITHDRAW_ACTION.equals(action) &amp;&amp; isAuthToProcessAcceptWithdrawRequest(request))</span>
+
+<span class="pc bnc" id="L1063" title="All 4 branches missed.">		|| (PageAction.CANCEL_WITHDRAW_ACTION.equals(action) &amp;&amp; isAuthToProcessCancelWithdrawRequest(request)));</span>
+	}
+
+	@Override
+	public boolean isAuthToViewTORqts() {
+<span class="pc bpc" id="L1068" title="2 of 4 branches missed.">		return super.isAuthToViewTORqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.TOM_VIEWREQUESTSFOREMPLOYEE_ID);</span>
+	}
+
+	@Override
+	public boolean isAuthToViewFTRqts() {
+<span class="nc bnc" id="L1073" title="All 4 branches missed.">		return super.isAuthToViewFTRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.FT_VIEWREQUESTSFOREMPLOYEE_ID);</span>
+	}
+
+	@Override
+	public boolean isAuthToViewSSRqts() {
+<span class="nc bnc" id="L1078" title="All 4 branches missed.">		return super.isAuthToViewSSRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SS_VIEWREQUESTSFOREMPLOYEE_ID);</span>
+	}
+
+	@Override
+	public boolean isAuthToViewSBRqts() {
+<span class="nc bnc" id="L1083" title="All 4 branches missed.">		return super.isAuthToViewSBRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SB_VIEWSHIFTBIDSFOREMP_ID);</span>
+	}
+
+	@Override
+	public boolean isAuthToEditTORqts() {
+<span class="pc bpc" id="L1088" title="2 of 4 branches missed.">		return super.isAuthToEditTORqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.TOM_MODIFYREQUESTSFOREMPLOYEE_ID);</span>
+	}
+
+	@Override
+	public boolean isAuthToEditFTRqts() {
+<span class="nc bnc" id="L1093" title="All 4 branches missed.">		return super.isAuthToEditFTRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.FT_MODIFYREQUESTSFOREMPLOYEE_ID);</span>
+	}
+
+	@Override
+	public boolean isAuthToEditSSRqts() {
+<span class="nc bnc" id="L1098" title="All 4 branches missed.">		return super.isAuthToEditSSRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SS_MODIFYREQUESTSFOREMPLOYEE_ID);</span>
+	}
+
+	@Override
+	public boolean isAuthToEditSBRqts() {
+<span class="nc bnc" id="L1103" title="All 4 branches missed.">		return super.isAuthToEditSBRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SB_MODIFYSHIFTBIDSFOREMP_ID);</span>
+	}
+
+	@Override
+	public boolean isAuthToViewCSRqts() {
+<span class="nc bnc" id="L1108" title="All 4 branches missed.">		return super.isAuthToViewCSRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.CS_VIEWREQUESTSFOREMPLOYEE_ID);</span>
+	}
+
+	@Override
+	public boolean isAuthToEditCSRqts() {
+<span class="pc bpc" id="L1113" title="2 of 4 branches missed.">		return super.isAuthToEditCSRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.CS_MODIFYREQUESTSFOREMPLOYEE_ID);</span>
+	}
+
+	/**
+	 * Return true if User is authorize to view specified Request
+	 */
+	protected boolean isAuthToViewRqt(RequestAggregate request) {
+<span class="fc" id="L1120">		String rType = request.getRequestType();</span>
+
+<span class="fc" id="L1122">		boolean result = false;</span>
+<span class="pc bpc" id="L1123" title="1 of 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(rType)) {</span>
+<span class="fc" id="L1124">			ID privID = PrivilegeKeys.TOM_VIEWREQUESTSFOREMPLOYEE_ID;</span>
+<span class="fc" id="L1125">			result = isTOAuthPriv(request, privID);</span>
+<span class="pc bnc" id="L1126" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(rType)) {</span>
+<span class="nc" id="L1127">			ID privID = PrivilegeKeys.FT_VIEWREQUESTSFOREMPLOYEE_ID;</span>
+<span class="nc" id="L1128">			result = isFTAuthPriv(request, privID);</span>
+<span class="nc bnc" id="L1129" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType)) {</span>
+<span class="nc" id="L1130">			ID privID = PrivilegeKeys.SS_VIEWREQUESTSFOREMPLOYEE_ID;</span>
+<span class="nc" id="L1131">			result = isSSAuthPriv(request, privID);</span>
+<span class="nc bnc" id="L1132" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTBID.equals(rType)) {</span>
+<span class="nc" id="L1133">			ID privID = PrivilegeKeys.SB_VIEWSHIFTBIDSFOREMP_ID;</span>
+<span class="nc" id="L1134">			result = isSBAuthPriv(request, privID);</span>
+<span class="nc bnc" id="L1135" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_CUSTSHIFT.equals(rType)) {</span>
+<span class="nc" id="L1136">			ID privID = PrivilegeKeys.CS_VIEWREQUESTSFOREMPLOYEE_ID;</span>
+<span class="nc" id="L1137">			result = isCSAuthPriv(request, privID);</span>
+		}
+
+<span class="fc" id="L1140">		return result;</span>
+	}
+
+	/**
+	 * Return true if User is authorize to update specified Request
+	 */
+	@Override
+	protected boolean isAuthToUpdateRqt(RequestAggregate request) {
+<span class="fc" id="L1148">		String rType = request.getRequestType();</span>
+
+<span class="fc" id="L1150">		boolean result = false;</span>
+<span class="pc bpc" id="L1151" title="1 of 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(rType)) {</span>
+<span class="fc" id="L1152">			ID privID = PrivilegeKeys.TOM_MODIFYREQUESTSFOREMPLOYEE_ID;</span>
+<span class="fc" id="L1153">			result = isTOAuthPriv(request, privID);</span>
+<span class="pc bnc" id="L1154" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(rType)) {</span>
+<span class="nc" id="L1155">			ID privID = PrivilegeKeys.FT_MODIFYREQUESTSFOREMPLOYEE_ID;</span>
+<span class="nc" id="L1156">			result = isFTAuthPriv(request, privID);</span>
+<span class="nc bnc" id="L1157" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType)) {</span>
+<span class="nc" id="L1158">			ID privID = PrivilegeKeys.SS_MODIFYREQUESTSFOREMPLOYEE_ID;</span>
+<span class="nc" id="L1159">			result = isSSAuthPriv(request, privID);</span>
+<span class="nc bnc" id="L1160" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTBID.equals(rType)) {</span>
+<span class="nc" id="L1161">			ID privID = PrivilegeKeys.SB_MODIFYSHIFTBIDSFOREMP_ID;</span>
+<span class="nc" id="L1162">			result = isSBAuthPriv(request, privID);</span>
+<span class="nc bnc" id="L1163" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_CUSTSHIFT.equals(rType)) {</span>
+<span class="nc" id="L1164">			ID privID = PrivilegeKeys.CS_MODIFYREQUESTSFOREMPLOYEE_ID;</span>
+<span class="nc" id="L1165">			result = isCSAuthPriv(request, privID);</span>
+		}
+
+<span class="fc" id="L1168">		return result;</span>
+	}
+
+	/**
+	 * Return true if User is authorize to approve specified Request
+	 */
+	protected boolean isAuthToApproveRqt(RequestAggregate request) {
+<span class="fc" id="L1175">		String rType = request.getRequestType();</span>
+<span class="fc" id="L1176">		String status = request.getRequestStatus();</span>
+<span class="fc" id="L1177">		boolean isEscalated = RequestAuditTrail.STATUS_ESCALATED.equals(status);</span>
+
+<span class="fc" id="L1179">		boolean result = false;</span>
+<span class="pc bpc" id="L1180" title="1 of 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(rType)) {</span>
+<span class="pc bpc" id="L1181" title="1 of 2 branches missed.">			ID privID = isEscalated ? PrivilegeKeys.TOM_APPROVEESCALATEDREQUESTS_ID : PrivilegeKeys.TOM_APPROVEPENDINGREQUESTS_ID;</span>
+<span class="fc" id="L1182">			result = isTOAuthPriv(request, privID);</span>
+<span class="pc bnc" id="L1183" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(rType)) {</span>
+<span class="nc" id="L1184">			ID privID = PrivilegeKeys.FT_APPROVEPENDINGREQUESTS_ID;</span>
+<span class="nc" id="L1185">			result = isFTAuthPriv(request, privID);</span>
+<span class="nc bnc" id="L1186" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType)) {</span>
+<span class="nc bnc" id="L1187" title="All 2 branches missed.">			ID privID = isEscalated ? PrivilegeKeys.SS_APPROVEESCALATEDREQUESTS_ID : PrivilegeKeys.SS_APPROVEPENDINGREQUESTS_ID;</span>
+<span class="nc" id="L1188">			result = isSSAuthPriv(request, privID);</span>
+<span class="nc bnc" id="L1189" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTBID.equals(rType)) {</span>
+<span class="nc bnc" id="L1190" title="All 2 branches missed.">			ID privID = isEscalated ? PrivilegeKeys.SB_APPROVEESCALATEDBIDS_ID : PrivilegeKeys.SB_APPROVEPENDINGBIDS_ID;</span>
+<span class="nc" id="L1191">			result = isSBAuthPriv(request, privID);</span>
+<span class="nc bnc" id="L1192" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_CUSTSHIFT.equals(rType)) {</span>
+<span class="nc bnc" id="L1193" title="All 2 branches missed.">			ID privID = isEscalated ? PrivilegeKeys.CS_APPROVEESCALATEDREQUESTS_ID : PrivilegeKeys.CS_APPROVEPENDINGREQUESTS_ID;</span>
+<span class="nc" id="L1194">			result = isCSAuthPriv(request, privID);</span>
+		}
+
+<span class="fc" id="L1197">		return result;</span>
+	}
+
+	protected boolean isAuthToProcessAcceptWithdrawRequest(RequestAggregate request) {
+<span class="fc" id="L1201">		String rType = request.getRequestType();</span>
+<span class="fc" id="L1202">		boolean result = false;</span>
+<span class="pc bpc" id="L1203" title="2 of 4 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(rType) &amp;&amp; ((TORequest) request).isEligibleForAcceptWithdrawAction()) {</span>
+<span class="fc" id="L1204">			result = isTOAuthPriv(request, PrivilegeKeys.TOM_ACCEPT_REJECT_WITHDRAW_REQUESTS_ID);</span>
+		}
+<span class="pc bpc" id="L1206" title="3 of 4 branches missed.">		if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType) &amp;&amp; ((ShiftSwapRequest) request).isEligibleForRejectWithdrawAction()) {</span>
+<span class="nc" id="L1207">			result = isSSAuthPriv(request, PrivilegeKeys.SS_APPROVEPENDINGREQUESTS_ID);</span>
+		}
+<span class="fc" id="L1209">		return result;</span>
+	}
+
+	protected boolean isAuthToProcessRejectWithdrawRequest(RequestAggregate request) {
+<span class="fc" id="L1213">		String rType = request.getRequestType();</span>
+<span class="fc" id="L1214">		boolean result = false;</span>
+<span class="pc bpc" id="L1215" title="2 of 4 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(rType) &amp;&amp; ((TORequest) request).isEligibleForRejectWithdrawAction()) {</span>
+<span class="fc" id="L1216">			result = isTOAuthPriv(request, PrivilegeKeys.TOM_ACCEPT_REJECT_WITHDRAW_REQUESTS_ID);</span>
+		}
+<span class="pc bpc" id="L1218" title="3 of 4 branches missed.">		if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType) &amp;&amp; ((ShiftSwapRequest) request).isEligibleForRejectWithdrawAction()) {</span>
+<span class="nc" id="L1219">			result = isSSAuthPriv(request, PrivilegeKeys.SS_APPROVEPENDINGREQUESTS_ID);</span>
+		}
+<span class="fc" id="L1221">		return result;</span>
+	}
+
+	/**
+	 * Return true if User is authorize to approve specified Time Off Request
+	 */
+	@Override
+	protected boolean isTOAuthPriv(RequestAggregate request, ID privID) {
+<span class="fc" id="L1229">		TORequest toReq = (TORequest) request;</span>
+<span class="fc" id="L1230">		ID orgID = (ID) m_eOrgMap.get(toReq.getEmployeeID());</span>
+<span class="fc" id="L1231">		return m_user.isAuthorized(privID, OrganizationScopeManagerProxy.getScopeID(orgID));</span>
+	}
+
+	@Override
+	protected boolean isFTAuthPriv(RequestAggregate request, ID privID) {
+<span class="nc" id="L1236">		TORequest toReq = (TORequest) request;</span>
+<span class="nc" id="L1237">		ID orgID = (ID) m_eOrgMap.get(toReq.getEmployeeID());</span>
+<span class="nc" id="L1238">		return m_user.isAuthorized(privID, OrganizationScopeManagerProxy.getScopeID(orgID));</span>
+	}
+
+	protected boolean isSSAuthPriv(RequestAggregate request, ID privID) {
+<span class="nc" id="L1242">		ShiftSwapRequest ssReq = (ShiftSwapRequest) request;</span>
+<span class="nc" id="L1243">		List empIDList = ssReq.getEmployees();</span>
+<span class="nc" id="L1244">		ID orgID1 = (ID) m_eOrgMap.get(empIDList.get(0));</span>
+<span class="nc" id="L1245">		ID orgID2 = (ID) m_eOrgMap.get(empIDList.get(1));</span>
+
+<span class="nc bnc" id="L1247" title="All 2 branches missed.">		return m_user.isAuthorized(privID, OrganizationScopeManagerProxy.getScopeID(orgID1))</span>
+<span class="nc bnc" id="L1248" title="All 2 branches missed.">				|| m_user.isAuthorized(privID, OrganizationScopeManagerProxy.getScopeID(orgID2));</span>
+	}
+
+	protected boolean isSBAuthPriv(RequestAggregate request, ID privID) {
+<span class="nc" id="L1252">		ShiftBidRequest sbReq = (ShiftBidRequest) request;</span>
+<span class="nc" id="L1253">		ID orgID = (ID) m_eOrgMap.get(sbReq.getEmployeeID());</span>
+<span class="nc" id="L1254">		return m_user.isAuthorized(privID, OrganizationScopeManagerProxy.getScopeID(orgID));</span>
+	}
+
+	protected boolean isCSAuthPriv(RequestAggregate request, ID privID) {
+<span class="nc" id="L1258">		CustShiftReq csReq = (CustShiftReq) request;</span>
+<span class="nc" id="L1259">		ID orgID = (ID) m_eOrgMap.get(csReq.getEmployeeID());</span>
+<span class="nc" id="L1260">		return m_user.isAuthorized(privID, OrganizationScopeManagerProxy.getScopeID(orgID));</span>
+	}
+
+	protected boolean isAuthToWithdrawApprovedRequest(RequestAggregate request) {
+<span class="fc" id="L1264">		String rType = request.getRequestType();</span>
+
+<span class="fc" id="L1266">		boolean result = false;</span>
+<span class="pc bpc" id="L1267" title="1 of 2 branches missed.">		if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType)) {</span>
+<span class="nc" id="L1268">			result = isSSAuthPriv(request, PrivilegeKeys.SS_WITHDRAWREQUESTS_ID);</span>
+		} else {
+<span class="fc" id="L1270">			result = isAuthToUpdateRqt(request); // all other types</span>
+		}
+<span class="fc" id="L1272">		return result;</span>
+	}
+
+	/**
+	 * Return false for other requests, true only for Time Off Requests
+	 */
+	protected boolean hasGroupActionForTimeOffChoice() {
+<span class="nc" id="L1279">		return false;</span>
+	}
+	//QC 176957:When approving a time off the page selector jumps back to page 1 in request management- ESR#4663410-Cloned QC 177450
+	//Fix for Edit action (not change status of requests)- shouldBeOnSamePageForEdit =true
+	//and all actions that refresh the page after change status of requests -
+	//if there is no filter or filter does not depend on status 
+	private boolean checkIfShouldStandOnSamePage(){
+<span class="pc bpc" id="L1286" title="1 of 4 branches missed.">		boolean result = shouldBeOnSamePageForEdit||</span>
+<span class="pc bpc" id="L1287" title="2 of 4 branches missed.">				((shouldBeOnSamePage || isPageActionGroupAction())&amp;&amp; !isFilterDependOnStatus());</span>
+<span class="fc" id="L1288">		return result;</span>
+	}
+	/**
+	 * The method checks if there is a filter which depends on status.
+	 * It serves for getting the current list after change status of requests.
+	 * Without filter or filter which is not based on status, once request is approved/denied
+	 * users should stand the same page.
+	 * But if the filter depends on status, after change status, under the filter, the request with changed status should on on the page
+	 */
+	protected boolean isFilterDependOnStatus(){
+<span class="fc" id="L1298">		boolean result = false;</span>
+<span class="pc bpc" id="L1299" title="2 of 4 branches missed.">		if(m_rfilterBoxPC != null &amp;&amp; m_rfilterBoxPC.getSelectedFilterID()!=null){ </span>
+<span class="nc" id="L1300">			ID filerID = m_rfilterBoxPC.getSelectedFilterID();</span>
+<span class="nc" id="L1301">			result =RequestsMH.filterDependOnStatus(filerID);</span>
+		}
+<span class="fc" id="L1303">		return result;</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

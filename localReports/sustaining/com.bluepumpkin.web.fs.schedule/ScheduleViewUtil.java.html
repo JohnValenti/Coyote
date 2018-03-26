@@ -1,0 +1,926 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ScheduleViewUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.fs.schedule</a> &gt; <span class="el_source">ScheduleViewUtil.java</span></div><h1>ScheduleViewUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.fs.schedule;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.CalendarRange;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.util.DateTimeUtil;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.activity.model.EventUtils;
+import com.bluepumpkin.ejb.bbm.activity.model.SimpleEvent;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.schedule.model.CalendarEvent;
+import com.bluepumpkin.ejb.bbm.schedule.model.PublishingPeriod;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignmentFields;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.TimeOffEvent;
+import com.bluepumpkin.ejb.bbm.vo.HOOAssignment;
+import com.bluepumpkin.ejb.bbm.workresource.OrganizationScopeManagerProxy;
+import com.bluepumpkin.web.fs.schedule.summary.DailyScheduleSummary;
+import com.witness.ejb.core.security.model.User;
+import com.witness.web.uif.system.RequestContext;
+
+/**
+ * Title: ScheduleViewUtil Description: Static methods used in Schedule Viewing
+ * classes Copyright: Copyright (c) 2002 Company: Blue Pumpkin Software, inc
+ * 
+ * @author Pavel Bosin Created on October 3, 2002, 5:40 PM
+ * @version 1.0
+ */
+<span class="nc" id="L41">public class ScheduleViewUtil {</span>
+<span class="fc" id="L42">	public static long DAY_IN_MSEC = 86400000;</span>
+	private static final String FORM_ACTION = &quot;GroupScheduleRH_FORM_ACTION&quot;;
+
+	/**
+	 * Cache specified Form Action
+	 */
+	public static void cacheFormAction(RequestContext context, String viewType) {
+<span class="fc" id="L49">		context.setAttribute(RequestContext.SESSION_SCOPE, FORM_ACTION, viewType);</span>
+<span class="fc" id="L50">	}</span>
+
+	/**
+	 * Return cached FormAction
+	 */
+	public static String getCachedFormAction(RequestContext context) {
+<span class="fc" id="L56">		return (String) context.getAttribute(RequestContext.SESSION_SCOPE, FORM_ACTION);</span>
+	}
+
+	/**
+	 * make day schedules for the group
+	 * 
+	 * @param hOOAssignments
+	 *            A list which contains one HOOAssignment for each employee
+	 * @param groupCampaignAssignments
+	 *            - collection of (collection of CampaignWorkResource
+	 *            assignments) for each employee.
+	 * @param employeeIDs
+	 *            - collection of employee IDs.
+	 * @param employeeCampAssMap
+	 *            - map of employeeIDs - &gt; CampaignWorkResource assignments.
+	 * @param campaignIDs
+	 *            - Set of unique campaign IDs that we need to lookup the
+	 *            Campaign names for.
+	 * @throws BbmFinderException
+	 */
+	public static Collection&lt;Collection&lt;DailyScheduleSummary&gt;&gt; makeGroupDaySummaries(RequestContext context,
+			TimeRange theTimeRange, Collection&lt;Collection&lt;? extends Event&gt;&gt; groupSchedule,
+			Collection&lt;Collection&lt;TimeRange&gt;&gt; groupTimeRanges, Collection&lt;HOOAssignment&gt; grouphOOAssignments,
+			Collection&lt;Collection&lt;PublishingPeriod&gt;&gt; groupPubPeriods, Collection&lt;ID&gt; employeeIDs,
+			Map&lt;ID, ID&gt; employeeOrgMap, Map&lt;ID, Activity&gt; activityMap) throws BbmFinderException {
+<span class="fc" id="L81">		ArrayList&lt;Collection&lt;DailyScheduleSummary&gt;&gt; groupDaySummaries = new ArrayList&lt;Collection&lt;DailyScheduleSummary&gt;&gt;();</span>
+
+<span class="pc bpc" id="L83" title="2 of 4 branches missed.">		if (groupSchedule == null || groupSchedule.size() == 0) {</span>
+<span class="nc" id="L84">			return groupDaySummaries;</span>
+		}
+
+<span class="pc bpc" id="L87" title="1 of 2 branches missed.">		Iterator&lt;Collection&lt;TimeRange&gt;&gt; iRanges = (groupTimeRanges == null) ? null : groupTimeRanges.iterator();</span>
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">		Iterator&lt;HOOAssignment&gt; iHoo = (grouphOOAssignments == null) ? null : grouphOOAssignments.iterator();</span>
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">		Iterator&lt;Collection&lt;PublishingPeriod&gt;&gt; iPPs = (groupPubPeriods == null) ? null : groupPubPeriods.iterator();</span>
+<span class="pc bpc" id="L90" title="1 of 2 branches missed.">		Iterator&lt;ID&gt; iEmps = (employeeIDs == null) ? null : employeeIDs.iterator();</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">		for (Iterator&lt;Collection&lt;? extends Event&gt;&gt; iSchedule = groupSchedule.iterator(); iSchedule.hasNext();) {</span>
+<span class="fc" id="L92">			Collection&lt;? extends Event&gt; empSchedules = iSchedule.next();</span>
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">			Collection&lt;TimeRange&gt; employeeTimeRanges = (iRanges == null) ? null : iRanges.next();</span>
+<span class="pc bpc" id="L94" title="1 of 2 branches missed.">			HOOAssignment empHoo = (iHoo == null) ? null : iHoo.next();</span>
+<span class="pc bpc" id="L95" title="1 of 2 branches missed.">			ID employeeID = (iEmps == null) ? null : iEmps.next();</span>
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">			ID orgID = (employeeOrgMap == null) ? null : employeeOrgMap.get(employeeID);</span>
+
+			// Changes for QA99660
+<span class="fc" id="L99">			Collection&lt;PublishingPeriod&gt; personalPubPeriods = null;</span>
+<span class="pc bpc" id="L100" title="1 of 2 branches missed.">			if (iPPs != null) {</span>
+<span class="fc" id="L101">				personalPubPeriods = iPPs.next();</span>
+			}
+
+			// Changes for QA99660
+<span class="fc" id="L105">			Collection&lt;DailyScheduleSummary&gt; empSummary = makeDaySummaries(context, theTimeRange, empSchedules,</span>
+					employeeTimeRanges, empHoo, personalPubPeriods, orgID, employeeID, activityMap); 
+<span class="fc" id="L107">			groupDaySummaries.add(empSummary);</span>
+<span class="fc" id="L108">		}</span>
+
+<span class="fc" id="L110">		return groupDaySummaries;</span>
+	}// makeGroupDaySummaries
+
+	/**
+	 * Get the campaign name for an employee's shift.
+	 * 
+	 * @param campaignNamesBySpId
+	 *            - Map of scheduling period ID -&gt; associated campaign name.
+	 * @param oneDaySchedule
+	 *            - Data structure describing the employee's shift for one day.
+	 * @return the campaign name if found in campaignNamesBySpId, else empty
+	 *         string.
+	 */
+	public static String getCampaignName(Map&lt;ID, String&gt; campaignNamesBySpId, DailyScheduleSummary oneDaySchedule) {
+<span class="fc" id="L124">		String campaignName = &quot;&quot;;</span>
+<span class="fc" id="L125">		ID spID = oneDaySchedule.getShiftSchedulingPeriodID();</span>
+
+<span class="pc bpc" id="L127" title="3 of 4 branches missed.">		if (spID != null &amp;&amp; campaignNamesBySpId == null) {</span>
+<span class="nc" id="L128">			System.out.println(&quot;\n\nWARNING in ScheduleViewUtil.getCampaignName(): campaignIdNames is null&quot;);</span>
+		}
+
+<span class="pc bpc" id="L131" title="5 of 6 branches missed.">		if (spID != null &amp;&amp; campaignNamesBySpId != null &amp;&amp; campaignNamesBySpId.containsKey(spID)) {</span>
+<span class="nc" id="L132">			campaignName = (String) campaignNamesBySpId.get(spID);</span>
+		}
+<span class="pc bpc" id="L134" title="1 of 2 branches missed.">		return campaignName == null ? &quot;&quot; : campaignName;</span>
+	}
+
+	/**
+	 * Get the campaign name for a particular event. This method will use the
+	 * SPID of the event to look up the correct campaign associated to the
+	 * event's SP. This method should not be used on event's that are not linked
+	 * to an SP (e.g. Calendar Events). For these types of events, this method
+	 * will return null.
+	 */
+	public static String getCampaignName(Map&lt;ID, String&gt; campaignNamesBySpID, SimpleEvent event) {
+<span class="nc" id="L145">		return campaignNamesBySpID.get(event.getSPID());</span>
+	}
+
+	/**
+	 * make day summaries for the one person schedules
+	 * 
+	 * @param wrcaCol
+	 *            - collection of CampaignWorkResource assignments for the
+	 *            employee.
+	 * @param campaignIDs
+	 *            - Set of unique campaign IDs that we need to lookup the
+	 *            Campaign names for.
+	 * @param personalPubPeriods
+	 *            - FIXME: This parameter can either be a collection of
+	 *            PublishingPeriod objects or a collection of a collection of
+	 *            PublishingPeriod objects. This needs to be refactored so the
+	 *            collection is consistently the same type.
+	 * @throws BbmFinderException
+	 */
+	public static Collection&lt;DailyScheduleSummary&gt; makeDaySummaries(RequestContext context, TimeRange theTimeRange,
+			Collection&lt;? extends Event&gt; employeeSchedule, Collection&lt;TimeRange&gt; employeeTimeRanges,
+			HOOAssignment hOOAssignment, Collection personalPubPeriods, ID orgID, ID employeeID,
+			Map&lt;ID, Activity&gt; activityMap) throws BbmFinderException {
+<span class="fc" id="L168">		ArrayList&lt;DailyScheduleSummary&gt; daySummaries = new ArrayList&lt;DailyScheduleSummary&gt;();</span>
+		// for each day in theTimerange
+<span class="fc" id="L170">		TimeZone tz = context.getViewingTimeZone();</span>
+<span class="fc" id="L171">		Calendar aCal = Calendar.getInstance(tz);</span>
+<span class="fc" id="L172">		aCal.setTime(theTimeRange.getStartDate());</span>
+<span class="fc" id="L173">		boolean dstAdjustment = false;</span>
+
+<span class="fc bfc" id="L175" title="All 2 branches covered.">		while (!aCal.getTime().after(theTimeRange.getEndDate())) {</span>
+<span class="fc" id="L176">			DailyScheduleSummary daySchedule = null;</span>
+<span class="fc" id="L177">			CalendarRange aDay = DateTimeUtil.makeDayRange(aCal.getTime(), tz);</span>
+
+			// DailyScheduleSummary(context, shiftStartDate, shiftEndDate,
+			// hasShift, isPublished, isDayOff)
+<span class="fc bfc" id="L181" title="All 2 branches covered.">			if (!ScheduleViewPM.dayIsPublished(aDay, employeeTimeRanges)) {</span>
+				// make nonpublished day interval
+<span class="fc" id="L183">				daySchedule = new DailyScheduleSummary(context, aDay, aDay.getStartDate(), aDay.getEndDate(), false,</span>
+						false, false, null, null, null);
+<span class="pc bpc" id="L185" title="2 of 4 branches missed.">			} else if (!EventUtils.hasShiftAssignment(employeeSchedule, aDay.getStartDate(), aDay.getEndDate())</span>
+<span class="pc bpc" id="L186" title="1 of 2 branches missed.">					&amp;&amp; hOOAssignment != null &amp;&amp; !hOOAssignment.isActive((short) aCal.get(Calendar.DAY_OF_WEEK))) {</span>
+				// org is closed
+<span class="nc" id="L188">				daySchedule = new DailyScheduleSummary(context, aDay, aDay.getStartDate(), aDay.getEndDate(), false,</span>
+						true, false, true, null, null, null);
+			} else {
+				// pubPeriod can not be null in this clause.
+<span class="fc" id="L192">				PublishingPeriod pubPeriod = findPubPeriodOverlapWithDay(aDay, personalPubPeriods);</span>
+<span class="fc" id="L193">				daySchedule = makePublishedDaySummary(context, aDay, employeeSchedule, pubPeriod, orgID, employeeID,</span>
+						activityMap);
+			}// endif
+
+<span class="fc" id="L197">			daySummaries.add(daySchedule);</span>
+			// QC46598 java bug for Brazil DST transition 10/18/09
+<span class="fc" id="L199">			dstAdjustment = nextDay(aCal, dstAdjustment);</span>
+			// aCal.add(Calendar.DATE,1);
+<span class="fc" id="L201">		}// endwhile</span>
+<span class="fc" id="L202">		return daySummaries;</span>
+	}// makeDaySummaries
+
+	private static PublishingPeriod findPubPeriodOverlapWithDay(CalendarRange aDay, Collection personalPubPeriods) {
+<span class="pc bpc" id="L206" title="2 of 4 branches missed.">		if (personalPubPeriods == null || personalPubPeriods.isEmpty())</span>
+<span class="nc" id="L207">			return null;</span>
+
+		// the caller code may pass collecion of collecion for single employee
+		// pub periods. need hack here
+<span class="pc bpc" id="L211" title="1 of 2 branches missed.">		if (personalPubPeriods.iterator().next() instanceof ArrayList) {</span>
+<span class="nc" id="L212">			personalPubPeriods = (Collection) personalPubPeriods.iterator().next();</span>
+<span class="nc bnc" id="L213" title="All 4 branches missed.">			if (personalPubPeriods == null || personalPubPeriods.isEmpty()){</span>
+<span class="nc" id="L214">				return null;</span>
+			}
+		}
+
+<span class="fc" id="L218">		PublishingPeriod pub = null;</span>
+<span class="fc bfc" id="L219" title="All 2 branches covered.">		for (Iterator i = personalPubPeriods.iterator(); i.hasNext();) {</span>
+<span class="fc" id="L220">			pub = (PublishingPeriod) i.next();</span>
+<span class="pc bpc" id="L221" title="2 of 4 branches missed.">			if (aDay.getStartDate().before(pub.getEndTime()) &amp;&amp; aDay.getEndDate().after(pub.getStartTime())</span>
+<span class="pc bpc" id="L222" title="1 of 2 branches missed.">					&amp;&amp; !pub.isPartialPublish()) {</span>
+<span class="nc" id="L223">				break;</span>
+			}
+		}
+<span class="fc" id="L226">		return pub;</span>
+	}
+
+	/**
+	 * Make daily schedule summary for one day using one employee schedule
+	 * events collection
+	 * 
+	 * @param context
+	 *            -
+	 * @param aDay
+	 *            - the day interval for which summary is created
+	 * @param employeeSchedule
+	 *            - collection of schedule Events covering longer period
+	 * @return DailyScheduleSummary with published flag as true, calcualted
+	 *         isDayOff, hasShift, start, and end
+	 * @throws BbmFinderException
+	 */
+	public static DailyScheduleSummary makePublishedDaySummary(RequestContext context, CalendarRange aDay,
+			Collection&lt;? extends Event&gt; employeeSchedule, PublishingPeriod pubPeriod, ID orgID, ID employeeID,
+			Map&lt;ID, Activity&gt; activityMap) throws BbmFinderException {
+<span class="fc" id="L246">		DailyScheduleSummary daySchedule = null;</span>
+<span class="fc" id="L247">		Collection&lt;ShiftAssignment&gt; shiftAssignments = findShift(aDay, employeeSchedule);</span>
+<span class="fc" id="L248">		Collection&lt;ID&gt; agentSPIDs = null;</span>
+
+<span class="fc" id="L250">		boolean makeTimeOff = false; // &quot;Time Off&quot;</span>
+<span class="fc" id="L251">		boolean makeOff = false; // &quot;Off&quot; (No Shift)</span>
+
+<span class="pc bpc" id="L253" title="2 of 4 branches missed.">		if (shiftAssignments != null &amp;&amp; shiftAssignments.size() &gt; 0) {</span>
+<span class="nc bnc" id="L254" title="All 2 branches missed.">			for (ShiftAssignment shiftAssignment : shiftAssignments) {</span>
+<span class="nc" id="L255">				TimeRange workRange = eventDisplayRange(shiftAssignment);</span>
+<span class="nc bnc" id="L256" title="All 4 branches missed.">				if (!workRange.isValid() || workRange.isInstant()) {</span>
+<span class="nc" id="L257">					makeOff = true; // empty shift - treat it as &quot;Off&quot;</span>
+				} else {
+					// find the remainder of the shift after removing time off
+					// from it
+<span class="nc" id="L261">					reduceWorkRangeByTimeOff(workRange, employeeSchedule);</span>
+<span class="nc bnc" id="L262" title="All 4 branches missed.">					if (workRange == null || workRange.isInstant()) {</span>
+<span class="nc" id="L263">						makeTimeOff = true; // the remainder is empty -</span>
+											// &quot;Time Off&quot;
+					} else {
+						// make summary for work during the remainder (Ex:
+						// &quot;8:00AM - 5:00PM&quot;)
+<span class="nc bnc" id="L268" title="All 2 branches missed.">						if (daySchedule == null) {</span>
+<span class="nc" id="L269">							agentSPIDs = ScheduleViewMH.findAgentSecondarySPIDs(context, aDay, employeeID);</span>
+<span class="nc" id="L270">							daySchedule = new DailyScheduleSummary(context, aDay, workRange.getStartDate(),</span>
+<span class="nc" id="L271">									workRange.getEndDate(), true, true, false, shiftAssignment.getCampaignID(),</span>
+<span class="nc" id="L272">									agentSPIDs, orgID, shiftAssignment.getChildren(), shiftAssignment,</span>
+<span class="nc" id="L273">									findCalendarEventsInRange(aDay, employeeSchedule), activityMap);</span>
+						} else {
+<span class="nc bnc" id="L275" title="All 2 branches missed.">							if (agentSPIDs == null) {</span>
+<span class="nc" id="L276">								agentSPIDs = ScheduleViewMH.findAgentSecondarySPIDs(context, aDay, employeeID);</span>
+							}
+<span class="nc" id="L278">							daySchedule.setSecondShift(new DailyScheduleSummary(context, aDay,</span>
+<span class="nc" id="L279">									workRange.getStartDate(), workRange.getEndDate(), true, true, false,</span>
+<span class="nc" id="L280">									shiftAssignment.getCampaignID(), agentSPIDs, orgID, shiftAssignment.getChildren(),</span>
+<span class="nc" id="L281">									shiftAssignment, findCalendarEventsInRange(aDay, employeeSchedule), activityMap));</span>
+						}
+					}
+				}
+<span class="nc" id="L285">			}</span>
+		}
+
+<span class="pc bpc" id="L288" title="1 of 2 branches missed.">		if (daySchedule == null) {</span>
+			// if (has TO event &gt; 1 hr long)
+<span class="pc bpc" id="L290" title="1 of 2 branches missed.">			if (dayHasTimeOffEvent(aDay, employeeSchedule)) {</span>
+<span class="fc" id="L291">				makeTimeOff = true;</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">			} else if (dayHasTimeOffEvent(aDay, employeeSchedule, 0)) {</span>
+				// if (has TO event &gt; 0 minutes long)
+<span class="nc" id="L294">				makeOff = true;</span>
+			} else {
+<span class="nc bnc" id="L296" title="All 4 branches missed.">				if (pubPeriod == null || pubPeriod.isPartialPublish()) {</span>
+<span class="nc" id="L297">					daySchedule = new DailyScheduleSummary(context, aDay, aDay.getStartDate(), aDay.getEndDate(),</span>
+							false, false, false, null, null, orgID); // &quot;Not Published&quot;
+				} else {
+<span class="nc" id="L300">					makeOff = true;</span>
+				}
+			}
+
+<span class="pc bpc" id="L304" title="1 of 2 branches missed.">			if (makeTimeOff) {</span>
+				// boolean args: hasShift, published, DayOff
+<span class="fc" id="L306">				daySchedule = new DailyScheduleSummary(context, aDay, aDay.getStartDate(), aDay.getEndDate(), true,</span>
+						true, true, null, null, orgID); 
+<span class="nc bnc" id="L308" title="All 2 branches missed.">			} else if (makeOff) {</span>
+				// boolean args: noShift, published, notDayOff
+<span class="nc" id="L310">				daySchedule = new DailyScheduleSummary(context, aDay, aDay.getStartDate(), aDay.getEndDate(), false,</span>
+						true, false, null, null, orgID); 
+			}
+		}
+
+<span class="fc" id="L315">		return daySchedule;</span>
+	}// makePublishedDaySummary
+
+	/**
+	 * Get daily schedule summary TimeRange for one day using one employee
+	 * schedule events collection
+	 * 
+	 * @param aDay
+	 *            - the day interval for which summary is created
+	 * @param employeeSchedule
+	 *            - collection of schedule Events covering longer period
+	 * @param secondShift
+	 *            - if true, we will use the second shift (if any). Else, we use
+	 *            the first shift (if any).
+	 * @return If a shift, return the TimeRange. If timeOff or off, return null.
+	 */
+	public static TimeRange getPublishedDaySummaryType(CalendarRange aDay,
+			Collection&lt;? extends Event&gt; employeeSchedule, boolean secondShift) {
+<span class="nc" id="L333">		Collection&lt;ShiftAssignment&gt; shiftEvents = findShift(aDay, employeeSchedule);</span>
+
+<span class="nc bnc" id="L335" title="All 4 branches missed.">		if (shiftEvents != null &amp;&amp; shiftEvents.size() &gt; 0) {</span>
+<span class="nc" id="L336">			int i = 0;</span>
+<span class="nc bnc" id="L337" title="All 2 branches missed.">			for (Iterator it = shiftEvents.iterator(); it.hasNext(); i++) {</span>
+<span class="nc bnc" id="L338" title="All 4 branches missed.">				if (i == 0 &amp;&amp; secondShift) {</span>
+<span class="nc" id="L339">					continue;</span>
+				}
+
+<span class="nc" id="L342">				Event shiftEvent = (Event) it.next();</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">				if (shiftEvent != null) {</span>
+					// (has shift)
+<span class="nc" id="L345">					TimeRange workRange = eventDisplayRange(shiftEvent);</span>
+<span class="nc bnc" id="L346" title="All 4 branches missed.">					if (!workRange.isValid() || workRange.isInstant()) {</span>
+<span class="nc" id="L347">						return null; // empty shift - treat it as &quot;Off&quot;</span>
+					} else {
+						// find the remainder of the shift after removing time
+						// off from it
+<span class="nc" id="L351">						reduceWorkRangeByTimeOff(workRange, employeeSchedule);</span>
+<span class="nc bnc" id="L352" title="All 4 branches missed.">						if (workRange == null || workRange.isInstant()) {</span>
+<span class="nc" id="L353">							return null; // the remainder is empty - &quot;Time Off&quot;</span>
+						} else {
+<span class="nc" id="L355">							return workRange;</span>
+						}
+					}
+				}
+				break; // We only look one shift
+			}
+		}
+<span class="nc" id="L362">		return null;</span>
+	}
+
+	// QC46598 java bug for (Brazil) DST transition from std to dst at midnight
+	// Detects the ST-&gt;DST transition for time zones that go from midnight to
+	// 11pm,
+	// and manipulates the Calendar so that schedule viewing works. The returned
+	// boolean denotes whether the CalendarRange was adjusted, so that the
+	// CalendarRange can be adjusted back on the next iteration.
+	public static boolean nextDay(CalendarRange aDay, boolean prevAdjustment) {
+<span class="fc" id="L372">		boolean bAdjustment = prevAdjustment;</span>
+
+<span class="fc" id="L374">		Calendar startCal = aDay.getStartCalendar();</span>
+<span class="fc" id="L375">		TimeZone tz = startCal.getTimeZone();</span>
+<span class="fc" id="L376">		int prevHrOfDay = startCal.get(Calendar.HOUR_OF_DAY);</span>
+<span class="fc" id="L377">		int prevDayOfYr = startCal.get(Calendar.DAY_OF_YEAR);</span>
+<span class="fc" id="L378">		boolean prevIsDst = tz.inDaylightTime(startCal.getTime());</span>
+<span class="fc" id="L379">		aDay.nextDay();</span>
+<span class="fc" id="L380">		startCal = aDay.getStartCalendar();</span>
+<span class="fc" id="L381">		Calendar endCal = aDay.getEndCalendar();</span>
+<span class="fc" id="L382">		bAdjustment = adjustCalForMidnightDSTTransition(startCal, endCal, tz, prevHrOfDay, prevDayOfYr, prevIsDst,</span>
+				prevAdjustment);
+<span class="fc" id="L384">		aDay.setStartCalendar(startCal);</span>
+<span class="fc" id="L385">		aDay.setEndCalendar(endCal);</span>
+
+<span class="fc" id="L387">		return bAdjustment;</span>
+	}
+
+	// QC46598 java bug for (Brazil) DST transition from std to dst at midnight
+	// Detects the ST-&gt;DST transition for time zones that go from midnight to
+	// 11pm,
+	// and manipulates the Calendar so that schedule viewing works. The returned
+	// boolean denotes whether the CalendarRange was adjusted, so that the
+	// CalendarRange can be adjusted back on the next iteration.
+	public static boolean nextDay(Calendar startCal, boolean prevAdjustment) {
+<span class="fc" id="L397">		boolean bAdjustment = prevAdjustment;</span>
+
+<span class="fc" id="L399">		TimeZone tz = startCal.getTimeZone();</span>
+<span class="fc" id="L400">		int prevHrOfDay = startCal.get(Calendar.HOUR_OF_DAY);</span>
+<span class="fc" id="L401">		int prevDayOfYr = startCal.get(Calendar.DAY_OF_YEAR);</span>
+<span class="fc" id="L402">		boolean prevIsDST = tz.inDaylightTime(startCal.getTime());</span>
+<span class="fc" id="L403">		startCal.add(Calendar.DATE, 1);</span>
+<span class="fc" id="L404">		bAdjustment = adjustCalForMidnightDSTTransition(startCal, null, tz, prevHrOfDay, prevDayOfYr, prevIsDST,</span>
+				prevAdjustment);
+
+<span class="fc" id="L407">		return bAdjustment;</span>
+	}
+
+	// QC46598 java bug for (Brazil) DST transition from std to dst at midnight
+	private static boolean adjustCalForMidnightDSTTransition(Calendar startCal, Calendar endCal, TimeZone tz,
+			int prevHrOfDay, int prevDayOfYr, boolean prevIsDST, boolean prevAdjustment) {
+
+<span class="fc" id="L414">		boolean rtnVal = false;</span>
+
+		// This way lies madness... It doesn't seem possible to set the time to
+		// midnight
+		// at the DST transition. So after setting the Calendar ahead one hour,
+		// we need
+		// to set it back again the next iteration of nextDay().
+<span class="pc bpc" id="L421" title="1 of 2 branches missed.">		if (prevAdjustment == true) {</span>
+<span class="nc" id="L422">			startCal.add(Calendar.HOUR, -1);</span>
+<span class="nc bnc" id="L423" title="All 2 branches missed.">			if (endCal != null) {</span>
+<span class="nc" id="L424">				endCal.add(Calendar.HOUR, -1);</span>
+			}
+		} else {
+<span class="fc" id="L427">			int hrOfDay = startCal.get(Calendar.HOUR_OF_DAY);</span>
+<span class="fc" id="L428">			int dayOfYr = startCal.get(Calendar.DAY_OF_YEAR);</span>
+<span class="fc" id="L429">			boolean isDST = tz.inDaylightTime(startCal.getTime());</span>
+
+<span class="pc bpc" id="L431" title="7 of 8 branches missed.">			if ((prevDayOfYr == dayOfYr) &amp;&amp; (prevHrOfDay == (hrOfDay + 1) % 24)</span>
+					&amp;&amp; ((prevIsDST == isDST) &amp;&amp; (isDST == false))) {
+<span class="nc" id="L433">				startCal.add(Calendar.HOUR, 1);</span>
+<span class="nc bnc" id="L434" title="All 2 branches missed.">				if (endCal != null) {</span>
+<span class="nc" id="L435">					endCal.add(Calendar.HOUR, 1);</span>
+				}
+
+<span class="nc" id="L438">				rtnVal = true;</span>
+			}
+		}
+
+<span class="fc" id="L442">		return rtnVal;</span>
+	}
+
+	/**
+	 * find shift assignments for a given day in the schedule collection.
+	 * 
+	 * @return a Collection of Events of type EVENT_TYPE_SHIFT_ASSIGNMENT that
+	 *         start on the given day. There may be 2 if user changed time zone
+	 *         and a shift that would have started early the next day is now
+	 *         included in the new 24 hour window which we are viewing
+	 *         (QC44831).
+	 */
+	public static Collection&lt;ShiftAssignment&gt; findShift(CalendarRange aDay, Collection employeeSchedule) {
+<span class="fc" id="L455">		Collection&lt;ShiftAssignment&gt; shifts = new ArrayList&lt;ShiftAssignment&gt;(2);</span>
+<span class="pc bpc" id="L456" title="2 of 4 branches missed.">		if (employeeSchedule != null &amp;&amp; aDay != null) {</span>
+<span class="fc bfc" id="L457" title="All 2 branches covered.">			for (Iterator i = employeeSchedule.iterator(); i.hasNext();) {</span>
+<span class="fc" id="L458">				Event scheduleEvent = (Event) i.next();</span>
+<span class="pc bpc" id="L459" title="2 of 4 branches missed.">				if (scheduleEvent != null &amp;&amp; scheduleEvent.getEventType() == Event.EVENT_TYPE_SHIFT_ASSIGNMENT</span>
+<span class="nc bnc" id="L460" title="All 2 branches missed.">						&amp;&amp; aDay.includes(scheduleEvent.getStartTime())) {</span>
+<span class="nc" id="L461">					shifts.add((ShiftAssignment) scheduleEvent);</span>
+				}
+<span class="fc" id="L463">			}</span>
+		}
+<span class="fc" id="L465">		return shifts;</span>
+	}// findShift
+
+	/**
+	 * find TimeOffEvents that intersect a given day in the schedule collection.
+	 */
+	public static Collection&lt;TimeOffEvent&gt; findTimeOffEventsInRange(CalendarRange aDay,
+			Collection&lt;? extends Event&gt; employeeSchedule) {
+<span class="nc" id="L473">		return (Collection&lt;TimeOffEvent&gt;) findEventsInRange(aDay, employeeSchedule, Event.EVENT_TYPE_TIME_OFF);</span>
+	}
+
+	/**
+	 * find CalendarEvents that intersect a given day in the schedule
+	 * collection.
+	 */
+	public static Collection&lt;CalendarEvent&gt; findCalendarEventsInRange(CalendarRange range,
+			Collection&lt;? extends Event&gt; employeeSchedule) {
+<span class="nc" id="L482">		return (Collection&lt;CalendarEvent&gt;) findEventsInRange(range, employeeSchedule,</span>
+				Event.EVENT_TYPE_CALENDAR_EVENT_ASSIGNMENT);
+	}
+
+	/**
+	 * find Events of a given type that intersect a given day in the schedule
+	 * collection.
+	 */
+	public static Collection&lt;? extends Event&gt; findEventsInRange(CalendarRange range,
+			Collection&lt;? extends Event&gt; eventList, int eventType) {
+<span class="nc" id="L492">		Collection&lt;Event&gt; foundEvents = new ArrayList&lt;Event&gt;(2);</span>
+<span class="nc bnc" id="L493" title="All 4 branches missed.">		if (eventList != null &amp;&amp; range != null) {</span>
+<span class="nc bnc" id="L494" title="All 2 branches missed.">			for (Event scheduleEvent : eventList) {</span>
+<span class="nc bnc" id="L495" title="All 4 branches missed.">				if (scheduleEvent != null &amp;&amp; scheduleEvent.getEventType() == eventType</span>
+<span class="nc bnc" id="L496" title="All 2 branches missed.">						&amp;&amp; range.getStartDate().before(scheduleEvent.getEndTime())</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">						&amp;&amp; range.getEndDate().after(scheduleEvent.getStartTime())) {</span>
+<span class="nc" id="L498">					foundEvents.add(scheduleEvent);</span>
+				}
+<span class="nc" id="L500">			}</span>
+		}
+<span class="nc" id="L502">		return foundEvents;</span>
+	}
+
+	/**
+	 * find if day has overlappinig time off event
+	 * 
+	 * @param aDay
+	 * @param employeeSchedule
+	 *            - Collection schedule events for one employee
+	 * @return boolean found TimeOff
+	 */
+	public static boolean dayHasTimeOffEvent(CalendarRange aDay, Collection&lt;? extends Event&gt; employeeSchedule) {
+<span class="fc" id="L514">		return dayHasTimeOffEvent(aDay, employeeSchedule, 3600000); // 1 hr</span>
+	}// dayHasTimeOffEvent
+
+	/**
+	 * find if day has overlappinig time off event
+	 * 
+	 * @param aDay
+	 * @param employeeSchedule
+	 *            - Collection schedule events for one employee
+	 * @param minDuration
+	 *            - The minimum number of milliseconds for any timeoff event to
+	 *            be counted (3600000 = 1 hour).
+	 * @return boolean found TimeOff
+	 */
+	public static boolean dayHasTimeOffEvent(CalendarRange aDay, Collection&lt;? extends Event&gt; employeeSchedule,
+			int minDuration) {
+<span class="pc bpc" id="L530" title="2 of 4 branches missed.">		if (aDay != null &amp;&amp; employeeSchedule != null) {</span>
+<span class="pc bpc" id="L531" title="1 of 2 branches missed.">			for (Iterator i = employeeSchedule.iterator(); i.hasNext();) {</span>
+<span class="fc" id="L532">				Event scheduleEvent = (Event) i.next();</span>
+<span class="pc bpc" id="L533" title="2 of 4 branches missed.">				if (scheduleEvent != null &amp;&amp; scheduleEvent.getEventType() == Event.EVENT_TYPE_TIME_OFF</span>
+<span class="pc bpc" id="L534" title="1 of 2 branches missed.">						&amp;&amp; aDay.getOverlapDuration(eventRange(scheduleEvent)) &gt; minDuration) {</span>
+<span class="fc" id="L535">					return true; // Found!</span>
+				}
+<span class="nc" id="L537">			}</span>
+		}
+<span class="nc" id="L539">		return false;</span>
+	}// dayHasTimeOffEvent
+
+	/**
+	 * Reduce work range by the time off events in the schedule collection
+	 * 
+	 * @param workRange
+	 * @param employeeSchedule
+	 *            - Collection of shceudle events for one employee
+	 */
+	public static void reduceWorkRangeByTimeOff(TimeRange workRange, Collection employeeSchedule) {
+<span class="nc bnc" id="L550" title="All 6 branches missed.">		if (workRange == null || workRange.isInstant() || employeeSchedule == null) {</span>
+<span class="nc" id="L551">			return;</span>
+		}
+
+<span class="nc" id="L554">		ArrayList timeOffEvents = new ArrayList();</span>
+<span class="nc bnc" id="L555" title="All 2 branches missed.">		for (Iterator i = employeeSchedule.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L556">			Event scheduleEvent = (Event) i.next();</span>
+<span class="nc bnc" id="L557" title="All 4 branches missed.">			if (scheduleEvent != null &amp;&amp; scheduleEvent.getEventType() == Event.EVENT_TYPE_TIME_OFF) {</span>
+<span class="nc" id="L558">				timeOffEvents.add(scheduleEvent);</span>
+			}
+<span class="nc" id="L560">		}</span>
+<span class="nc" id="L561">		Collections.sort(timeOffEvents);</span>
+<span class="nc bnc" id="L562" title="All 2 branches missed.">		for (Iterator i = timeOffEvents.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L563">			Event scheduleEvent = (Event) i.next();</span>
+<span class="nc" id="L564">			TimeRange timeOffRange = eventDisplayRange(scheduleEvent);</span>
+<span class="nc bnc" id="L565" title="All 2 branches missed.">			if (workRange.isInside(timeOffRange)) {</span>
+<span class="nc" id="L566">				workRange.setEndDate(workRange.getStartDate()); // make instant</span>
+<span class="nc" id="L567">				break; // no reason to continue</span>
+			} else {
+<span class="nc bnc" id="L569" title="All 2 branches missed.">				if (timeOffRange.getStartDate().getTime() &gt; workRange.getStartDate().getTime()) {</span>
+<span class="nc" id="L570">					break;// it will not split, only trim the ends</span>
+				}
+				// it will not split, only trim the ends
+<span class="nc" id="L573">				workRange.trimBy(timeOffRange);</span>
+<span class="nc bnc" id="L574" title="All 2 branches missed.">				if (workRange.isInstant()) {</span>
+<span class="nc" id="L575">					break;</span>
+				}
+			}
+<span class="nc" id="L578">		}</span>
+<span class="nc" id="L579">		Collections.reverse(timeOffEvents);</span>
+<span class="nc bnc" id="L580" title="All 2 branches missed.">		for (Iterator i = timeOffEvents.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L581">			Event scheduleEvent = (Event) i.next();</span>
+<span class="nc" id="L582">			TimeRange timeOffRange = eventDisplayRange(scheduleEvent);</span>
+<span class="nc bnc" id="L583" title="All 2 branches missed.">			if (workRange.isInside(timeOffRange)) {</span>
+<span class="nc" id="L584">				workRange.setEndDate(workRange.getStartDate()); // make instant</span>
+<span class="nc" id="L585">				break; // no reason to continue</span>
+			} else {
+<span class="nc bnc" id="L587" title="All 2 branches missed.">				if (timeOffRange.getEndDate().getTime() &lt; workRange.getEndDate().getTime()) {</span>
+<span class="nc" id="L588">					break;// it will not split, only trim the ends</span>
+				}
+				// it will not split, only trim the ends
+<span class="nc" id="L591">				workRange.trimBy(timeOffRange);</span>
+<span class="nc bnc" id="L592" title="All 2 branches missed.">				if (workRange.isInstant()) {</span>
+<span class="nc" id="L593">					break;</span>
+				}
+			}
+<span class="nc" id="L596">		}</span>
+<span class="nc" id="L597">	}// reduceWorkRangeByTimeOff</span>
+
+	/**
+	 * make TimeRange corresponding to the schedule Event object
+	 */
+	public static TimeRange eventRange(Event scheduleEvent) {
+<span class="fc" id="L603">		return new TimeRange(scheduleEvent.getStartTime(), scheduleEvent.getEndTime());</span>
+	}// eventRange
+
+	/**
+	 * make TimeRange corresponding to the schedule Event object
+	 */
+	public static TimeRange eventDisplayRange(Event scheduleEvent) {
+<span class="nc bnc" id="L610" title="All 2 branches missed.">		if (scheduleEvent instanceof ShiftAssignment) {</span>
+<span class="nc" id="L611">			return new TimeRange(ScheduleViewUtil.getDisplayStartTime((ShiftAssignment) scheduleEvent),</span>
+<span class="nc" id="L612">					ScheduleViewUtil.getDisplayEndTime((ShiftAssignment) scheduleEvent));</span>
+		} else {
+<span class="nc" id="L614">			return eventRange(scheduleEvent);</span>
+		}
+	}// eventDisplayRange
+
+	/**
+	 * get the collection of unique activity IDs from the collection of schedule
+	 * items
+	 * 
+	 * @param theScheduleItems
+	 *            Collection of schedule items
+	 * @param myEmpID
+	 *            The ID of the currently logged-in user
+	 * @param hasTimeoffPreference
+	 *            - Does the logged-in user have the &quot;show timeoff&quot; preference
+	 *            set?
+	 * @return Collection of unique activity IDs
+	 */
+	public static Collection&lt;ID&gt; getScheduledActivityIDs(Collection theScheduleItems, ID myEmpID,
+			boolean hasTimeoffPreference) {
+<span class="nc" id="L633">		ArrayList&lt;ID&gt; theIDs = new ArrayList&lt;ID&gt;();</span>
+		// iterate through the schedule items and select unique activities
+<span class="nc bnc" id="L635" title="All 4 branches missed.">		if (theScheduleItems != null &amp;&amp; theScheduleItems.size() &gt; 0) {</span>
+<span class="nc bnc" id="L636" title="All 2 branches missed.">			for (Iterator it = theScheduleItems.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L637">				Event anEvent = (Event) it.next();</span>
+<span class="nc" id="L638">				ID activityID = anEvent.getActivityID();</span>
+<span class="nc" id="L639">				Collection&lt;ID&gt; empIDs = anEvent.getWorkResourceIDs();</span>
+<span class="nc bnc" id="L640" title="All 2 branches missed.">				if (empIDs != null) {</span>
+<span class="nc bnc" id="L641" title="All 2 branches missed.">					for (Iterator&lt;ID&gt; empIt = empIDs.iterator(); empIt.hasNext();) {</span>
+<span class="nc" id="L642">						ID curID = empIt.next();</span>
+<span class="nc bnc" id="L643" title="All 6 branches missed.">						if ((curID.equals(myEmpID) || hasTimeoffPreference || (anEvent.getEventType() != Event.EVENT_TYPE_TIME_OFF))</span>
+<span class="nc bnc" id="L644" title="All 4 branches missed.">								&amp;&amp; (!activityID.equals(Activity.ACTIVITY_NONE) &amp;&amp; !isIdInCollection(activityID, theIDs))) {</span>
+<span class="nc" id="L645">							theIDs.add(activityID);</span>
+<span class="nc" id="L646">							break;</span>
+						}
+<span class="nc" id="L648">					}</span>
+<span class="nc bnc" id="L649" title="All 4 branches missed.">				} else if (!activityID.equals(Activity.ACTIVITY_NONE) &amp;&amp; !isIdInCollection(activityID, theIDs)) {</span>
+<span class="nc" id="L650">					theIDs.add(activityID);</span>
+				}
+<span class="nc" id="L652">			}</span>
+		}
+<span class="nc" id="L654">		return theIDs;</span>
+	}// getScheduledActivityIDs
+
+	/**
+	 * return true if given ID is in the given collection of IDs
+	 */
+	public static boolean isIdInCollection(ID theID, Collection theCollection) {
+<span class="nc" id="L661">		boolean result = false;</span>
+<span class="nc bnc" id="L662" title="All 2 branches missed.">		if (theCollection != null) {</span>
+<span class="nc bnc" id="L663" title="All 2 branches missed.">			for (Iterator it = theCollection.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L664">				ID anID = (ID) it.next();</span>
+<span class="nc bnc" id="L665" title="All 2 branches missed.">				if (anID.equals(theID)) {</span>
+<span class="nc" id="L666">					result = true;</span>
+<span class="nc" id="L667">					break;</span>
+				}
+<span class="nc" id="L669">			}</span>
+		}
+<span class="nc" id="L671">		return result;</span>
+	}// isIdInCollection
+
+	/**
+	 * get Org Scoped privilege for the specified org and save it in the hash
+	 * map. Updates theData with boolean result.
+	 */
+	public static boolean isPrivWithOrgScope(RequestContext context, HashMap theData, String privKey, String hashKey,
+			boolean bDefaultIfNoOrg, ID orgID) {
+<span class="nc" id="L680">		User user = context.getUser();</span>
+<span class="nc bnc" id="L681" title="All 2 branches missed.">		boolean bValue = (orgID != null) ? user.isAuthorized(privKey, OrganizationScopeManagerProxy.getScopeID(orgID))</span>
+				: bDefaultIfNoOrg;
+<span class="nc" id="L683">		Boolean boolFlag = new Boolean(bValue);</span>
+<span class="nc" id="L684">		theData.put(hashKey, boolFlag);</span>
+<span class="nc" id="L685">		return bValue;</span>
+	}
+
+	/**
+	 * get Org Scoped privilege for the specified org and save it in the hash
+	 * map
+	 */
+	public static boolean isPrivWithOrgScope(RequestContext context, String privKey, boolean bDefaultIfNoOrg, ID orgID) {
+<span class="nc" id="L693">		User user = context.getUser();</span>
+<span class="nc bnc" id="L694" title="All 2 branches missed.">		boolean bValue = (orgID != null) ? user.isAuthorized(privKey, OrganizationScopeManagerProxy.getScopeID(orgID))</span>
+				: bDefaultIfNoOrg;
+<span class="nc" id="L696">		return bValue;</span>
+	}
+
+	/**
+	 * get Generic scoped privilege and save it the hash map. Updates theData
+	 * with boolean result.
+	 */
+	public static boolean isPrivWithGenScope(RequestContext context, HashMap theData, String privKey, String hashKey) {
+<span class="nc" id="L704">		User user = context.getUser();</span>
+<span class="nc" id="L705">		boolean bValue = user.isAuthorized(privKey);</span>
+<span class="nc" id="L706">		Boolean boolFlag = new Boolean(bValue);</span>
+<span class="nc" id="L707">		theData.put(hashKey, boolFlag);</span>
+<span class="nc" id="L708">		return bValue;</span>
+	}
+
+	/**
+	 * get Generic scoped privilege and save it the hash map.
+	 */
+	public static boolean isPrivWithGenScope(RequestContext context, String privKey) {
+<span class="nc" id="L715">		User user = context.getUser();</span>
+<span class="nc" id="L716">		boolean bValue = user.isAuthorized(privKey);</span>
+<span class="nc" id="L717">		return bValue;</span>
+	}
+
+	/**
+	 * get top elements from a collection
+	 */
+	public static Collection getTopCollectionPage(Collection col, int pageSize) {
+<span class="fc" id="L724">		ArrayList result = new ArrayList();</span>
+<span class="pc bpc" id="L725" title="1 of 2 branches missed.">		if (col != null) {</span>
+<span class="fc" id="L726">			Iterator it = col.iterator();</span>
+<span class="pc bpc" id="L727" title="1 of 4 branches missed.">			for (int i = 0; it.hasNext() &amp;&amp; i &lt; pageSize; i++) {</span>
+<span class="fc" id="L728">				result.add(it.next());</span>
+			}
+		}
+<span class="fc" id="L731">		return result;</span>
+	}// getTopCollectionPage
+
+	/**
+	 * Get bottom elements from a collection.
+	 */
+	public static Collection getBottomCollectionPage(Collection col, int chunkSize) {
+<span class="nc" id="L738">		ArrayList result = new ArrayList();</span>
+<span class="nc bnc" id="L739" title="All 2 branches missed.">		if (col != null) {</span>
+<span class="nc" id="L740">			int i = 0;</span>
+<span class="nc bnc" id="L741" title="All 2 branches missed.">			for (Iterator it = col.iterator(); it.hasNext(); i++) {</span>
+<span class="nc" id="L742">				Object curID = it.next();</span>
+<span class="nc bnc" id="L743" title="All 2 branches missed.">				if (i &gt;= chunkSize) {</span>
+<span class="nc" id="L744">					result.add(curID);</span>
+				}
+			}
+		}
+<span class="nc" id="L748">		return result;</span>
+	}// getBottomCollectionPage
+
+	/**
+	 * if day is out of range, get first day of time Range
+	 */
+	public static TimeRange makeSureDayIsInRange(TimeRange dayRange, TimeRange timeRange, TimeZone tz) {
+<span class="nc bnc" id="L755" title="All 2 branches missed.">		if (dayRange == null) {</span>
+<span class="nc bnc" id="L756" title="All 2 branches missed.">			if (timeRange != null) {</span>
+				// while creating the date range, create the date range within
+				// day like 23.59.59 instead 0 hours on nextday
+<span class="nc" id="L759">				Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L760">				cal.setTime(timeRange.getStartDate());</span>
+<span class="nc" id="L761">				cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L762">				cal.add(Calendar.MILLISECOND, -1);</span>
+<span class="nc" id="L763">				dayRange = new TimeRange(timeRange.getStartDate(), cal.getTime()); // DAY_IN_MSEC-1);</span>
+<span class="nc" id="L764">			} // else keep null</span>
+		} else { // have valid dayRange - make sure it is inside timeRange
+<span class="nc bnc" id="L766" title="All 2 branches missed.">			if (timeRange != null) {</span>
+<span class="nc bnc" id="L767" title="All 2 branches missed.">				if (!dayRange.isInside(timeRange)) {</span>
+					// move to the first day of timeRange
+					// QA61501 -Not able to see full shift when viewing one day
+					// in graph view-People/Sched
+					// create day range within a day so creating with one milli
+					// sec less
+<span class="nc" id="L773">					Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L774">					cal.setTime(timeRange.getStartDate());</span>
+<span class="nc" id="L775">					cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L776">					cal.add(Calendar.MILLISECOND, -1);</span>
+<span class="nc" id="L777">					dayRange = new TimeRange(timeRange.getStartDate(), cal.getTime()); // DAY_IN_MSEC-1);</span>
+				}
+			} // else keep dayRange
+		}
+<span class="nc" id="L781">		return dayRange;</span>
+	}// makeSureDayIsInRange
+
+	/**
+	 * Get the display start time of a ShiftAssignment.
+	 * &lt;P&gt;
+	 * 
+	 * @return Date - event start time
+	 */
+	public static Date getDisplayStartTime(ShiftAssignment sa) {
+<span class="nc" id="L791">		Date startTime = sa.getFieldValueDate(ShiftAssignmentFields.STARTTIME);</span>
+
+		// Hack to treat initial NO_ACTIVITY events as not part of the shift
+<span class="nc" id="L794">		Collection&lt;ShiftEventAssignment&gt; shiftEventAssignments = sa.getChildren();</span>
+<span class="nc bnc" id="L795" title="All 4 branches missed.">		if (shiftEventAssignments != null &amp;&amp; !shiftEventAssignments.isEmpty()) {</span>
+<span class="nc" id="L796">			Iterator&lt;ShiftEventAssignment&gt; it = shiftEventAssignments.iterator();</span>
+<span class="nc bnc" id="L797" title="All 2 branches missed.">			while (it.hasNext()) {</span>
+<span class="nc" id="L798">				ShiftEventAssignment sea = (ShiftEventAssignment) it.next();</span>
+<span class="nc bnc" id="L799" title="All 4 branches missed.">				if (sea.getActivityID().toInt() == Activity.NO_ACTIVITY &amp;&amp; sea.getStartTime().equals(sa.getStartTime())) {</span>
+<span class="nc" id="L800">					startTime = sea.getEndTime();</span>
+<span class="nc" id="L801">					break;</span>
+				}
+<span class="nc" id="L803">			}</span>
+		}
+<span class="nc" id="L805">		return startTime;</span>
+	}
+
+	/**
+	 * Get the display end time of a ShiftAssignment.
+	 * &lt;P&gt;
+	 * 
+	 * @return Date - event start time
+	 */
+	public static Date getDisplayEndTime(ShiftAssignment sa) {
+<span class="nc" id="L815">		return new Date(getDisplayStartTime(sa).getTime() + +getDisplayDuration(sa) * ShiftAssignment.MILLIS_IN_ONE_MIN);</span>
+	}
+
+	/**
+	 * Get the display duration of a ShiftAssignment.
+	 * &lt;P&gt;
+	 * 
+	 * @return int - duration (in minutes) of the event
+	 */
+	public static int getDisplayDuration(ShiftAssignment sa) {
+<span class="nc" id="L825">		int duration = sa.getFieldValueInt(ShiftAssignmentFields.DURATION);</span>
+
+		// Hack to treat initial NO_ACTIVITY events as not part of the shift
+<span class="nc" id="L828">		Collection&lt;ShiftEventAssignment&gt; shiftEventAssignments = sa.getChildren();</span>
+<span class="nc bnc" id="L829" title="All 4 branches missed.">		if (shiftEventAssignments != null &amp;&amp; !shiftEventAssignments.isEmpty()) {</span>
+<span class="nc" id="L830">			Iterator&lt;ShiftEventAssignment&gt; it = shiftEventAssignments.iterator();</span>
+<span class="nc bnc" id="L831" title="All 2 branches missed.">			while (it.hasNext()) {</span>
+<span class="nc" id="L832">				ShiftEventAssignment sea = it.next();</span>
+				// QC95641 (QA44225) trailing NO_ACTIVITY events also need
+				// consideration
+<span class="nc bnc" id="L835" title="All 2 branches missed.">				if (sea.getActivityID().equals(Activity.ACTIVITY_NONE)) {</span>
+<span class="nc bnc" id="L836" title="All 2 branches missed.">					if (sea.getStartTime().equals(sa.getStartTime())) {</span>
+<span class="nc" id="L837">						duration = duration - sea.getDuration();</span>
+<span class="nc bnc" id="L838" title="All 2 branches missed.">					} else if (sea.getEndTime().equals(sa.getEndTime())) {</span>
+<span class="nc" id="L839">						duration = duration - sea.getDuration();</span>
+					}
+				}
+<span class="nc" id="L842">			}</span>
+		}
+<span class="nc" id="L844">		return duration;</span>
+	}
+
+	public static TimeRange getExtensionBeforeTimeRange(ShiftAssignment sa) {
+<span class="nc" id="L848">		TimeRange beforeTimeRange = null;</span>
+
+<span class="nc" id="L850">		int minutesBefore = sa.getExtensionBefore();</span>
+<span class="nc bnc" id="L851" title="All 2 branches missed.">		if (minutesBefore &gt; 0) {</span>
+<span class="nc" id="L852">			Date startTime = sa.getStartTime();</span>
+<span class="nc" id="L853">			Date endTime = new Date(startTime.getTime() + minutesBefore * 60000);</span>
+
+<span class="nc" id="L855">			Collection&lt;ShiftEventAssignment&gt; shiftEventAssignments = sa.getChildren();</span>
+<span class="nc bnc" id="L856" title="All 4 branches missed.">			if (shiftEventAssignments != null &amp;&amp; !shiftEventAssignments.isEmpty()) {</span>
+<span class="nc" id="L857">				boolean findStart = false;</span>
+<span class="nc" id="L858">				boolean findEnd = false;</span>
+<span class="nc" id="L859">				Iterator&lt;ShiftEventAssignment&gt; it = shiftEventAssignments.iterator();</span>
+<span class="nc bnc" id="L860" title="All 2 branches missed.">				while (it.hasNext()) {</span>
+<span class="nc" id="L861">					ShiftEventAssignment sea = it.next();</span>
+<span class="nc bnc" id="L862" title="All 4 branches missed.">					if (!findStart &amp;&amp; sea.getActivityID().toInt() == Activity.NO_ACTIVITY</span>
+<span class="nc bnc" id="L863" title="All 2 branches missed.">							&amp;&amp; sea.getStartTime().equals(startTime)) {</span>
+<span class="nc" id="L864">						startTime = sea.getEndTime();</span>
+<span class="nc" id="L865">						findStart = true;</span>
+					}
+<span class="nc bnc" id="L867" title="All 4 branches missed.">					if (!findEnd &amp;&amp; sea.getActivityID().toInt() == Activity.NO_ACTIVITY</span>
+<span class="nc bnc" id="L868" title="All 2 branches missed.">							&amp;&amp; sea.getStartTime().equals(endTime)) {</span>
+<span class="nc" id="L869">						endTime = sea.getEndTime();</span>
+<span class="nc" id="L870">						findEnd = true;</span>
+					}
+<span class="nc bnc" id="L872" title="All 4 branches missed.">					if (findStart &amp;&amp; findEnd)</span>
+<span class="nc" id="L873">						break;</span>
+<span class="nc" id="L874">				}</span>
+			}
+
+<span class="nc" id="L877">			beforeTimeRange = new TimeRange(startTime, endTime);</span>
+		}
+
+<span class="nc" id="L880">		return beforeTimeRange;</span>
+	}
+
+	public static TimeRange getExtensionAfterTimeRange(ShiftAssignment sa) {
+<span class="nc" id="L884">		TimeRange beforeTimeRange = null;</span>
+
+<span class="nc" id="L886">		int minutesAfter = sa.getExtensionAfter();</span>
+<span class="nc bnc" id="L887" title="All 2 branches missed.">		if (minutesAfter &gt; 0) {</span>
+<span class="nc" id="L888">			Date endTime = sa.getEndTime();</span>
+<span class="nc" id="L889">			Date startTime = new Date(endTime.getTime() - minutesAfter * 60000);</span>
+
+<span class="nc" id="L891">			Collection&lt;ShiftEventAssignment&gt; shiftEventAssignments = sa.getChildren();</span>
+<span class="nc bnc" id="L892" title="All 4 branches missed.">			if (shiftEventAssignments != null &amp;&amp; !shiftEventAssignments.isEmpty()) {</span>
+<span class="nc" id="L893">				boolean findStart = false;</span>
+<span class="nc" id="L894">				boolean findEnd = false;</span>
+<span class="nc" id="L895">				Iterator&lt;ShiftEventAssignment&gt; it = shiftEventAssignments.iterator();</span>
+<span class="nc bnc" id="L896" title="All 2 branches missed.">				while (it.hasNext()) {</span>
+<span class="nc" id="L897">					ShiftEventAssignment sea = it.next();</span>
+<span class="nc bnc" id="L898" title="All 4 branches missed.">					if (!findStart &amp;&amp; sea.getActivityID().toInt() == Activity.NO_ACTIVITY</span>
+<span class="nc bnc" id="L899" title="All 2 branches missed.">							&amp;&amp; sea.getEndTime().equals(startTime)) {</span>
+<span class="nc" id="L900">						startTime = sea.getStartTime();</span>
+<span class="nc" id="L901">						findStart = true;</span>
+					}
+<span class="nc bnc" id="L903" title="All 4 branches missed.">					if (!findEnd &amp;&amp; sea.getActivityID().toInt() == Activity.NO_ACTIVITY</span>
+<span class="nc bnc" id="L904" title="All 2 branches missed.">							&amp;&amp; sea.getEndTime().equals(endTime)) {</span>
+<span class="nc" id="L905">						endTime = sea.getStartTime();</span>
+<span class="nc" id="L906">						findEnd = true;</span>
+					}
+<span class="nc bnc" id="L908" title="All 4 branches missed.">					if (findStart &amp;&amp; findEnd)</span>
+<span class="nc" id="L909">						break;</span>
+<span class="nc" id="L910">				}</span>
+			}
+
+<span class="nc" id="L913">			beforeTimeRange = new TimeRange(startTime, endTime);</span>
+		}
+
+<span class="nc" id="L916">		return beforeTimeRange;</span>
+	}
+
+	public static String getActivityNameConsiderOverride(Activity activity, String absentStringOverride) {
+<span class="nc bnc" id="L920" title="All 4 branches missed.">		if (activity.isTimeoff() &amp;&amp; absentStringOverride != null) {</span>
+<span class="nc" id="L921">			return absentStringOverride;</span>
+		}
+<span class="nc" id="L923">		return activity.getName();</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SkillServiceDelegate.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.wfm.ws.entityImport.skill</a> &gt; <span class="el_source">SkillServiceDelegate.java</span></div><h1>SkillServiceDelegate.java</h1><pre class="source lang-java linenums">package com.verint.wfm.ws.entityImport.skill;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil;
+import com.bluepumpkin.ejb.bbm.dao.MapUtil.SystemType;
+import com.bluepumpkin.ejb.bbm.skill.ejb.SkillManager;
+import com.bluepumpkin.ejb.bbm.skill.model.Skill;
+import com.bluepumpkin.ejb.bbm.vo.validators.ValidatorConstants;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
+import com.bluepumpkin.ejb.core.Log;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.wfm.ws.ServiceApplicationException;
+import com.verint.wfm.ws.entityImport.EntityImportService;
+import com.verint.wfm.ws.entityImport.skill.model.SkillDTO;
+import com.verint.wfm.ws.util.ExternalIDUtil;
+import com.verint.wfm.ws.util.MapJAXBType;
+import com.verint.wfm.ws.util.SyncUtil;
+
+/**
+ * This webservice is used to synchronize skills from an external applications (Eg: RFS system) to the WFO. This
+ * webservice has method to create new skills or update existing skills in the WFO.
+ * 
+ * @author Radhika Pochana, Copyright (c) 20011 by Verint Systems, Inc. All Rights Reserved.
+ */
+<span class="fc" id="L41">public class SkillServiceDelegate {</span>
+	private static final long serialVersionUID = 1L;
+
+<span class="fc" id="L44">	private static Category CAT = Log.initCategory(SkillServiceDelegate.class.getName());</span>
+<span class="fc" id="L45">	private SkillManager m_manager = null;</span>
+<span class="fc" id="L46">	private WorkResourceManager m_workResourceManager = null;</span>
+
+	public List&lt;SkillNotPersistedInfo&gt; createOrUpdate(Collection&lt;SkillDTO&gt; skillDTOs, String systemTypeName)
+			throws ServiceApplicationException {
+
+<span class="nc" id="L51">		SystemType systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L52">		CAT.debug(&quot;createOrUpdate(): systemType.name(): &quot; + systemType.name());</span>
+		
+<span class="nc" id="L54">		List&lt;SkillNotPersistedInfo&gt; skillNotPersistedInfos = new ArrayList&lt;SkillNotPersistedInfo&gt;();</span>
+<span class="nc bnc" id="L55" title="All 4 branches missed.">		if (skillDTOs == null || skillDTOs.isEmpty()) {</span>
+<span class="nc" id="L56">			CAT.debug(&quot;No skills to create/update&quot;);</span>
+<span class="nc" id="L57">			return skillNotPersistedInfos;</span>
+		}
+
+		// Convert From DTO's to entities so that the EJB layer can handle them
+<span class="nc" id="L61">		List&lt;SkillWithExternalIDWrapper&gt; newSkillWrappers = new ArrayList&lt;SkillWithExternalIDWrapper&gt;();</span>
+<span class="nc" id="L62">		List&lt;SkillWithExternalIDWrapper&gt; oldSkillWrappers = new ArrayList&lt;SkillWithExternalIDWrapper&gt;();</span>
+		
+<span class="nc" id="L64">		convertToEntity(skillDTOs, systemType, newSkillWrappers, oldSkillWrappers, skillNotPersistedInfos);</span>
+
+<span class="nc" id="L66">		CAT.debug(&quot;Number of new Skills &quot; + newSkillWrappers.size());</span>
+<span class="nc" id="L67">		CAT.debug(&quot;Number of Existing skills &quot; + oldSkillWrappers.size());</span>
+
+<span class="nc bnc" id="L69" title="All 2 branches missed.">		if (m_manager == null) {</span>
+<span class="nc" id="L70">			CAT.error(&quot;SkillServiceDelegate failed to obtain reference to SkillManager session bean!&quot;);</span>
+<span class="nc" id="L71">			throw new ServiceApplicationException(</span>
+					&quot;SkillServiceDelegate failed to obtain reference to SkillManager session bean!&quot;);
+		}
+
+		// Create or update skills
+		try {
+
+<span class="nc bnc" id="L78" title="All 2 branches missed.">			for (SkillWithExternalIDWrapper skillWrapper : newSkillWrappers) {</span>
+<span class="nc" id="L79">				CAT.debug(&quot;Before create entity... note skill's organization id: &quot;</span>
+<span class="nc" id="L80">						+ skillWrapper.getSkill().getOrganizationID().toString());</span>
+<span class="nc" id="L81">				m_manager.createSkill(skillWrapper.getSkill(), systemType, skillWrapper.getSkillExernalID());</span>
+<span class="nc" id="L82">				CAT.debug(&quot;In createOrUpdate method: inserted the Skill!&quot;);</span>
+<span class="nc" id="L83">			}</span>
+
+<span class="nc bnc" id="L85" title="All 2 branches missed.">			for (SkillWithExternalIDWrapper skillWrapper : oldSkillWrappers) {</span>
+<span class="nc" id="L86">				CAT.debug(&quot;Before update entity... note skill's organization id: &quot;</span>
+<span class="nc" id="L87">						+ skillWrapper.getSkill().getOrganizationID().toString());</span>
+<span class="nc" id="L88">				m_manager.updateSkillByStringID(skillWrapper.getSkill());</span>
+				
+<span class="nc bnc" id="L90" title="All 2 branches missed.">				if(skillWrapper.getSkillExernalID() != null) {</span>
+					// Update skill map with external id
+<span class="nc" id="L92">					ID wfoSkillId = MapUtil.getExternalToWfoID(systemType, MapUtil.ObjectType.Skill,skillWrapper.getSkillExernalID());</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">					if(wfoSkillId == null) {</span>
+<span class="nc" id="L94">						m_manager.matchSkillWithExternalID(skillWrapper.getSkill(),systemType, skillWrapper.getSkillExernalID());</span>
+					}
+				}
+<span class="nc" id="L97">				CAT.debug(&quot;In sycreateOrUpdate method: updated the Skill!&quot;);</span>
+<span class="nc" id="L98">			}</span>
+<span class="nc" id="L99">		} catch (Exception any) {</span>
+<span class="nc" id="L100">			CAT.error(&quot;failed to Create/Update Skill!&quot;, any);</span>
+<span class="nc" id="L101">			throw new ServiceApplicationException(any);</span>
+<span class="nc" id="L102">		}</span>
+<span class="nc" id="L103">		return skillNotPersistedInfos;</span>
+	}
+
+	// --------------------------------------------------------- helper methods
+	@PostConstruct
+	public void postConstruct() {
+		try {
+<span class="fc" id="L110">			m_manager = WfmManagerFactory.getSkillManager();</span>
+<span class="fc" id="L111">			m_workResourceManager = BbmManagerFactory.getWorkResourceManager();</span>
+<span class="fc" id="L112">			CAT.info(&quot;Succeeded to obtain reference to SkillManager :)&quot;);</span>
+<span class="nc" id="L113">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L114">			CAT.error(&quot;Failed to obtain reference to SkillManager :(&quot;, e);</span>
+<span class="fc" id="L115">		}</span>
+<span class="fc" id="L116">	}</span>
+
+	@PreDestroy
+	public void preDestroy() {
+<span class="nc" id="L120">		m_manager = null;</span>
+<span class="nc" id="L121">	}</span>
+
+	protected void convertToEntity(Collection&lt;SkillDTO&gt; skillDTOs, SystemType systemType,
+			List&lt;SkillWithExternalIDWrapper&gt; newSkillWrappers, List&lt;SkillWithExternalIDWrapper&gt; oldSkillWrappers,
+			List&lt;SkillNotPersistedInfo&gt; skillNotPersistedInfos) throws ServiceApplicationException {
+		try {
+
+			// Clear the external id cache in case its stale
+<span class="nc" id="L129">			MapUtil.flushMap(systemType);</span>
+			// Refresh the org name cache too in case its stale
+<span class="nc" id="L131">			SyncUtil.getOrganizationIDsByNamesCaseInsensitive(Collections.&lt;String&gt; emptyList(), m_workResourceManager, true);</span>
+
+<span class="nc bnc" id="L133" title="All 2 branches missed.">			for (SkillDTO skillDTO : skillDTOs) {</span>
+				// We will create exception info; only add to collection if there is an exception
+<span class="nc" id="L135">				SkillNotPersistedInfo skillNotPersistedInfo = new SkillNotPersistedInfo(skillDTO.getExternalSourceId());</span>
+
+				// first validate the DTO
+<span class="nc bnc" id="L138" title="All 2 branches missed.">				if (StringUtil.isEmptyOrWhiteSpace(skillDTO.getExternalSourceId())) {</span>
+<span class="nc" id="L139">					skillNotPersistedInfo.addExternalIdMissingMessage(skillDTO.getName());</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">				} else if (skillDTO.getExternalSourceId().length() &gt; EntityImportService.EXTERNALID_MAX_LENGTH) {</span>
+<span class="nc" id="L141">					skillNotPersistedInfo.addExternalIdLengthExceededMessage(skillDTO.getExternalSourceId().length(),</span>
+							EntityImportService.EXTERNALID_MAX_LENGTH);
+				}
+
+<span class="nc bnc" id="L145" title="All 2 branches missed.">				if (StringUtil.isEmptyOrWhiteSpace(skillDTO.getName())) {</span>
+<span class="nc" id="L146">					skillNotPersistedInfo.addNameMissingMessage();</span>
+<span class="nc bnc" id="L147" title="All 2 branches missed.">				} else if (StringUtil.containsInvalidChars(skillDTO.getName(), ValidatorConstants.INVALID_NAME_CHARS)){</span>
+<span class="nc" id="L148">					skillNotPersistedInfo.addNameHasInvalidCharactersMessage(ValidatorConstants.INVALID_NAME_CHARS);</span>
+				}
+<span class="nc bnc" id="L150" title="All 2 branches missed.">				else if (skillDTO.getName().length() &gt; EntityImportService.NAME_MAX_LENGTH) {</span>
+<span class="nc" id="L151">					skillNotPersistedInfo.addNameLengthExceededMessage(skillDTO.getName().length(),</span>
+							EntityImportService.NAME_MAX_LENGTH);
+				}
+
+<span class="nc bnc" id="L155" title="All 2 branches missed.">				if (StringUtil.isEmptyOrWhiteSpace(skillDTO.getMediaTypeId())) {</span>
+<span class="nc" id="L156">					skillNotPersistedInfo.addMediaIdMissingMessage();</span>
+				}
+				
+<span class="nc" id="L159">				ID orgID = null;</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">				if (StringUtil.isEmptyOrWhiteSpace(skillDTO.getOrganizationName())) {</span>
+<span class="nc" id="L161">					skillNotPersistedInfo.addOrganizationNameMissingMessage();</span>
+				} else {
+<span class="nc" id="L163">					orgID = SyncUtil.getOrganizationIDByNameCaseInsensitive(skillDTO.getOrganizationName(), m_workResourceManager, false);</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">					if (orgID == null) {</span>
+<span class="nc" id="L165">						skillNotPersistedInfo.addNoSuchOrganizatonNameMessage(skillDTO</span>
+<span class="nc" id="L166">								.getOrganizationName());</span>
+					}
+				}
+
+				// Add skill to collection if possible, else add info to collection
+<span class="nc bnc" id="L171" title="All 2 branches missed.">				if (!skillNotPersistedInfo.getMessages().isEmpty()) {</span>
+<span class="nc" id="L172">					CAT.error(&quot;User error: Skill entity will not be persisted&quot;);</span>
+<span class="nc" id="L173">					skillNotPersistedInfos.add(skillNotPersistedInfo);</span>
+				} else {
+
+					// Translate DTO properties to skill entity
+<span class="nc" id="L177">					SkillWithExternalIDWrapper skillWrapper = new SkillWithExternalIDWrapper();</span>
+<span class="nc" id="L178">					Skill skill = new Skill();</span>
+<span class="nc" id="L179">					skillWrapper.setSkill(skill);</span>
+<span class="nc" id="L180">					skillWrapper.setSkillExernalID(ExternalIDUtil.buildExternalID(systemType,</span>
+<span class="nc" id="L181">							skillDTO.getExternalSourceId()));</span>
+
+					// lookup the WFO ID
+					try {
+<span class="nc" id="L185">						ID wfoSkillId = null;</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">						if (m_manager == null) {</span>
+<span class="nc" id="L187">							CAT.error(&quot;SkillServiceDelegate failed to obtain reference to SkillManager session bean!&quot;);</span>
+<span class="nc" id="L188">							throw new ServiceApplicationException(</span>
+									&quot;SkillServiceDelegate failed to obtain reference to SkillManager session bean!&quot;);
+						}
+						
+						try {
+<span class="nc" id="L193">							wfoSkillId = MapUtil.getExternalToWfoID(systemType, MapUtil.ObjectType.Skill,skillWrapper.getSkillExernalID());</span>
+<span class="nc" id="L194">						} catch (JdmoException e) {</span>
+<span class="nc" id="L195">							throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L196">						}</span>
+<span class="nc bnc" id="L197" title="All 2 branches missed.">						if(wfoSkillId == null) {</span>
+<span class="nc" id="L198">							Skill wfoSkill = m_manager.getSkillByNameAndMedia(skillDTO.getName(), Skill.convertStr2MediaID(skillDTO.getMediaTypeId()));</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">							if(wfoSkill != null)</span>
+<span class="nc" id="L200">								wfoSkillId = wfoSkill.getID();</span>
+						}
+<span class="nc bnc" id="L202" title="All 2 branches missed.">						if(wfoSkillId != null) {</span>
+<span class="nc" id="L203">							skill.setIDStr(wfoSkillId.toString());</span>
+<span class="nc" id="L204">							skill.setID(wfoSkillId);</span>
+						}
+
+<span class="nc" id="L207">					} catch (BbmObjectNotFoundException e) {</span>
+						// TODO Auto-generated catch block
+<span class="nc" id="L209">						throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L210">					} catch (BbmFinderException e) {</span>
+						// TODO Auto-generated catch block
+<span class="nc" id="L212">						throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L213">					} catch (RemoteException e) {</span>
+						// TODO Auto-generated catch block
+<span class="nc" id="L215">						throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L216">					}</span>
+
+<span class="nc" id="L218">					skill.setOrganizationID(orgID);</span>
+<span class="nc" id="L219">					skill.setName(skillDTO.getName());</span>
+<span class="nc bnc" id="L220" title="All 2 branches missed.">					skill.setDescription(StringUtil.isEmptyOrWhiteSpace(skillDTO.getDescription()) ? null : skillDTO</span>
+<span class="nc" id="L221">							.getDescription());</span>
+					// TODO do we really want default to media = phone? No!
+<span class="nc" id="L223">					skill.setMediaID(Skill.convertStr2MediaID(skillDTO.getMediaTypeId()));</span>
+<span class="nc" id="L224">					skill.setSkillActive(true);</span>
+
+					// Separate out skills which are new, based on not having a local id
+<span class="nc bnc" id="L227" title="All 2 branches missed.">					if (skill.getID() == null) {</span>
+<span class="nc" id="L228">						newSkillWrappers.add(skillWrapper);</span>
+					} else {
+<span class="nc" id="L230">						oldSkillWrappers.add(skillWrapper);</span>
+					}
+				}
+<span class="nc" id="L233">			} // end DTO loop</span>
+<span class="nc" id="L234">		} catch (RuntimeException e) {</span>
+<span class="nc" id="L235">			CAT.error(&quot;Failed to convert DTOs!&quot;, e);</span>
+<span class="nc" id="L236">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L237">		}</span>
+
+<span class="nc" id="L239">	} // ----- end</span>
+
+	public MapJAXBType areSaved(Collection&lt;String&gt; skillExternalSourceIds, String systemTypeName)
+			throws ServiceApplicationException {
+<span class="nc" id="L243">		return SyncUtil.areSaved(skillExternalSourceIds, systemTypeName, MapUtil.ObjectType.Skill);</span>
+	}
+
+<span class="pc" id="L246">	public static class SkillWithExternalIDWrapper {</span>
+		protected Skill m_skill;
+		protected ID m_skillExernalID;
+
+		public Skill getSkill() {
+<span class="nc" id="L251">			return m_skill;</span>
+		}
+
+		public void setSkill(Skill skill) {
+<span class="nc" id="L255">			m_skill = skill;</span>
+<span class="nc" id="L256">		}</span>
+
+		public ID getSkillExernalID() {
+<span class="nc" id="L259">			return m_skillExernalID;</span>
+		}
+
+		public void setSkillExernalID(ID skillExernalID) {
+<span class="nc" id="L263">			m_skillExernalID = skillExernalID;</span>
+<span class="nc" id="L264">		}</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

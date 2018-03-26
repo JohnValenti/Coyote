@@ -1,0 +1,1165 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ScheduleUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.schedule.util</a> &gt; <span class="el_source">ScheduleUtil.java</span></div><h1>ScheduleUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.schedule.util;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.util.NumberFactory;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.activity.model.EventUtils;
+import com.bluepumpkin.ejb.bbm.activity.model.SimpleEvent;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.EventPrecedenceRule;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignmentFields;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.util.optimizeBreaks.Optimizer.NetStaffing;
+import com.bluepumpkin.ejb.bbm.timeseries.model.NetStaffingCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.PredictTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftEvent;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftOTExtension;
+
+<span class="nc" id="L35">public class ScheduleUtil {</span>
+
+	public static final int MINUTES_IN_HOUR = 60;
+	public static final int HOURS_IN_DAY = 24;
+	public static final long MILLIS_IN_DAY = 1000 * 60 * 60 * 24L;
+	public static final long MILLIS_IN_HOUR = MILLIS_IN_DAY / HOURS_IN_DAY;
+	public static final long MILLIS_IN_MINUTE = MILLIS_IN_HOUR / MINUTES_IN_HOUR;
+
+<span class="nc" id="L43">	public static class CantFindShiftEventAssignmentsException extends Throwable {</span>
+
+		private static final long serialVersionUID = 1L;
+	}
+
+<span class="nc" id="L48">	protected static class BreakInfo {</span>
+		int earliest;
+
+		int latest;
+
+		int length;
+
+		int nShiftEventIndex;
+		
+<span class="nc" id="L57">		boolean isEndingEvent=false;</span>
+
+<span class="nc" id="L59">		public BreakInfo() {</span>
+
+<span class="nc" id="L61">		}</span>
+	}
+
+	/**
+	 * Add a real OT extension to a shift assignment. Shift events will NOT be added.
+	 *
+	 * @param sa - The shift assignment to add the extension to.
+	 * @param ote - The extension to add to the shift assignment.
+	 * @param isBefore - Should this extension be placed before or after shift? true for before, false for after.
+	 */
+	public static void addOTE(ShiftAssignment sa, ShiftOTExtension ote, boolean isBefore) {
+<span class="nc" id="L72">		addOTE(sa, ote, isBefore, true, false);</span>
+<span class="nc" id="L73">	}</span>
+
+	/**
+	 * Add an extension to a shift assignment. It can be real OT or non-OT. Non-OT extensions are treated as shift events in
+	 * the main shift (when the OT activity is different than the main shift's activity), or as just an elongated shift (when
+	 * the OT activity is the same as the main shift's activity).
+	 *
+	 * @param sa - The shift assignment to add the extension to. The ShiftAssignment's startTime and durationwill be updated.
+	 * @param ote - The extension to add to the shift assignment.
+	 * @param isBefore - Should this extension be placed before or after shift? true for before, false for after.
+	 * @param isSetAsOT - Is this a real OT extension? true for OT extension, false for non-OT extension.
+	 * @param isCreateShiftEvents - Should we schedule shift events using the old deprecated algorithm (un-optimized for net
+	 *            staffing)?
+	 */
+	public static void addOTE(ShiftAssignment sa, ShiftOTExtension ote, boolean isBefore, boolean isSetAsOT,
+			boolean isCreateShiftEvents) {
+<span class="nc" id="L89">    	addOTE(sa, ote, isBefore, isSetAsOT, isCreateShiftEvents, true);</span>
+<span class="nc" id="L90">    }</span>
+    
+    public static void addOTE(ShiftAssignment sa, ShiftOTExtension ote, boolean isBefore, boolean isSetAsOT, boolean isCreateShiftEvents, boolean createGap) {
+<span class="nc" id="L93">		Calendar aCalendar = Calendar.getInstance();</span>
+		// GQ: I don't think we can add an extension to an OT shift anymore, so this is probably not needed
+<span class="nc" id="L95">		boolean isOTShift = EventUtils.isOTShift(sa);</span>
+
+<span class="nc bnc" id="L97" title="All 2 branches missed.">		if (isBefore) {</span>
+			// create gap event
+<span class="nc bnc" id="L99" title="All 4 branches missed.">            if (createGap &amp;&amp; ote.getMinGap() &gt; 0) {</span>
+<span class="nc" id="L100">				ShiftEventAssignment event = new ShiftEventAssignment();</span>
+<span class="nc" id="L101">				event.setActivityID(Activity.ACTIVITY_SHIFT_OVERTIME_GAP);</span>
+<span class="nc" id="L102">				aCalendar.setTime(sa.getStartTime());</span>
+<span class="nc" id="L103">				aCalendar.add(Calendar.MINUTE, -ote.getMinGap());</span>
+<span class="nc" id="L104">				event.setStartTime(aCalendar.getTime());</span>
+<span class="nc" id="L105">				event.setDuration(ote.getMinGap());</span>
+<span class="nc" id="L106">				event.setPaid(false);</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">				if (isSetAsOT) {</span>
+<span class="nc" id="L108">					event.setOverTimeGapType(Short.parseShort(&quot;1&quot;));</span>
+				}
+<span class="nc" id="L110">				event.setLocked(true);</span>
+<span class="nc" id="L111">				event.addWorkResourceID(sa.getWorkResourceIDs().iterator().next());</span>
+<span class="nc" id="L112">				sa.addShiftEventAssignment(event);</span>
+			}
+
+			// adjust shift assignment start time
+<span class="nc" id="L116">			aCalendar.setTime(sa.getStartTime());</span>
+<span class="nc" id="L117">			aCalendar.add(Calendar.MINUTE, -(ote.getDuration() + ote.getMinGap()));</span>
+<span class="nc" id="L118">			sa.setStartTime(aCalendar.getTime());</span>
+
+			// adjust duration of the shift assignment
+<span class="nc" id="L121">			sa.setDuration(sa.getDuration() + ote.getDuration() + ote.getMinGap());</span>
+
+<span class="nc bnc" id="L123" title="All 2 branches missed.">			if (isSetAsOT) {</span>
+<span class="nc" id="L124">				sa.setOTExtensionBeforeID(ote.getID());</span>
+<span class="nc" id="L125">				sa.setExtensionBefore(ote.getDuration() + ote.getMinGap());</span>
+<span class="nc" id="L126">				sa.setOTExtensionBeforeActivityID(ote.getActivityID());</span>
+			} else {
+				/*
+				 * BUG: If you have a non-OT shift, and you request a non-OT extension (one that contains at least one work
+				 * shift event) where the extension's activity is different than the main shift's activity, you will get a
+				 * CONFLICT_OVERLAP_SHIFT_EVENT exception.
+				 */
+
+				// non-OT shift extension, create working event for main activity of ote if not same as main shift activity
+<span class="nc bnc" id="L135" title="All 2 branches missed.">				if (!ote.getActivityID().equals(sa.getActivityID())) {</span>
+<span class="nc" id="L136">					ShiftEventAssignment event = new ShiftEventAssignment();</span>
+<span class="nc" id="L137">					event.setActivityID(ote.getActivityID());</span>
+<span class="nc" id="L138">					event.setStartTime(sa.getStartTime());</span>
+<span class="nc" id="L139">					event.setDuration(ote.getDuration() + ote.getMinGap());</span>
+<span class="nc" id="L140">					event.setPaid(true);</span>
+<span class="nc" id="L141">					event.setLocked(true);</span>
+<span class="nc" id="L142">					event.addWorkResourceID(sa.getWorkResourceIDs().iterator().next());</span>
+<span class="nc" id="L143">					sa.addShiftEventAssignment(event);</span>
+				}
+
+<span class="nc bnc" id="L146" title="All 2 branches missed.">				if (isOTShift) {</span>
+<span class="nc" id="L147">					sa.setExtensionAfter(sa.getDuration());</span>
+				}
+			}
+
+<span class="nc bnc" id="L151" title="All 6 branches missed.">			if (isCreateShiftEvents &amp;&amp; (ote.getShiftEvents() != null) &amp;&amp; (!ote.getShiftEvents().isEmpty())) {</span>
+<span class="nc" id="L152">				createShiftEvents(sa, sa.getStartTime(), ote.getDuration(), ote.getShiftEvents(), 0, null);</span>
+			}
+		} else {
+			// ote after
+<span class="nc bnc" id="L156" title="All 2 branches missed.">			if (isSetAsOT) {</span>
+<span class="nc" id="L157">				sa.setOTExtensionAfterID(ote.getID());</span>
+<span class="nc" id="L158">				sa.setExtensionAfter(ote.getDuration() + ote.getMinGap());</span>
+<span class="nc" id="L159">				sa.setOTExtensionAfterActivityID(ote.getActivityID());</span>
+			} else {
+				// non-OT shift extension, create working event for main activity of ote if it is not same as the main shift
+<span class="nc bnc" id="L162" title="All 2 branches missed.">				if (!ote.getActivityID().equals(sa.getActivityID())) {</span>
+<span class="nc" id="L163">					ShiftEventAssignment event = new ShiftEventAssignment();</span>
+<span class="nc" id="L164">					event.setActivityID(ote.getActivityID());</span>
+<span class="nc" id="L165">					event.setStartTime(sa.getEndTime());</span>
+<span class="nc" id="L166">					event.setDuration(ote.getDuration() + ote.getMinGap());</span>
+<span class="nc" id="L167">					event.setPaid(true);</span>
+<span class="nc" id="L168">					event.setLocked(true);</span>
+<span class="nc" id="L169">					event.addWorkResourceID(sa.getWorkResourceIDs().iterator().next());</span>
+<span class="nc" id="L170">					sa.addShiftEventAssignment(event);</span>
+				}
+			}
+			// create gap event
+<span class="nc bnc" id="L174" title="All 4 branches missed.">            if (createGap &amp;&amp; ote.getMinGap() &gt; 0) {</span>
+<span class="nc" id="L175">				ShiftEventAssignment event = new ShiftEventAssignment();</span>
+<span class="nc" id="L176">				event.setActivityID(Activity.ACTIVITY_SHIFT_OVERTIME_GAP);</span>
+<span class="nc" id="L177">				event.setStartTime(sa.getEndTime());</span>
+<span class="nc" id="L178">				event.setDuration(ote.getMinGap());</span>
+<span class="nc" id="L179">				event.setPaid(false);</span>
+<span class="nc bnc" id="L180" title="All 2 branches missed.">				if (isSetAsOT) {</span>
+<span class="nc" id="L181">					event.setOverTimeGapType(Short.parseShort(&quot;2&quot;));</span>
+				}
+<span class="nc" id="L183">				event.setLocked(true);</span>
+<span class="nc" id="L184">				event.addWorkResourceID(sa.getWorkResourceIDs().iterator().next());</span>
+<span class="nc" id="L185">				sa.addShiftEventAssignment(event);</span>
+			}
+			// adjust duration of the shift assignment
+<span class="nc" id="L188">			sa.setDuration(sa.getDuration() + ote.getDuration() + ote.getMinGap());</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">			if (isOTShift) {</span>
+<span class="nc" id="L190">				sa.setExtensionAfter(sa.getDuration());</span>
+			}
+
+<span class="nc bnc" id="L193" title="All 6 branches missed.">			if (isCreateShiftEvents &amp;&amp; (ote.getShiftEvents() != null) &amp;&amp; (!ote.getShiftEvents().isEmpty())) {</span>
+				// calculate ot start
+<span class="nc" id="L195">				aCalendar = Calendar.getInstance();</span>
+<span class="nc" id="L196">				aCalendar.setTime(sa.getEndTime());</span>
+<span class="nc" id="L197">				aCalendar.add(Calendar.MINUTE, -ote.getDuration());</span>
+<span class="nc" id="L198">				Date otAfterStart = aCalendar.getTime();</span>
+<span class="nc" id="L199">				createShiftEvents(sa, otAfterStart, ote.getDuration(), ote.getShiftEvents(), 0, null);</span>
+			}
+		}
+<span class="nc" id="L202">	}</span>
+
+	public static boolean isOTShift(ShiftAssignment sa) {
+<span class="nc bnc" id="L205" title="All 2 branches missed.">		if (sa.getDuration() == sa.getExtensionAfter()) {</span>
+<span class="nc" id="L206">			return true;</span>
+		}
+<span class="nc" id="L208">		return false;</span>
+	}
+
+	static public boolean isOT(Event event) {
+<span class="nc" id="L212">		return EventUtils.isOT(event);</span>
+	}
+	
+	static public int getOTGapMinutes(ShiftAssignment sa, int iGapType) {
+<span class="nc" id="L216">		Iterator itSEAs = sa.getChildren().iterator();</span>
+<span class="nc" id="L217">		int gapMin = 0;</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">		while (itSEAs.hasNext()) {</span>
+<span class="nc" id="L219">			ShiftEventAssignment nextSEA = (ShiftEventAssignment) itSEAs.next();</span>
+<span class="nc bnc" id="L220" title="All 2 branches missed.">			if (nextSEA.getActivityID().equals(Activity.ACTIVITY_SHIFT_OVERTIME_GAP)</span>
+<span class="nc bnc" id="L221" title="All 2 branches missed.">					&amp;&amp; nextSEA.getOverTimeGapType() == iGapType) {</span>
+<span class="nc" id="L222">				gapMin += nextSEA.getDuration();</span>
+			}
+<span class="nc" id="L224">		}</span>
+<span class="nc" id="L225">		return gapMin;</span>
+	}
+
+	/**
+	 * To mark a shift as an OT shift, we will put the entire shift duration in the EXTENSIONBEFORE column in SHIFTASSIGNMENT
+	 * table. Essentially, any shift will be tagged as an OT Shift if Duration == EXTENSIONAFTER. also set shift activity and
+	 * ot extension after activity same, and null all the other extension before/after attributes
+	 */
+	public static ShiftAssignment convertToOTShift(ShiftAssignment sa) {
+<span class="nc" id="L234">		sa.setExtensionAfter(sa.getDuration());</span>
+<span class="nc" id="L235">		sa.setOTExtensionAfterActivityID(sa.getActivityID());</span>
+		// null all the other ot attributes;
+<span class="nc" id="L237">		sa.setExtensionBefore(0);</span>
+<span class="nc" id="L238">		sa.setOTExtensionBeforeActivityID(null);</span>
+<span class="nc" id="L239">		sa.setOTExtensionBeforeID(null);</span>
+
+<span class="nc" id="L241">		sa.setOTExtensionAfterID(null);</span>
+
+		// remove gap events if there are any
+<span class="nc" id="L244">		Event event = null;</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">		for (Iterator i = sa.getChildren().iterator(); i.hasNext();) {</span>
+<span class="nc" id="L246">			event = (Event) i.next();</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">			if (event.getActivityID().equals(Activity.ACTIVITY_SHIFT_OVERTIME_GAP)) {</span>
+<span class="nc" id="L248">				sa.removeShiftEventAssignment(event.getID());</span>
+			}
+		}
+<span class="nc" id="L251">		return sa;</span>
+	}
+
+	/**
+	 * Remove all ShiftEventAssignment's from a ShiftAssignment that have one of the given precedences.
+	 *
+	 * @param sa The ShiftAssignment to be altered.
+	 * @param precedence - The precedences for whose ShiftEventAssignment's should be removed.
+	 */
+	private static void removeEventsOfPrecedence(ShiftAssignment sa, List precedences) {
+<span class="nc" id="L261">		HashMap childrenMap = sa.getChildObjectMap();</span>
+<span class="nc bnc" id="L262" title="All 2 branches missed.">		if (childrenMap != null) {</span>
+<span class="nc" id="L263">			Object events = childrenMap.get(NumberFactory.newInteger(ShiftAssignmentFields.CHILD_SHIFT_EVENT));</span>
+<span class="nc bnc" id="L264" title="All 4 branches missed.">			if (events != null &amp;&amp; !((HashMap) events).isEmpty()) {</span>
+<span class="nc" id="L265">				Collection objs = ((HashMap) events).values();</span>
+<span class="nc" id="L266">				ShiftEventAssignment event = null;</span>
+<span class="nc bnc" id="L267" title="All 2 branches missed.">				for (Iterator i = objs.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L268">					event = (ShiftEventAssignment) i.next();</span>
+<span class="nc bnc" id="L269" title="All 2 branches missed.">					if (precedences.contains(event.getOverlayPrecedence())) {</span>
+<span class="nc" id="L270">						i.remove();</span>
+					}
+				}
+			}
+		}
+<span class="nc" id="L275">	}</span>
+
+	/**
+	 * Convert an OT Extension to a non-OT entension within a shift assignment. The shift's length will be increase and the
+	 * OT will be removed. The activities within original OT extension will become shift event assignments within the main
+	 * shift.
+	 *
+	 * @param shiftAssn - The shift assignment whose OT will be converted.
+	 * @param otBeforeExt - The OT extension Before the shift that will be converted to non-OT (if any).
+	 * @param otAfterExt - The OT extension After the shift that will be converted to non-OT (if any).
+	 * @param isConvertOTBefore - true to convert the extension before the shift.
+	 * @param isConvertOTAfter - true to convert the extension after the shift.
+	 * @return the converted ShiftAssignment.
+	 */
+	public static ShiftAssignment convertOTExtToNonOTExt(ShiftAssignment sa, ShiftOTExtension otBeforeExt,
+			ShiftOTExtension otAfterExt, boolean isConvertOTBefore, boolean isConvertOTAfter) throws Exception {
+<span class="nc" id="L291">		ID empID = sa.getWorkResourceIDs().iterator().next();</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">		Date otBeforeGapStart = isConvertOTBefore ? getOTBeforeGapStart(sa, otBeforeExt) : null;</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">		Date otAfterGapEnd = isConvertOTAfter ? getOTAfterGapEnd(sa, otAfterExt) : null;</span>
+
+		/*
+		 * (1) If main shift's activity is different than the Extension's activity, then we need to create a
+		 * shiftEventAssignment for the OT Extension's activity and add it to the shift. But we cannot have overlapping
+		 * events with the same precedence, so we must be careful. If there are any other &quot;isUsedInShift&quot; type shift events
+		 * in the extension, then they will have the same precedence as our new shift event, so we must fragment our shift
+		 * event so as not to overlap with those shift events (but we should not fragment it under non-&quot;isUsedInShift&quot; type
+		 * shift events (such as breaks).
+		 */
+<span class="nc" id="L303">		final short TEMP_PRECEDENCE = 4;</span>
+
+<span class="nc" id="L305">		boolean isNeedToFlattenExtBefore = false;</span>
+<span class="nc" id="L306">		ShiftEventAssignment extBeforeEvent = null;</span>
+<span class="nc bnc" id="L307" title="All 4 branches missed.">		if (isConvertOTBefore &amp;&amp; !otBeforeExt.getActivityID().equals(sa.getActivityID())) {</span>
+<span class="nc" id="L308">			extBeforeEvent = createShiftEventAssignment(otBeforeExt.getActivityID(), sa.getStartTime(), </span>
+<span class="nc" id="L309">					otBeforeExt.getDuration(), otBeforeExt.getMinGap(), empID);</span>
+<span class="nc bnc" id="L310" title="All 2 branches missed.">			if (doesExtHaveEventOfPrecedence(sa, true, otBeforeGapStart,</span>
+					EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_EVENT_ASSIGNMENT_USEDINSHIFT)) {
+<span class="nc" id="L312">				isNeedToFlattenExtBefore = true;</span>
+				// we temporarily set the precedence lower for our fragmentation to work
+<span class="nc" id="L314">				extBeforeEvent.setOverlayPrecedence(TEMP_PRECEDENCE);</span>
+			}
+<span class="nc" id="L316">			sa.addShiftEventAssignment(extBeforeEvent);</span>
+		}
+
+<span class="nc" id="L319">		boolean isNeedToFlattenExtAfter = false;</span>
+<span class="nc" id="L320">		ShiftEventAssignment extAfterEvent = null;</span>
+<span class="nc bnc" id="L321" title="All 4 branches missed.">		if (isConvertOTAfter &amp;&amp; !otAfterExt.getActivityID().equals(sa.getActivityID())) {</span>
+<span class="nc" id="L322">			extAfterEvent = createShiftEventAssignment(otAfterExt.getActivityID(), otAfterGapEnd, otAfterExt.getDuration(),</span>
+<span class="nc" id="L323">							otAfterExt.getMinGap(), empID);</span>
+<span class="nc bnc" id="L324" title="All 2 branches missed.">			if (doesExtHaveEventOfPrecedence(sa, false, otAfterGapEnd,</span>
+					EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_EVENT_ASSIGNMENT_USEDINSHIFT)) {
+<span class="nc" id="L326">				isNeedToFlattenExtAfter = true;</span>
+				// we temporarily set the precedence lower for our fragmentation to work
+<span class="nc" id="L328">				extAfterEvent.setOverlayPrecedence(TEMP_PRECEDENCE);</span>
+			}
+<span class="nc" id="L330">			sa.addShiftEventAssignment(extAfterEvent);</span>
+		}
+
+<span class="nc bnc" id="L333" title="All 4 branches missed.">		if (isNeedToFlattenExtBefore || isNeedToFlattenExtAfter) {</span>
+			// we only need to flatten the conflicting events (those with a precedence of
+			// PRECEDENCE_TYPE_SHIFT_EVENT_ASSIGNMENT_USEDINSHIFT)
+<span class="nc" id="L336">			ShiftAssignment saClone = (ShiftAssignment) sa.clone();</span>
+			// see EventPrecedenceRule.java. We keep only precedences 4,5.
+<span class="nc" id="L338">			removeEventsOfPrecedence(saClone, Arrays.asList(new short[] { 1, 10, 20, 70 }));</span>
+
+<span class="nc" id="L340">			Collection&lt;ShiftEventAssignment&gt; seAssigns = sa.getChildren();</span>
+<span class="nc" id="L341">			Collection&lt;ShiftEventAssignment&gt; seAssignsClone = saClone.getChildren();</span>
+			// flatten the clone's events
+<span class="nc" id="L343">			Collection&lt;SimpleEvent&gt; simpleEvents = EventUtils.convertEventsToTimelineForSingleEmployee(seAssignsClone);</span>
+
+			// Delete the original ShiftEventAssignment(s) with the precedence of 4, since they will be replaced by the
+			// fragments.
+<span class="nc bnc" id="L347" title="All 2 branches missed.">			for (ShiftEventAssignment sea : seAssigns) {</span>
+<span class="nc bnc" id="L348" title="All 2 branches missed.">				if (sea.getOverlayPrecedence() == TEMP_PRECEDENCE) {</span>
+					// tbd: will this work even though sea has no ID?
+<span class="nc" id="L350">					seAssigns.remove(sea);</span>
+				}
+<span class="nc" id="L352">			}</span>
+
+<span class="nc bnc" id="L354" title="All 2 branches missed.">			for (SimpleEvent simpleEvent : simpleEvents) {</span>
+				// Events that have a precedence of 4 are the ones we fragmented. We need to add these to the original
+				// ShiftAssignment, setting their precedence to 5.
+<span class="nc bnc" id="L357" title="All 2 branches missed.">				if (simpleEvent.getOverlayPrecedence() == TEMP_PRECEDENCE) {</span>
+<span class="nc" id="L358">					ShiftEventAssignment seaFragment = createShiftEventAssignment(simpleEvent, empID);</span>
+<span class="nc" id="L359">					sa.addShiftEventAssignment(seaFragment);</span>
+				}
+<span class="nc" id="L361">			}</span>
+		}
+
+		// (2) Set the overtime gap events' gap type to 0 (for those that were converted).
+<span class="nc" id="L365">		Collection&lt;ShiftEventAssignment&gt; seAssigns = sa.getChildren();</span>
+<span class="nc bnc" id="L366" title="All 2 branches missed.">		for (ShiftEventAssignment sea : seAssigns) {</span>
+<span class="nc bnc" id="L367" title="All 4 branches missed.">			if (isConvertOTBefore &amp;&amp; sea.getStartTime().equals(otBeforeGapStart)) {</span>
+<span class="nc" id="L368">				sea.setOverTimeGapType(Short.parseShort(&quot;0&quot;));</span>
+<span class="nc bnc" id="L369" title="All 4 branches missed.">			} else if (isConvertOTAfter &amp;&amp; sea.getEndTime().equals(otAfterGapEnd)) {</span>
+<span class="nc" id="L370">				sea.setOverTimeGapType(Short.parseShort(&quot;0&quot;));</span>
+			}
+<span class="nc" id="L372">		}</span>
+
+		// (3) Finally, clear the extension information from the ShiftAssignment
+<span class="nc bnc" id="L375" title="All 2 branches missed.">		if (isConvertOTBefore) {</span>
+<span class="nc" id="L376">			sa.setOTExtensionBeforeID(null);</span>
+<span class="nc" id="L377">			sa.setExtensionBefore(0);</span>
+<span class="nc" id="L378">			sa.setOTExtensionBeforeActivityID(null);</span>
+		}
+<span class="nc bnc" id="L380" title="All 2 branches missed.">		if (isConvertOTAfter) {</span>
+<span class="nc" id="L381">			sa.setOTExtensionAfterID(null);</span>
+<span class="nc" id="L382">			sa.setExtensionAfter(0);</span>
+<span class="nc" id="L383">			sa.setOTExtensionAfterActivityID(null);</span>
+		}
+
+<span class="nc" id="L386">		return sa;</span>
+	}
+
+	/**
+	 * Determines whether the ShiftAssignment has one or more ShiftEventAssignment of the specified precedence in its OT
+	 * Before Extension (when isExtBefore is true) or in its OT After Extension (when isExtBefore is false).
+	 *
+	 * @param sa - The ShiftAssignment to check.
+	 * @param isExtBefore - true to check the OT Ext Before, false to check the OT Ext After.
+	 * @param gapDate - isExtBefore ? otBeforeGapStart : otAfterGapEnd
+	 * @param precedence - The precedence to check ShiftEventAssignments for.
+	 * @return
+	 */
+	private static boolean doesExtHaveEventOfPrecedence(ShiftAssignment sa, boolean isExtBefore, Date gapDate,
+			short precedence) {
+<span class="nc" id="L401">		Collection&lt;ShiftEventAssignment&gt; seAssigns = sa.getChildren();</span>
+<span class="nc bnc" id="L402" title="All 2 branches missed.">		for (ShiftEventAssignment sea : seAssigns) {</span>
+<span class="nc bnc" id="L403" title="All 6 branches missed.">			if (isExtBefore &amp;&amp; sea.getStartTime().before(gapDate) &amp;&amp; sea.getOverlayPrecedence() == precedence) {</span>
+<span class="nc" id="L404">				return true;</span>
+<span class="nc bnc" id="L405" title="All 6 branches missed.">			} else if (!isExtBefore &amp;&amp; !sea.getStartTime().before(gapDate) &amp;&amp; sea.getOverlayPrecedence() == precedence) {</span>
+<span class="nc" id="L406">				return true;</span>
+			}
+<span class="nc" id="L408">		}</span>
+
+<span class="nc" id="L410">		return false;</span>
+	}
+
+	/**
+	 * Get the time that the OTBeforeExt's OT gap event starts (assuming that there is one).
+	 */
+	public static Date getOTBeforeGapStart(ShiftAssignment sa, ShiftOTExtension otBeforeExt) {
+<span class="nc" id="L417">		Calendar cal = Calendar.getInstance(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="nc" id="L418">		cal.setTime(sa.getStartTime());</span>
+<span class="nc" id="L419">		cal.add(Calendar.MINUTE, otBeforeExt.getDuration());</span>
+<span class="nc" id="L420">		return cal.getTime();</span>
+	}
+
+	/**
+	 * Get the time that the OTAfterExt's OT gap event ends (assuming that there is one).
+	 */
+	public static Date getOTAfterGapEnd(ShiftAssignment sa, ShiftOTExtension otAfterExt) {
+<span class="nc" id="L427">		Calendar cal = Calendar.getInstance(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="nc" id="L428">		cal.setTime(sa.getEndTime());</span>
+<span class="nc" id="L429">		cal.add(Calendar.MINUTE, -otAfterExt.getDuration());</span>
+<span class="nc" id="L430">		return cal.getTime();</span>
+	}
+
+	/**
+	 * Create a &quot;usedInShift&quot; type shift event assignment.
+	 */
+	private static ShiftEventAssignment createShiftEventAssignment(ID activityID, Date startTime, int duration,
+			int gapDuration, ID empID) {
+<span class="nc" id="L438">		ShiftEventAssignment event = new ShiftEventAssignment();</span>
+<span class="nc" id="L439">		event.setActivityID(activityID);</span>
+<span class="nc" id="L440">		event.setStartTime(startTime);</span>
+<span class="nc" id="L441">		event.setDuration(duration);</span>
+<span class="nc" id="L442">		event.setPaid(true);</span>
+<span class="nc" id="L443">		event.setLocked(true);</span>
+<span class="nc" id="L444">		event.addWorkResourceID(empID);</span>
+<span class="nc" id="L445">		event.setOverlayPrecedence(EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_EVENT_ASSIGNMENT_USEDINSHIFT);</span>
+<span class="nc" id="L446">		return event;</span>
+	}
+
+	/**
+	 * Create a &quot;usedInShift&quot; type shift event assignment.
+	 */
+	private static ShiftEventAssignment createShiftEventAssignment(SimpleEvent simpleEvent, ID empID) {
+<span class="nc" id="L453">		ShiftEventAssignment event = new ShiftEventAssignment();</span>
+<span class="nc" id="L454">		event.setActivityID(simpleEvent.getActivityID());</span>
+<span class="nc" id="L455">		event.setStartTime(simpleEvent.getStartTime());</span>
+<span class="nc" id="L456">		event.setDuration(simpleEvent.getDuration());</span>
+<span class="nc" id="L457">		event.setPaid(true);</span>
+<span class="nc" id="L458">		event.setLocked(true);</span>
+<span class="nc" id="L459">		event.addWorkResourceID(empID);</span>
+<span class="nc" id="L460">		event.setOverlayPrecedence(EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_EVENT_ASSIGNMENT_USEDINSHIFT);</span>
+<span class="nc" id="L461">		return event;</span>
+	}
+
+	/**
+	 * Create shift events for a shift assignment using an old algorithm (un-optimized for net staffing).
+	 *
+	 * @param shiftAssignment - the shift assignment to schedule shift events for.
+	 * @param start - the start of the window to schedule shift events for.
+	 * @param duration - the length of time over which shift events will be scheduled.
+	 * @param pShiftEvents - The events to add to the shift assignment.
+	 * @param minSpacing
+	 * @param tz
+	 * @return
+	 * @deprecated - Use com.bluepumpkin.ejb.bbm.schedule.util.optimizeBreaks.Optimizer instead.
+	 */
+	@Deprecated
+	public static boolean createShiftEvents(ShiftAssignment shiftAssignment, Date start, int duration,
+			Collection pShiftEvents, int minSpacing, TimeZone tz) {
+<span class="nc" id="L479">		boolean isSuccess = true;</span>
+		try {
+			int lNumBreaks;
+			int[] breakStart;
+			boolean found;
+			BreakInfo[] aBreakInfo;
+			boolean[] freeIntervals;
+			int lShiftLengthInMinutes;
+			boolean lStartAnytime;
+			int lNextBreakIndex;
+
+<span class="nc" id="L490">			lShiftLengthInMinutes = duration;</span>
+
+<span class="nc" id="L492">			freeIntervals = new boolean[lShiftLengthInMinutes];</span>
+<span class="nc" id="L493">			lNumBreaks = getNumBreaks(pShiftEvents);</span>
+<span class="nc" id="L494">			breakStart = new int[lNumBreaks];</span>
+<span class="nc" id="L495">			aBreakInfo = new BreakInfo[lNumBreaks];</span>
+<span class="nc" id="L496">			lNextBreakIndex = 0;</span>
+<span class="nc" id="L497">			Iterator itShiftEvents = pShiftEvents.iterator();</span>
+<span class="nc bnc" id="L498" title="All 2 branches missed.">			while (itShiftEvents.hasNext()) {</span>
+<span class="nc" id="L499">				ShiftEvent pNextShiftEvent = (ShiftEvent) itShiftEvents.next();</span>
+<span class="nc" id="L500">				int numEvent = 1;</span>
+
+<span class="nc bnc" id="L502" title="All 4 branches missed.">				if (pNextShiftEvent.isFlexible() &amp;&amp; pNextShiftEvent.getMinCount() == 0) {</span>
+					// don't create flexible shift event with min count == 0
+<span class="nc" id="L504">					continue;</span>
+				}
+
+<span class="nc bnc" id="L507" title="All 4 branches missed.">				if (pNextShiftEvent.isFlexible() &amp;&amp; pNextShiftEvent.getMinCount() &gt; 1) {</span>
+<span class="nc" id="L508">					numEvent = pNextShiftEvent.getMinCount();</span>
+				}
+
+<span class="nc bnc" id="L511" title="All 2 branches missed.">				for (int ix = 0; ix &lt; numEvent; ix++) {</span>
+<span class="nc" id="L512">					aBreakInfo[lNextBreakIndex] = new BreakInfo();</span>
+<span class="nc" id="L513">					lStartAnytime = pNextShiftEvent.isAnyTime();</span>
+<span class="nc" id="L514">					int lLength = pNextShiftEvent.getDuration().getDurationInMinutes();</span>
+
+					// lTheLatest is the latest start time of a shiftEvent
+<span class="nc" id="L517">					int lTheLatest = lShiftLengthInMinutes - lLength;</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">					if (lTheLatest &lt; 0) {</span>
+<span class="nc" id="L519">						throw new CantFindShiftEventAssignmentsException();</span>
+						// BPTHROW(CBPError(CO_SHIFT_ASSIGNMENT_TOO_SHORT));
+					}
+<span class="nc bnc" id="L522" title="All 2 branches missed.">					if (!lStartAnytime) {</span>
+<span class="nc" id="L523">						int lWindowStart = pNextShiftEvent.getStart();</span>
+<span class="nc" id="L524">						int lWindowEnd = pNextShiftEvent.getEnd();</span>
+						
+<span class="nc bnc" id="L526" title="All 4 branches missed.">						if (lWindowStart==lWindowEnd &amp;&amp; lWindowStart+lLength==shiftAssignment.getDuration()) {</span>
+<span class="nc" id="L527">							aBreakInfo[lNextBreakIndex].isEndingEvent = true;</span>
+						}
+
+<span class="nc bnc" id="L530" title="All 2 branches missed.">						if (pNextShiftEvent.isCafeteria()) {</span>
+							// shift event is specified in absolute time,
+							// so we need to adjust to the shift assignment's relative
+							// time
+							//
+							// e.g. If the shift assignment starts at 1AM, then
+							// our absolute time happens 1 hours earlier during the
+							// shift.
+<span class="nc" id="L538">							Calendar tempCal = null;</span>
+<span class="nc bnc" id="L539" title="All 2 branches missed.">							if (tz == null) {</span>
+<span class="nc" id="L540">								tempCal = Calendar.getInstance();</span>
+							} else {
+<span class="nc" id="L542">								tempCal = Calendar.getInstance(tz);</span>
+							}
+<span class="nc" id="L544">							tempCal.setTime(start);</span>
+<span class="nc" id="L545">							Date shiftAssignmentStartTime = tempCal.getTime();</span>
+
+<span class="nc" id="L547">							tempCal.set(Calendar.HOUR_OF_DAY, lWindowStart / MINUTES_IN_HOUR);</span>
+<span class="nc" id="L548">							tempCal.set(Calendar.MINUTE, lWindowStart % MINUTES_IN_HOUR);</span>
+<span class="nc" id="L549">							Date startWindowDate = tempCal.getTime();</span>
+
+<span class="nc" id="L551">							tempCal.set(Calendar.HOUR_OF_DAY, lWindowEnd / MINUTES_IN_HOUR);</span>
+<span class="nc" id="L552">							tempCal.set(Calendar.MINUTE, lWindowEnd % MINUTES_IN_HOUR);</span>
+<span class="nc" id="L553">							Date endWindowDate = tempCal.getTime();</span>
+
+<span class="nc bnc" id="L555" title="All 2 branches missed.">							if (endWindowDate.before(shiftAssignmentStartTime)) {</span>
+<span class="nc" id="L556">								startWindowDate = TimeZoneUtil.addDay(startWindowDate);</span>
+							}
+							
+<span class="nc bnc" id="L559" title="All 2 branches missed.">							if (endWindowDate.before(startWindowDate)) {</span>
+								// need to wrap to next day
+<span class="nc" id="L561">								tempCal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L562">								endWindowDate = tempCal.getTime();</span>
+							}
+
+<span class="nc" id="L565">							lWindowStart = convertDateToInterval(startWindowDate, shiftAssignmentStartTime, MILLIS_IN_MINUTE);</span>
+<span class="nc" id="L566">							lWindowEnd = convertDateToInterval(endWindowDate, shiftAssignmentStartTime, MILLIS_IN_MINUTE);</span>
+
+							// boundary checks, throw exception if it can't fit.
+<span class="nc bnc" id="L569" title="All 4 branches missed.">							if ((lWindowEnd &lt; 0) || ((lWindowStart &gt; lTheLatest))) {</span>
+<span class="nc" id="L570">								throw new CantFindShiftEventAssignmentsException();</span>
+							}
+						}
+
+<span class="nc bnc" id="L574" title="All 2 branches missed.">						aBreakInfo[lNextBreakIndex].earliest = (lWindowStart &gt;= 0 ? lWindowStart : 0);</span>
+<span class="nc bnc" id="L575" title="All 2 branches missed.">						aBreakInfo[lNextBreakIndex].latest = (lWindowEnd &gt;= 0 ? lWindowEnd : 0);</span>
+
+						// validation
+<span class="nc bnc" id="L578" title="All 2 branches missed.">						if (aBreakInfo[lNextBreakIndex].earliest &lt; minSpacing) {</span>
+<span class="nc" id="L579">							aBreakInfo[lNextBreakIndex].earliest = minSpacing;</span>
+						}
+						
+<span class="nc bnc" id="L582" title="All 4 branches missed.">						if (aBreakInfo[lNextBreakIndex].latest &gt; (lTheLatest - minSpacing) &amp;&amp; !aBreakInfo[lNextBreakIndex].isEndingEvent) {</span>
+<span class="nc" id="L583">							aBreakInfo[lNextBreakIndex].latest = lTheLatest - minSpacing;</span>
+						}
+						
+<span class="nc bnc" id="L586" title="All 2 branches missed.">						if (aBreakInfo[lNextBreakIndex].earliest &gt; aBreakInfo[lNextBreakIndex].latest) {</span>
+<span class="nc" id="L587">							aBreakInfo[lNextBreakIndex].earliest = aBreakInfo[lNextBreakIndex].latest;</span>
+						}
+<span class="nc" id="L589">					} else {</span>
+<span class="nc" id="L590">						aBreakInfo[lNextBreakIndex].earliest = 0;</span>
+<span class="nc" id="L591">						aBreakInfo[lNextBreakIndex].latest = lTheLatest;</span>
+<span class="nc" id="L592">						applyMinSpacingForAnyTimeEvent(aBreakInfo[lNextBreakIndex], minSpacing);</span>
+					}
+<span class="nc" id="L594">					aBreakInfo[lNextBreakIndex].length = lLength;</span>
+
+					// for short breaks
+<span class="nc bnc" id="L597" title="All 2 branches missed.">					if (aBreakInfo[lNextBreakIndex].length &lt; 1) {</span>
+<span class="nc" id="L598">						aBreakInfo[lNextBreakIndex].length = 1;</span>
+					}
+
+					// SKM 3/2/99 - need to keep track of shift event index now...
+<span class="nc" id="L602">					aBreakInfo[lNextBreakIndex].nShiftEventIndex = lNextBreakIndex;</span>
+					// SKM 3/2/99 &lt;eoc&gt;
+<span class="nc" id="L604">					lNextBreakIndex++;</span>
+				}
+<span class="nc" id="L606">			}</span>
+
+<span class="nc" id="L608">			Arrays.fill(breakStart, -1);</span>
+<span class="nc" id="L609">			Arrays.fill(freeIntervals, true); </span>
+			//mark off the first min spacing
+<span class="nc" id="L611">			placingLeadingEvent(minSpacing, breakStart, aBreakInfo, freeIntervals);</span>
+			
+<span class="nc" id="L613">			placingEndingEvent(minSpacing, breakStart, aBreakInfo, freeIntervals);</span>
+			
+<span class="nc" id="L615">			found =	recursiveFindBreakAssignment(lNumBreaks, aBreakInfo, breakStart, freeIntervals, lShiftLengthInMinutes,</span>
+							minSpacing);
+<span class="nc bnc" id="L617" title="All 2 branches missed.">			if (!found) {</span>
+				// couldn't find a break assignment that respects the min spacing -
+				// let's look for one that doesn't
+<span class="nc" id="L620">				found =	recursiveFindBreakAssignment(lNumBreaks, aBreakInfo, breakStart, freeIntervals,</span>
+								lShiftLengthInMinutes, 0);
+			}
+<span class="nc bnc" id="L623" title="All 2 branches missed.">			if (found) {</span>
+<span class="nc" id="L624">				ID workResourceID = shiftAssignment.getWorkResourceIDs().iterator().next();</span>
+<span class="nc" id="L625">				long shiftStartTime = start.getTime();</span>
+<span class="nc" id="L626">				lNextBreakIndex = 0;</span>
+<span class="nc" id="L627">				itShiftEvents = pShiftEvents.iterator();</span>
+<span class="nc bnc" id="L628" title="All 2 branches missed.">				while (itShiftEvents.hasNext()) {</span>
+<span class="nc" id="L629">					ShiftEvent pNextShiftEvent = (ShiftEvent) itShiftEvents.next();</span>
+<span class="nc" id="L630">					int numEvent = 1;</span>
+
+<span class="nc bnc" id="L632" title="All 4 branches missed.">					if (pNextShiftEvent.isFlexible() &amp;&amp; pNextShiftEvent.getMinCount() == 0) {</span>
+						// don't create flexible shift event with min count == 0
+<span class="nc" id="L634">						continue;</span>
+					}
+
+<span class="nc bnc" id="L637" title="All 4 branches missed.">					if (pNextShiftEvent.isFlexible() &amp;&amp; pNextShiftEvent.getMinCount() &gt; 1) {</span>
+<span class="nc" id="L638">						numEvent = pNextShiftEvent.getMinCount();</span>
+					}
+<span class="nc bnc" id="L640" title="All 2 branches missed.">					for (int ix = 0; ix &lt; numEvent; ix++) {</span>
+<span class="nc" id="L641">						BreakInfo nextBreakInfo = aBreakInfo[lNextBreakIndex];</span>
+<span class="nc" id="L642">						ShiftEventAssignment nextSEA = new ShiftEventAssignment();</span>
+<span class="nc" id="L643">						int nextBreakStart = breakStart[lNextBreakIndex];</span>
+<span class="nc" id="L644">						long nextBreakStartDateTime = shiftStartTime + nextBreakStart * MILLIS_IN_MINUTE;</span>
+<span class="nc" id="L645">						Date nextStartTime = new Date(nextBreakStartDateTime);</span>
+<span class="nc" id="L646">						nextSEA.setStartTime(nextStartTime);</span>
+<span class="nc" id="L647">						nextSEA.setDuration(nextBreakInfo.length);</span>
+<span class="nc" id="L648">						nextSEA.setActivityID(pNextShiftEvent.getActivityID());</span>
+<span class="nc" id="L649">						nextSEA.setLocked(false);</span>
+<span class="nc" id="L650">						nextSEA.setPaid(pNextShiftEvent.isPaid());</span>
+<span class="nc" id="L651">						nextSEA.setShiftEventID(pNextShiftEvent.getID());</span>
+<span class="nc" id="L652">						nextSEA.addWorkResourceID(workResourceID);</span>
+<span class="nc" id="L653">						shiftAssignment.addShiftEventAssignment(nextSEA);</span>
+<span class="nc" id="L654">						lNextBreakIndex++;</span>
+					}
+<span class="nc" id="L656">				}</span>
+<span class="nc" id="L657">			} else {</span>
+				// can't schedule the shift events!
+				// BPTHROW(CBPError(CO_CANT_SCHEDULE_SHIFT_EVENTS));
+<span class="nc" id="L660">				throw new CantFindShiftEventAssignmentsException();</span>
+			}
+<span class="nc" id="L662">		} catch (CantFindShiftEventAssignmentsException e) {</span>
+<span class="nc" id="L663">			isSuccess = createShiftEventsAtBeginning(shiftAssignment, pShiftEvents);</span>
+<span class="nc" id="L664">		}</span>
+<span class="nc" id="L665">		return isSuccess;</span>
+	}
+
+	private static void placingEndingEvent(int minSpacing, int[] breakStart, BreakInfo[] aBreakInfo,
+			boolean[] freeIntervals) {
+<span class="nc" id="L670">		int lastEventDuration = 0;</span>
+<span class="nc bnc" id="L671" title="All 2 branches missed.">		for (int i = 0; i &lt; aBreakInfo.length; i ++ ) {</span>
+<span class="nc bnc" id="L672" title="All 2 branches missed.">			if (aBreakInfo[i].isEndingEvent) {</span>
+				//put at the beginning
+<span class="nc" id="L674">				breakStart[i]=aBreakInfo[i].earliest;</span>
+<span class="nc" id="L675">				lastEventDuration = aBreakInfo[i].length;</span>
+			}
+		}
+<span class="nc" id="L678">		Arrays.fill(freeIntervals, freeIntervals.length-lastEventDuration, freeIntervals.length, false);</span>
+<span class="nc" id="L679">	}</span>
+
+	private static void placingLeadingEvent(int minSpacing, int[] breakStart, BreakInfo[] aBreakInfo,
+			boolean[] freeIntervals) {
+<span class="nc" id="L683">		int firstEventDuration = 0;</span>
+<span class="nc bnc" id="L684" title="All 2 branches missed.">		for (int i = 0; i &lt; aBreakInfo.length; i ++ ) {</span>
+<span class="nc bnc" id="L685" title="All 4 branches missed.">			if (aBreakInfo[i].earliest==0 &amp;&amp; aBreakInfo[i].latest==0) {</span>
+				//put at the beginning
+<span class="nc" id="L687">				breakStart[i]=0;</span>
+<span class="nc" id="L688">				firstEventDuration = aBreakInfo[i].length;</span>
+			}
+		}
+<span class="nc" id="L691">		Arrays.fill(freeIntervals, 0, minSpacing+firstEventDuration, false);</span>
+<span class="nc" id="L692">	}</span>
+
+	private static int getNumBreaks(Collection pShiftEvents) {
+<span class="nc" id="L695">		int num = 0;</span>
+<span class="nc" id="L696">		Iterator itShiftEvents = pShiftEvents.iterator();</span>
+<span class="nc bnc" id="L697" title="All 2 branches missed.">		while (itShiftEvents.hasNext()) {</span>
+<span class="nc" id="L698">			ShiftEvent pNextShiftEvent = (ShiftEvent) itShiftEvents.next();</span>
+<span class="nc bnc" id="L699" title="All 2 branches missed.">			if (pNextShiftEvent.isFlexible()) {</span>
+				// only flexibile shift event has min/max count. 0:not create; min: is the min.
+<span class="nc" id="L701">				num = num + pNextShiftEvent.getMinCount();</span>
+			} else {
+<span class="nc" id="L703">				num++;</span>
+			}
+<span class="nc" id="L705">		}</span>
+<span class="nc" id="L706">		return num;</span>
+	}
+
+	protected static void applyMinSpacingForAnyTimeEvent(BreakInfo aBreakInfo, int minSpacing) {
+<span class="nc" id="L710">		aBreakInfo.earliest += minSpacing;</span>
+<span class="nc" id="L711">		aBreakInfo.latest -= minSpacing;</span>
+<span class="nc" id="L712">	}</span>
+
+	protected static boolean recursiveFindBreakAssignment(int lNumBreaks, BreakInfo[] aBreakInfo, int[] breakStarts,
+			boolean freeIntervals[], long lShiftLengthInMinutes, int minSpacing) {
+		int i, earliest, latest, brkLength, nextCalculate;
+		int tryStart, tryEnd;
+<span class="nc" id="L718">		boolean done = false;</span>
+<span class="nc" id="L719">		int minStarts = 999;</span>
+<span class="nc" id="L720">		int minBreak = -1;</span>
+		int tmpStarts;
+		// We have to find out the break with the most constraints.
+
+<span class="nc bnc" id="L724" title="All 2 branches missed.">		for (i = 0; i &lt; lNumBreaks; i++) {</span>
+<span class="nc bnc" id="L725" title="All 2 branches missed.">			if (breakStarts[i] &lt; 0) {</span>
+<span class="nc" id="L726">				tmpStarts = getNumBreakStarts(aBreakInfo, i, freeIntervals, lShiftLengthInMinutes);</span>
+<span class="nc bnc" id="L727" title="All 2 branches missed.">				if (tmpStarts == 0) {</span>
+<span class="nc" id="L728">					return false;</span>
+				}
+<span class="nc bnc" id="L730" title="All 2 branches missed.">				if (tmpStarts &lt; minStarts) {</span>
+<span class="nc" id="L731">					minBreak = i;</span>
+<span class="nc" id="L732">					minStarts = tmpStarts;</span>
+				}
+			}
+		}
+<span class="nc bnc" id="L736" title="All 2 branches missed.">		if (minBreak == -1) {</span>
+			// We've found start times for every break
+<span class="nc" id="L738">			return true;</span>
+		}
+<span class="nc" id="L740">		nextCalculate = minBreak;</span>
+
+<span class="nc" id="L742">		earliest = aBreakInfo[nextCalculate].earliest;</span>
+<span class="nc" id="L743">		latest = aBreakInfo[nextCalculate].latest;</span>
+<span class="nc" id="L744">		brkLength = aBreakInfo[nextCalculate].length;</span>
+
+<span class="nc" id="L746">		done = false;</span>
+<span class="nc" id="L747">		tryStart = earliest;</span>
+<span class="nc" id="L748">		tryEnd = getTryEndConsiderMinSpacing(tryStart, aBreakInfo[nextCalculate].length, minSpacing);</span>
+<span class="nc bnc" id="L749" title="All 4 branches missed.">		while ((!done) &amp;&amp; (tryStart &lt;= latest)) {</span>
+<span class="nc" id="L750">			done = true;</span>
+<span class="nc bnc" id="L751" title="All 2 branches missed.">			for (i = tryStart; i &lt;= tryEnd; i++) {</span>
+<span class="nc bnc" id="L752" title="All 2 branches missed.">				if (!freeIntervals[i]) {</span>
+<span class="nc" id="L753">					done = false;</span>
+<span class="nc" id="L754">					i = tryEnd + 1;</span>
+				}
+			}
+<span class="nc bnc" id="L757" title="All 2 branches missed.">			if (!done) {</span>
+				// this start time wasn't free, try the next
+<span class="nc" id="L759">				tryStart++;</span>
+<span class="nc" id="L760">				tryEnd++;</span>
+			} else {
+				// otherwise, use this as the break start and try to schedule
+				// the others
+<span class="nc" id="L764">				breakStarts[nextCalculate] = tryStart;</span>
+<span class="nc" id="L765">				int freeStart = Math.max(tryStart, 0);</span>
+<span class="nc" id="L766">				int freeEnd = Math.max(Math.min(tryStart + brkLength + minSpacing, (int) lShiftLengthInMinutes), tryStart</span>
+								+ brkLength);
+<span class="nc" id="L768">				int intervalsToChange = freeEnd - freeStart;</span>
+<span class="nc" id="L769">				boolean[] oldFreeIntervals = new boolean[intervalsToChange];</span>
+
+<span class="nc" id="L771">				System.arraycopy(freeIntervals, freeStart, oldFreeIntervals, 0, intervalsToChange);</span>
+<span class="nc bnc" id="L772" title="All 2 branches missed.">				for (i = freeStart; i &lt; freeEnd; i++) {</span>
+<span class="nc" id="L773">					freeIntervals[i] = false;</span>
+				}
+<span class="nc" id="L775">				done = recursiveFindBreakAssignment(lNumBreaks, aBreakInfo, breakStarts, freeIntervals,</span>
+								lShiftLengthInMinutes, minSpacing);
+<span class="nc bnc" id="L777" title="All 2 branches missed.">				if (!done) {</span>
+					// couldn't schedule the other breaks, try the next
+<span class="nc" id="L779">					breakStarts[nextCalculate] = -1;</span>
+<span class="nc bnc" id="L780" title="All 2 branches missed.">					if ((tryStart + intervalsToChange) &gt; freeIntervals.length) {</span>
+						// can not schedule that event any more.
+<span class="nc" id="L782">						break;</span>
+					}
+<span class="nc" id="L784">					System.arraycopy(oldFreeIntervals, 0, freeIntervals, tryStart, intervalsToChange);</span>
+<span class="nc" id="L785">					tryStart++;</span>
+<span class="nc" id="L786">					tryEnd++;</span>
+				}
+<span class="nc" id="L788">			}</span>
+		}
+<span class="nc bnc" id="L790" title="All 2 branches missed.">		if (!done) {</span>
+			// couldn't find a free spot for this break
+<span class="nc" id="L792">			breakStarts[nextCalculate] = -1;</span>
+<span class="nc" id="L793">			return false;</span>
+		}
+<span class="nc" id="L795">		return true;</span>
+	}
+	
+	protected static int getTryEndConsiderMinSpacing(int tryStart, int duration, int minSpacing) {
+<span class="nc" id="L799">		return tryStart + duration - 1 + minSpacing;</span>
+	}
+
+	protected static int getNumBreakStarts(BreakInfo[] aBreakInfo, int brknum, boolean freeIntervals[],
+			long lShiftLengthInMinutes) {
+<span class="nc" id="L804">		int earliest = aBreakInfo[brknum].earliest;</span>
+<span class="nc" id="L805">		int latest = aBreakInfo[brknum].latest;</span>
+<span class="nc" id="L806">		int brklength = aBreakInfo[brknum].length;</span>
+<span class="nc" id="L807">		int count = 0;</span>
+<span class="nc" id="L808">		int here = 1;</span>
+
+<span class="nc bnc" id="L810" title="All 2 branches missed.">		for (int i = earliest; i &lt;= latest; i++) {</span>
+<span class="nc" id="L811">			here = 1;</span>
+			// int freeStart = Math.max(i - minSpacing, 0);
+			// int freeEnd = Math.max(Math.min(i + brklength - 1 + minSpacing,
+			// (int)lShiftLengthInMinutes), i + brklength - 1);
+<span class="nc bnc" id="L815" title="All 2 branches missed.">			for (int j = i; j &lt;= i + brklength - 1; j++) {</span>
+<span class="nc bnc" id="L816" title="All 2 branches missed.">				if (j &gt;= lShiftLengthInMinutes) {</span>
+<span class="nc" id="L817">					here = 0;</span>
+<span class="nc" id="L818">					break;</span>
+				}
+
+<span class="nc bnc" id="L821" title="All 2 branches missed.">				if (!freeIntervals[j]) {</span>
+<span class="nc" id="L822">					here = 0;</span>
+<span class="nc" id="L823">					break;</span>
+				}
+			}
+<span class="nc bnc" id="L826" title="All 2 branches missed.">			if (here &gt; 0) {</span>
+<span class="nc" id="L827">				count++;</span>
+			}
+		}
+<span class="nc" id="L830">		return (count);</span>
+	}
+
+	private static boolean createShiftEventsAtBeginning(ShiftAssignment shiftAssignment, Collection pShiftEvents) {
+<span class="nc" id="L834">		boolean isSuccess = true;</span>
+		// couldn't find legal assignments, just place at the beginning of
+		// shift assignment
+<span class="nc" id="L837">		long currentOffset = 0;</span>
+		// find the work resource ID
+<span class="nc" id="L839">		ID workResourceID = null;</span>
+<span class="nc" id="L840">		Collection collectionWorkResourceIDs = shiftAssignment.getWorkResourceIDs();</span>
+<span class="nc bnc" id="L841" title="All 2 branches missed.">		if (collectionWorkResourceIDs != null) {</span>
+<span class="nc" id="L842">			workResourceID = (ID) collectionWorkResourceIDs.toArray()[0];</span>
+		}
+<span class="nc" id="L844">		Iterator itSEs = pShiftEvents.iterator();</span>
+<span class="nc bnc" id="L845" title="All 2 branches missed.">		while (itSEs.hasNext()) {</span>
+<span class="nc" id="L846">			ShiftEvent nextSE = (ShiftEvent) itSEs.next();</span>
+<span class="nc" id="L847">			int numEvent = 1;</span>
+
+<span class="nc bnc" id="L849" title="All 4 branches missed.">			if (nextSE.isFlexible() &amp;&amp; nextSE.getMinCount() == 0) {</span>
+				// don't create flexible shift event with min count == 0
+<span class="nc" id="L851">				continue;</span>
+			}
+
+<span class="nc bnc" id="L854" title="All 4 branches missed.">			if (nextSE.isFlexible() &amp;&amp; nextSE.getMinCount() &gt; 1) {</span>
+<span class="nc" id="L855">				numEvent = nextSE.getMinCount();</span>
+			}
+<span class="nc bnc" id="L857" title="All 2 branches missed.">			for (int ix = 0; ix &lt; numEvent; ix++) {</span>
+<span class="nc" id="L858">				int nextDuration = nextSE.getDuration().getDurationInMinutes();</span>
+<span class="nc" id="L859">				Date nextStartTime = new Date(shiftAssignment.getStartTime().getTime() + currentOffset * 60 * 1000);</span>
+<span class="nc" id="L860">				ShiftEventAssignment nextSEA = new ShiftEventAssignment();</span>
+<span class="nc" id="L861">				nextSEA.setStartTime(nextStartTime);</span>
+<span class="nc" id="L862">				nextSEA.setDuration(nextDuration);</span>
+<span class="nc" id="L863">				nextSEA.setActivityID(nextSE.getActivityID());</span>
+<span class="nc" id="L864">				nextSEA.setLocked(false);</span>
+<span class="nc" id="L865">				nextSEA.setPaid(nextSE.isPaid());</span>
+<span class="nc" id="L866">				nextSEA.setShiftEventID(nextSE.getID());</span>
+<span class="nc" id="L867">				nextSEA.addWorkResourceID(workResourceID);</span>
+<span class="nc bnc" id="L868" title="All 2 branches missed.">				if (nextSEA.getEndTime().after(shiftAssignment.getEndTime())) {</span>
+					// show warning error about &quot;shift assignment is too short to fit all the shift events&quot;, and continue to
+					// create shift
+<span class="nc" id="L871">					isSuccess = false;</span>
+<span class="nc" id="L872">					return isSuccess;</span>
+				}
+<span class="nc" id="L874">				shiftAssignment.addShiftEventAssignment(nextSEA);</span>
+<span class="nc" id="L875">				currentOffset += nextDuration;</span>
+			}
+<span class="nc" id="L877">		}</span>
+<span class="nc" id="L878">		return isSuccess;</span>
+	}
+
+	/**
+	 * Converts a date (dateToConvert) to a number of intervals. The number of intervals returned is calculated as the
+	 * distance in milliseconds between startDate and dateToConvert, divided by millisInInterval. Used to calculate the
+	 * correct place to render shifts on the calendar.
+	 *
+	 * @param dateToConvert - used to calculate number of intervals between this date and startDate
+	 * @param startDate - used to calculate number of intervals between this date and dateToConvert
+	 * @param millisInInterval - the length of an interval in milliseconds.
+	 * @return the number of intervals between startDate and dateToConvert.
+	 */
+	public static int convertDateToInterval(Date dateToConvert, Date startDate, long millisInInterval) {
+<span class="nc" id="L892">		return convertDateToInterval(dateToConvert, startDate, millisInInterval, null, false);</span>
+	}
+
+	/**
+	 * Converts a date (dateToConvert) to a number of intervals. The number of intervals returned is calculated as the
+	 * distance in milliseconds between startDate and dateToConvert, divided by millisInInterval. Used to calculate the
+	 * correct place to render shifts on the calendar.
+	 *
+	 * @param dateToConvert - used to calculate number of intervals between this date and startDate
+	 * @param startDate - used to calculate number of intervals between this date and dateToConvert
+	 * @param millisInInterval - the length of an interval in milliseconds.
+	 * @param timeZone - TimeZone of the current context.
+	 * @param ignoreDstTransitions - if true, will ignore any DST transitions between dateToConvert and startDate and will
+	 *            calculate the number of intervals between them as though no DST transitions occurred.
+	 * @return the number of intervals between startDate and dateToConvert.
+	 *
+	 *         Note: The timeZone parameter is only used if ignoreDstTransitions is true. It can be null if
+	 *         ignoreDstTransitions is false.
+	 *
+	 *         Currently, the reason why we even want to ignore DST transitions at all is due to a quirk with the individual
+	 *         schedule view. The column header is build to show a 24 hour day, always, even if the week contains a DST
+	 *         transition. In these cases, we need to ensure that the headers and shifts in the week are rendered properly
+	 *         (as properly as they can be).
+	 */
+	public static int convertDateToInterval(Date dateToConvert, Date startDate, long millisInInterval, TimeZone timeZone,
+			boolean ignoreDstTransitions) {
+
+<span class="nc" id="L919">		long totalMillis = dateToConvert.getTime() - startDate.getTime();</span>
+<span class="nc bnc" id="L920" title="All 2 branches missed.">		if (ignoreDstTransitions) {</span>
+<span class="nc bnc" id="L921" title="All 6 branches missed.">			if ((timeZone.inDaylightTime(startDate) || inDaylightTimeMidNightTransition(timeZone, startDate)) &amp;&amp; !timeZone.inDaylightTime(dateToConvert)) {</span>
+				// Fall DST transition, but since we are ignoring this transition we need to subtract
+				// an hour's worth of milliseconds (otherwise the number of intervals returned will
+				// take into account this transition resulting in more intervals).
+<span class="nc" id="L925">				totalMillis -= timeZone.getDSTSavings();</span>
+<span class="nc bnc" id="L926" title="All 6 branches missed.">			} else if ((!timeZone.inDaylightTime(startDate) || inDaylightTimeMidNightTransition(timeZone, startDate)) &amp;&amp; timeZone.inDaylightTime(dateToConvert)) {</span>
+				// Spring DST transition, but since we are ignoring this transition we need to add
+				// an hour's worth of milliseconds (otherwise the number of intervals returned will
+				// take into account this transition resulting in less intervals).
+<span class="nc" id="L930">				totalMillis += timeZone.getDSTSavings();</span>
+			}
+		}
+<span class="nc" id="L933">		return (int) Math.floor((totalMillis) / (millisInInterval));</span>
+	}
+	
+	private static boolean inDaylightTimeMidNightTransition(TimeZone tz, Date dayStart) {
+<span class="nc" id="L937">		boolean isMidnight = false;</span>
+<span class="nc bnc" id="L938" title="All 2 branches missed.">		if (dayStart.equals(TimeZoneUtil.getMidNightDate(dayStart, tz))) {</span>
+<span class="nc" id="L939">			isMidnight = true;</span>
+		}
+		
+<span class="nc" id="L942">		Calendar calendar = Calendar.getInstance(tz);</span>
+<span class="nc" id="L943">		calendar.setTime(dayStart);</span>
+<span class="nc" id="L944">		calendar.add(Calendar.MINUTE, -1);</span>
+		
+<span class="nc bnc" id="L946" title="All 4 branches missed.">		return isMidnight &amp;&amp; (tz.inDaylightTime(calendar.getTime()) != tz.inDaylightTime(dayStart));</span>
+	}
+
+	/**
+	 * Calculates and returns a date that lies after the given startDate by an amount of milliseconds equal to the given
+	 * number of intervals (numIntervals) and the length of each interval.
+	 *
+	 * @param numIntervals - Number of intervals forward with which we use to calculate the returned date value.
+	 * @param startDate - The returned date will lie numIntervals forward from startDate.
+	 * @param millisInInterval - the length of an interval in milliseconds.
+	 */
+	public static Date convertIntervalToDate(int numIntervals, Date startDate, long millisInInterval) {
+<span class="nc" id="L958">		long intervalMillis = startDate.getTime() + numIntervals * millisInInterval;</span>
+<span class="nc" id="L959">		Date intervalDate = new Date(intervalMillis);</span>
+<span class="nc" id="L960">		return intervalDate;</span>
+	}
+
+	/**
+	 * Convert a NetStaffingCube into the net staffing data required by the shift event Optimizer API. Basically, the API
+	 * requires a per-QueueID Collection of &quot;consecutively equal&quot; net staffing values.
+	 *
+	 * @param nsCube
+	 * @return The net staffing data required by the shift event Optimizer API.
+	 */
+	public static HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; convertNSCubeToNSOMap(NetStaffingCube nsCube) {
+<span class="nc" id="L971">		HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; hmQueueNetStaffing = new HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt;();</span>
+
+<span class="nc bnc" id="L973" title="All 2 branches missed.">		if (nsCube != null) {</span>
+<span class="nc" id="L974">			HashMap&lt;ID, PredictTraceCube&gt; predictTraceCubeMap = nsCube.getPredictTraceCubeMap();</span>
+<span class="nc bnc" id="L975" title="All 4 branches missed.">			if (predictTraceCubeMap != null &amp;&amp; predictTraceCubeMap.size() &gt; 0) {</span>
+<span class="nc bnc" id="L976" title="All 2 branches missed.">				for (Iterator&lt;ID&gt; iterator = predictTraceCubeMap.keySet().iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L977">					ID spQID = iterator.next();</span>
+<span class="nc" id="L978">					PredictTraceCube pCube = predictTraceCubeMap.get(spQID);</span>
+
+<span class="nc" id="L980">					Pair&lt;ID, Collection&lt;NetStaffing&gt;&gt; curPair = convertTraceCubeToNSOSpans(pCube);</span>
+<span class="nc bnc" id="L981" title="All 2 branches missed.">					if (curPair != null) {</span>
+<span class="nc" id="L982">						hmQueueNetStaffing.put(curPair.getFirst(), curPair.getSecond());</span>
+					}
+<span class="nc" id="L984">				}</span>
+			}
+		}
+
+<span class="nc" id="L988">		return hmQueueNetStaffing;</span>
+	}
+
+	/**
+	 * Convert a net staffing TraceCube into a &quot;Net Staffing Optimizer Span&quot; data structure, which is used by the
+	 * com.bluepumpkin.ejb.bbm.schedule.util.optimizeBreaks.Optimizer class for placing breaks within Shifts and OT
+	 * Extensions in the best time slots to improve Net Staffing.
+	 *
+	 * @param pCube - A TraceCube that must contain the Trace.NETSTAFFING trace type.
+	 * @return a &quot;Net Staffing Optimizer Span&quot; data structure, which is a QueueID paired with Collection&lt;NetStaffing&gt;.
+	 */
+	public static Pair&lt;ID, Collection&lt;NetStaffing&gt;&gt; convertTraceCubeToNSOSpans(TraceCube pCube) {
+<span class="nc" id="L1000">		return convertTraceCubeToNSOSpans(pCube, null);</span>
+	}
+
+	/**
+	 * Convert forecasted Net Staffing, real-time FTE, and required FTE data into a &quot;Net Staffing Optimizer Span&quot; data
+	 * structure, which is used by the com.bluepumpkin.ejb.bbm.schedule.util.optimizeBreaks.Optimizer class for placing
+	 * breaks within Shifts and OT Extensions in the best time slots to improve Net Staffing. If the requiredCube is not
+	 * null, we calculate net staffing from (realtimeFTE - FTE required). Otherwise, we simply get the net staffing directly
+	 * from forecastCube.
+	 *
+	 * @param forecastCube - A forecast TraceCube that must contain the Trace.NETSTAFFING or Trace.FTE type.
+	 * @param realtimeFTE - Optional: The real time FTE per day for a queue. Indexes are [dayOffset][intervalNum].
+	 * @param requiredCube - Optional: A required TraceCube that must contain the Trace.FTE type. If not null, then we
+	 *            calculate the net staffing as real-time FTE - required FTE. If null, we just get net staffing from
+	 *            forecastCube.
+	 * @return a &quot;Net Staffing Optimizer Span&quot; data structure, which is a QueueID paired with Collection&lt;NetStaffing&gt;.
+	 */
+	public static Pair&lt;ID, Collection&lt;NetStaffing&gt;&gt; convertTraceCubeToNSOSpans(TraceCube forecastCube, TraceCube requiredCube) {
+<span class="nc bnc" id="L1018" title="All 2 branches missed.">		if (forecastCube != null) {</span>
+<span class="nc" id="L1019">			ID queueID = forecastCube.getQueueID();</span>
+<span class="nc" id="L1020">			Collection&lt;NetStaffing&gt; nsSpans = new ArrayList&lt;NetStaffing&gt;();</span>
+			// The start and end of a span of equal net staffing values within pCube.
+			Date spanStart, spanEnd;
+
+			// Iterate over all values in the cube, and aggregate equal consecutive values together into a NetStaffing span.
+<span class="nc" id="L1025">			Calendar cal = Calendar.getInstance(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="nc" id="L1026">			Date firstDate = forecastCube.getRawStartDate();</span>
+<span class="nc" id="L1027">			Date curDate = firstDate;</span>
+<span class="nc" id="L1028">			Date lastDate = firstDate;</span>
+<span class="nc" id="L1029">			Date nextDate = null;</span>
+<span class="nc" id="L1030">			cal.setTime(firstDate);</span>
+<span class="nc" id="L1031">			int numIntervalsInSpan = 0;</span>
+<span class="nc" id="L1032">			double firstVal = getFTEDifferential(forecastCube, requiredCube, firstDate);</span>
+
+<span class="nc bnc" id="L1034" title="All 2 branches missed.">			while (!curDate.after(forecastCube.getRawEndDate())) {</span>
+<span class="nc" id="L1035">				double curVal = getFTEDifferential(forecastCube, requiredCube, curDate);</span>
+<span class="nc" id="L1036">				cal.add(Calendar.MINUTE, 15);</span>
+<span class="nc" id="L1037">				nextDate = cal.getTime();</span>
+<span class="nc" id="L1038">				lastDate = curDate;</span>
+
+<span class="nc bnc" id="L1040" title="All 4 branches missed.">				if ((curVal != firstVal) || (nextDate.after(forecastCube.getRawEndDate()))) {</span>
+<span class="nc" id="L1041">					nsSpans.add(new NetStaffing(firstDate, lastDate, (int) ((numIntervalsInSpan * firstVal) * 15)));</span>
+<span class="nc" id="L1042">					firstDate = curDate;</span>
+<span class="nc" id="L1043">					firstVal = curVal;</span>
+<span class="nc" id="L1044">					numIntervalsInSpan = 1;</span>
+				} else {
+<span class="nc" id="L1046">					numIntervalsInSpan++;</span>
+				}
+
+<span class="nc" id="L1049">				curDate = nextDate;</span>
+<span class="nc" id="L1050">			}</span>
+
+<span class="nc" id="L1052">			return new Pair(queueID, nsSpans);</span>
+		}
+
+<span class="nc" id="L1055">		return null;</span>
+	}
+
+	/**
+	 * Get FTE Differential from the forecast and required cubes for one interval. If requiredCube is null, then we instead
+	 * return the NETSTAFFING value from the forecastCube.
+	 *
+	 * @param forecastCube - The cube holding wither the NETSTAFFING or FTE values.
+	 * @param realtimeFTE - Optional: The real time FTE per day for a queue. Indexes are [dayOffset][intervalNum].
+	 * @param requiredCube - (optional) The cube holding the required FTE values.
+	 * @param date - an interval in the cubes.
+	 * @return - The net staffing value, or 0.0 if not available.
+	 */
+	public static double getFTEDifferential(TraceCube forecastCube, TraceCube requiredCube, Date date) {
+<span class="nc bnc" id="L1069" title="All 2 branches missed.">		if (requiredCube != null) {</span>
+<span class="nc" id="L1070">			ID queueID = forecastCube.getQueueID();</span>
+<span class="nc" id="L1071">			double forecastVal = forecastCube.getTraceValueD(Trace.FTE, date);</span>
+<span class="nc" id="L1072">			double requiredVal = requiredCube.getTraceValueD(Trace.FTE, date);</span>
+<span class="nc bnc" id="L1073" title="All 4 branches missed.">			if (forecastCube.isTraceValueValid(forecastVal) &amp;&amp; forecastCube.isTraceValueValid(requiredVal)) {</span>
+<span class="nc" id="L1074">				return forecastVal - requiredVal;</span>
+			}
+<span class="nc" id="L1076">		} else {</span>
+			// we just read net staffing directly from the forecast cube
+<span class="nc" id="L1078">			double forecastVal = forecastCube.getTraceValueD(Trace.NETSTAFFING, date);</span>
+<span class="nc bnc" id="L1079" title="All 2 branches missed.">			if (forecastCube.isTraceValueValid(forecastVal)) {</span>
+<span class="nc" id="L1080">				return forecastVal;</span>
+			}
+		}
+<span class="nc" id="L1083">		return 0.0d;</span>
+	}
+
+	public static void buildShiftAssignment(Collection&lt;ShiftAssignment&gt; shifts, Collection&lt;ShiftEventAssignment&gt; shiftEvents) {
+
+<span class="fc" id="L1088">		Map&lt;ID, ShiftAssignment&gt; shiftIDToShift = new HashMap&lt;ID, ShiftAssignment&gt;(shifts.size());</span>
+
+<span class="pc bpc" id="L1090" title="1 of 2 branches missed.">		for (ShiftAssignment shift : shifts) {</span>
+<span class="nc" id="L1091">			shiftIDToShift.put(shift.getID(), shift);</span>
+<span class="nc" id="L1092">		}</span>
+
+		//add shift events to shift
+<span class="pc bpc" id="L1095" title="1 of 2 branches missed.">		for (ShiftEventAssignment event : shiftEvents) {</span>
+<span class="nc" id="L1096">			ID shiftID = event.getParentID();</span>
+<span class="nc" id="L1097">			ShiftAssignment shift = shiftIDToShift.get(shiftID);</span>
+
+<span class="nc bnc" id="L1099" title="All 2 branches missed.">			if (shift != null) {</span>
+<span class="nc" id="L1100">				shift.fillChildObject(ShiftAssignmentFields.CHILD_SHIFT_EVENT, event);</span>
+			}
+<span class="nc" id="L1102">		}</span>
+<span class="fc" id="L1103">	}</span>
+
+	/**
+	 * Makes a deep clone of ShiftAssignment. 
+	 * Note that ShiftAssignment.cloneForPublishing does not make copies of the shift events. 
+	 */
+	public static ShiftAssignment deepCloneShiftAssigment(ShiftAssignment original) {
+		//
+<span class="nc" id="L1111">		ShiftAssignment shiftAssignment = cloneShiftAssignment(original);</span>
+<span class="nc" id="L1112">		List&lt;ShiftEventAssignment&gt; events = new ArrayList&lt;ShiftEventAssignment&gt;();</span>
+<span class="nc bnc" id="L1113" title="All 2 branches missed.">		for (ShiftEventAssignment event : original.getChildren()) {</span>
+<span class="nc" id="L1114">			events.add(cloneShiftEvent(event));</span>
+<span class="nc" id="L1115">		}</span>
+
+<span class="nc" id="L1117">		ScheduleUtil.buildShiftAssignment(Collections.singleton(shiftAssignment), events);</span>
+<span class="nc" id="L1118">		return shiftAssignment;</span>
+	}
+
+	private static ShiftEventAssignment cloneShiftEvent(ShiftEventAssignment original) {
+<span class="nc" id="L1122">		ShiftEventAssignment event = new ShiftEventAssignment();</span>
+<span class="nc" id="L1123">		event.setID(original.getID());</span>
+<span class="nc" id="L1124">		event.setStartTime(original.getStartTime());</span>
+<span class="nc" id="L1125">		event.setDuration(original.getDuration());</span>
+<span class="nc" id="L1126">		event.setLocked(original.isLocked());</span>
+<span class="nc" id="L1127">		event.setPaid(original.getPaid());</span>
+<span class="nc" id="L1128">		event.setActivityID(original.getActivityID());</span>
+<span class="nc" id="L1129">		event.setShiftEventID(original.getShiftEventID());</span>
+<span class="nc" id="L1130">		event.setParentID(original.getParentID());</span>
+		@SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L1132">		Collection&lt;ID&gt; workResourceIDs = original.getWorkResourceIDs();</span>
+<span class="nc bnc" id="L1133" title="All 2 branches missed.">		event.addWorkResourceID(workResourceIDs.isEmpty() ? null : workResourceIDs.iterator().next());</span>
+<span class="nc" id="L1134">		event.setOverlayPrecedence(original.getOverlayPrecedence());</span>
+<span class="nc" id="L1135">		event.setOverTimeGapType(original.getOverTimeGapType());</span>
+<span class="nc" id="L1136">		event.setSPID(original.getSPID());</span>
+<span class="nc" id="L1137">		return event;</span>
+
+	}
+
+	private static ShiftAssignment cloneShiftAssignment(ShiftAssignment original) {
+
+<span class="nc" id="L1143">		ShiftAssignment shift = new ShiftAssignment();</span>
+<span class="nc" id="L1144">		shift.setID(original.getID());</span>
+<span class="nc" id="L1145">		shift.setStartTime(original.getStartTime());</span>
+<span class="nc" id="L1146">		shift.setDuration(original.getDuration());</span>
+<span class="nc" id="L1147">		shift.setLocked(original.isLocked());</span>
+<span class="nc" id="L1148">		shift.setActivityID(original.getActivityID());</span>
+<span class="nc" id="L1149">		shift.setShiftID(original.getShiftID());</span>
+<span class="nc" id="L1150">		Collection&lt;ID&gt; workResourceIDs = original.getWorkResourceIDs();</span>
+<span class="nc bnc" id="L1151" title="All 2 branches missed.">		shift.addWorkResourceID(workResourceIDs.isEmpty() ? null : workResourceIDs.iterator().next());</span>
+<span class="nc" id="L1152">		shift.setCampaignID(original.getCampaignID());</span>
+<span class="nc" id="L1153">		shift.setOverlayPrecedence(original.getOverlayPrecedence());</span>
+<span class="nc" id="L1154">		shift.setWorkPatternID(original.getWorkPatternID());</span>
+<span class="nc" id="L1155">		shift.setExtensionBefore(original.getExtensionBefore());</span>
+<span class="nc" id="L1156">		shift.setExtensionAfter(original.getExtensionAfter());</span>
+
+<span class="nc" id="L1158">		shift.setOTExtensionBeforeID(original.getOTExtensionBeforeID());</span>
+<span class="nc" id="L1159">		shift.setOTExtensionAfterID(original.getOTExtensionAfterID());</span>
+<span class="nc" id="L1160">		shift.setOTExtensionBeforeActivityID(original.getOTExtensionBeforeActivityID());</span>
+<span class="nc" id="L1161">		shift.setOTExtensionAfterActivityID(original.getOTExtensionAfterActivityID());</span>
+<span class="nc" id="L1162">		return shift;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>LoginHelperUtils.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.test.utils</a> &gt; <span class="el_source">LoginHelperUtils.java</span></div><h1>LoginHelperUtils.java</h1><pre class="source lang-java linenums">package com.verint.test.utils;
+
+import com.gargoylesoftware.htmlunit.BrowserVersion;
+import com.gargoylesoftware.htmlunit.WebClient;
+import com.verint.test.constants.PathKeys;
+import com.verint.test.utils.http.URLBuilderUtils;
+import org.json.JSONObject;
+
+import java.util.HashMap;
+import java.util.Map;
+
+<span class="nc" id="L12">public class LoginHelperUtils {</span>
+
+	//Stores the pre-authed web clients for each user so they can be referenced later
+	//without needing to log in again
+<span class="nc" id="L16">	private static Map&lt;String, WebClient&gt; webClientsByUser = new HashMap&lt;&gt;();</span>
+
+	//Cached authentication token for applets
+<span class="nc" id="L19">	private static String authentificationToken = null;</span>
+
+	public static final String SUPER_USER_NAME = &quot;wsuperuser&quot;;
+	public static final String SUPER_USER_PASSWORD = &quot;pumpkin1&quot;;
+
+
+	/**
+	 * Gets an authentication token for WFO services.
+	 * @return
+	 * { &quot;AuthToken&quot;:{&quot;token&quot; : &quot;tokenValue&quot;} }
+	 */
+	private static JSONObject getAuthenticationTokenForUser(String userName, String password) throws Exception {
+<span class="nc" id="L31">		String authServiceUrl = URLBuilderUtils.getCoreRestURL() + PathKeys.AUTH_SERVICE_URL;</span>
+<span class="nc" id="L32">		JSONObject user = new JSONObject();</span>
+<span class="nc" id="L33">		user.put(&quot;user&quot;, userName);</span>
+<span class="nc" id="L34">		user.put(&quot;password&quot;, password);</span>
+
+<span class="nc" id="L36">		JSONObject authentication = URLBuilderUtils.postRestRequest(authServiceUrl, null, user);</span>
+<span class="nc" id="L37">		JSONObject tokenOnly = authentication.getJSONObject(&quot;AuthToken&quot;);</span>
+<span class="nc" id="L38">		return tokenOnly;</span>
+	}
+
+	/**
+	 * Return Singleton WebClient with disabled JavaScript Engine.
+	 * Only few test required JS. We could enable JS before this tests and disable after.
+	 * By disabling JS We increase test execution by 50%;
+	 *
+	 * @return
+	 * @throws Exception
+	 */
+	public static WebClient getPreAuthedWebClientForSuperuser() throws Exception {
+<span class="nc" id="L50">		return getPreAuthedWebClient(SUPER_USER_NAME, SUPER_USER_PASSWORD);</span>
+	}
+
+	/**
+	 * Return a pre-authed, singleton WebClient for the given username/password.
+	 * @param username
+	 * @param password
+	 * @return
+	 * @throws Exception
+	 */
+	public static WebClient getPreAuthedWebClient(String username, String password) throws Exception {
+		//we already have web client
+<span class="nc bnc" id="L62" title="All 2 branches missed.">		if (webClientsByUser.containsKey(username)) {</span>
+<span class="nc" id="L63">			return webClientsByUser.get(username);</span>
+		}
+
+<span class="nc" id="L66">		WebClient webClient = buildPreAuthedWebClient(username, password, false);</span>
+<span class="nc" id="L67">		webClientsByUser.put(username, webClient);</span>
+<span class="nc" id="L68">		return webClient;</span>
+	}
+
+	/**
+	 * Build New Client instead existing Singleton WebClient
+	 *
+	 * @param jsEnabled
+	 * @return
+	 * @throws Exception
+	 */
+	public static WebClient getNewPreAuthedWebClientForSuperuser(boolean jsEnabled) throws Exception {
+<span class="nc" id="L79">		return buildPreAuthedWebClient(SUPER_USER_NAME, SUPER_USER_PASSWORD, jsEnabled);</span>
+	}
+
+	public static WebClient getNewPreAuthedWebClient(String username, String password, boolean jsEnabled) throws Exception {
+<span class="nc" id="L83">		return buildPreAuthedWebClient(username, password, jsEnabled);</span>
+	}
+
+
+	/**
+	 * Build Authentifed web client.
+	 *
+	 * @return
+	 * @throws Exception
+	 */
+	private static WebClient buildPreAuthedWebClient(String username, String password, boolean jsEnabled) throws Exception {
+		WebClient webClient;
+<span class="nc" id="L95">		Host proxyHost = getProxyHost();</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">		if (proxyHost != null) {</span>
+<span class="nc" id="L97">			webClient = new WebClient(BrowserVersion.INTERNET_EXPLORER, proxyHost.getHost(), proxyHost.getPort());</span>
+		} else {
+<span class="nc" id="L99">			webClient = new WebClient(BrowserVersion.INTERNET_EXPLORER);</span>
+		}
+<span class="nc" id="L101">		webClient.getOptions().setThrowExceptionOnScriptError(false);</span>
+<span class="nc" id="L102">		webClient.getOptions().setJavaScriptEnabled(jsEnabled);</span>
+<span class="nc" id="L103">		webClient.getOptions().setHistorySizeLimit(0);</span>
+<span class="nc" id="L104">		addAuthTokenToRequestHeader(webClient, username, password);</span>
+
+<span class="nc" id="L106">		return webClient;</span>
+	}
+
+	private static void addAuthTokenToRequestHeader(WebClient wc, String userName, String password) throws Exception {
+<span class="nc" id="L110">		wc.addRequestHeader(&quot;Impact360AuthToken&quot;, getAuthenticationTokenStringForUser(userName, password));</span>
+<span class="nc" id="L111">	}</span>
+
+	/**
+	 * Gets an authentication token string for user/password
+	 * @return String auth token
+	 * { &quot;AuthToken&quot;:{&quot;token&quot; : &quot;tokenValue&quot;} }
+	 */
+	private static String getAuthenticationTokenStringForUser(String userName, String password) throws Exception {
+<span class="nc" id="L119">		return getAuthenticationTokenForUser(userName, password).getString(&quot;token&quot;);</span>
+	}
+
+	public static Host getProxyHost() {
+<span class="nc" id="L123">		String proxyHost = System.getProperty(&quot;htmlUnitProxyHost&quot;);</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">		if(proxyHost != null){</span>
+<span class="nc" id="L125">			String[] hostAndPort = proxyHost.split(&quot;:&quot;);</span>
+<span class="nc" id="L126">			return new Host(hostAndPort[0], Integer.valueOf(hostAndPort[1]));</span>
+		}
+<span class="nc" id="L128">		return null;</span>
+	}
+
+<span class="nc" id="L131">	public static class Host {</span>
+		private String host;
+		private int port;
+
+<span class="nc" id="L135">		public Host(String host, int port) {</span>
+<span class="nc" id="L136">			this.host = host;</span>
+<span class="nc" id="L137">			this.port = port;</span>
+<span class="nc" id="L138">		}</span>
+
+		public String getHost() {
+<span class="nc" id="L141">			return host;</span>
+		}
+
+		public int getPort() {
+<span class="nc" id="L145">			return port;</span>
+		}
+	}
+
+	/**
+	 * Makes authentication call and returns AuthenticationToken for superuser
+	 *
+	 * @return
+	 * @throws Exception
+	 */
+	public static String getAuthenticationTokenForSuperuser() throws Exception {
+<span class="nc bnc" id="L156" title="All 2 branches missed.">		if(authentificationToken == null) {</span>
+<span class="nc" id="L157">			authentificationToken = getAuthenticationTokenStringForUser(SUPER_USER_NAME, SUPER_USER_PASSWORD);</span>
+		}
+<span class="nc" id="L159">		return authentificationToken;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

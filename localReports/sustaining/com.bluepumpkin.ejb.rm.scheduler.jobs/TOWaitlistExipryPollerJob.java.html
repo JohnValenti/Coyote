@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TOWaitlistExipryPollerJob.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.scheduler.jobs</a> &gt; <span class="el_source">TOWaitlistExipryPollerJob.java</span></div><h1>TOWaitlistExipryPollerJob.java</h1><pre class="source lang-java linenums">/*
+ * Created on Oct 9, 2003
+ *
+ * To change this generated comment go to
+ * Window&gt;Preferences&gt;Java&gt;Code Generation&gt;Code and Comments
+ */
+package com.bluepumpkin.ejb.rm.scheduler.jobs;
+
+import org.quartz.StatefulJob;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.Lock;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.RmManagerFactory;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.ejb.CalendarTimeOffDayFacade;
+import com.bluepumpkin.ejb.rm.util.TORequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.timeoff.waitlist.ejb.TOWaitlistManager;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TONotifyMessage;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+ 
+
+import java.util.*;
+
+/**
+ * Title:        Witness Systms Request Management Module
+ * Copyright:    Copyright (c) 2001-2004
+ * Company:      Blue Pumpkin Software, inc
+ *
+ * @author Sameet Joshi , Aug 2006
+ */
+<span class="fc" id="L35">public class TOWaitlistExipryPollerJob implements StatefulJob {</span>
+<span class="fc" id="L36">	private static Category m_cat = Log.initCategory(TOWaitlistExipryPollerJob.class.getName());</span>
+	/**
+	 * lock to ensure that this job is not reexecuted while an earlier instance is still executing.
+	 */
+<span class="fc" id="L40">	static Lock m_jobExecLock = new Lock();</span>
+	/*
+	 * @see org.quartz.Job#execute(org.quartz.JobExecutionContext)
+	 */
+<span class="fc" id="L44">	static long lastRunTime = 0;</span>
+<span class="fc" id="L45">	static int lastKnownRunHour = 0;</span>
+
+	public void execute(JobExecutionContext execCtxt) throws JobExecutionException {
+<span class="fc" id="L48">		String methodName = &quot;execute&quot;;</span>
+		try {
+			// try to obtain the lock.
+<span class="pc bpc" id="L51" title="1 of 2 branches missed.">			if (!m_jobExecLock.lock()) {</span>
+<span class="nc" id="L52">				m_cat.debug(&quot;Quartz job not executed as an earlier job is still executing&quot;);</span>
+<span class="nc" id="L53">				return;</span>
+			}
+<span class="fc bfc" id="L55" title="All 2 branches covered.">			if (TORequestUtil.isTOWaitlistFeatureEnabled()) {</span>
+				// continue to perform other polled tasks if an exception is thrown.
+<span class="fc" id="L57">				TOWaitlistManager toWaitlistManager = RequestUtil.getTOWaitlistManager();</span>
+				try {
+<span class="fc" id="L59">					toWaitlistManager.updateStatusForExpiredTOWaitlistRequests();</span>
+<span class="nc" id="L60">				} catch (Exception e) {</span>
+<span class="nc" id="L61">					m_cat.error(&quot;**** Exception caught and ignored ****: &quot;, e);</span>
+<span class="fc" id="L62">				}</span>
+<span class="fc" id="L63">				scanAllTOWaitlistedRequests(toWaitlistManager);</span>
+			}
+<span class="fc" id="L65">			RequestUtil.getTOHoursPerDayManager(null,null).syncTOHoursPerDay();</span>
+			// release lock
+<span class="fc" id="L67">			m_jobExecLock.releaseLock();</span>
+<span class="nc" id="L68">		} catch (Exception e) {</span>
+			// release lock if it is being held.
+<span class="nc bnc" id="L70" title="All 2 branches missed.">			if (m_jobExecLock.isLocked()) {</span>
+<span class="nc" id="L71">				m_jobExecLock.releaseLock();</span>
+			}
+<span class="nc" id="L73">			m_cat.error(methodName, e);</span>
+<span class="nc" id="L74">			throw new JobExecutionException(e, false);</span>
+<span class="fc" id="L75">		}</span>
+<span class="fc" id="L76">	}</span>
+
+<span class="fc" id="L78">	public static int HOUR_IN_MSECS = 3600000;</span>
+
+	public boolean isElgibileToRunTOWaitlistScanNow(long now) {
+<span class="fc" id="L81">		int runInterval = 24;</span>
+<span class="fc" id="L82">		int runHour = 20;</span>
+		try {
+<span class="fc" id="L84">			String runHourStr = BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.REQUEST_MANAGEMENT + &quot;FULL_TO_WL_SCAN_RUN_TIME&quot;);</span>
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">			if (runHourStr != null) runHour = Integer.parseInt(runHourStr);</span>
+<span class="nc" id="L86">		} catch (Exception e) {</span>
+<span class="fc" id="L87">		}</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">		if (runHour != lastKnownRunHour) {</span>
+<span class="fc" id="L89">			lastRunTime = 0;</span>
+<span class="fc" id="L90">			lastKnownRunHour = runHour;</span>
+		}
+<span class="fc" id="L92">		int currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);</span>
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">		if (RequestUtil.isRMDebugEnabled()) m_cat.info(&quot;runHour=&quot; + runHour + &quot;: currentHour=&quot; + currentHour + &quot; : LAST Run time in Hrs= &quot; + ((now - lastRunTime) / HOUR_IN_MSECS));</span>
+<span class="fc bfc" id="L94" title="All 2 branches covered.">		if (runHour == currentHour) {</span>
+<span class="pc bpc" id="L95" title="1 of 4 branches missed.">			return (lastRunTime == 0 || (now - lastRunTime) &gt; (runInterval * HOUR_IN_MSECS));</span>
+		}
+<span class="fc" id="L97">		return false;</span>
+	}
+
+	public void scanAllTOWaitlistedRequests(TOWaitlistManager toWaitlistManager) throws Exception {
+<span class="fc" id="L101">		long now = new Date().getTime();</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">		if (isElgibileToRunTOWaitlistScanNow(now)) {</span>
+<span class="fc" id="L103">			m_cat.info(&quot;running waitlist scan now to check for denials:&quot;);</span>
+<span class="fc" id="L104">			CalendarTimeOffDayFacade toCalFacade = RmManagerFactory.getInstance().getTimeOffDayFacade();</span>
+<span class="fc" id="L105">			Collection tobeScannedTOPoolIDs = toCalFacade.getTOPoolIDsWithWaitListScanEnabled();</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">			for (Iterator iterator = tobeScannedTOPoolIDs.iterator(); iterator.hasNext();) {</span>
+<span class="fc" id="L107">				ID pTOPoolID = (ID) iterator.next();</span>
+				try {
+<span class="fc" id="L109">					TONotifyMessage msg = new TONotifyMessage(TONotifyMessage.TO_NOTIFY_TOPOOL_FULL_SCAN);</span>
+<span class="fc" id="L110">					msg.setTOPoolId(pTOPoolID);</span>
+<span class="fc" id="L111">					msg.sendMessage();</span>
+<span class="nc" id="L112">				} catch (Exception e) {</span>
+<span class="nc" id="L113">					m_cat.error(&quot;**** Exception caught and ignored ****: &quot;, e);</span>
+<span class="fc" id="L114">				}</span>
+<span class="fc" id="L115">			}</span>
+<span class="fc" id="L116">			lastRunTime = now;</span>
+<span class="fc" id="L117">			m_cat.info(&quot;Waitlist scan to check for denials complete:&quot; + (new Date().getTime() - now));</span>
+		}
+
+<span class="fc" id="L120">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

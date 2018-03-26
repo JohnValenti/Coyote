@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftAssignmentOfFlexRequestIsNotChangedRule.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.flextime.validation</a> &gt; <span class="el_source">ShiftAssignmentOfFlexRequestIsNotChangedRule.java</span></div><h1>ShiftAssignmentOfFlexRequestIsNotChangedRule.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.flextime.validation;
+
+import java.util.Collection;
+import java.util.Date;
+import java.util.Iterator;
+
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.activity.model.EventUtils;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignmentFields;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftOTExtension;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.FlexRequestMakeup;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+
+/**
+ * Validate that there is no change to the shift assignments of the flex request
+ *
+ */
+<span class="nc" id="L25">public class ShiftAssignmentOfFlexRequestIsNotChangedRule implements Validator {</span>
+
+<span class="nc" id="L27">	private static final String CLASS_NAME = ShiftAssignmentOfFlexRequestIsNotChangedRule.class.getName();</span>
+
+	@Override
+	public ValidationResult validate(Validatable validatable) throws Exception {
+
+<span class="nc" id="L32">		TORequest toRequest = (TORequest) validatable;</span>
+
+<span class="nc" id="L34">		ValidationResult result = null;</span>
+<span class="nc" id="L35">		FTValidationCache cache = getFTValidationCache(toRequest);</span>
+
+<span class="nc bnc" id="L37" title="All 2 branches missed.">		for (FlexRequestMakeup makeup : toRequest.getFlexRequestMakeupList()) {</span>
+<span class="nc" id="L38">			result = validate(cache, toRequest, makeup);</span>
+<span class="nc bnc" id="L39" title="All 2 branches missed.">			if (result != null) {</span>
+<span class="nc" id="L40">				break;</span>
+			}
+<span class="nc" id="L42">		}</span>
+
+<span class="nc" id="L44">		return result;</span>
+	}
+
+	private ValidationResult validate(FTValidationCache cache, TORequest toRequest, FlexRequestMakeup makeup) throws Exception {
+		ValidationResult result;
+
+<span class="nc" id="L50">		ShiftAssignment sa = cache.getShiftAssignmentByID(makeup.getShiftAssignmentID());</span>
+<span class="nc bnc" id="L51" title="All 2 branches missed.">		if (sa == null) {</span>
+			//raise an error if shift assignment with specified ID is found. Most likely the shift was deleted (or replaced with a new one)
+<span class="nc" id="L53">			result = ValidationUtil.setHardValidationResult(toRequest, RmEjbBundleKey.FLEX_REQ_SHIFT_ASSIGNMENT_CHANGED, &quot;&quot;, CLASS_NAME);</span>
+<span class="nc bnc" id="L54" title="All 2 branches missed.">		} else if (!cache.isPublishedShiftInSync(sa)) {</span>
+			//the pub shift is not in sync with pub world
+<span class="nc" id="L56">			result = ValidationUtil.setHardValidationResult(toRequest, RmEjbBundleKey.FLEX_REQ_PUB_SCHEDULE_CHANGED, &quot;&quot;, CLASS_NAME);</span>
+<span class="nc bnc" id="L57" title="All 2 branches missed.">		} else if (!mainShiftStartEndInSync(cache, makeup, sa)) {</span>
+			// unpublished shift assignment is changed (start time/end time changed)
+<span class="nc" id="L59">			result = ValidationUtil.setHardValidationResult(toRequest, RmEjbBundleKey.FLEX_REQ_SHIFT_ASSIGNMENT_CHANGED, &quot;&quot;, CLASS_NAME);</span>
+		} else {
+<span class="nc" id="L61">			result = null;</span>
+		}
+
+<span class="nc" id="L64">		return result;</span>
+	}
+
+
+	private boolean mainShiftStartEndInSync(FTValidationCache cache, FlexRequestMakeup makeup, ShiftAssignment sa) throws Exception {
+
+<span class="nc" id="L70">		Date mainShiftStart = getMainShiftStart(cache, sa);</span>
+<span class="nc" id="L71">		Date mainShiftEnd = getMainShiftEnd(cache, sa);</span>
+
+<span class="nc bnc" id="L73" title="All 4 branches missed.">		return makeup.getShiftStartTime().equals(mainShiftStart) &amp;&amp; makeup.getShiftEndTime().equals(mainShiftEnd);</span>
+	}
+
+	private Date getMainShiftEnd(FTValidationCache cache, ShiftAssignment shiftAssignment) throws Exception {
+<span class="nc" id="L77">		int afterLength = 0;</span>
+<span class="nc" id="L78">		int afterGap = 0;</span>
+		// there is no user requested activity ID, then find calendar after extension's activity if any and set field to readonly
+<span class="nc bnc" id="L80" title="All 4 branches missed.">		if (shiftAssignment.getOTExtensionAfterID() != null &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L81">			ShiftOTExtension shiftOTE = cache.getShiftOTExtensionByID(shiftAssignment.getOTExtensionAfterID());</span>
+<span class="nc" id="L82">			afterLength = shiftOTE.getDuration();</span>
+<span class="nc" id="L83">			afterGap = shiftOTE.getMinGap();</span>
+		}
+		// customized on duration and gap
+<span class="nc bnc" id="L86" title="All 4 branches missed.">		if (shiftAssignment.getExtensionAfter() &gt; 0 &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L87">			int duration = shiftAssignment.getExtensionAfter();</span>
+			// is there any gap?
+<span class="nc" id="L89">			int gap = getOTExtensionGapDuration(shiftAssignment, 2);</span>
+<span class="nc" id="L90">			afterLength = duration - gap;</span>
+<span class="nc" id="L91">			afterGap = gap;</span>
+		}
+
+<span class="nc" id="L94">		return new Date(shiftAssignment.getEndTime().getTime() - (afterLength + afterGap) * TimeZoneUtil.MINUTE_IN_MILLISECONDS_LONG);</span>
+	}
+
+	private Date getMainShiftStart(FTValidationCache cache, ShiftAssignment shiftAssignment) throws Exception {
+<span class="nc" id="L98">		int beforeLength = 0;</span>
+<span class="nc" id="L99">		int beforeGap = 0;</span>
+		// there is no user requested activity ID, then find calendar before extension's activity if any and set field to readonly
+<span class="nc bnc" id="L101" title="All 4 branches missed.">		if (shiftAssignment.getOTExtensionBeforeID() != null &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L102">			ShiftOTExtension shiftOTE = cache.getShiftOTExtensionByID(shiftAssignment.getOTExtensionBeforeID());</span>
+<span class="nc" id="L103">			beforeLength = shiftOTE.getDuration();</span>
+<span class="nc" id="L104">			beforeGap = shiftOTE.getMinGap();</span>
+		}
+		// customized on duration and gap
+<span class="nc bnc" id="L107" title="All 4 branches missed.">		if (shiftAssignment.getExtensionBefore() &gt; 0 &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L108">			int duration = shiftAssignment.getExtensionBefore();</span>
+			// is there any gap?
+<span class="nc" id="L110">			int gap = getOTExtensionGapDuration(shiftAssignment, 1);</span>
+<span class="nc" id="L111">			beforeLength = duration - gap;</span>
+<span class="nc" id="L112">			beforeGap = gap;</span>
+		}
+<span class="nc" id="L114">		return new Date(shiftAssignment.getStartTime().getTime() + (beforeLength + beforeGap) * TimeZoneUtil.MINUTE_IN_MILLISECONDS_LONG);</span>
+	}
+
+	@SuppressWarnings(&quot;rawtypes&quot;)
+	private static int getOTExtensionGapDuration(ShiftAssignment shift, int gapType) {
+<span class="nc" id="L119">		int duration = 0;</span>
+<span class="nc" id="L120">		Collection shiftEvents = shift.getChildObjects(ShiftAssignmentFields.CHILD_SHIFT_EVENT);</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">		for (Iterator i = shiftEvents.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L122">			ShiftEventAssignment event = (ShiftEventAssignment) i.next();</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">			if (event.getOverTimeGapType() == gapType) {</span>
+<span class="nc" id="L124">				return event.getDuration();</span>
+			}
+<span class="nc" id="L126">		}</span>
+
+<span class="nc" id="L128">		return duration;</span>
+	}
+
+	protected FTValidationCache getFTValidationCache(TORequest toRequest) {
+<span class="nc" id="L132">		return (FTValidationCache) toRequest.getCache();</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>
