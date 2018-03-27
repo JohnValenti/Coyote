@@ -29,8 +29,8 @@
             //copy files for report gen
             exec('C:\xampp\htdocs\Coyote\Scripts\copyteamexecs.bat ' .$teamname.' '.$buildno.'');
             
-        //TODO - check for team filter and copy to jacoco
             //run ant
+            //C:\jacoco\apache-ant-1.9.2-bin\bin\ant -Dbasedir="C:\jacoco" -f C:\jacoco\build.xml %ReportFilter%
         
         ?>
     </body>
