@@ -13,7 +13,7 @@
 	$basepath = "C:\xampp\htdocs\Coyote\TeamResources\"+$teamname
 	$teamurl = "http://atlartifactory:8081/artifactory/test-repo/jacocoReporting/"+$teampath
 	$teamzip = $basepath+"\teamzip\"+$teamname+"\"+$buildno+"\"+pipeline+".zip"
-	$teamdest = $basepath+"\execs\"+$buildno
+	$teamdest = $basepath+"\execs\"+$buildno+"\"
 
 	Invoke-WebRequest -Uri $teamurl -OutFile $teamzip
 	Expand-Archive $teamzip -dest $teamdest -force
