@@ -6,19 +6,32 @@
     
         <?php
             $buildno = $_GET['buildno'];
+            $teamname = $_GET['teamname'];
             $teampath = $_GET['teampath'];
-            $teampath = $_GET['teamname'];
+            $pipeline = $_GET['pipeline'];
+            $jacocopath = "C:";
+            
             //$teampath = "15.2HFR3/delphi/RequestManagement_Experimental.zip";
             //$teamname = "delphi";
     
             // download test resources
             exec('C:\xampp\htdocs\Coyote\Scripts\dltestres.bat ' .$buildno.'');
         
-            // download team exec and jacoco
-            exec('C:\xampp\htdocs\Coyote\Scripts\dlteamrep.bat ' .$teampath.' '.$teamname. '');
+            // download team exec
+            exec('C:\xampp\htdocs\Coyote\Scripts\dlteamrep.bat ' .$teamname.' '.teampath.' '.$piepline.' '.$buildno.'');
+        
+            // dl jacoco
+            //exec('C:\xampp\htdocs\Coyote\Scripts\dljacoco.bat ');
         
             // reset baseline
-            exec('C:\xampp\htdocs\Coyote\Scripts\CustomResetBaselineAndCopy.bat ' .$teamname.' ');
+            exec('C:\xampp\htdocs\Coyote\Scripts\ResetBaseAndCopyAndPurge.bat ' .$jacocopath.'');
+        
+            //copy files for report gen
+            exec('C:\xampp\htdocs\Coyote\Scripts\copyteamexecs.bat ' .$teamname.' '.$buildno.'');
+            
+        //TODO - check for team filter and copy to jacoco
+            //run ant
+        
         ?>
     </body>
 </html>
