@@ -73,7 +73,7 @@
          //Extract the most recent jacoco coverage value from the html report for Delphi
          
          $delphidoc = new DOMDocument();
-         $delphidoc->loadHTMLFile('C:\xampp\htdocs\Coyote\reports\delphi\index.html');
+         $delphidoc->loadHTMLFile('C:\xampp\htdocs\Coyote\Reports\report\delphi\index.html');
          $x= new DOMXpath($delphidoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          $delphiProgress = $node->textContent;
@@ -134,7 +134,7 @@
          //Extract the most recent jacoco coverage value from the html report for sustaining
          
          $susdoc = new DOMDocument();
-         $susdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\reports\sustaining\index.html');
+         $susdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\Reports\report\sustaining\index.html');
          $x= new DOMXpath($susdoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          $susProgress = $node->textContent;
