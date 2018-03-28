@@ -13,7 +13,7 @@
             
             //$teampath = "15.2HFR3/delphi/RequestManagement_Experimental.zip";
             //$teamname = "delphi";
-        //buildno =15.2.3.2597
+            //buildno =15.2.3.2597
     
             // download test resources
             exec('C:\xampp\htdocs\Coyote\Scripts\dltestres.bat ' .$buildno.'');
@@ -25,12 +25,14 @@
             //exec('C:\xampp\htdocs\Coyote\Scripts\dljacoco.bat ');
         
             // reset baseline
-            exec('C:\xampp\htdocs\Coyote\Scripts\ResetBaseAndCopyAndPurge.bat ' .$jacocopath.'');
+            //TODO CHECK THIS
+            //exec('C:\xampp\htdocs\Coyote\Scripts\ResetBaseAndCopyAndPurge.bat ' .$jacocopath.'');
         
-            //copy files for report gen
+            //clean dump out + copy files to
+            // copy files for report gen to jacoco/dump-out/jacoc
             exec('C:\xampp\htdocs\Coyote\Scripts\copyteamexecs.bat ' .$teamname.' '.$buildno.'');
             
-            //run ant
+            //run ant command, move generated report and clean up
             
             //C:\jacoco\apache-ant-1.9.2-bin\bin\ant -Dbasedir="C:\jacoco" -f C:\jacoco\build.xml %ReportFilter%
         

@@ -8,7 +8,11 @@
 
 $basepath = "C:\xampp\htdocs\Coyote\TeamResources\"
 $sourceDirectory  = $basepath+$teamname+"\"+$buildno+"\"
-$destinationDirectory = "C:\Jacoco\dump-out\"
+$destinationDirectory = "C:\Jacoco\dump-out\jacoco\"
 
+#delete dump out
 Get-ChildItem -Path $destinationDirectory -Include *.* -File -Recurse | foreach { $_.Delete()}
-Copy-item -Force -Recurse -Verbose $sourceDirectory -Destination $destinationDirectory
+#Remove-Item -Path $destinationDirectory -Recurse
+
+#copy in all team execs
+#Copy-item -Force -Recurse $sourceDirectory -Destination $destinationDirectory

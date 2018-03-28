@@ -1,0 +1,2 @@
+@ECHO OFF
+PowerShell -NoProfile -ExecutionPolicy Bypass -Command "& 'C:\xampp\htdocs\Coyote\Scripts\dlteamrep.ps1' -teamname delphi -version 15.2HFR3 -pipeline RequestManagement_Experimental -buildno 15.2.3.2597";
