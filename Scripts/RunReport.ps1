@@ -14,12 +14,14 @@
 	$sourceDirectoryTeamReport  = "C:\jacoco\report\"
 	$destinationDirectoryTeamReport = "C:\xampp\htdocs\Coyote\Reports\"
 	$destinationDirectoryDump = "C:\jacoco\dump-out\jacoco"
+	$sourceDirectoryIndividualTeam = "C:\xampp\htdocs\Coyote\TeamResources\"+$teamname+"\execs\jacoco\"+$buildno
 	$sourceDirectoryAllTeams  = "C:\xampp\htdocs\Coyote\TeamResources\CoreTeams\execs\jacoco\"+$buildno
 	$destinationDirectoryBuildDump = "C:\jacoco\dump-out\jacoco\"+$buildno
 	$destinationJacocoLatest = "C:\jacoco\latest\"
 	$sourceDirectoryTestResource = "C:\xampp\htdocs\Coyote\TestResources\"+$buildno+".jar"
 	
 	#### STAGE ONE - RUN ANT ON CURRENT EXEC THAT IS ALREADY IN DUMP-OUT FOLDER COPY REQUIRED TEST RESOURCE AND EXTRACT
+	Copy-item -Force -Recurse -Verbose $sourceDirectoryAllTeams -Destination $destinationDirectoryDump
 	New-Item -ItemType directory -Path $destinationJacocoLatest
 	[System.Reflection.Assembly]::LoadWithPartialName('System.IO.Compression.FileSystem')
 	[System.IO.Compression.ZipFile]::ExtractToDirectory($sourceDirectoryTestResource, $destinationJacocoLatest)
