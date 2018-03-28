@@ -14,8 +14,8 @@
 	$sourceDirectoryTeamReport  = "C:\jacoco\report\"
 	$destinationDirectoryTeamReport = "C:\xampp\htdocs\Coyote\Reports\"
 	$destinationDirectoryDump = "C:\jacoco\dump-out\jacoco"
-	$sourceDirectoryIndividualTeam = "C:\xampp\htdocs\Coyote\TeamResources\"+$teamname+"\execs\jacoco\"+$buildno
-	$sourceDirectoryAllTeams  = "C:\xampp\htdocs\Coyote\TeamResources\CoreTeams\execs\jacoco\"+$buildno
+	$sourceDirectoryIndividualTeam = "C:\xampp\htdocs\Coyote\TeamResources\"+$teamname+"\"+$buildno
+	$sourceDirectoryAllTeams  = "C:\xampp\htdocs\Coyote\TeamResources\CoreTeams\"+$buildno
 	$destinationDirectoryBuildDump = "C:\jacoco\dump-out\jacoco\"+$buildno
 	$destinationJacocoLatest = "C:\jacoco\latest\"
 	$sourceDirectoryTestResource = "C:\xampp\htdocs\Coyote\TestResources\"+$buildno+".jar"
