@@ -15,4 +15,4 @@ Get-ChildItem -Path $destinationDirectory -Include *.* -File -Recurse | foreach 
 #Remove-Item -Path $destinationDirectory -Recurse
 
 #copy in all team execs
-#Copy-item -Force -Recurse $sourceDirectory -Destination $destinationDirectory
+Copy-item -Force -Recurse $sourceDirectory -Destination $destinationDirectory

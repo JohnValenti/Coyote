@@ -14,14 +14,21 @@
 	$sourceDirectoryTeamReport  = "C:\jacoco\report\"
 	$destinationDirectoryTeamReport = "C:\xampp\htdocs\Coyote\Reports\"
 	$destinationDirectoryDump = "C:\jacoco\dump-out\jacoco"
-	$sourceDirectoryIndividualTeam = "C:\xampp\htdocs\Coyote\TeamResources\"+$teamname+"\"+$buildno
+	$sourceDirectoryIndividualTeam = "C:\xampp\htdocs\Coyote\TeamResources\"+$teamname+"\"+$buildno+"\"
 	$sourceDirectoryAllTeams  = "C:\xampp\htdocs\Coyote\TeamResources\CoreTeams\"+$buildno
+	$sourceDirectoryAllTeamsCopy = "C:\xampp\htdocs\Coyote\TeamResources\CoreTeams\"
 	$destinationDirectoryBuildDump = "C:\jacoco\dump-out\jacoco\"+$buildno
 	$destinationJacocoLatest = "C:\jacoco\latest\"
 	$sourceDirectoryTestResource = "C:\xampp\htdocs\Coyote\TestResources\"+$buildno+".jar"
 	
 	#### STAGE ONE - RUN ANT ON CURRENT EXEC THAT IS ALREADY IN DUMP-OUT FOLDER COPY REQUIRED TEST RESOURCE AND EXTRACT
-	Copy-item -Force -Recurse -Verbose $sourceDirectoryAllTeams -Destination $destinationDirectoryDump
+	Copy-item -Force -Recurse -Verbose $sourceDirectoryIndividualTeam -Destination $destinationDirectoryDump
+	
+	if(!(Test-Path -Path $sourceDirectoryAllTeams)){
+		New-Item -ItemType directory -Path $sourceDirectoryAllTeams
+	}
+	
+	Copy-item -Force -Recurse -Verbose $sourceDirectoryIndividualTeam -Destination $sourceDirectoryAllTeamsCopy
 	New-Item -ItemType directory -Path $destinationJacocoLatest
 	[System.Reflection.Assembly]::LoadWithPartialName('System.IO.Compression.FileSystem')
 	[System.IO.Compression.ZipFile]::ExtractToDirectory($sourceDirectoryTestResource, $destinationJacocoLatest)
