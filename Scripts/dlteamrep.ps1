@@ -10,7 +10,7 @@
 		[string] $buildno
 	)
 
-	$basepath = "C:\xampp\htdocs\Coyote\TeamResources\"+$teamname
+	$basepath = "C:\Coyote\TeamResources\"+$teamname
 	$teamurl = "http://atlartifactory:8081/artifactory/test-repo/jacocoReporting/"+$version+"/"+$teamname+"/"+$pipeline+".zip"
 	$teamzip = $basepath+"\zipholder"
 	$zipfile = $teamzip+"\zipfile.zip"

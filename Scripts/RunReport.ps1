@@ -7,19 +7,19 @@
 		[string] $buildno
 	)
 
-	$basepath = "C:\xampp\htdocs\Coyote\TeamResources\"+$teamname
+	$basepath = "C:\Coyote\"+$teamname
 	$teamfilter=$teamname
 	$antCmd = "cmd.exe /C C:\jacoco\apache-ant-1.9.2-bin\bin\ant -Dbasedir=""C:\jacoco"" -f C:\jacoco\build.xml "+$teamfilter
-	$antCmdAll = "cmd.exe /C C:\jacoco\apache-ant-1.9.2-bin\bin\ant -Dbasedir='C:\jacoco' -f C:\jacoco\build.xml sustaining"
+	$antCmdAll = "cmd.exe /C C:\jacoco\apache-ant-1.9.2-bin\bin\ant -Dbasedir='C:\jacoco' -f C:\jacoco\build.xml coreteams"
 	$sourceDirectoryTeamReport  = "C:\jacoco\report\"
-	$destinationDirectoryTeamReport = "C:\xampp\htdocs\Coyote\Reports\"
+	$destinationDirectoryTeamReport = $basepath+"Reports\"
 	$destinationDirectoryDump = "C:\jacoco\dump-out\jacoco"
-	$sourceDirectoryIndividualTeam = "C:\xampp\htdocs\Coyote\TeamResources\"+$teamname+"\"+$buildno+"\"
-	$sourceDirectoryAllTeams  = "C:\xampp\htdocs\Coyote\TeamResources\CoreTeams\"+$buildno
-	$sourceDirectoryAllTeamsCopy = "C:\xampp\htdocs\Coyote\TeamResources\CoreTeams\"
+	$sourceDirectoryIndividualTeam = $basepath+"TeamResources\"+$teamname+"\"+$buildno+"\"
+	$sourceDirectoryAllTeams  = $basepath"TeamResources\CoreTeams\"+$buildno
+	$sourceDirectoryAllTeamsCopy = $basepath+"TeamResources\CoreTeams\"
 	$destinationDirectoryBuildDump = "C:\jacoco\dump-out\jacoco\"+$buildno
 	$destinationJacocoLatest = "C:\jacoco\latest\"
-	$sourceDirectoryTestResource = "C:\xampp\htdocs\Coyote\TestResources\"+$buildno+".jar"
+	$sourceDirectoryTestResource = $basepath+"TestResources\"+$buildno+".jar"
 	
 	#### STAGE ONE - RUN ANT ON CURRENT EXEC THAT IS ALREADY IN DUMP-OUT FOLDER COPY REQUIRED TEST RESOURCE AND EXTRACT
 	Copy-item -Force -Recurse -Verbose $sourceDirectoryIndividualTeam -Destination $destinationDirectoryDump

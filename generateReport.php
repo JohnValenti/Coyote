@@ -13,13 +13,13 @@
             ini_set('max_execution_time', 300); //300 seconds = 5 minutes
             
             // download test resources
-            exec('C:\xampp\htdocs\Coyote\Scripts\dltestres.bat ' .$buildno.'');
+            exec('C:\Coyote\Scripts\dltestres.bat ' .$buildno.'');
         
             // download team exec
-            exec('C:\xampp\htdocs\Coyote\Scripts\dlteamrep.bat ' .$teamname.' '.$version.' '.$pipeline.' '.$buildno.'');
+            exec('C:\Coyote\Scripts\dlteamrep.bat ' .$teamname.' '.$version.' '.$pipeline.' '.$buildno.'');
                    
             //run ant command, move generated report and clean up
-            exec('C:\xampp\htdocs\Coyote\Scripts\RunTeamReport.bat ' .$teamname.' '.$pipeline.' '.$buildno.'');
+            exec('C:\Coyote\Scripts\RunTeamReport.bat ' .$teamname.' '.$pipeline.' '.$buildno.'');
         ?>
     </body>
 </html>

@@ -58,7 +58,7 @@
          //Extract the most recent jacoco coverage value from the html report for All of the core teams
          
          $alldoc = new DOMDocument();
-         $alldoc->loadHTMLFile('C:\xampp\htdocs\Coyote\reports\sustaining\index.html');
+         $alldoc->loadHTMLFile('C:\Coyote\Reports\report\coreteams\index.html');
          $x= new DOMXpath($alldoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          $allProgress = $node->textContent;
@@ -73,7 +73,7 @@
          //Extract the most recent jacoco coverage value from the html report for Delphi
          
          $delphidoc = new DOMDocument();
-         $delphidoc->loadHTMLFile('C:\xampp\htdocs\Coyote\Reports\report\delphi\index.html');
+         $delphidoc->loadHTMLFile('C:\Coyote\Reports\report\delphi\index.html');
          $x= new DOMXpath($delphidoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          $delphiProgress = $node->textContent;
@@ -88,7 +88,7 @@
          //Extract the most recent jacoco coverage value from the html report for QX
          
          $qxdoc = new DOMDocument();
-         $qxdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\reports\queuex\index.html');
+         $qxdoc->loadHTMLFile('C:\Coyote\Reports\report\queuex\index.html');
          $x= new DOMXpath($qxdoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          $qxProgress = $node->textContent;
@@ -103,7 +103,7 @@
          //Extract the most recent jacoco coverage value from the html report for Firebirds
          
          $fbdoc = new DOMDocument();
-         $fbdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\reports\sustaining\index.html');
+         $fbdoc->loadHTMLFile('C:\Coyote\Reports\report\firebirds\index.html');
          $x= new DOMXpath($fbdoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          
@@ -119,7 +119,7 @@
          //Extract the most recent jacoco coverage value from the html report for FIS
          
          $fisdoc = new DOMDocument();
-         $fisdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\reports\queuex\index.html');
+         $fisdoc->loadHTMLFile('C:\Coyote\Reports\report\fis\index.html');
          $x= new DOMXpath($fisdoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node) //echo $node->textContent;
          $fisProgress = $node->textContent;
@@ -134,7 +134,7 @@
          //Extract the most recent jacoco coverage value from the html report for sustaining
          
          $susdoc = new DOMDocument();
-         $susdoc->loadHTMLFile('C:\xampp\htdocs\Coyote\Reports\report\sustaining\index.html');
+         $susdoc->loadHTMLFile('C:\Coyote\Reports\report\sustaining\index.html');
          $x= new DOMXpath($susdoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          $susProgress = $node->textContent;
