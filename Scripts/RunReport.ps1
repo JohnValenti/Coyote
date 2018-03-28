@@ -23,11 +23,9 @@
 	
 	#### STAGE ONE - RUN ANT ON CURRENT EXEC THAT IS ALREADY IN DUMP-OUT FOLDER COPY REQUIRED TEST RESOURCE AND EXTRACT
 	Copy-item -Force -Recurse -Verbose $sourceDirectoryIndividualTeam -Destination $destinationDirectoryDump
-	
 	if(!(Test-Path -Path $sourceDirectoryAllTeams)){
 		New-Item -ItemType directory -Path $sourceDirectoryAllTeams
 	}
-	
 	Copy-item -Force -Recurse -Verbose $sourceDirectoryIndividualTeam -Destination $sourceDirectoryAllTeamsCopy
 	New-Item -ItemType directory -Path $destinationJacocoLatest
 	[System.Reflection.Assembly]::LoadWithPartialName('System.IO.Compression.FileSystem')
