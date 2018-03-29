@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeOffRequestRestService.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.rm.rest.service</a> &gt; <span class="el_source">TimeOffRequestRestService.java</span></div><h1>TimeOffRequestRestService.java</h1><pre class="source lang-java linenums">package com.verint.web.rm.rest.service;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Date;
+import java.util.List;
+
+import javax.servlet.ServletContext;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.Response;
+import javax.xml.bind.annotation.XmlRootElement;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.localization.LocaleContext;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.requests.flextime.ShiftAssignmentDetailData;
+import com.verint.web.rest.exception.checked.BusinessWFOException;
+import com.verint.web.rest.exception.checked.SystemWFOException;
+import com.verint.web.rest.exception.checked.WFOException;
+import com.verint.web.rest.security.WFOSecurity;
+import com.verint.web.rest.service.AbstractWFOEntityService;
+import com.verint.web.rest.util.FormatUtils;
+import com.verint.web.rm.rest.entity.timeoff.TimeOffRequestEntity;
+import com.verint.web.rm.rest.entity.timeoff.TimeOffRequestParamEntity;
+import com.verint.web.rm.rest.entity.timeoff.TimeOffRequestProcessEntity;
+import com.verint.web.rm.rest.facade.flex.ShiftAssignmentDetailRequestQuery;
+import com.verint.web.rm.rest.facade.timeoff.ITimeOffRequestFacade;
+import com.verint.web.rm.rest.util.RmUtils;
+import com.witness.web.uif.system.RequestContext;
+
+@Path(&quot;/timeoff/&quot;)
+@Produces(&quot;application/json&quot;)
+@WFOSecurity
+public class TimeOffRequestRestService extends AbstractWFOEntityService&lt;TimeOffRequestEntity&gt; {
+<span class="fc" id="L48">	private static final Category logger = Log.initCategory(TimeOffRequestRestService.class.getName());</span>
+
+	private String comment;
+<span class="fc" id="L51">	private ID actId = null;</span>
+	private Date startTime;
+	private Date endTime;
+	private int debitType;
+	private RequestContext context;
+
+	@Context
+	private HttpServletRequest request;
+	@Context
+	private HttpServletResponse response;
+	@Context
+	private ServletContext sc;
+
+	protected LocaleContext m_localeContext;
+	protected Localizer m_localizer;
+	public ITimeOffRequestFacade timeOffRequestFacade;
+
+<span class="fc" id="L68">	public TimeOffRequestRestService() { // NOSONAR</span>
+<span class="fc" id="L69">	}</span>
+
+	public RequestContext getRequestContext() {
+<span class="nc" id="L72">		return new RequestContext(request, response, sc );</span>
+	}
+
+	protected LocaleContext getLocaleContext() {
+<span class="nc" id="L76">		m_localeContext= getLocaleContext(request, response, sc);</span>
+<span class="nc" id="L77">		return m_localeContext;</span>
+	}
+
+	protected Localizer getLocalizer() {
+<span class="nc" id="L81">		m_localizer= getRequestContext().getLocalizer();</span>
+<span class="nc" id="L82">		return m_localizer;</span>
+	}
+	public ITimeOffRequestFacade getTimeOffRequestFacade() {
+<span class="nc" id="L85">		return timeOffRequestFacade;</span>
+	}
+
+	public void setTimeOffRequestFacade(ITimeOffRequestFacade timeOffRequestFacade) {
+<span class="fc" id="L89">		this.timeOffRequestFacade = timeOffRequestFacade;</span>
+<span class="fc" id="L90">	}</span>
+
+	@GET
+	@Path(&quot;/get&quot;)
+	public TimeOffRequestList&lt;TimeOffRequestEntity&gt; getTimeOffEntitiesWithParameters() throws WFOException {
+		try {
+<span class="nc" id="L96">			comment = &quot;&quot;;</span>
+<span class="nc" id="L97">			actId = null;</span>
+<span class="nc" id="L98">			startTime = null;</span>
+<span class="nc" id="L99">			endTime = null;</span>
+
+<span class="nc" id="L101">			String strEmpId = request.getParameter(&quot;employeeId&quot;);</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">			ID empId = StringUtil.isEmpty(strEmpId) ? null : new ID(strEmpId);</span>
+<span class="nc" id="L103">			String strOrgId = request.getParameter(&quot;organizationId&quot;);</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">			ID orgId = StringUtil.isEmpty(strOrgId) ? null : new ID(strOrgId);</span>
+
+<span class="nc bnc" id="L106" title="All 4 branches missed.">			if (empId==null &amp;&amp; orgId==null) {</span>
+<span class="nc" id="L107">				throw new BusinessWFOException(&quot;employeeId and organizationId both null&quot;, Response.Status.CONFLICT);</span>
+			}
+<span class="nc bnc" id="L109" title="All 2 branches missed.">			else if (empId != null) {</span>
+<span class="nc" id="L110">				orgId = null;</span>
+			}
+
+<span class="nc" id="L113">			String strStartTime = request.getParameter(&quot;startTime&quot;);</span>
+<span class="nc" id="L114">			String strEndTime = request.getParameter(&quot;endTime&quot;);</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">			if (strStartTime != null) {</span>
+<span class="nc" id="L116">				startTime = FormatUtils.iso8601SecPrecisionStringToDate(strStartTime);</span>
+			}
+<span class="nc bnc" id="L118" title="All 2 branches missed.">			if (strEndTime != null) {</span>
+<span class="nc" id="L119">				endTime = FormatUtils.iso8601SecPrecisionStringToDate(strEndTime);</span>
+			}
+<span class="nc bnc" id="L121" title="All 4 branches missed.">			if (startTime != null &amp;&amp; endTime != null) {</span>
+<span class="nc" id="L122">				Calendar startCal = Calendar.getInstance();</span>
+<span class="nc" id="L123">				startCal.setTime(startTime);</span>
+<span class="nc" id="L124">				Calendar endCal = Calendar.getInstance();</span>
+<span class="nc" id="L125">				endCal.setTime(endTime);</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">				if (!endCal.after(startCal)) {</span>
+<span class="nc" id="L127">					throw new BusinessWFOException(&quot;endTime is not after startTime&quot;, Response.Status.CONFLICT);</span>
+				}
+			}
+<span class="nc" id="L130">			String strSubmittedFrom = request.getParameter(&quot;submittedFrom&quot;);</span>
+<span class="nc" id="L131">			String strSubmittedTo = request.getParameter(&quot;submittedTo&quot;);</span>
+<span class="nc" id="L132">			Date submittedFrom = null;</span>
+<span class="nc" id="L133">			Date submittedTo = null;</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">			if (strSubmittedFrom != null) {</span>
+<span class="nc" id="L135">				submittedFrom = FormatUtils.iso8601SecPrecisionStringToDate(strSubmittedFrom);</span>
+			}
+<span class="nc bnc" id="L137" title="All 2 branches missed.">			if (strSubmittedTo != null) {</span>
+<span class="nc" id="L138">				submittedTo = FormatUtils.iso8601SecPrecisionStringToDate(strSubmittedTo);</span>
+			}
+<span class="nc bnc" id="L140" title="All 4 branches missed.">			if (submittedFrom != null &amp;&amp; submittedTo != null) {</span>
+<span class="nc" id="L141">				Calendar fromCal = Calendar.getInstance();</span>
+<span class="nc" id="L142">				fromCal.setTime(submittedFrom);</span>
+<span class="nc" id="L143">				Calendar toCal = Calendar.getInstance();</span>
+<span class="nc" id="L144">				toCal.setTime(submittedTo);</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">				if (!toCal.after(fromCal)) {</span>
+<span class="nc" id="L146">					throw new BusinessWFOException(&quot;submittedTo is not after submittedFrom&quot;, Response.Status.CONFLICT);</span>
+				}
+			}
+<span class="nc bnc" id="L149" title="All 4 branches missed.">			if (submittedFrom == null || submittedTo == null) {</span>
+<span class="nc" id="L150">				submittedFrom = null;</span>
+<span class="nc" id="L151">				submittedTo = null;</span>
+<span class="nc" id="L152">				logger.debug(&quot;ignoring submitted parameters since one of the pair was not specified&quot;);</span>
+			}
+
+			// either start/endTime or submittedFrom/To must be specified
+<span class="nc bnc" id="L156" title="All 4 branches missed.">			if (startTime == null &amp;&amp; submittedFrom == null) {</span>
+<span class="nc" id="L157">				throw new BusinessWFOException(&quot;Neither startTime nor submittedFrom were specified&quot;, Response.Status.CONFLICT);</span>
+			}
+
+<span class="nc" id="L160">			int iStatus = 0;</span>
+<span class="nc" id="L161">			String status = request.getParameter(&quot;status&quot;);</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">			if (status != null) {</span>
+<span class="nc" id="L163">				iStatus = Integer.valueOf(status).intValue();</span>
+			}
+
+<span class="nc" id="L166">			boolean showExpired = false;</span>
+<span class="nc" id="L167">			String strShowExpired = request.getParameter(&quot;showExpired&quot;);</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">			if (strShowExpired != null) {</span>
+<span class="nc" id="L169">				showExpired = Boolean.getBoolean(strShowExpired);</span>
+			}
+
+//			User user = getUser(request);
+<span class="nc" id="L173">			RequestContext context = getRequestContext();</span>
+
+<span class="nc" id="L175">			return (new TimeOffRequestList&lt;TimeOffRequestEntity&gt;(</span>
+<span class="nc" id="L176">				timeOffRequestFacade.getAllTimeOffEvents(context, empId, orgId,  startTime, endTime, submittedFrom, submittedTo, iStatus))) ;</span>
+//				timeOffRequestFacade.getAllTimeOffEvents(context, empId, orgId,  startTime, endTime, submittedFrom, submittedTo, iStatus, showExpired))) ;
+
+		}
+<span class="nc" id="L180">		catch (WFOException ex) {</span>
+<span class="nc" id="L181">			logger.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L182">			throw ex;</span>
+		}
+<span class="nc" id="L184">		catch (Exception ex) {</span>
+<span class="nc" id="L185">			logger.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L186">			throw new SystemWFOException(ex.getLocalizedMessage());</span>
+		}
+	}
+
+	@POST
+	@Path(&quot;/submitTimeoffRequest&quot;)
+	@Consumes(&quot;application/json&quot;)
+	public TimeOffRequestEntity submitTimeOffRequest(TimeOffRequestParamEntity bean) throws WFOException {
+		try {
+<span class="nc" id="L195">			extractCommonParameters(bean);</span>
+
+<span class="nc" id="L197">			boolean addToWaitlist = bean.getAddToWaitlist();</span>
+
+<span class="nc" id="L199">			String strWaitlistExpiration = bean.getWaitlistExpiration();</span>
+<span class="nc" id="L200">			Date waitlistExpiration = null;</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">			if (!StringUtil.isEmpty(strWaitlistExpiration)) {</span>
+<span class="nc" id="L202">				waitlistExpiration = FormatUtils.iso8601SecPrecisionStringToDate(strWaitlistExpiration);</span>
+			}
+
+//			User user = getUser(request);
+
+<span class="nc" id="L207">			return timeOffRequestFacade.submitTimeOffRequest(context, actId, debitType, startTime, endTime,</span>
+				comment, addToWaitlist, waitlistExpiration);
+		}
+<span class="nc" id="L210">		catch (WFOException ex) { // should already be logged</span>
+<span class="nc" id="L211">			throw ex;</span>
+		}
+<span class="nc" id="L213">		catch (Exception ex) {</span>
+<span class="nc" id="L214">			logger.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L215">			throw new SystemWFOException(ex.getLocalizedMessage());</span>
+		}
+	}
+
+	@POST
+	@Path(&quot;/editTimeoffRequest&quot;)
+	@Consumes(&quot;application/json&quot;)
+	public TimeOffRequestEntity editTimeOffRequest(TimeOffRequestParamEntity bean) throws WFOException {
+		try {
+<span class="nc" id="L224">			ID reqId = new ID(bean.getTimeoffRequestId());</span>
+
+<span class="nc" id="L226">			extractCommonParameters(bean);</span>
+
+<span class="nc" id="L228">			return timeOffRequestFacade.editTimeOffRequest(context, reqId, actId, debitType, startTime, endTime, comment);</span>
+		}
+<span class="nc" id="L230">		catch (WFOException ex) { // should already be logged</span>
+<span class="nc" id="L231">			throw ex;</span>
+		}
+<span class="nc" id="L233">		catch (Exception ex) {</span>
+<span class="nc" id="L234">			logger.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L235">			throw new SystemWFOException(ex.getLocalizedMessage());</span>
+		}
+	}
+
+	@POST
+	@Path(&quot;processTimeoffRequest&quot;)
+	@Consumes(&quot;application/json&quot;)
+	public TimeOffRequestEntity processTimeOffRequest(TimeOffRequestProcessEntity bean) throws WFOException {
+		try {
+<span class="nc" id="L244">			ID reqId = new ID(bean.getTimeoffRequestId());</span>
+<span class="nc" id="L245">			int actionCode = bean.getActionCode();</span>
+<span class="nc" id="L246">			comment = bean.getComment();</span>
+
+<span class="nc" id="L248">			context = getRequestContext();</span>
+
+<span class="nc" id="L250">			return timeOffRequestFacade.processTimeOffRequest(context, reqId, actionCode, comment);</span>
+		}
+<span class="nc" id="L252">		catch (WFOException ex) { // should already be logged</span>
+<span class="nc" id="L253">			throw ex;</span>
+		}
+<span class="nc" id="L255">		catch (Exception ex) {</span>
+<span class="nc" id="L256">			logger.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L257">			throw new SystemWFOException(ex.getLocalizedMessage());</span>
+		}
+	}
+
+	/**
+	 * Gets the time off request.
+	 *
+	 * Parameters:
+	 * requestID: The ID of the time off request.
+	 *
+	 * Example:
+	 * http://localhost:7001/wfo/rest/rm-api/timeoff/getRequest?requestID=3001
+	 */
+	@GET
+	@Path(&quot;/getRequest&quot;)
+	public TimeOffRequestEntity getRequest() throws WFOException {
+		try {
+<span class="nc" id="L274">			context = getRequestContext();</span>
+
+<span class="nc" id="L276">			ID requestID = RmUtils.getID(context, RmUtils.REQUEST_ID_FN);</span>
+
+<span class="nc" id="L278">			return timeOffRequestFacade.getRequest(context, requestID);</span>
+<span class="nc" id="L279">		} catch (Exception ex) {</span>
+<span class="nc" id="L280">			throw RmUtils.handleServiceException(ex, logger);</span>
+		}
+	}
+
+	@GET
+	@Path(&quot;/shiftAssignmentdetail&quot;)
+	public ShiftAssignmentDetailData getShiftAssignmentDetail() throws WFOException {
+<span class="nc" id="L287">		String strStartDate = request.getParameter(&quot;startdate&quot;);</span>
+<span class="nc" id="L288">		String strEndDate = request.getParameter(&quot;enddate&quot;);</span>
+<span class="nc" id="L289">		String strEmpId = request.getParameter(&quot;empId&quot;);</span>
+
+<span class="nc" id="L291">		logger.l7dInfo(&quot;TimeOffRequestRestService.getShiftAssignmentDetail_Rest - strStartDate:&quot; + strStartDate);</span>
+<span class="nc" id="L292">		logger.l7dInfo(&quot;TimeOffRequestRestService.getShiftAssignmentDetail_Rest - strEndtDate:&quot; + strEndDate);</span>
+<span class="nc" id="L293">		logger.l7dInfo(&quot;TimeOffRequestRestService.getShiftAssignmentDetail_Rest - empId:&quot; + strEmpId);</span>
+
+<span class="nc" id="L295">		Date startDate = new Date();</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">		if (!StringUtil.isEmpty(strStartDate)) {</span>
+<span class="nc" id="L297">			startDate = FormatUtils.iso8601SecPrecisionStringToDate(strStartDate);</span>
+		}
+
+<span class="nc" id="L300">		Date endDate = new Date();</span>
+<span class="nc bnc" id="L301" title="All 2 branches missed.">		if (!StringUtil.isEmpty(strEndDate)) {</span>
+<span class="nc" id="L302">			endDate = FormatUtils.iso8601SecPrecisionStringToDate(strEndDate);</span>
+		}
+
+<span class="nc" id="L305">		ShiftAssignmentDetailRequestQuery query = new ShiftAssignmentDetailRequestQuery();</span>
+<span class="nc" id="L306">		query.setContext(getRequestContext())</span>
+<span class="nc" id="L307">				.setBundle(getRequestContext().getLocalizer().getBundle(RmWebBundleKey.BUNDLE_NAME))</span>
+<span class="nc" id="L308">				.setFromDate(startDate)</span>
+<span class="nc" id="L309">				.setToDate(endDate)</span>
+<span class="nc" id="L310">				.setUserId(this.getRequestContext().getUser().getEmployeeID())</span>
+<span class="nc" id="L311">				.setEmployeeId(new ID(strEmpId));</span>
+
+<span class="nc" id="L313">		return timeOffRequestFacade.getShiftAssignmentDetail(query);</span>
+	}
+
+	private void extractCommonParameters(TimeOffRequestParamEntity bean) {
+<span class="nc" id="L317">		this.startTime = null;</span>
+<span class="nc" id="L318">		this.endTime = null;</span>
+<span class="nc" id="L319">		this.comment = &quot;&quot;;</span>
+
+<span class="nc" id="L321">		this.actId = new ID(bean.getActivityId());</span>
+<span class="nc" id="L322">		this.debitType = bean.getDebitType();</span>
+
+<span class="nc" id="L324">		String strStartTime = bean.getStartTime();</span>
+<span class="nc" id="L325">		String strEndTime = bean.getEndTime();</span>
+<span class="nc bnc" id="L326" title="All 2 branches missed.">		if (!StringUtil.isEmpty(strStartTime)) {</span>
+<span class="nc" id="L327">			this.startTime = FormatUtils.iso8601SecPrecisionStringToDate(strStartTime);</span>
+		}
+<span class="nc bnc" id="L329" title="All 2 branches missed.">		if (!StringUtil.isEmpty(strEndTime)) {</span>
+<span class="nc" id="L330">			this.endTime = FormatUtils.iso8601SecPrecisionStringToDate(strEndTime);</span>
+		}
+
+<span class="nc" id="L333">		this.comment = bean.getComment();</span>
+<span class="nc bnc" id="L334" title="All 2 branches missed.">		if (StringUtil.isEmpty(this.comment)) {</span>
+<span class="nc" id="L335">			this.comment = &quot;&quot;;</span>
+		}
+
+<span class="nc" id="L338">		context = getRequestContext();</span>
+<span class="nc" id="L339">	}</span>
+
+	@Override
+	public TimeOffRequestEntity getEntity(@PathParam(&quot;id&quot;) String employeeId) throws WFOException {
+<span class="nc" id="L343">			return null;</span>
+	}
+
+	@Override
+	public TimeOffRequestList&lt;TimeOffRequestEntity&gt; getAllEntities() throws WFOException {
+<span class="nc" id="L348">		return null;</span>
+	}
+
+	@Override
+	public TimeOffRequestEntity updateEntity(TimeOffRequestEntity employee) throws WFOException {
+<span class="nc" id="L353">		return new TimeOffRequestEntity();</span>
+	}
+
+	@Override
+	public TimeOffRequestEntity addEntity(TimeOffRequestEntity employee) throws WFOException {
+<span class="nc" id="L358">		return new TimeOffRequestEntity();</span>
+	}
+
+	@Override
+	public TimeOffRequestEntity deleteEntity(@PathParam(&quot;id&quot;) String id) throws WFOException {
+<span class="nc" id="L363">		return new TimeOffRequestEntity();</span>
+	}
+
+	@Override
+	public boolean addEntities(Collection&lt;TimeOffRequestEntity&gt; entities) throws WFOException {
+<span class="nc" id="L368">		return true;</span>
+	}
+
+	@Override
+	public boolean updateEntities(Collection&lt;TimeOffRequestEntity&gt; entities) throws WFOException {
+<span class="nc" id="L373">		return true;</span>
+	}
+
+	@Override
+	public boolean deleteEntities(Collection&lt;TimeOffRequestEntity&gt; entities) throws WFOException {
+<span class="nc" id="L378">		return true;</span>
+	}
+
+	@XmlRootElement(name = &quot;timeoffRequest&quot;)
+	private class TimeOffRequestList&lt;TimeOffRequestEntity&gt; extends ArrayList&lt;TimeOffRequestEntity&gt;{
+<span class="nc" id="L383">		public TimeOffRequestList(List&lt;TimeOffRequestEntity&gt; wrapped) {</span>
+<span class="nc" id="L384">			super(wrapped);</span>
+<span class="nc" id="L385">		}</span>
+	}
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

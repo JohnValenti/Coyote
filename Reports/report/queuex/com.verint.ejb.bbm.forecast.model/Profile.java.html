@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>Profile.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.ejb.bbm.forecast.model</a> &gt; <span class="el_source">Profile.java</span></div><h1>Profile.java</h1><pre class="source lang-java linenums">/*
+ * (c) 2010-2012 Verint Systems, Inc.
+ */
+package com.verint.ejb.bbm.forecast.model;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeContext;
+import com.bluepumpkin.ejb.bbm.time.TimeInterval;
+import com.bluepumpkin.ejb.bbm.time.TimeIntervalAtTime;
+import com.bluepumpkin.ejb.bbm.time.TimeIntervalFactory;
+import com.bluepumpkin.ejb.bbm.time.TimeUnits;
+import com.bluepumpkin.ejb.bbm.workload.model.Queue;
+import com.verint.ejb.bbm.forecast.model.history.ProfileEntry;
+
+/**
+ * This class is a model for a forecast profile composed of one or more weeks of
+ * historical data combined using a weighted average according to externally
+ * supplied weights for each historical week.
+ */
+public class Profile {
+	private ForecastProfile m_forecastProfile;
+	private final TimeIntervalAtTime m_interval;
+<span class="nc" id="L29">	private List&lt;ProfileListener&gt; m_listeners = new ArrayList&lt;ProfileListener&gt;();</span>
+<span class="nc" id="L30">	private Collection&lt;ProfileEntry&gt; m_entries = new ArrayList&lt;ProfileEntry&gt;();</span>
+	private Queue m_queue;
+	private int m_strategicVolumeWeight;
+	private int m_strategicAhtWeight;
+
+	/**
+	 * To be used only when forecast profile has a start date (i.e., it is not
+	 * part of a manually-saved profile).
+	 *
+	 * @param forecastProfile
+	 * @param queue
+	 * @param timeContext
+	 */
+<span class="nc" id="L43">	public Profile(ForecastProfile forecastProfile, Queue queue, TimeContext timeContext) {</span>
+<span class="nc" id="L44">		m_forecastProfile = forecastProfile;</span>
+<span class="nc" id="L45">		m_queue = queue;</span>
+<span class="nc" id="L46">		m_interval = createTimeIntervalForForecastProfile(forecastProfile, timeContext);</span>
+<span class="nc" id="L47">		m_entries.addAll(convertToProfileEntries(forecastProfile.getProfileComponents(), timeContext));</span>
+<span class="nc" id="L48">		m_strategicVolumeWeight = forecastProfile.getStrategicCallVolumeWeight();</span>
+<span class="nc" id="L49">		m_strategicAhtWeight = forecastProfile.getStrategicAverageHandlingTimeWeight();</span>
+<span class="nc" id="L50">	}</span>
+
+	/**
+	 * To be used only when forecast profile has no start date (i.e., it is part
+	 * of a manually-saved profile).
+	 *
+	 * @param forecastProfile
+	 * @param interval
+	 *            the time interval to be used when interpreting the profile.
+	 *            Should represent the interval of the SP week.
+	 * @param queue
+	 * @param timeContext
+	 */
+<span class="nc" id="L63">	public Profile(ForecastProfile forecastProfile, TimeIntervalAtTime interval, Queue queue, TimeContext timeContext) {</span>
+<span class="nc" id="L64">		m_forecastProfile = forecastProfile;</span>
+<span class="nc" id="L65">		m_queue = queue;</span>
+<span class="nc" id="L66">		m_interval = new TimeIntervalAtTime(interval, timeContext);</span>
+<span class="nc" id="L67">		m_entries.addAll(convertToProfileEntries(forecastProfile.getProfileComponents(), timeContext));</span>
+<span class="nc" id="L68">		m_strategicVolumeWeight = forecastProfile.getStrategicCallVolumeWeight();</span>
+<span class="nc" id="L69">		m_strategicAhtWeight = forecastProfile.getStrategicAverageHandlingTimeWeight();</span>
+<span class="nc" id="L70">	}</span>
+
+<span class="nc" id="L72">	public Profile(Profile profileToCopy) {</span>
+		try {
+<span class="nc" id="L74">			m_forecastProfile = (ForecastProfile) profileToCopy.getForecastProfile().clone();</span>
+<span class="nc" id="L75">			m_forecastProfile.setID(null);</span>
+<span class="nc" id="L76">			m_interval = profileToCopy.m_interval;</span>
+<span class="nc" id="L77">			m_queue = profileToCopy.getQueue();</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">			for (ProfileEntry pe : profileToCopy.getProfileEntries()) {</span>
+<span class="nc" id="L79">				m_entries.add(new ProfileEntry(pe));</span>
+<span class="nc" id="L80">			}</span>
+<span class="nc" id="L81">			m_strategicVolumeWeight = profileToCopy.m_strategicVolumeWeight;</span>
+<span class="nc" id="L82">			m_strategicAhtWeight = profileToCopy.m_strategicAhtWeight;</span>
+<span class="nc" id="L83">		} catch (CloneNotSupportedException e) {</span>
+<span class="nc" id="L84">			throw new RuntimeException(e);</span>
+<span class="nc" id="L85">		}</span>
+<span class="nc" id="L86">	}</span>
+
+	/**
+	 * Clears the profile entry list and the underlying ForecastProfile
+	 *
+	 * @param fireEventsForSetProfileEntries
+	 *            - true if you want setProfileEntries() to fire events, false
+	 *            otherwise.
+	 */
+	public void clear() {
+<span class="nc" id="L96">		ID spQueueID = getSPQueueID();</span>
+<span class="nc" id="L97">		ForecastProfile oldFP = m_forecastProfile;</span>
+<span class="nc" id="L98">		m_forecastProfile = new ForecastProfile();</span>
+<span class="nc" id="L99">		m_forecastProfile.setStartDate(m_interval.getStartTime());</span>
+<span class="nc" id="L100">		m_forecastProfile.setEndDate(m_interval.getEndTime());</span>
+<span class="nc" id="L101">		m_forecastProfile.setSPQueueID(spQueueID);</span>
+<span class="nc" id="L102">		this.setProfileEntries(new ArrayList&lt;ProfileEntry&gt;(0));</span>
+<span class="nc" id="L103">		this.setIsModified(false);</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">		if (oldFP.isModified()) {</span>
+<span class="nc" id="L105">			fireProfileModified(true, false);</span>
+		}
+<span class="nc" id="L107">	}</span>
+
+	public ForecastProfile getForecastProfile() {
+<span class="nc" id="L110">		return m_forecastProfile;</span>
+	}
+
+	/**
+	 * Returns the ID of the underlying forecast profile.
+	 */
+	public ID getID() {
+<span class="nc" id="L117">		return m_forecastProfile.getID();</span>
+	}
+
+	/**
+	 * Gets the copy of the server side forecast profile object encapsulated by
+	 * this profile. The ID of the copy is set to null.
+	 *
+	 * @return the forecast profile copy
+	 * @throws CloneNotSupportedException
+	 *             the clone not supported exception
+	 */
+	public ForecastProfile getForecastProfileCopy() throws CloneNotSupportedException {
+<span class="nc" id="L129">		ForecastProfile forecastProfile = m_forecastProfile.cloneForecastProfileValueFields();</span>
+<span class="nc" id="L130">		return forecastProfile;</span>
+	}
+
+	public Queue getQueue() {
+<span class="nc" id="L134">		return m_queue;</span>
+	}
+
+	public Collection&lt;ProfileEntry&gt; getProfileEntries() {
+<span class="nc" id="L138">		return Collections.unmodifiableCollection(m_entries);</span>
+	}
+
+	public void setProfileEntries(Collection&lt;ProfileEntry&gt; entries) {
+<span class="nc" id="L142">		m_entries = new ArrayList&lt;ProfileEntry&gt;(entries);</span>
+<span class="nc" id="L143">		Collection&lt;ProfileComponent&gt; pcCol = new ArrayList&lt;ProfileComponent&gt;(entries.size());</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">		for (ProfileEntry pe : entries) {</span>
+<span class="nc" id="L145">			pcCol.add(pe.getProfileComponent());</span>
+<span class="nc" id="L146">		}</span>
+<span class="nc" id="L147">		m_forecastProfile.setProfileComponents(pcCol);</span>
+<span class="nc" id="L148">	}</span>
+
+	public void addProfileEntry(ProfileEntry profileEntry) {
+<span class="nc" id="L151">		m_entries.add(profileEntry);</span>
+<span class="nc" id="L152">		m_forecastProfile.addProfileComponents(Collections.singleton(profileEntry.getProfileComponent()));</span>
+<span class="nc" id="L153">	}</span>
+
+	/**
+	 * ESR#4163092: Creating Combined Forecast in WFO Suite is taking too long
+	 * to complete. Fire events after adding, removing, or setting a
+	 * profileEntry. The listener is CompositeProfile, which just calls
+	 * updateCompositeProfileEntries() with no parameters, so we can just pass
+	 * null paramters to the listerner.
+	 * @param recalc - Pass true if you want the forecast to be recalculated, false otherwise.
+	 */
+	public void fireEventsForProfileEntryChange(boolean recalc) {
+<span class="nc" id="L164">		Date start = new Date();</span>
+<span class="nc" id="L165">		fireProfileEntriesChanged(null, null,recalc);</span>
+<span class="nc" id="L166">		Date end = new Date();</span>
+<span class="nc" id="L167">		double duration = (end.getTime() - start.getTime()) / 1000.0;</span>
+<span class="nc" id="L168">		System.out.println(&quot;Profile.fireProfileEntriesChanged duration= &quot; + duration + &quot; sec\n&quot;);</span>
+<span class="nc" id="L169">	}</span>
+
+	public ID getSPQueueID() {
+<span class="nc" id="L172">		return m_forecastProfile.getSPQueueID();</span>
+	}
+
+	public boolean isModified() {
+<span class="nc" id="L176">		return m_forecastProfile.isModified();</span>
+	}
+
+	public void setIsModified(boolean modified) {
+<span class="nc bnc" id="L180" title="All 2 branches missed.">		if (modified != isModified()) {</span>
+<span class="nc" id="L181">			m_forecastProfile.setIsModified(modified);</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">			fireProfileModified(!modified, modified);</span>
+		}
+<span class="nc" id="L184">	}</span>
+
+	public void removeProfileEntries(Collection&lt;ProfileEntry&gt; profileEntries, boolean fireEvents) {
+<span class="nc" id="L187">		Collection&lt;ProfileEntry&gt; old = new ArrayList&lt;ProfileEntry&gt;(m_entries);</span>
+<span class="nc" id="L188">		m_entries.removeAll(profileEntries);</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">		for (ProfileEntry entry : profileEntries) {</span>
+<span class="nc" id="L190">			m_forecastProfile.removeProfileComponents(Collections.singleton(entry.getProfileComponent()));</span>
+<span class="nc" id="L191">		}</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">		if (fireEvents) {</span>
+<span class="nc" id="L193">			fireProfileEntriesChanged(old, new ArrayList&lt;ProfileEntry&gt;(m_entries),true);</span>
+		}
+<span class="nc" id="L195">	}</span>
+
+	public void addListener(ProfileListener listener) {
+<span class="nc bnc" id="L198" title="All 2 branches missed.">		if (!m_listeners.contains(listener)) {</span>
+<span class="nc" id="L199">			m_listeners.add(listener);</span>
+		}
+<span class="nc" id="L201">	}</span>
+
+	public void removeListener(ProfileListener listener) {
+<span class="nc" id="L204">		m_listeners.remove(listener);</span>
+<span class="nc" id="L205">	}</span>
+
+	private void fireProfileModified(boolean oldValue, boolean newValue) {
+<span class="nc bnc" id="L208" title="All 2 branches missed.">		for (ProfileListener listener : m_listeners) {</span>
+<span class="nc" id="L209">			listener.modifiedChanged(this, oldValue, newValue);</span>
+<span class="nc" id="L210">		}</span>
+<span class="nc" id="L211">	}</span>
+
+	private void fireProfileEntriesChanged(Collection&lt;ProfileEntry&gt; oldProfileEntries, Collection&lt;ProfileEntry&gt; newProfileEntries,
+			boolean recalc) {
+<span class="nc bnc" id="L215" title="All 2 branches missed.">		for (ProfileListener listener : m_listeners) {</span>
+<span class="nc" id="L216">			listener.profileEntriesChanged(this, oldProfileEntries, newProfileEntries, recalc);</span>
+<span class="nc" id="L217">		}</span>
+<span class="nc" id="L218">	}</span>
+
+	private Collection&lt;ProfileEntry&gt; convertToProfileEntries(Collection&lt;ProfileComponent&gt; profileComponents,
+			TimeContext timeContext) {
+<span class="nc" id="L222">		ArrayList&lt;ProfileEntry&gt; retVal = new ArrayList&lt;ProfileEntry&gt;();</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">		for (ProfileComponent pc : profileComponents) {</span>
+			// TODO: If the queue is null (combined), is any more descriptive
+			// queue name required?
+<span class="nc bnc" id="L226" title="All 2 branches missed.">			retVal.add(new ProfileEntry(pc, timeContext, m_interval.getStartTime(),</span>
+<span class="nc" id="L227">					(m_queue != null) ? m_queue.getName() : &quot;&quot;));</span>
+<span class="nc" id="L228">		}</span>
+<span class="nc" id="L229">		return retVal;</span>
+	}
+
+	public TimeIntervalAtTime getInterval() {
+<span class="nc" id="L233">		return m_interval;</span>
+	}
+
+	public Date getStartDate() {
+<span class="nc" id="L237">		return m_interval.getStartTime();</span>
+	}
+
+	/**
+	 * Returns true if this profile contains a profile entry with the same
+	 * historical interval as the input entry.
+	 */
+	public boolean containsEntry(ProfileEntry entry) {
+<span class="nc bnc" id="L245" title="All 2 branches missed.">		for (ProfileEntry pe : getProfileEntries()) {</span>
+<span class="nc bnc" id="L246" title="All 2 branches missed.">			if (pe.getHistoryPeriod().equals(entry.getHistoryPeriod())) {</span>
+<span class="nc" id="L247">				return true;</span>
+			}
+<span class="nc" id="L249">		}</span>
+<span class="nc" id="L250">		return false;</span>
+	}
+
+	/**
+	 * Returns the weight from 0 to 100 percent, inclusive, that represents the
+	 * relative importance of the strategic volume forecast in the overall
+	 * forecast calculation. 0 indicates that the strategic volume forecast is
+	 * to be disregarded; 100 indicates that the tactical volume forecast is to
+	 * be disregarded.
+	 *
+	 * @return
+	 */
+	public int getStrategicVolumeWeight() {
+<span class="nc" id="L263">		return m_strategicVolumeWeight;</span>
+	}
+
+	/**
+	 * Returns the weight from 0 to 100 percent, inclusive, that represents the
+	 * relative importance of the strategic AHT forecast in the overall forecast
+	 * calculation. 0 indicates that the strategic AHT forecast is to be
+	 * disregarded; 100 indicates that the tactical AHT forecast is to be
+	 * disregarded.
+	 *
+	 * @return
+	 */
+	public int getStrategicAverageHandlingTimeWeight() {
+<span class="nc" id="L276">		return m_strategicAhtWeight;</span>
+	}
+
+	public void setStrategicVolumeWeight(int cvW) {
+<span class="nc bnc" id="L280" title="All 2 branches missed.">		if (m_strategicVolumeWeight != cvW) {</span>
+<span class="nc" id="L281">			int oldV = m_strategicVolumeWeight;</span>
+<span class="nc" id="L282">			m_strategicVolumeWeight = cvW;</span>
+<span class="nc" id="L283">			fireStrategicCVWeightChanged(oldV, cvW);</span>
+		}
+<span class="nc" id="L285">	}</span>
+
+	public void setStrategicAHTWeight(int ahtW) {
+<span class="nc bnc" id="L288" title="All 2 branches missed.">		if (m_strategicAhtWeight != ahtW) {</span>
+<span class="nc" id="L289">			int oldV = m_strategicAhtWeight;</span>
+<span class="nc" id="L290">			m_strategicAhtWeight = ahtW;</span>
+<span class="nc" id="L291">			fireStrategicAHTWeightChanged(oldV, ahtW);</span>
+		}
+
+<span class="nc" id="L294">	}</span>
+
+	private void fireStrategicCVWeightChanged(int oldValue, int newValue) {
+<span class="nc bnc" id="L297" title="All 2 branches missed.">		for (ProfileListener listener : m_listeners) {</span>
+<span class="nc" id="L298">			listener.strategicCVWeightChanged(this, oldValue, newValue);</span>
+<span class="nc" id="L299">		}</span>
+<span class="nc" id="L300">	}</span>
+
+	private void fireStrategicAHTWeightChanged(int oldValue, int newValue) {
+<span class="nc bnc" id="L303" title="All 2 branches missed.">		for (ProfileListener listener : m_listeners) {</span>
+<span class="nc" id="L304">			listener.strategicAHTWeightChanged(this, oldValue, newValue);</span>
+<span class="nc" id="L305">		}</span>
+<span class="nc" id="L306">	}</span>
+
+	/**
+	 * Creates a TimeIntervalAtTime which spans the length of the given forecastProfile.  Assumes that forecastProfile
+	 * has its start/end dates set.
+	 */
+	private static TimeIntervalAtTime createTimeIntervalForForecastProfile(ForecastProfile forecastProfile, TimeContext timeContext) {
+<span class="nc" id="L313">		TimeInterval interval = new TimeInterval(TimeUnits.Day, forecastProfile.getStartDate(),</span>
+<span class="nc" id="L314">				forecastProfile.getEndDate(), timeContext);</span>
+<span class="nc bnc" id="L315" title="All 2 branches missed.">		if (interval.getUnitCount() &lt; 7) {</span>
+<span class="nc" id="L316">			return new TimeIntervalAtTime(forecastProfile.getStartDate(), interval);</span>
+		}
+<span class="nc" id="L318">		return new TimeIntervalAtTime(forecastProfile.getStartDate(), new TimeIntervalFactory(timeContext).getOneWeek());</span>
+	}
+
+	@Override
+	public String toString() {
+<span class="nc" id="L323">		return &quot;Profile[ForecastProfileId: &quot; + m_forecastProfile.getID() + &quot; Interval: &quot; + m_interval.toString() +</span>
+<span class="nc" id="L324">				&quot; Queue: &quot; + m_queue.getID() + &quot;]&quot;;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

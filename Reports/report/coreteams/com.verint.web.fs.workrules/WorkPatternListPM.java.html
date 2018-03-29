@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>WorkPatternListPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.workrules</a> &gt; <span class="el_source">WorkPatternListPM.java</span></div><h1>WorkPatternListPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.workrules;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.PaginationPair;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectIDListComparator;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeType;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workrules.model.Shift;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftEvent;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftOTExtension;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftPattern;
+import com.bluepumpkin.ejb.bbm.workrules.model.VTOEvent;
+import com.bluepumpkin.web.bbm.organization.setup.employeetype.EmployeeTypeModelHandler;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.web.fs.widgets.FindToolbarPageComponent;
+import com.verint.web.fs.widgets.JumpToPagePaginationPC;
+import com.verint.web.fs.widgets.ToggleVisiblePC;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarTextButton;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+
+public class WorkPatternListPM extends WorkRulesListPM {
+	private static final long serialVersionUID = 1L;
+	public static final String WORK_PATTERN_IMPORT_POPUP = &quot;WORK_PATTERN_IMPORT_POPUP&quot;;	// Screen name of import popup
+	public static final String WORK_PATTERN_EXPORT_POPUP = &quot;WORK_PATTERN_EXPORT_POPUP&quot;;	// Screen name of export popup
+	public static final String WORKPATTERN_LIST_SORTCOLUMN = WorkPatternMasterDetailListPC.WORKPATTERN_LIST_SORTCOLUMN;
+	public static final String WORKPATTERN_LIST_SORTORDER = WorkPatternMasterDetailListPC.WORKPATTERN_LIST_SORTORDER; 
+	public static final String WORKPATTERNLIST_ITEMINDEX = JumpToPagePaginationPC.WORKPATTERNLIST_ITEMINDEX;
+	ToggleVisiblePC toggleAll;
+	
+<span class="fc" id="L43">	private Map&lt;ID, Organization&gt; orgMap = null;</span>
+<span class="fc" id="L44">	private Map&lt;ID, Campaign&gt; campaignMap = null;</span>
+<span class="fc" id="L45">	private Map&lt;ID, Activity&gt; activityMap = null;</span>
+<span class="fc" id="L46">	private Map&lt;ID, EmployeeType&gt; empTypeMap = null;</span>
+<span class="fc" id="L47">	private boolean isAscendingSort = true;</span>
+	
+	public WorkPatternListPM(RequestContext context) {
+<span class="fc" id="L50">		super(context,JumpToPagePaginationPC.USED_IN_WORKPATTERN_LIST_PAGE);</span>
+
+<span class="fc" id="L52">		option_showTimeZoneToggle = true;</span>
+		
+<span class="fc" id="L54">		removeChildComponent(m_list);</span>
+<span class="fc" id="L55">		m_list = new WorkPatternMasterDetailListPC(m_context, shiftPatterns, optimizationTargetTimeZone, timeZoneEffectiveDate, </span>
+				isByOrg, orgMap, campaignMap, activityMap, empTypeMap,WorkPatternMasterDetailListPC.USED_IN_LIST);
+		//Need to get the sort order which is get from WorkPatternMasterDetailListPC(...) for loadData(). 
+<span class="fc" id="L58">		isAscendingSort = m_list.getHeader().isAscending();</span>
+<span class="fc" id="L59">		this.addChildComponent(m_list);</span>
+<span class="fc" id="L60">		this.setIsMultiRowSelectable(true);</span>
+		
+<span class="fc" id="L62">		addRequiredJavaScriptFile(WorkRulesJSFileID.WORK_RULES_UTIL);</span>
+		
+<span class="fc" id="L64">		toggleAll = new ToggleVisiblePC(m_context, &quot;toggleAll&quot;);</span>
+<span class="fc" id="L65">		this.addChildComponent(toggleAll);</span>
+<span class="fc" id="L66">	}</span>
+
+<span class="fc" id="L68">	private ArrayList&lt;ShiftPattern&gt; shiftPatterns = new ArrayList&lt;ShiftPattern&gt;();</span>
+	@Override
+	protected void loadData() throws Exception {
+<span class="fc" id="L71">		super.loadData();</span>
+<span class="fc" id="L72">		int pageIndex = getPagePaginationIndex();</span>
+<span class="fc" id="L73">		int itemIndex = getEditIndex();</span>
+<span class="fc" id="L74">		int pageSize = getPageIDSize();	</span>
+<span class="fc" id="L75">		String pageAction = getPageAction();</span>
+<span class="fc" id="L76">		String strItemIndex = (String) m_context.getAttribute(RequestContext.SESSION_SCOPE, WORKPATTERNLIST_ITEMINDEX);</span>
+<span class="pc bpc" id="L77" title="1 of 6 branches missed.">		if(pageAction!=null&amp;&amp; (pageAction.equals(PageAction.CANCEL)||pageAction.equals(PageAction.SAVE) </span>
+<span class="pc bpc" id="L78" title="1 of 4 branches missed.">				||pageAction.equals(PageAction.TABLE_SORT)||pageAction.equals(PageAction.CREATE_NEW))){</span>
+		
+<span class="pc bpc" id="L80" title="1 of 2 branches missed.">			if (!StringUtil.isEmpty(strItemIndex)){</span>
+<span class="nc" id="L81">					itemIndex = Integer.parseInt(strItemIndex);</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">					pageIndex = (itemIndex/pageSize)+ (itemIndex%pageSize &gt; 0 ? 1: 0); </span>
+			}
+		} 
+<span class="pc bpc" id="L85" title="1 of 4 branches missed.">		if (isByOrg &amp;&amp; selectedOrg != null) {</span>
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">			if (isPaginationNavPressed()) {</span>
+<span class="nc" id="L87">				shiftPatterns = new ArrayList&lt;ShiftPattern&gt;(WorkRulesModelHandler.getShiftPatterns(m_context, getPageIDs()));</span>
+			} else {
+<span class="fc" id="L89">				PaginationPair&lt;ShiftPattern&gt; shiftPatternData = WorkRulesModelHandler.getShiftPatternsByOrgHierarchy(m_context, </span>
+<span class="fc" id="L90">						getSelectedIDObject(), isAscendingSort, pageSize,</span>
+<span class="fc" id="L91">						pageIndex, m_list.getSortComparators(), null,getTextToFind(itemToFind));</span>
+<span class="fc" id="L92">				shiftPatterns = new ArrayList&lt;ShiftPattern&gt;(shiftPatternData.getValues());</span>
+<span class="fc" id="L93">				initPaginationIDs(shiftPatternData.getIDs());					</span>
+<span class="fc" id="L94">			}</span>
+<span class="pc bpc" id="L95" title="3 of 4 branches missed.">		} else if (!isByOrg &amp;&amp; selectedSchedulingPeriod != null){</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">			if (isPaginationNavPressed()) {</span>
+<span class="nc" id="L97">				shiftPatterns = new ArrayList&lt;ShiftPattern&gt;(WorkRulesModelHandler.getShiftPatterns(m_context, getPageIDs()));</span>
+			} else {
+<span class="nc" id="L99">				PaginationPair&lt;ShiftPattern&gt; shiftPatternData =</span>
+<span class="nc" id="L100">						WorkRulesModelHandler.getShiftPatternsBySchedulingPeriod(m_context, </span>
+						selectedSchedulingPeriod, isAscendingSort, pageSize,
+<span class="nc" id="L102">						pageIndex, m_list.getSortComparators(), null,getTextToFind(itemToFind));</span>
+<span class="nc" id="L103">				shiftPatterns = new ArrayList&lt;ShiftPattern&gt;(shiftPatternData.getValues());</span>
+<span class="nc" id="L104">				initPaginationIDs(shiftPatternData.getIDs());							</span>
+			}
+		}
+		
+<span class="fc" id="L108">		Collections.sort(shiftPatterns, new ValueObjectIDListComparator(new ArrayList&lt;ID&gt;(getPageIDs())));</span>
+		
+		// Collections of IDs of objects we will need for display
+<span class="fc" id="L111">		Collection&lt;ID&gt; orgIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L112">		Collection&lt;ID&gt; campaignIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L113">		Collection&lt;ID&gt; activityIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L114">		Collection&lt;ID&gt; empTypeIDs = new HashSet&lt;ID&gt;();</span>
+		
+<span class="fc bfc" id="L116" title="All 2 branches covered.">		for (ShiftPattern sp : shiftPatterns) {</span>
+<span class="pc bpc" id="L117" title="1 of 2 branches missed.">			if (sp.getOrganizationID() != null) orgIDs.add(sp.getOrganizationID());</span>
+<span class="pc bpc" id="L118" title="1 of 2 branches missed.">			if (sp.getCampaignID() != null) campaignIDs.add(sp.getCampaignID());</span>
+<span class="pc bpc" id="L119" title="1 of 2 branches missed.">			if (sp.getEmployeeTypeID() != null) empTypeIDs.add(sp.getEmployeeTypeID());</span>
+<span class="fc bfc" id="L120" title="All 2 branches covered.">			for (Shift shift : sp.getShiftPatternShiftAttributes().keySet()) {</span>
+<span class="pc bpc" id="L121" title="1 of 2 branches missed.">				if (shift.getOrganizationID() != null) orgIDs.add(shift.getOrganizationID());</span>
+<span class="pc bpc" id="L122" title="1 of 2 branches missed.">				if (shift.getCampaignID() != null) campaignIDs.add(shift.getCampaignID());</span>
+<span class="fc bfc" id="L123" title="All 2 branches covered.">				if (shift.getActivityID() != null) activityIDs.add(shift.getActivityID());</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">				for (ShiftEvent se : shift.getShiftEvents()) {</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">					if (se.getOrganizationID() != null) orgIDs.add(se.getOrganizationID());</span>
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">					if (se.getCampaignID() != null) campaignIDs.add(se.getCampaignID());</span>
+<span class="pc bpc" id="L127" title="1 of 2 branches missed.">					if (se.getActivityID() != null) activityIDs.add(se.getActivityID());</span>
+<span class="fc" id="L128">				}</span>
+<span class="fc" id="L129">			}</span>
+<span class="fc bfc" id="L130" title="All 2 branches covered.">			for (VTOEvent vtoe : sp.getVTOEventStartTimes().keySet()) {</span>
+<span class="pc bpc" id="L131" title="1 of 2 branches missed.">				if (vtoe.getOrganizationID() != null) orgIDs.add(vtoe.getOrganizationID());</span>
+<span class="pc bpc" id="L132" title="1 of 2 branches missed.">				if (vtoe.getCampaignID() != null) campaignIDs.add(vtoe.getCampaignID());</span>
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">				if (vtoe.getActivityID() != null) activityIDs.add(vtoe.getActivityID());</span>
+<span class="fc" id="L134">			}</span>
+<span class="fc bfc" id="L135" title="All 2 branches covered.">			for (ShiftOTExtension sote : sp.getOTExtensionStartTimes().keySet()) {</span>
+<span class="pc bpc" id="L136" title="1 of 2 branches missed.">				if (sote.getOrganizationID() != null) orgIDs.add(sote.getOrganizationID());</span>
+<span class="pc bpc" id="L137" title="1 of 2 branches missed.">				if (sote.getCampaignID() != null) campaignIDs.add(sote.getCampaignID());</span>
+<span class="pc bpc" id="L138" title="1 of 2 branches missed.">				if (sote.getActivityID() != null) activityIDs.add(sote.getActivityID());</span>
+<span class="fc" id="L139">			}</span>
+<span class="fc" id="L140">		}</span>
+
+<span class="fc" id="L142">		orgMap = WorkRulesModelHandler.getOrgs(m_context, orgIDs);</span>
+<span class="pc bpc" id="L143" title="1 of 2 branches missed.">		if (!isByOrg) campaignMap = WorkRulesModelHandler.getCampaigns(m_context, campaignIDs);</span>
+<span class="fc" id="L144">		activityMap = WorkRulesModelHandler.getActivities(m_context, activityIDs);</span>
+<span class="fc" id="L145">		empTypeMap = EmployeeTypeModelHandler.getEmployeeTypesByIDs(m_context, empTypeIDs);</span>
+<span class="fc" id="L146">	}</span>
+
+	
+	@Override
+	public void initForDisplay() {
+<span class="fc" id="L151">		super.initForDisplay();</span>
+
+<span class="fc" id="L153">	}</span>
+	
+	/**
+		Limit the page size to 30 to prevent a Javascript message saying that the script is taking too long.
+		Each work pattern can have shifts, vto events, and ot extensions. If a work pattern has all three,
+		there will be 3 tables per row with a javascript representation, which can add up to a lot of work.
+		See bug QC-74372 for more information.
+	 */
+	protected int getMaximumPaginationSize() {
+<span class="fc" id="L162">		int configuredMaxPageSize = retrieveConfiguredMaxPageSize();</span>
+<span class="pc bpc" id="L163" title="3 of 4 branches missed.">		if (configuredMaxPageSize &lt; 0 || configuredMaxPageSize &gt; 30) {</span>
+<span class="fc" id="L164">			return 30;</span>
+		} else {
+<span class="nc" id="L166">			return configuredMaxPageSize;</span>
+		}
+	}
+
+	@Override
+	protected void initHeader() {
+<span class="fc" id="L172">	}</span>
+
+	@Override
+	protected void initSelectableItems() {
+<span class="fc" id="L176">		this.removeChildComponent(m_list);</span>
+<span class="fc" id="L177">		m_list = new WorkPatternMasterDetailListPC(m_context, shiftPatterns, optimizationTargetTimeZone, timeZoneEffectiveDate, </span>
+<span class="fc" id="L178">				isByOrg, orgMap, campaignMap, activityMap, empTypeMap,WorkPatternMasterDetailListPC.USED_IN_LIST) {</span>
+			@Override
+			protected void setRowAttributes(DefaultMultiColumnNodeData rowData,
+					ShiftPattern shiftPattern) {
+<span class="fc" id="L182">				WorkPatternListPM.this.setRowAttributes(rowData, shiftPattern.getOrganizationID());</span>
+<span class="fc" id="L183">			}</span>
+		};
+		//m_list.extractParameters(m_context.getRequest());
+<span class="fc" id="L186">		this.addChildComponent(m_list);</span>
+<span class="fc" id="L187">	}</span>
+
+	@Override
+	protected void initContentTitle() {
+<span class="fc" id="L191">		super.initContentTitle();</span>
+<span class="fc" id="L192">		m_contentTitlePC.setPageTitle(m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.WORK_PATTERNS));</span>
+<span class="fc" id="L193">	}</span>
+
+	public static WorkPatternListPM getInstance(RequestContext context) {
+<span class="fc" id="L196">		return (WorkPatternListPM)PageModel.getInstance(context, WorkPatternListPM.class);</span>
+	}
+	
+	protected void initToolbar() {	
+		
+<span class="pc bpc" id="L201" title="1 of 4 branches missed.">		if(selectedCampaign != null || selectedOrg != null) {</span>
+<span class="fc" id="L202">			FindToolbarPageComponent findToolBar = new FindToolbarPageComponent(m_context, getToolbar(),</span>
+					FIND_ITEM_FN, WorkRulesRH.FIND_ACTION,
+<span class="fc" id="L204">					getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_FIND_WORKPATTERNS));	</span>
+<span class="fc" id="L205">			getToolbar().addToolbarComponent(findToolBar);</span>
+<span class="fc" id="L206">			getToolbar().addDivider(); </span>
+<span class="fc" id="L207">			StringBuilder sbImportArgs = new StringBuilder();</span>
+<span class="fc" id="L208">			sbImportArgs.append(WorkRulesImportPopupPM.IS_BY_ORG_ARGUMENT).append(&quot;=&quot;).append(isByOrg);</span>
+<span class="pc bpc" id="L209" title="1 of 2 branches missed.">			if(!isByOrg) {</span>
+<span class="nc" id="L210">				sbImportArgs.append(&quot;&amp;&quot;);</span>
+<span class="nc" id="L211">				sbImportArgs.append(WorkRulesImportPopupPM.CAMPAIGN_ID_ARGUMENT).append(&quot;=&quot;).append(selectedCampaign.getID());</span>
+<span class="nc" id="L212">				sbImportArgs.append(&quot;&amp;&quot;);</span>
+<span class="nc" id="L213">				sbImportArgs.append(WorkRulesImportPopupPM.SCHEDULING_PERIOD_ID_ARGUMENT).append(&quot;=&quot;).append(selectedSchedulingPeriod.getID());</span>
+			} else {
+<span class="fc" id="L215">				sbImportArgs.append(&quot;&amp;&quot;);</span>
+<span class="fc" id="L216">				sbImportArgs.append(WorkRulesImportPopupPM.ORGANIZATION_ID_ARGUMENT).append(&quot;=&quot;).append(selectedOrg.getID());</span>
+			}
+<span class="fc" id="L218">			sbImportArgs.append(&quot;&amp;&quot;);</span>
+<span class="fc" id="L219">			sbImportArgs.append(WorkRulesImportPopupPM.OPTIMIZATION_TARGET_TIMEZONE).append(&quot;=&quot;).append(optimizationTargetTimeZone.getID());</span>
+<span class="fc" id="L220">			sbImportArgs.append(&quot;&amp;&quot;);</span>
+<span class="fc" id="L221">			sbImportArgs.append(WorkRulesImportPopupPM.TIMEZONE_EFFECTIVE_DATE).append(&quot;=&quot;).append(timeZoneEffectiveDate);</span>
+					
+<span class="fc" id="L223">			addPopupArgs(WorkPatternListPM.WORK_PATTERN_IMPORT_POPUP, WorkPatternImportPopupPM.FORM_ACTION, sbImportArgs.toString(), null, &quot;480,520,ctr,ctr&quot;, true, 1);</span>
+<span class="fc" id="L224">			ToolbarTextButton importButton = m_toolbar.createPopupWindowButton(WorkPatternListPM.WORK_PATTERN_IMPORT_POPUP, </span>
+<span class="fc" id="L225">					i18n(m_bundle, FsWebBundleKey.TOOLBAR_IMPORT), m_context.getUser().isAuthorized(PrivilegeKeys.FS_EDITWORKRULES));</span>
+<span class="fc" id="L226">			m_toolbar.addToolbarElement(importButton);</span>
+			
+<span class="fc" id="L228">			StringBuilder sb = new StringBuilder();</span>
+<span class="fc" id="L229">			sb.append(WorkPatternExportPopupPM.IS_BY_ORG_ARGUMENT).append(&quot;=&quot;).append(isByOrg);</span>
+<span class="pc bpc" id="L230" title="1 of 2 branches missed.">			if(!isByOrg) {</span>
+<span class="nc" id="L231">				sb.append(&quot;&amp;&quot;);</span>
+<span class="nc" id="L232">				sb.append(WorkPatternExportPopupPM.CAMPAIGN_ID_ARGUMENT).append(&quot;=&quot;).append(selectedCampaign.getID());</span>
+<span class="nc" id="L233">				sb.append(&quot;&amp;&quot;);</span>
+<span class="nc" id="L234">				sb.append(WorkPatternExportPopupPM.SCHEDULING_PERIOD_ID_ARGUMENT).append(&quot;=&quot;).append(selectedSchedulingPeriod.getID());</span>
+			} else {
+<span class="fc" id="L236">				sb.append(&quot;&amp;&quot;);</span>
+<span class="fc" id="L237">				sb.append(WorkPatternExportPopupPM.ORGANIZATION_ID_ARGUMENT).append(&quot;=&quot;).append(selectedOrg.getID());</span>
+			}
+<span class="fc" id="L239">			sb.append(&quot;&amp;&quot;);</span>
+<span class="fc" id="L240">			sb.append(WorkPatternExportPopupPM.OPTIMIZATION_TARGET_TIMEZONE).append(&quot;=&quot;).append(optimizationTargetTimeZone.getID());</span>
+<span class="fc" id="L241">			sb.append(&quot;&amp;&quot;);</span>
+<span class="fc" id="L242">			sb.append(WorkPatternExportPopupPM.TIMEZONE_EFFECTIVE_DATE).append(&quot;=&quot;).append(timeZoneEffectiveDate);</span>
+			
+<span class="fc" id="L244">			addPopupArgs(WorkPatternListPM.WORK_PATTERN_EXPORT_POPUP, WorkPatternExportPopupPM.VIEW_ACTION, sb.toString(), null, &quot;480,255,ctr,ctr&quot;, true, 1);</span>
+<span class="fc" id="L245">			ToolbarTextButton exportButton = m_toolbar.createPopupWindowButton(WorkPatternListPM.WORK_PATTERN_EXPORT_POPUP, </span>
+<span class="fc" id="L246">					i18n(m_bundle, FsWebBundleKey.TOOLBAR_EXPORT), true);</span>
+<span class="fc" id="L247">			m_toolbar.addToolbarElement(exportButton);</span>
+			
+<span class="fc" id="L249">			boolean hasEditPrivilege = hasEditPrivilege();</span>
+<span class="fc" id="L250">            importButton.setEnabled(hasEditPrivilege);</span>
+<span class="fc" id="L251">            exportButton.setEnabled(hasEditPrivilege);</span>
+			
+<span class="fc" id="L253">			m_toolbar.addDivider();</span>
+		}
+<span class="fc" id="L255">		super.initToolbar();</span>
+<span class="fc" id="L256">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

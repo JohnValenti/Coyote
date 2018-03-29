@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RequestFacadeImpl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.rm.rest.facade</a> &gt; <span class="el_source">RequestFacadeImpl.java</span></div><h1>RequestFacadeImpl.java</h1><pre class="source lang-java linenums">package com.verint.web.rm.rest.facade;
+
+import java.rmi.RemoteException;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import javax.ws.rs.core.Response;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
+import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.model.ShiftBidAuction;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.web.bbm.employee.EmployeeModelHandler;
+import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.auction.AuctionMH;
+import com.bluepumpkin.web.rm.requests.RequestsMH;
+import com.verint.web.rest.exception.checked.BusinessWFOException;
+import com.verint.web.rest.exception.checked.WFOException;
+import com.verint.web.rm.rest.entity.ActionCode;
+import com.verint.web.rm.rest.entity.Entity;
+import com.verint.web.rm.rest.entity.RequestEntity;
+import com.verint.web.rm.rest.entity.RequestListEntity;
+import com.verint.web.rm.rest.facade.custshift.CustShiftFacadeImpl;
+import com.verint.web.rm.rest.facade.shiftbidding.ShiftBiddingFacadeImpl;
+import com.verint.web.rm.rest.facade.shiftswap.ShiftSwapFacadeImpl;
+import com.verint.web.rm.rest.facade.timeoff.TimeOffRequestFacadeImpl;
+import com.verint.web.rm.rest.util.RmUtils;
+import com.witness.web.uif.system.RequestContext;
+
+public class RequestFacadeImpl implements IRequestFacade {
+<span class="fc" id="L46">	private static final Category LOG = Log.initCategory(RequestFacadeImpl.class.getName());</span>
+
+<span class="fc" id="L48">	private static final String[] VALID_REQUEST_TYPES = {</span>
+			Request.REQUESTTYPE_ALL,
+			Request.REQUESTTYPE_CUSTSHIFT,
+			Request.REQUESTTYPE_SHIFTBID,
+			Request.REQUESTTYPE_SHIFTSWAP,
+			Request.REQUESTTYPE_TIMEOFF
+	};
+
+<span class="fc" id="L56">	public RequestFacadeImpl() { // NOSONAR</span>
+<span class="fc" id="L57">	}</span>
+
+	/**
+	 * Gets the employee's requests.
+	 *
+	 * @param context
+	 * @param employeeID
+	 * @param type
+	 *            The type of requests to return. Defaults to &quot;all&quot;. See VALID_REQUEST_TYPES for possible values.
+	 * @param includeExpired
+	 *            True to include expired requests.
+	 */
+	@Override
+	public RequestListEntity getRequestsForEmp(RequestContext context, ID employeeID, String type, boolean includeExpired,
+			boolean includeWaitlistRank)
+			throws WFOException {
+		try {
+<span class="nc" id="L74">			RequestListEntity result = new RequestListEntity();</span>
+<span class="nc" id="L75">			result.setId(employeeID.toString());</span>
+<span class="nc" id="L76">			List&lt;RequestEntity&gt; results = result.getRequests();</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">			if (StringUtil.isEmptyOrWhiteSpace(type)) {</span>
+<span class="nc" id="L78">				type = Request.REQUESTTYPE_ALL; // NOSONAR</span>
+			} else {
+<span class="nc" id="L80">				validateRequestType(type);</span>
+			}
+<span class="nc" id="L82">			OrganizationSetting orgSettings = RequestsMH.getOrgSettingForEmployee(context, employeeID);</span>
+<span class="nc" id="L83">			Collection&lt;RequestAggregate&gt; requests = RequestsMH.getRequestsForEmpFull(employeeID, type, includeExpired);</span>
+<span class="nc" id="L84">			Map&lt;ID, EmployeeName&gt; empNamesByID = getEmployeeNamesById(context, requests);</span>
+<span class="nc" id="L85">			RequestsMetaData metaData = new RequestsMetaData(orgSettings);</span>
+<span class="nc" id="L86">			Map&lt;ID, String&gt; activityIDNameMap = new HashMap&lt;ID, String&gt;();</span>
+<span class="nc" id="L87">			Map&lt;ID, ShiftBidAuction&gt; auctionsByID = getShiftBidAuctions(requests);</span>
+<span class="nc" id="L88">			Map&lt;ID, Boolean&gt; auctionsOpenByID = getShiftBidAuctionOpenMap(auctionsByID.values());</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">			for (RequestAggregate ra : requests) {</span>
+<span class="nc" id="L90">				RequestEntity reqEntity = null;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">				if (ra instanceof TORequest) {</span>
+<span class="nc" id="L92">					TORequest tor = (TORequest) ra;</span>
+<span class="nc" id="L93">					TimeOffRequestFacadeImpl.updateWithdrawalStatus(tor);</span>
+<span class="nc" id="L94">					reqEntity = TimeOffRequestFacadeImpl.createTORequestEntity(tor, activityIDNameMap, context, false,</span>
+							includeWaitlistRank);
+<span class="nc bnc" id="L96" title="All 2 branches missed.">				} else if (ra instanceof ShiftBidRequest) {</span>
+<span class="nc" id="L97">					ShiftBidRequest shiftBidReq = (ShiftBidRequest) ra;</span>
+<span class="nc" id="L98">					boolean usesScoring = getUsesScoring(shiftBidReq.getShiftBidAuctionID(), auctionsByID);</span>
+<span class="nc" id="L99">					reqEntity = ShiftBiddingFacadeImpl.createShiftBidRequestEntity(context, shiftBidReq, usesScoring, metaData);</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">				} else if (ra instanceof ShiftSwapRequest) {</span>
+<span class="nc" id="L101">					ShiftSwapRequest swapReq = (ShiftSwapRequest) ra;</span>
+<span class="nc" id="L102">					reqEntity = ShiftSwapFacadeImpl.createShiftSwapRequestEntity(context, swapReq, empNamesByID);</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">				} else if (ra instanceof CustShiftReq) {</span>
+<span class="nc" id="L104">					CustShiftReq custShiftReq = (CustShiftReq) ra;</span>
+<span class="nc" id="L105">					reqEntity = CustShiftFacadeImpl.createCustShiftRequestEntity(context, custShiftReq, metaData);</span>
+				}
+
+<span class="nc bnc" id="L108" title="All 2 branches missed.">				if (reqEntity != null) {</span>
+<span class="nc" id="L109">					results.add(reqEntity);</span>
+<span class="nc" id="L110">					addActions(context, ra, reqEntity, orgSettings, auctionsOpenByID);</span>
+				}
+<span class="nc" id="L112">			}</span>
+<span class="nc" id="L113">			RmUtils.addActivities(context, result.getActivities(), metaData.getActivityIDs());</span>
+<span class="nc" id="L114">			RmUtils.addAuctions(result.getAuctions(), auctionsByID.values());</span>
+<span class="nc" id="L115">			RmUtils.addShifts(result.getShifts(), metaData.getShiftIDs());</span>
+<span class="nc" id="L116">			RmUtils.addShiftOTExtensions(result.getShiftOTExtensions(), metaData.getShiftOTExtensionIDs());</span>
+<span class="nc" id="L117">			return result;</span>
+<span class="nc" id="L118">		} catch (Exception ex) {</span>
+<span class="nc" id="L119">			throw RmUtils.handleFacadeException(ex, LOG);</span>
+		}
+	}
+
+	public static void addActions(RequestContext context, RequestAggregate request, RequestEntity entity, OrganizationSetting orgSettings,
+			Map&lt;ID, Boolean&gt; auctionsOpenByID) {
+<span class="nc" id="L125">		MyRequestsPMEx pm = new MyRequestsPMEx(context);</span>
+<span class="nc" id="L126">		pm.setupForRest(orgSettings, auctionsOpenByID);</span>
+<span class="nc" id="L127">		pm.createItemActions(request, &quot;&quot;);</span>
+
+<span class="nc" id="L129">		List&lt;Entity&gt; actions = entity.getActions();</span>
+<span class="nc" id="L130">		Map&lt;String, ActionCode&gt; lookup = ActionCode.getPageActionToActionCode();</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">		for (String action : pm.actions) {</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">			if (lookup.containsKey(action)) {</span>
+<span class="nc" id="L133">				ActionCode code = lookup.get(action);</span>
+<span class="nc" id="L134">				Entity actionEntity = new Entity();</span>
+<span class="nc" id="L135">				actionEntity.setId(Integer.toString(code.getActionCode()));</span>
+<span class="nc" id="L136">				actionEntity.setName(action);</span>
+<span class="nc" id="L137">				actions.add(actionEntity);</span>
+			}
+<span class="nc" id="L139">		}</span>
+<span class="nc" id="L140">	}</span>
+
+	public static Map&lt;ID, EmployeeName&gt; getEmployeeNamesById(RequestContext context, Collection&lt;RequestAggregate&gt; requests)
+			throws BbmException, RemoteException {
+<span class="nc" id="L144">		Set&lt;ID&gt; employeeIDs = new HashSet&lt;ID&gt;();</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">		for (RequestAggregate request : requests) {</span>
+<span class="nc" id="L146">			employeeIDs.add(request.getEmployeeID());</span>
+<span class="nc bnc" id="L147" title="All 2 branches missed.">			if (request instanceof ShiftSwapRequest) {</span>
+<span class="nc" id="L148">				ShiftSwapRequest swapReq = (ShiftSwapRequest) request;</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">				for (ShiftSwapItem item : swapReq.getShiftSwapItems()) {</span>
+<span class="nc" id="L150">					employeeIDs.add(item.getEmployeeID());</span>
+<span class="nc" id="L151">				}</span>
+			}
+<span class="nc" id="L153">		}</span>
+<span class="nc" id="L154">		return EmployeeModelHandler.getEmployeeNamesByIDs(context, employeeIDs);</span>
+	}
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	private Map&lt;ID, ShiftBidAuction&gt; getShiftBidAuctions(Collection&lt;RequestAggregate&gt; requests)
+			throws RmHardValidationException, Exception {
+<span class="nc" id="L160">		Set&lt;ID&gt; auctionIDs = new HashSet&lt;ID&gt;();</span>
+<span class="nc bnc" id="L161" title="All 2 branches missed.">		for (RequestAggregate ra : requests) {</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">			if (ra instanceof ShiftBidRequest) {</span>
+<span class="nc" id="L163">				auctionIDs.add(((ShiftBidRequest) ra).getShiftBidAuctionID());</span>
+			}
+<span class="nc" id="L165">		}</span>
+<span class="nc" id="L166">		Collection&lt;ShiftBidAuction&gt; auctions = AuctionMH.getAuctionsByIDs(auctionIDs);</span>
+<span class="nc" id="L167">		Map&lt;ID, ShiftBidAuction&gt; auctionsByID = new HashMap&lt;ID, ShiftBidAuction&gt;();</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">		for (ShiftBidAuction auction : auctions) {</span>
+<span class="nc" id="L169">			auctionsByID.put(auction.getID(), auction);</span>
+<span class="nc" id="L170">		}</span>
+<span class="nc" id="L171">		return auctionsByID;</span>
+	}
+
+	private Map&lt;ID, Boolean&gt; getShiftBidAuctionOpenMap(Collection&lt;ShiftBidAuction&gt; auctions) {
+<span class="nc" id="L175">		Map&lt;ID, Boolean&gt; map = new HashMap&lt;ID, Boolean&gt;();</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">		for (ShiftBidAuction auction : auctions) {</span>
+<span class="nc" id="L177">			ID id = auction.getID();</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">			if (!map.containsKey(id)) {</span>
+<span class="nc" id="L179">				map.put(id, auction.getIsAuctionOpen());</span>
+			}
+<span class="nc" id="L181">		}</span>
+<span class="nc" id="L182">		return map;</span>
+	}
+
+	private boolean getUsesScoring(ID auctionID, Map&lt;ID, ShiftBidAuction&gt; auctionsByID) {
+<span class="nc bnc" id="L186" title="All 2 branches missed.">		if (auctionsByID.containsKey(auctionID)) {</span>
+<span class="nc" id="L187">			return auctionsByID.get(auctionID).getUsesScoring();</span>
+		}
+<span class="nc" id="L189">		return false;</span>
+	}
+
+	private void validateRequestType(String type) throws BusinessWFOException {
+<span class="nc bnc" id="L193" title="All 2 branches missed.">		for (String validType : VALID_REQUEST_TYPES) {</span>
+<span class="nc bnc" id="L194" title="All 2 branches missed.">			if (validType.equals(type)) {</span>
+<span class="nc" id="L195">				return;</span>
+			}
+		}
+<span class="nc" id="L198">		throw new BusinessWFOException(&quot;Invalid request type.&quot;, Response.Status.BAD_REQUEST);</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

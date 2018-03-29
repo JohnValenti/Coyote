@@ -1,0 +1,731 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RequestsPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.requests</a> &gt; <span class="el_source">RequestsPM.java</span></div><h1>RequestsPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.requests;
+
+import java.util.Collection;
+import java.util.Date;
+import java.util.ResourceBundle;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.l10n.RegionalFormatBundleKey;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.withdraw.model.ShiftSwapWithdraw;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.requests.timeoff.withdraw.model.TOWithdraw;
+import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.ejb.rm.util.LicenseUtil;
+import com.bluepumpkin.web.rm.auction.BidRequestFormPopupPM;
+import com.bluepumpkin.web.rm.keys.RmImageFileID;
+import com.bluepumpkin.web.rm.keys.RmJavaScriptFileID;
+import com.bluepumpkin.web.rm.keys.RmKeys;
+import com.bluepumpkin.web.rm.keys.RmPageAction;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.model.User;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.data.wrapper.DateWrapper;
+import com.witness.web.uif.keys.ImageFileID;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.message.MessagePC;
+import com.witness.web.uif.pagecomponent.table.GenericHeaderData;
+import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.pagemodel.WorkpaneListPM;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.html.HtmlLinkUtil;
+
+/**
+ * Title:        RequestsPM
+ * Description:  Base class for Requests viewing pages.
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, inc
+ * @author       David Su
+ * @version      1.0
+ */
+public abstract class RequestsPM extends WorkpaneListPM {
+	protected static final String CREATE_NEW_REQUEST = &quot;CREATE_NEW_REQUEST&quot;;
+
+	protected User m_user;
+	protected OrganizationSetting m_orgSetting;
+	protected ResourceBundle m_bundle;
+<span class="fc" id="L59">	protected String m_requestType = &quot;&quot;;</span>
+	protected ID m_empID;
+	protected TimeZone m_view_tz;
+	protected MessagePC m_messagePC;
+<span class="fc" id="L63">	protected boolean m_isPageEnabled = true;</span>
+<span class="fc" id="L64">	protected boolean m_showFilterAndActiveComponent = true;</span>
+
+    /**
+     * For QA59182, we need to know the maximum allowable page size.
+     */
+<span class="fc" id="L69">    protected int m_limitingPageSize = 0;</span>
+
+
+	/**
+	 * Constructor
+	 */
+	protected RequestsPM(RequestContext context) {
+<span class="fc" id="L76">		super(context, PageModel.BASIC_MODEL);</span>
+
+<span class="fc" id="L78">		m_user = context.getUser();</span>
+<span class="fc" id="L79">		m_bundle = m_localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="fc" id="L80">		m_view_tz = m_context.getViewingTimeZone();</span>
+<span class="fc" id="L81">		m_empID = RequestUtil.getEmpIDAndAddMsgIfNotAvailable(context, this);</span>
+
+<span class="fc" id="L83">		addRequiredJavaScriptFile(JavaScriptFileID.MEDIATOR_WORKPANE_GENERIC);</span>
+<span class="fc" id="L84">		setJSMediator(RmJavaScriptFileID.MEDIATOR_REQUEST);</span>
+
+<span class="fc" id="L86">		initMessagePC();</span>
+<span class="fc" id="L87">		m_list.setRowSelectable(false);</span>
+<span class="fc" id="L88">		m_list.setSelectableCursorStyle(&quot;&quot;);</span>
+<span class="fc" id="L89">		m_list.setIsZebra(true);</span>
+
+<span class="fc" id="L91">		addPopupArgs(RmPageAction.POPUP_REQUEST_CHANGE_STATUS_ACTION, RmKeys.RH_REQUEST_CHANGE_STATUS_FORM,</span>
+				null, &quot;requestID,requestType,requestVersion,requestAction&quot;, &quot;700,500,ctr,ctr&quot;, true, 1);
+<span class="fc" id="L93">		setIsPaginatingSelectedIDs(false);</span>
+<span class="fc" id="L94">        setLimitingPageSize();</span>
+<span class="fc" id="L95">	}</span>
+
+	/**
+	 * Constructor
+	 */
+	protected RequestsPM(RequestContext context, String requestType)	{
+<span class="fc" id="L101">		this(context);</span>
+<span class="fc" id="L102">		m_requestType = requestType;</span>
+<span class="fc" id="L103">	}</span>
+
+	/**
+	 * Constructor
+	 */
+	protected RequestsPM(RequestContext context, String requestType, boolean showFilter) {
+<span class="fc" id="L109">		this(context);</span>
+<span class="fc" id="L110">		m_requestType = requestType;</span>
+<span class="fc" id="L111">		m_showFilterAndActiveComponent = showFilter;</span>
+<span class="fc" id="L112">	}</span>
+
+	/**
+	 * Initialize for Display
+	 */
+	@Override
+	public void initForDisplay() {
+<span class="pc bpc" id="L119" title="1 of 2 branches missed.">		if (m_isInitializedForDisplay) return;</span>
+		else {
+<span class="fc" id="L121">			boolean isAuthToViewRtqs = true;</span>
+<span class="pc bpc" id="L122" title="1 of 2 branches missed.">			if (Request.REQUESTTYPE_ALL.equals(m_requestType)) {</span>
+<span class="fc" id="L123">				isAuthToViewRtqs = isAuthToViewAnyRqts();</span>
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">				if (isAuthToViewRtqs) {</span>
+<span class="fc" id="L125">					initTimeOffPopupWindowArgs();</span>
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">					if(LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L127">						initFlexTimePopupWindowArgs();</span>
+					}
+<span class="fc" id="L129">					initShiftSwapPopupWindowArgs();</span>
+<span class="fc" id="L130">					initShiftBidPopupWindowArgs();</span>
+<span class="fc" id="L131">					initCustomShiftPopupWindowArgs();</span>
+
+<span class="fc" id="L133">					initNewRequestMenu();</span>
+				}
+<span class="nc bnc" id="L135" title="All 2 branches missed.">			} else if (Request.REQUESTTYPE_TIMEOFF.equals(m_requestType)) {</span>
+<span class="nc" id="L136">				isAuthToViewRtqs = isAuthToViewTORqts();</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">				if (isAuthToViewRtqs) initTimeOffPopupWindowArgs();</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">			} else if (Request.REQUESTTYPE_FLEXTIME.equals(m_requestType)) {</span>
+<span class="nc" id="L139">				isAuthToViewRtqs = isAuthToViewFTRqts();</span>
+<span class="nc bnc" id="L140" title="All 4 branches missed.">				if (isAuthToViewRtqs &amp;&amp; LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L141">					initFlexTimePopupWindowArgs();</span>
+				}
+<span class="nc bnc" id="L143" title="All 2 branches missed.">			} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(m_requestType)) {</span>
+<span class="nc" id="L144">				isAuthToViewRtqs = isAuthToViewSSRqts();</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">				if (isAuthToViewRtqs) initShiftSwapPopupWindowArgs();</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">			} else if (Request.REQUESTTYPE_SHIFTBID.equals(m_requestType)) {</span>
+<span class="nc" id="L147">				isAuthToViewRtqs = isAuthToViewSBRqts();</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">				if (isAuthToViewRtqs) initShiftBidPopupWindowArgs();</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">			} else if (Request.REQUESTTYPE_CUSTSHIFT.equals(m_requestType)) {</span>
+<span class="nc" id="L150">				isAuthToViewRtqs = isAuthToViewCSRqts();</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">				if (isAuthToViewRtqs) initCustomShiftPopupWindowArgs();</span>
+			}
+
+<span class="pc bpc" id="L154" title="1 of 2 branches missed.">			if (m_showFilterAndActiveComponent)</span>
+<span class="pc bpc" id="L155" title="1 of 2 branches missed.">				if (!isAuthToViewRtqs) addUnauthorizedToViewMsg();</span>
+<span class="pc bpc" id="L156" title="1 of 2 branches missed.">			if (!m_isPageEnabled) addPageNotEnabledMsg();</span>
+
+<span class="fc" id="L158">			super.initForDisplay();</span>
+		}
+<span class="fc" id="L160">	}</span>
+
+	/**
+	 * Initialize New Request Menu. To be implemented in subclasses.
+	 */
+	protected void initNewRequestMenu() {
+<span class="nc" id="L166">	}</span>
+
+	/**
+	 * Add Page not enabled Message
+	 *
+	 * Meant to be overwritten
+	 */
+	protected void addPageNotEnabledMsg() {
+<span class="nc" id="L174">		addPageMessage(Message.INFO_TYPE, UIFWebBundleKey.PAGE_NOT_CURRENTLY_ENABLED,</span>
+				UIFWebBundleKey.BUNDLE_NAME);
+<span class="nc" id="L176">	}</span>
+
+	/**
+	 * Initialize Message PC
+	 */
+	private void initMessagePC() {
+<span class="fc" id="L182">		m_messagePC = RequestUtil.createCmntMsgPC(m_context, &quot;200px&quot;, &quot;50px&quot;, &quot;&quot;);</span>
+<span class="fc" id="L183">	}</span>
+
+	/**
+	 * Render Request Comments
+	 */
+	protected String renderComments(RequestAggregate request) {
+<span class="fc" id="L189">		m_messagePC.clear();</span>
+<span class="fc" id="L190">		Collection msgs = RequestUtil.getCommentsAsMessages(request);</span>
+<span class="fc" id="L191">		m_messagePC.addMessage(msgs);</span>
+<span class="fc" id="L192">		return m_messagePC.getHtmlDisplay();</span>
+	}
+
+
+	/**
+	 * Sets the maximum page size for the requests screens.
+	 * The default value is 30, unless overridden by the BPCONFIG key &quot;bluepumpkin/rm/pageIDSizeLimit&quot;
+	 */
+	protected void setLimitingPageSize() {
+<span class="fc" id="L201">		readLimitingPageSize();</span>
+<span class="pc bpc" id="L202" title="1 of 2 branches missed.">		if (m_limitingPageSize &lt;= 0) {</span>
+<span class="fc" id="L203">			m_limitingPageSize = 30;</span>
+		}
+<span class="fc" id="L205">	}</span>
+
+	/**
+	 * Convinience Method to add Header Data
+	 */
+	protected void addHeaderData(TableHeaderPC header, ResourceBundle bundle,
+			String rbKey) {
+<span class="nc" id="L212">		addHeaderData(header, bundle, rbKey, false);</span>
+<span class="nc" id="L213">	}</span>
+
+	/**
+	 * Convinience Method to add Header Data
+	 */
+	protected void addHeaderData(TableHeaderPC header, ResourceBundle bundle,
+			String rbKey, boolean isSortable)
+    {
+		//header.addColumnHeaderData(rbKey, i18n(bundle, rbKey), isSortable);
+<span class="fc" id="L222">        GenericHeaderData hdrData = header.addColumnHeaderData(rbKey, i18n(bundle, rbKey), isSortable);</span>
+<span class="fc bfc" id="L223" title="All 2 branches covered.">        if (hdrData.getSortable()) {</span>
+<span class="fc" id="L224">            String displayName = hdrData.getDisplayName();</span>
+<span class="fc" id="L225">            hdrData.setDisplayName(displayName);</span>
+        }
+<span class="fc" id="L227">	}</span>
+
+
+	/**
+	 * Create Date Wrapper
+	 */
+	protected DateWrapper createDataWrapper(Date date) {
+<span class="fc" id="L234">		return new DateWrapper(date, m_localizer, m_view_tz, RegionalFormatBundleKey.DATE_FORMAT, RegionalFormatBundleKey.TIME_FORMAT);</span>
+	}
+
+	/**
+	 * Return Localized Request Type
+	 */
+	protected String getLocalizedRequestType(RequestAggregate request) {
+<span class="fc" id="L241">		String rType = request.getRequestType();</span>
+<span class="pc bpc" id="L242" title="1 of 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(rType)) {</span>
+<span class="fc" id="L243">			return i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_TIME_OFF);</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(rType)) {</span>
+<span class="nc" id="L245">			return i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME);</span>
+<span class="nc bnc" id="L246" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType)) {</span>
+<span class="nc" id="L247">			return i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_SWAP);</span>
+<span class="nc bnc" id="L248" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTBID.equals(rType)) {</span>
+<span class="nc" id="L249">			return i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_BIDDING);</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_CUSTSHIFT.equals(rType)) {</span>
+<span class="nc" id="L251">			return i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_CUSTOM_SHIFT);</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_ALL.equals(rType)) {</span>
+<span class="nc" id="L253">			return i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_ALL);</span>
+		} else {
+<span class="nc" id="L255">			return rType;</span>
+		}
+	}
+
+	/**
+	 * Return true if Refresh Button is enabled
+	 */
+	protected boolean isCommonButtonsEnabled() {
+<span class="pc bpc" id="L263" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	/**
+	 * Add Create Request Button
+	 */
+<span class="nc" id="L269">	protected void addCreateRequestButton() {}</span>
+
+	/**
+	 * Add Common Toolbar Buttons
+	 *
+	 * - Create New Request
+	 * - Refresh
+	 */
+	protected void addCommonToolbarButtons() {
+<span class="fc" id="L278">		addCreateRequestButton();</span>
+<span class="fc" id="L279">	}</span>
+
+	/**
+	 * Initialize Popup Window Arguments for Time Off
+	 */
+	protected void initTimeOffPopupWindowArgs() {
+<span class="fc" id="L285">		addPopupArgs(RmPageAction.POPUP_TIMEOFF_REQUEST_FORM_ACTION, RmKeys.RH_TIMEOFF_FORM,</span>
+				null, &quot;requestID,pageMode&quot;, &quot;800,655,ctr,ctr&quot;, true, 1);
+
+<span class="fc" id="L288">		addPopupArgs(RmPageAction.POPUP_TIMEOFF_REQUEST_DETAILS_ACTION, RmKeys.RH_TIMEOFF_DETAILS,</span>
+				null, &quot;requestID,requestType,pageMode&quot;, &quot;800,600,ctr,ctr&quot;, true, 1);
+
+<span class="fc" id="L291">	}</span>
+
+	/**
+	 * Initialize Popup Window Arguments for Flex Time
+	 */
+	protected void initFlexTimePopupWindowArgs() {
+<span class="nc" id="L297">		addPopupArgs(RmPageAction.POPUP_FLEXTIME_REQUEST_FORM_ACTION, RmKeys.RH_FLEXTIME_FORM,</span>
+				null, &quot;requestID,pageMode&quot;, &quot;1150,792,ctr,ctr&quot;, true, 1);
+
+<span class="nc" id="L300">		addPopupArgs(RmPageAction.POPUP_FLEXTIME_REQUEST_DETAILS_ACTION, RmKeys.RH_FLEXTIME_DETAILS,</span>
+				null, &quot;requestID,requestType,pageMode&quot;, &quot;1150,792,ctr,ctr&quot;, true, 1);
+
+<span class="nc" id="L303">	}</span>
+
+	/**
+	 * Initialize Popup Window Arguments for Custom Shift requests
+	 */
+	protected void initCustomShiftPopupWindowArgs() {
+<span class="fc" id="L309">		addPopupArgs(RmPageAction.POPUP_CUSTSHIFT_REQUEST_FORM_ACTION, RmKeys.RH_CUSTSHIFT_FORM,</span>
+				null, &quot;requestID,pageMode&quot;, &quot;800,655,ctr,ctr&quot;, true, 1);
+
+<span class="fc" id="L312">		addPopupArgs(RmPageAction.POPUP_CUSTSHIFT_REQUEST_DETAILS_ACTION, RmKeys.RH_CUSTSHIFT_DETAILS,</span>
+				null, &quot;requestID,requestType,pageMode&quot;, &quot;800,600,ctr,ctr&quot;, true, 1);
+
+<span class="fc" id="L315">	}</span>
+
+	/**
+	 * Initialize Popup Window Arguments for Shift Swap
+	 */
+	protected void initShiftSwapPopupWindowArgs() {
+		//QC(96672) changes -- added shiftDate1,shiftDate2 as arg .
+<span class="fc" id="L322">		addPopupArgs(RmPageAction.POPUP_AGENT_SKILLS_ACTION, RmKeys.RH_AGENT_SKILLS,</span>
+				null, &quot;employeeID,shiftDate1,shiftDate2&quot;, &quot;550,350,ctr,ctr&quot;, true, 1);
+
+<span class="fc" id="L325">		addPopupArgs(RmPageAction.POPUP_SHIFTSWAP_REQUEST_FORM_ACTION, RmKeys.RH_SHIFTSWAP_FORM,</span>
+				null, &quot;requestID,pageMode&quot;, &quot;560,510,ctr,ctr&quot;, true, 1);
+
+<span class="fc" id="L328">		String sParam = PageAction.PAGE_ACTION + &quot;=&quot; + PageAction.SUBMIT_TO_MGR;</span>
+<span class="fc" id="L329">		addPopupArgs(RmPageAction.POPUP_SHIFTSWAP_REQUEST_SUBMIT_FORM_ACTION, RmKeys.RH_SHIFTSWAP_FORM,</span>
+				sParam, &quot;requestID,pageMode&quot;, &quot;560,360,ctr,ctr&quot;, true, 1);
+
+<span class="fc" id="L332">		addPopupArgs(RmPageAction.POPUP_SHIFTSWAP_REQUEST_DETAILS_ACTION, RmKeys.RH_SHIFTSWAP_DETAILS,</span>
+				null, &quot;requestID,requestType,pageMode&quot;, &quot;700,600,ctr,ctr&quot;, true, 1);
+<span class="fc" id="L334">	}</span>
+
+	/**
+	 * Initialize Popup Window Arguments for Shift Bid
+	 */
+	protected void initShiftBidPopupWindowArgs() {
+<span class="fc" id="L340">		BidRequestFormPopupPM.addPopupArgs(this, RmPageAction.POPUP_EDIT_BID_REQUEST_ACTION);</span>
+<span class="fc" id="L341">		BidRequestFormPopupPM.addPopupArgs(this, RmPageAction.POPUP_VIEW_BID_REQUEST_ACTION);</span>
+<span class="fc" id="L342">	}</span>
+
+
+
+	/**
+	 * Specify whether Sorting is supported
+	 */
+	@Override
+	public boolean isSortSupported() {
+<span class="fc" id="L351">		return true;</span>
+	}
+
+	/**
+	 * Create RequestAggregate Status Icon
+	 */
+	protected String createStatusIcon(RequestAggregate request, boolean isForAgent) {
+<span class="fc" id="L358">		String status = request.getRequestStatus();</span>
+<span class="fc" id="L359">		return &quot;&lt;center&gt;&quot; + RequestUtil.createStatusIcon(status, isForAgent, m_localizer,request) + &quot;&lt;/center&gt;&quot;;</span>
+	}
+
+	/**
+	 * Return Image for specified Action
+	 */
+	protected String getImageForAction(String action) {
+<span class="fc" id="L366">		String src = &quot;&quot;;</span>
+<span class="fc bfc" id="L367" title="All 2 branches covered.">		if (PageAction.EDIT.equals(action)) {</span>
+<span class="fc" id="L368">			src = ImageFileID.ACTION_EDIT;</span>
+<span class="pc bpc" id="L369" title="1 of 2 branches missed.">		} else if (PageAction.SUBMIT_TO_MGR.equals(action)) {</span>
+<span class="nc" id="L370">			src = ImageFileID.ACTION_SUBMIT_TO_MANAGER;</span>
+<span class="fc bfc" id="L371" title="All 2 branches covered.">		} else if (PageAction.VIEW_DETAIL.equals(action)) {</span>
+<span class="fc" id="L372">			src = ImageFileID.ACTION_VIEW_DETAIL;</span>
+<span class="fc bfc" id="L373" title="All 2 branches covered.">		} else if (PageAction.DENY.equals(action)) {</span>
+<span class="fc" id="L374">			src = ImageFileID.ACTION_DENY;</span>
+<span class="fc bfc" id="L375" title="All 2 branches covered.">		} else if (PageAction.WITHDRAW.equals(action)) {</span>
+<span class="fc" id="L376">			src = ImageFileID.ACTION_WITHDRAW;</span>
+<span class="pc bpc" id="L377" title="1 of 2 branches missed.">		} else if (PageAction.WITHDRAW_NEGOTIATION.equals(action)) {</span>
+<span class="nc" id="L378">			src = ImageFileID.ACTION_WITHDRAW;</span>
+<span class="fc bfc" id="L379" title="All 2 branches covered.">		} else if (PageAction.APPROVE.equals(action)) {</span>
+<span class="fc" id="L380">			src = ImageFileID.ACTION_APPROVE;</span>
+<span class="fc bfc" id="L381" title="All 2 branches covered.">		} else if (PageAction.TENTATIVELY_APPROVE.equals(action)) {</span>
+<span class="fc" id="L382">			src = ImageFileID.ACTION_TENTATIVELY_APPROVE;</span>
+<span class="pc bpc" id="L383" title="1 of 2 branches missed.">		} else if (PageAction.VIEW_SCHEDULE.equals(action)) {</span>
+<span class="nc" id="L384">			src = ImageFileID.ACTION_VIEW_SCHEDULE;</span>
+<span class="fc bfc" id="L385" title="All 2 branches covered.">		} else if (PageAction.ESCALATE.equals(action)) {</span>
+<span class="fc" id="L386">			src = ImageFileID.ACTION_ESCALATE;</span>
+<span class="pc bpc" id="L387" title="1 of 2 branches missed.">		} else if (RmPageAction.ADD_TO_WAITLIST_ACTION.equals(action)) {</span>
+<span class="nc" id="L388">			src = RmImageFileID.ADD_TO_WAITLIST;</span>
+<span class="fc bfc" id="L389" title="All 2 branches covered.">		} else if (RmPageAction.ADD_TO_MAN_WAITLIST_ACTION.equals(action)) {</span>
+<span class="fc" id="L390">			src = RmImageFileID.ADD_TO_WAITLIST_MAN;</span>
+<span class="fc bfc" id="L391" title="All 2 branches covered.">		} else if (PageAction.ACCEPT_WITHDRAW_ACTION.equals(action)) {</span>
+<span class="fc" id="L392">			src = ImageFileID.ACTION_ACCEPT_WITHDRAW;</span>
+<span class="fc bfc" id="L393" title="All 2 branches covered.">		} else if (PageAction.REJECT_WITHDRAW_ACTION.equals(action)) {</span>
+<span class="fc" id="L394">			src = ImageFileID.ACTION_REJECT_WITHDRAW;</span>
+<span class="pc bpc" id="L395" title="1 of 2 branches missed.">		} else if (PageAction.CANCEL_WITHDRAW_ACTION.equals(action)) {</span>
+<span class="fc" id="L396">			src = ImageFileID.ACTION_CANCEL_WITHDRAW;</span>
+		} else {
+<span class="nc" id="L398">			src = action;</span>
+		}
+
+<span class="fc" id="L401">		return src;</span>
+	}
+
+	/**
+	 * Return Image Alt text for specified Action
+	 */
+	protected String getImageAltForAction(String action) {
+<span class="fc" id="L408">		return RequestUtil.getLocalizedAction(m_localizer, m_common_bundle, action);</span>
+	}
+
+	/**
+	 * Create List Item Action Icon
+	 */
+	protected String createActionIcon(String action, RequestAggregate request, String args) {
+
+<span class="fc" id="L416">		String type = request.getRequestType();</span>
+<span class="fc" id="L417">		String version = request.getObjectVersionNumber();</span>
+<span class="fc" id="L418">		String onClickJS = &quot;pageMediator.handleListAction('&quot;+ action +&quot;','&quot;+ type</span>
+				+&quot;', '&quot;+ version +&quot;', '&quot;+ args +&quot;');&quot;;
+
+<span class="fc" id="L421">		String src = getImageForAction(action);</span>
+<span class="fc" id="L422">		String alt = getImageAltForAction(action);</span>
+<span class="fc" id="L423">		return createIconButton(src, alt, onClickJS);</span>
+	}
+
+	/**
+	 * Create Icon Button
+	 */
+	protected String createIconButton(String src, String alt, String onClickJS)
+    {
+<span class="fc" id="L431">        StringBuffer sb = new StringBuffer();</span>
+<span class="fc" id="L432">		sb.append(&quot;&lt;span class=\&quot;itemActionWpr\&quot;&gt;&lt;span class=\&quot;itemAction\&quot;&gt;&quot;);</span>
+
+<span class="fc bfc" id="L434" title="All 2 branches covered.">        if (onClickJS != null) {</span>
+            //For 508 Accessibility compliance, the action icons must be focusable links
+<span class="fc" id="L436">            String img = HtmlUtil.imageTag(null, src, null, null, alt, null, null, true, &quot;0&quot;);</span>
+<span class="fc" id="L437">            sb.append(HtmlLinkUtil.createActiveLink(&quot;&quot;, img, alt, alt, null, onClickJS));</span>
+<span class="fc" id="L438">        } else {</span>
+<span class="fc" id="L439">            HtmlUtil.imageTag(null, src, null, null, alt, null, onClickJS, true);</span>
+        }
+
+<span class="fc" id="L442">        sb.append(&quot;&lt;/span&gt;&lt;/span&gt;&quot;);</span>
+<span class="fc" id="L443">        return sb.toString();</span>
+	}
+
+	/**
+	 * Return true if the Action is valid for the specified Request
+	 */
+	protected boolean isValidAction(String action, RequestAggregate request) {
+<span class="fc" id="L450">		String status = request.getRequestStatus();</span>
+
+<span class="pc bpc" id="L452" title="1 of 4 branches missed.">		return PageAction.VIEW_DETAIL.equals(action) ||	!request.hasExpired() &amp;&amp;</span>
+				(
+					(
+<span class="pc bpc" id="L455" title="1 of 2 branches missed.">					    ( RequestAuditTrail.STATUS_WAITLIST.equals(status) ||</span>
+<span class="fc bfc" id="L456" title="All 2 branches covered.">					      RequestAuditTrail.STATUS_PENDING.equals(status) ||</span>
+<span class="pc bpc" id="L457" title="1 of 2 branches missed.">					      RequestAuditTrail.STATUS_TENTATIVE.equals(status) ||</span>
+<span class="fc bfc" id="L458" title="All 2 branches covered.">					      RequestAuditTrail.STATUS_ESCALATED.equals(status) ||</span>
+<span class="pc bpc" id="L459" title="1 of 2 branches missed.">					      RequestAuditTrail.STATUS_NEGOTIATION.equals(status) )</span>
+						&amp;&amp;
+<span class="fc bfc" id="L461" title="All 4 branches covered.">					    ( PageAction.EDIT.equals(action) ||	PageAction.WITHDRAW.equals(action) )</span>
+					)
+					||
+					(
+<span class="pc bpc" id="L465" title="1 of 2 branches missed.">						RequestAuditTrail.STATUS_NEGOTIATION.equals(request.getRequestStatus()) &amp;&amp;</span>
+<span class="nc bnc" id="L466" title="All 2 branches missed.">					    PageAction.SUBMIT_TO_MGR.equals(action) &amp;&amp;</span>
+<span class="pc bnc" id="L467" title="All 2 branches missed.">					    canSubmitToManager(action, request)</span>
+					)
+					||
+					(
+<span class="pc bpc" id="L471" title="1 of 2 branches missed.">						request.getRequestType().equals(Request.REQUESTTYPE_SHIFTBID) &amp;&amp;</span>
+<span class="nc bnc" id="L472" title="All 2 branches missed.">						RequestAuditTrail.STATUS_APPROVED.equals(request.getRequestStatus()) &amp;&amp;</span>
+<span class="pc bnc" id="L473" title="All 2 branches missed.">						PageAction.WITHDRAW.equals(action)</span>
+					)
+				);
+	}
+
+	/**
+	 * Is the Submit to Manager action valid?
+	 * @return true if the submit to manager action is valid.
+	 */
+	protected boolean canSubmitToManager(String action, RequestAggregate request) {
+<span class="nc" id="L483">		return false;</span>
+	}
+
+	/**
+	 * Return true if the Action is allowed for the specified Request
+	 */
+	protected boolean isAllowedAction(String action, RequestAggregate request) {
+<span class="nc" id="L490">		return false;</span>
+	}
+
+	/**
+	 * Determine whether the specified action for the request is enabled
+	 */
+	protected boolean isItemActionEnabled(RequestAggregate request, String action) {
+<span class="pc bpc" id="L497" title="1 of 4 branches missed.">		return isValidAction(action, request) &amp;&amp; isAllowedAction(action, request);</span>
+	}
+
+	/**
+	 * Append Item Action if enabled
+	 */
+	protected void appendItemAction(RequestAggregate request, String action, String rowID, StringBuffer sb) {
+<span class="fc bfc" id="L504" title="All 2 branches covered.">		String itemAction = isItemActionEnabled(request, action)?</span>
+<span class="fc" id="L505">				createActionIcon(action, request, rowID):</span>
+<span class="fc" id="L506">				createIconButton(ImageFileID.BLANK_SPACER, null, null);</span>
+<span class="fc" id="L507">		sb.append( itemAction );</span>
+<span class="fc" id="L508">	}</span>
+
+	/**
+	 * Create List Item Actions
+	 */
+	public String createItemActions(RequestAggregate request, String rowID) {
+<span class="fc" id="L514">		StringBuffer sb = new StringBuffer(200);</span>
+
+<span class="fc" id="L516">		sb.append(&quot;&lt;nobr&gt;&quot;);</span>
+<span class="fc" id="L517">		appendItemAction(request, PageAction.EDIT, rowID, sb);</span>
+<span class="fc bfc" id="L518" title="All 2 branches covered.">		if (!request.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED)){</span>
+			//Submit to manager of request should only occur if not approved.
+			//Required to not show icon in case of submit of withdrawal
+<span class="fc" id="L521">			appendItemAction(request, PageAction.SUBMIT_TO_MGR, rowID, sb);</span>
+		}
+
+		//Note: only one or neither of the add to waitlist actions will be shown at any given time
+<span class="fc" id="L525">		appendItemAction(request, RmPageAction.ADD_TO_WAITLIST_ACTION, rowID, sb);</span>
+<span class="fc" id="L526">		appendItemAction(request, RmPageAction.ADD_TO_MAN_WAITLIST_ACTION, rowID, sb);</span>
+
+<span class="fc" id="L528">		appendItemAction(request, PageAction.DENY, rowID, sb);</span>
+<span class="fc" id="L529">		appendItemAction(request, PageAction.ESCALATE, rowID, sb);</span>
+<span class="fc" id="L530">		appendItemAction(request, PageAction.WITHDRAW, rowID, sb);</span>
+<span class="fc" id="L531">		appendItemAction(request, PageAction.WITHDRAW_NEGOTIATION, rowID, sb);</span>
+<span class="fc" id="L532">		appendItemAction(request, PageAction.VIEW_DETAIL, rowID, sb);</span>
+<span class="fc" id="L533">		appendItemAction(request, PageAction.TENTATIVELY_APPROVE, rowID, sb);</span>
+<span class="fc" id="L534">		appendItemAction(request, PageAction.APPROVE, rowID, sb);</span>
+<span class="fc" id="L535">		sb.append(&quot;&lt;/nobr&gt;&quot;);</span>
+
+<span class="pc bpc" id="L537" title="1 of 4 branches missed.">        if (request.isTimeOffRequest() &amp;&amp; request.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED)) {</span>
+<span class="fc" id="L538">            TOWithdraw toWithdraw = ((TORequest) request).getWithdrawInfo();</span>
+<span class="fc bfc" id="L539" title="All 4 branches covered.">            if (toWithdraw != null &amp;&amp; RequestAuditTrail.isRequestForWithdrawalStates(toWithdraw.getRequestStatus())) {</span>
+<span class="fc" id="L540">                sb.append(&quot;&lt;BR&gt;&quot;);</span>
+<span class="fc" id="L541">                appendItemAction(request, PageAction.ACCEPT_WITHDRAW_ACTION, rowID, sb);</span>
+<span class="fc" id="L542">                appendItemAction(request, PageAction.REJECT_WITHDRAW_ACTION, rowID, sb);</span>
+<span class="fc" id="L543">                appendItemAction(request, PageAction.CANCEL_WITHDRAW_ACTION, rowID, sb);</span>
+            }
+        }
+
+<span class="pc bpc" id="L547" title="3 of 4 branches missed.">        if (request.isShiftSwapRequest() &amp;&amp; request.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED)) {</span>
+<span class="nc" id="L548">            ShiftSwapWithdraw ssWithdraw = ((ShiftSwapRequest) request).getWithdrawInfo();</span>
+<span class="nc bnc" id="L549" title="All 4 branches missed.">            if (ssWithdraw != null &amp;&amp; RequestAuditTrail.isRequestForWithdrawalStates(ssWithdraw.getRequestStatus())) {</span>
+<span class="nc" id="L550">                sb.append(&quot;&lt;BR&gt;&quot;);</span>
+<span class="nc" id="L551">        		appendItemAction(request, PageAction.SUBMIT_TO_MGR, rowID, sb);</span>
+<span class="nc" id="L552">                appendItemAction(request, PageAction.ACCEPT_WITHDRAW_ACTION, rowID, sb);</span>
+<span class="nc" id="L553">                appendItemAction(request, PageAction.REJECT_WITHDRAW_ACTION, rowID, sb);</span>
+<span class="nc" id="L554">                appendItemAction(request, PageAction.CANCEL_WITHDRAW_ACTION, rowID, sb);</span>
+            }
+        }
+<span class="fc" id="L557">		return sb.toString();</span>
+	}
+
+	/**
+	 * Create View Option
+	 */
+	protected StringsPair createViewOption(String value, String rbKey) {
+<span class="fc" id="L564">		return new StringsPair(value, i18n(m_bundle, rbKey));</span>
+	}
+
+	/**
+	 * Return True if Employee is Valid
+	 */
+	protected boolean isValidEmployee() {
+<span class="pc bpc" id="L571" title="1 of 2 branches missed.">		return m_empID != null;</span>
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Privilege helpers
+	//////////////////////////////////////////////////////////////////////////////
+	public boolean isAuthToViewAnyRqts() {
+<span class="pc bpc" id="L578" title="9 of 10 branches missed.">		return isAuthToViewTORqts() || isAuthToViewFTRqts() || isAuthToViewSSRqts() || isAuthToViewSBRqts() || isAuthToViewCSRqts();</span>
+	}
+
+	public boolean isAuthToEditAnyRqts() {
+<span class="pc bpc" id="L582" title="9 of 10 branches missed.">		return isAuthToEditTORqts() || isAuthToEditFTRqts() || isAuthToEditSSRqts() || isAuthToEditSBRqts() || isAuthToEditCSRqts();</span>
+	}
+
+	public boolean isAuthToViewTORqts() {
+<span class="pc bpc" id="L586" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	public boolean isAuthToViewFTRqts() {
+<span class="nc bnc" id="L590" title="All 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	public boolean isAuthToViewSSRqts() {
+<span class="pc bpc" id="L594" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	public boolean isAuthToViewSBRqts() {
+<span class="pc bpc" id="L598" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	public boolean isAuthToViewCSRqts() {
+<span class="pc bpc" id="L602" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	public boolean isAuthToEditTORqts() {
+<span class="pc bpc" id="L606" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	public boolean isAuthToEditFTRqts() {
+<span class="nc bnc" id="L610" title="All 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	public boolean isAuthToEditSSRqts() {
+<span class="pc bpc" id="L614" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	public boolean isAuthToEditSBRqts() {
+<span class="pc bpc" id="L618" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	public boolean isAuthToEditCSRqts() {
+<span class="pc bpc" id="L622" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_isPageEnabled;</span>
+	}
+
+	/**
+	 * Add Unauthorized to View Request Message
+	 */
+	protected void addUnauthorizedToViewMsg() {
+<span class="nc" id="L629">        addPageMessage(Message.ERROR_TYPE, RmWebBundleKey.UNAUTHORIZED_TO_VIEW_REQUESTS,</span>
+                RmWebBundleKey.BUNDLE_NAME);
+<span class="nc" id="L631">    }</span>
+
+    protected boolean isAuthToProcessCancelWithdrawRequest(RequestAggregate request) {
+<span class="fc" id="L634">        String rType = request.getRequestType();</span>
+<span class="fc" id="L635">        boolean result = false;</span>
+<span class="pc bpc" id="L636" title="2 of 4 branches missed.">        if (Request.REQUESTTYPE_TIMEOFF.equals(rType) &amp;&amp; ((TORequest) request).isEligibleForCancelWithdrawAction()) {</span>
+<span class="fc" id="L637">            result = isAuthToUpdateRqt(request);</span>
+        }
+<span class="pc bpc" id="L639" title="3 of 4 branches missed.">        if (Request.REQUESTTYPE_FLEXTIME.equals(rType) &amp;&amp; ((TORequest) request).isEligibleForCancelWithdrawAction()) {</span>
+<span class="nc" id="L640">            result = isAuthToUpdateRqt(request);</span>
+        }
+<span class="pc bpc" id="L642" title="3 of 4 branches missed.">        if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType) &amp;&amp; ((ShiftSwapRequest) request).isEligibleForCancelWithdrawAction()) {</span>
+<span class="nc" id="L643">            result = isAuthToUpdateRqt(request);</span>
+        }
+<span class="fc" id="L645">        return result;</span>
+    }
+
+    //This method is overridden in implementing classes
+    protected boolean isAuthToUpdateRqt(RequestAggregate request) {
+<span class="nc" id="L650">        return false;</span>
+    }
+
+	/**
+	 * Return true if User is authorized to waitlist the specified Request.
+	 * Both agents and managers use the same privilege for this.
+	 */
+	protected boolean isAuthToWaitlistRqt(RequestAggregate request) {
+<span class="fc" id="L658">		String rType = request.getRequestType();</span>
+
+<span class="fc" id="L660">		boolean result = false;</span>
+<span class="pc bpc" id="L661" title="1 of 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(rType)) {</span>
+<span class="fc" id="L662">			ID privID = PrivilegeKeys.TOM_ADDREQUESTTOWAITLIST_ID;</span>
+<span class="fc" id="L663">			result = isTOAuthPriv(request, privID);</span>
+		}
+<span class="fc" id="L665">		return result;</span>
+	}
+
+    /**
+     * Return true if User is authorize to approve specified Time Off Request
+     */
+	protected boolean isTOAuthPriv(RequestAggregate request, ID privID) {
+<span class="nc" id="L672">		return m_user.isAuthorized(privID);</span>
+	}
+
+	protected boolean isFTAuthPriv(RequestAggregate request, ID privID) {
+<span class="nc" id="L676">		return m_user.isAuthorized(privID);</span>
+	}
+
+    //Changed for QA59182 -Out Of Memory Error thrown when Selecting All or More Records in the request management and in Adherence
+	//overriding the method for WorkpanePageModel as hack to restrict the number of records selected in a page
+	@Override
+	public void setPageIDSize(int PageIDSize) {
+		//try{
+			//String pageIDSizeFetched = BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.RM_PAGE_ID_SIZE_LIMIT);
+			//if ( pageIDSizeFetched != null ){
+				//int iPageIDSizeFetched = Integer.parseInt(pageIDSizeFetched);
+				//if ((PageIDSize &gt; iPageIDSizeFetched) || (PageIDSize&lt;0 &amp;&amp; iPageIDSizeFetched&gt;=0) ){
+				//	PageIDSize = iPageIDSizeFetched;
+				//}
+			//}
+		//}catch(Exception ex){
+			//ignoring any exception caught.
+		//}
+
+<span class="pc bpc" id="L695" title="3 of 6 branches missed.">		if ((m_limitingPageSize &gt; 0) &amp;&amp; ((PageIDSize &gt; m_limitingPageSize) || (PageIDSize &lt; 0)))</span>
+        {
+<span class="nc" id="L697">            PageIDSize = m_limitingPageSize;</span>
+        }
+
+<span class="fc" id="L700">		super.setPageIDSize(PageIDSize);</span>
+<span class="fc" id="L701">	}</span>
+
+    public void readLimitingPageSize() {
+        try
+        {
+<span class="fc" id="L706">            String pageIDSizeFetched = BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.RM_PAGE_ID_SIZE_LIMIT);</span>
+<span class="pc bpc" id="L707" title="1 of 2 branches missed.">            if ( pageIDSizeFetched != null )</span>
+            {
+<span class="nc" id="L709">                m_limitingPageSize = Integer.parseInt(pageIDSizeFetched);</span>
+            }
+<span class="nc" id="L711">        }catch(Exception ex){</span>
+            //ignoring any exception caught.
+<span class="fc" id="L713">        }</span>
+<span class="fc" id="L714">    }</span>
+
+    /**
+     * Return the number of records shown. Mainly used by pagination control.
+     * We override the parent's method so that the cached page id size, if
+     * larger than the limiting page id size or less than 0, is not used.
+     */
+    @Override
+	public int getPageIDSizeWithoutNormalizing() {
+<span class="fc" id="L723">        int pageIDSize = super.getPageIDSizeWithoutNormalizing();</span>
+<span class="pc bpc" id="L724" title="3 of 6 branches missed.">        if ( m_limitingPageSize &gt; 0 &amp;&amp; ( pageIDSize &gt; m_limitingPageSize || pageIDSize &lt; 0 ) ) {</span>
+<span class="nc" id="L725">            pageIDSize = m_limitingPageSize;</span>
+        }
+<span class="fc" id="L727">        return pageIDSize;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

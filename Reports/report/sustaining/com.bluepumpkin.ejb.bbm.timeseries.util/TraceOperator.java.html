@@ -1,0 +1,2410 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TraceOperator.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.timeseries.util</a> &gt; <span class="el_source">TraceOperator.java</span></div><h1>TraceOperator.java</h1><pre class="source lang-java linenums">/*
+ * � 2002-2014 Verint Systems, Inc.
+ */
+package com.bluepumpkin.ejb.bbm.timeseries.util;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.Duration;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.ejb.bbm.base.BbmTimeSeriesException;
+import com.bluepumpkin.ejb.bbm.timeseries.model.AggrRequiredTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.DataValueConstraints;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ForecastTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.vo.HOOAssignment;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+
+/**
+ * This static class contains utility methods for aggregating and scaling trace
+ * cube values across time, and combining and distributing trace cube values
+ * across queues.
+ * 
+ * IMPORTANT: Time intervals and index ranges in TraceCube and related classes use
+ * inclusive end bounds.  This means that if you want to access all of a trace's values
+ * on January 8th, your start time should be 00:00:00 on January 8th and your
+ * end time should be 23:59:59 on January 8th, NOT 00:00:00 on January 9th.
+ */
+public class TraceOperator {
+
+<span class="nc" id="L47">	private TraceOperator() {</span>
+		// static class
+<span class="nc" id="L49">	}</span>
+
+	/**
+	 * Differentiate two TraceCubes,
+	 *
+	 * @param TraceCube,
+	 *            ActualTraceCube
+	 * @param TraceCube,
+	 *            either AggForecastedTraceCube or AggrRequiredTraceCube
+	 * @return TraceCube, difference
+	 */
+	public static TraceCube diffTraceInAbs(TraceCube actualCube, TraceCube targetCube)
+	throws BbmTimeSeriesException {
+<span class="nc bnc" id="L62" title="All 4 branches missed.">		if (actualCube == null &amp;&amp; targetCube == null) {</span>
+<span class="nc" id="L63">			return null;</span>
+		}
+<span class="nc" id="L65">		TraceCube diffCube = null;</span>
+<span class="nc bnc" id="L66" title="All 2 branches missed.">		if (targetCube != null) {</span>
+<span class="nc" id="L67">			diffCube = targetCube.cloneTraceCube();</span>
+		} else {
+<span class="nc" id="L69">			diffCube = actualCube.cloneTraceCube();</span>
+		}
+<span class="nc" id="L71">		int length = diffCube.getMaximumLength(diffCube.getTraceTypes());</span>
+<span class="nc" id="L72">		short[] types = diffCube.getTraceTypes();</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">		for (int k = 0; k &lt; types.length; k++) {</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">			for (int pos = 0; pos &lt; length; pos++) {</span>
+<span class="nc" id="L75">				double value = Trace.TRACENA;</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">				if (targetCube != null) {</span>
+<span class="nc" id="L77">					value = targetCube.getTraceValueD(types[k], pos);</span>
+				}
+<span class="nc" id="L79">				double actualValue = Trace.TRACENA;</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">				if (actualCube != null) {</span>
+<span class="nc" id="L81">					actualValue = actualCube.getTraceValueD(types[k], pos);</span>
+				}
+<span class="nc bnc" id="L83" title="All 12 branches missed.">				if ((value != Trace.TRACEOFF &amp;&amp; actualValue != Trace.TRACEOFF) &amp;&amp;</span>
+					(value != Trace.TRACENA &amp;&amp; actualValue != Trace.TRACENA) &amp;&amp;
+                    (value != Trace.TRACEINCOMP &amp;&amp; actualValue != Trace.TRACEINCOMP))
+                {
+<span class="nc" id="L87">					value = actualValue - value;</span>
+				}
+<span class="nc" id="L89">				diffCube.setTraceValue(types[k], value, pos, true);</span>
+			}
+		}
+<span class="nc" id="L92">		return diffCube;</span>
+	}
+
+	/**
+	 * Differentiate two TraceCubes,
+	 *
+	 * @param TraceCube,
+	 *            ActualTraceCube
+	 * @param TraceCube,
+	 *            either AggForecastedTraceCube or AggrRequiredTraceCube
+	 * @return TraceCube, difference
+	 */
+	public static TraceCube diffTraceInAbs(TraceCube actualCube, TraceCube targetCube, boolean nullify)
+	throws BbmTimeSeriesException {
+<span class="nc bnc" id="L106" title="All 2 branches missed.">		if (!nullify)</span>
+<span class="nc" id="L107">			return diffTraceInAbs(actualCube, targetCube);</span>
+<span class="nc bnc" id="L108" title="All 4 branches missed.">		if (actualCube == null &amp;&amp; targetCube == null) {</span>
+<span class="nc" id="L109">			return null;</span>
+		}
+<span class="nc" id="L111">		TraceCube diffCube = null;</span>
+<span class="nc bnc" id="L112" title="All 2 branches missed.">		if (targetCube != null) {</span>
+<span class="nc" id="L113">			diffCube = targetCube.cloneTraceCube();</span>
+		} else {
+<span class="nc" id="L115">			diffCube = actualCube.cloneTraceCube();</span>
+		}
+<span class="nc" id="L117">		int length = diffCube.getMaximumLength(diffCube.getTraceTypes());</span>
+<span class="nc" id="L118">		short[] types = diffCube.getTraceTypes();</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">		for (int k = 0; k &lt; types.length; k++) {</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">			for (int pos = 0; pos &lt; length; pos++) {</span>
+<span class="nc" id="L121">				double value = Trace.TRACENA;</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">				if (targetCube != null) {</span>
+<span class="nc" id="L123">					value = targetCube.getTraceValueD(types[k], pos);</span>
+				}
+<span class="nc" id="L125">				double actualValue = Trace.TRACENA;</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">				if (actualCube != null) {</span>
+<span class="nc" id="L127">					actualValue = actualCube.getTraceValueD(types[k], pos);</span>
+				}
+                
+<span class="nc bnc" id="L130" title="All 4 branches missed.">				if (value == Trace.TRACEOFF || actualValue == Trace.TRACEOFF)</span>
+                {
+<span class="nc" id="L132">                    value = Integer.MIN_VALUE;</span>
+                }
+<span class="nc bnc" id="L134" title="All 8 branches missed.">                else if ((value != Trace.TRACENA &amp;&amp; actualValue != Trace.TRACENA) &amp;&amp;</span>
+                        (value != Trace.TRACEINCOMP &amp;&amp; actualValue != Trace.TRACEINCOMP))
+                {
+<span class="nc" id="L137">					value = actualValue - value;</span>
+                }
+				else
+                {
+<span class="nc" id="L141">					value = Integer.MAX_VALUE;</span>
+                }
+
+<span class="nc" id="L144">                diffCube.setTraceValue(types[k], value, pos, true);</span>
+			}
+		}
+<span class="nc" id="L147">		return diffCube;</span>
+	}
+
+	/**
+	 * Differentiate two TraceCubes, giving result in percentage
+	 *
+	 * @param TraceCube,
+	 *            ActualTraceCube
+	 * @param TraceCube,
+	 *            either AggForecastedTraceCube or AggrRequiredTraceCube
+	 * @return TraceCube, difference
+	 */
+	public static TraceCube diffTraceInPct(TraceCube actualCube, TraceCube targetCube)
+	throws BbmTimeSeriesException {
+<span class="nc bnc" id="L161" title="All 4 branches missed.">		if (actualCube == null &amp;&amp; targetCube == null) {</span>
+<span class="nc" id="L162">			return null;</span>
+		}
+<span class="nc" id="L164">		TraceCube diffCube = null;</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">		if (targetCube != null) {</span>
+<span class="nc" id="L166">			diffCube = targetCube.cloneTraceCube();</span>
+		} else {
+<span class="nc" id="L168">			diffCube = actualCube.cloneTraceCube();</span>
+		}
+<span class="nc" id="L170">		int length = diffCube.getMaximumLength(diffCube.getTraceTypes());</span>
+<span class="nc" id="L171">		short[] types = diffCube.getTraceTypes();</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">		for (int k = 0; k &lt; types.length; k++) </span>
+        {
+<span class="nc bnc" id="L174" title="All 2 branches missed.">			for (int pos = 0; pos &lt; length; pos++) </span>
+            {
+<span class="nc" id="L176">				double value = 0;</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">				if (targetCube != null) </span>
+                {
+<span class="nc" id="L179">					value = targetCube.getTraceValueD(types[k], pos);</span>
+<span class="nc bnc" id="L180" title="All 4 branches missed.">					if ((value == Trace.TRACENA) || (value == Trace.TRACEINCOMP))</span>
+<span class="nc" id="L181">						value = 0;</span>
+				}
+<span class="nc" id="L183">				double actualValue = 0;</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">				if (actualCube != null) </span>
+                {
+<span class="nc" id="L186">					actualValue = actualCube.getTraceValueD(types[k], pos);</span>
+				}
+<span class="nc bnc" id="L188" title="All 4 branches missed.">				if (value != Trace.TRACEOFF &amp;&amp; actualValue != Trace.TRACEOFF) </span>
+                {
+<span class="nc bnc" id="L190" title="All 4 branches missed.">					if ((actualValue == Trace.TRACENA) ||(actualValue == Trace.TRACEINCOMP))</span>
+                    {
+						// we want to put -1
+<span class="nc" id="L193">						value = Trace.TRACENA;</span>
+					} 
+                    else 
+                    {
+<span class="nc" id="L197">						actualValue = actualValue - value;</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">						if (value != 0)</span>
+<span class="nc" id="L199">							value = TraceUtil.roundDouble((double)actualValue*100/value);</span>
+						else
+<span class="nc" id="L201">							value = Trace.TRACENA;    //CHANGED FROM TRACEUNB TO TRACENA. TRACEUNB is removed</span>
+					}
+				}
+<span class="nc" id="L204">				diffCube.setTraceValue(types[k], value, pos, true);</span>
+			}
+		}
+<span class="nc" id="L207">		return diffCube;</span>
+	}
+
+	/**
+	 * Differentiate two TraceCubes, giving result in percentage
+	 *
+	 * @param TraceCube,
+	 *            ActualTraceCube
+	 * @param TraceCube,
+	 *            either AggForecastedTraceCube or AggrRequiredTraceCube
+	 * @param nullify
+	 * @return TraceCube, difference
+	 */
+	public static TraceCube diffTraceInPct(TraceCube actualCube, TraceCube targetCube, boolean nullify)
+	throws BbmTimeSeriesException {
+<span class="nc bnc" id="L222" title="All 2 branches missed.">		if (!nullify)</span>
+<span class="nc" id="L223">			return diffTraceInPct(actualCube, targetCube);</span>
+<span class="nc bnc" id="L224" title="All 4 branches missed.">		if (actualCube == null &amp;&amp; targetCube == null) {</span>
+<span class="nc" id="L225">			return null;</span>
+		}
+<span class="nc" id="L227">		TraceCube diffCube = null;</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">		if (targetCube != null) {</span>
+<span class="nc" id="L229">			diffCube = targetCube.cloneTraceCube();</span>
+		} else {
+<span class="nc" id="L231">			diffCube = actualCube.cloneTraceCube();</span>
+		}
+<span class="nc" id="L233">		int length = diffCube.getMaximumLength(diffCube.getTraceTypes());</span>
+<span class="nc" id="L234">		short[] types = diffCube.getTraceTypes();</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">		for (int k = 0; k &lt; types.length; k++) </span>
+        {
+<span class="nc bnc" id="L237" title="All 2 branches missed.">			for (int pos = 0; pos &lt; length; pos++) </span>
+            {
+<span class="nc" id="L239">				double value = Trace.TRACENA;</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">				if (targetCube != null) </span>
+                {
+<span class="nc" id="L242">					value = targetCube.getTraceValueD(types[k], pos);</span>
+				}
+<span class="nc" id="L244">				double actualValue = Trace.TRACENA;</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">				if (actualCube != null) </span>
+                {
+<span class="nc" id="L247">					actualValue = actualCube.getTraceValueD(types[k], pos);</span>
+				}
+<span class="nc bnc" id="L249" title="All 4 branches missed.">				if (value != Trace.TRACEOFF &amp;&amp; actualValue != Trace.TRACEOFF) </span>
+                {
+<span class="nc bnc" id="L251" title="All 8 branches missed.">					if (actualValue == Trace.TRACENA || value == Trace.TRACENA ||</span>
+                        actualValue == Trace.TRACEINCOMP || value == Trace.TRACEINCOMP)
+                    {
+<span class="nc" id="L254">						value = Integer.MAX_VALUE;</span>
+					} 
+                    else 
+                    {
+<span class="nc" id="L258">						actualValue = actualValue - value;</span>
+<span class="nc bnc" id="L259" title="All 2 branches missed.">						if (value != 0)</span>
+<span class="nc" id="L260">							value = TraceUtil.roundDouble((double)actualValue*100/value);</span>
+						else
+<span class="nc" id="L262">							value = Integer.MAX_VALUE;</span>
+					}
+				} 
+                else 
+                {
+<span class="nc" id="L267">					value = Integer.MIN_VALUE;</span>
+				}
+<span class="nc" id="L269">				diffCube.setTraceValue(types[k], value, pos, true);</span>
+			}
+		}
+<span class="nc" id="L272">		return diffCube;</span>
+	}
+
+	// Check if value array is all NA or not
+	private static boolean allNAPoints(double[] value) {
+<span class="nc bnc" id="L277" title="All 2 branches missed.">		for (int i = value.length - 1; i &gt;= 0; i--) {</span>
+<span class="nc bnc" id="L278" title="All 4 branches missed.">			if (!(value[i] == Trace.TRACENA || value[i] == Trace.TRACEINCOMP)){</span>
+<span class="nc" id="L279">				return false;</span>
+			}
+		}
+<span class="nc" id="L282">		return true;</span>
+	}
+	// Check if value array is all NA or not
+	private static boolean allOFFPoints(double[] value) {
+<span class="nc bnc" id="L286" title="All 2 branches missed.">		for (int i = value.length - 1; i &gt;= 0; i--) {</span>
+<span class="nc bnc" id="L287" title="All 2 branches missed.">			if (value[i] != Trace.TRACEOFF)</span>
+<span class="nc" id="L288">				return false;</span>
+		}
+<span class="nc" id="L290">		return true;</span>
+	}
+
+	// Check if value array has at least one valid (non-negative) value.
+	private static boolean hasValidValue(double[] values)
+	{
+<span class="nc bnc" id="L296" title="All 2 branches missed.">		for (int i = values.length - 1; i &gt;= 0; i--) {</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">			if (Trace.isValidValue(values[i])){</span>
+<span class="nc" id="L298">				return true;</span>
+			}
+		}
+<span class="nc" id="L301">		return false;</span>
+	}
+
+	/**
+	 * Scales the specified time interval in the trace cube
+	 * to equal the specified value.  The inverse of aggregatePeriod().
+	 * The range modified includes the start time and the end time.
+	 * &lt;p&gt;
+	 * If the end time is before the start time the trace cube will not be modified.
+	 * &lt;p&gt;
+	 * If there are no valid data points in the specified trace, no action is taken
+	 * and no exception is thrown.
+	 * 
+	 * @param cube
+	 * @param traceType
+	 * @param targetValue
+	 * @param startTime
+	 * @param endTime
+	 * @throws ArrayIndexOutOfBoundsException if &lt;code&gt;startTime&lt;/code&gt; or &lt;code&gt;endTime&lt;/code&gt;
+	 * falls outside the time period covered by the trace cube.
+	 */
+	public static void scalePeriodTrace(
+			TraceCube cube,
+			short traceType,
+			int targetValue,
+			Date startTime,
+			Date endTime) {
+
+<span class="nc" id="L329">		int startIndex = TraceUtil.gapOffSet(cube.getStartDate(), cube.getStartOffSet(), startTime);</span>
+<span class="nc" id="L330">		int endIndex = TraceUtil.gapOffSet(cube.getStartDate(), cube.getStartOffSet(), endTime);</span>
+		// If the specified range is empty, return without modifying the cube.
+<span class="nc bnc" id="L332" title="All 2 branches missed.">		if (endIndex &lt; startIndex) {</span>
+<span class="nc" id="L333">			return;</span>
+		}
+<span class="nc" id="L335">		scalePeriodTrace(cube, traceType, targetValue, startIndex, endIndex);</span>
+<span class="nc" id="L336">	}</span>
+
+	/**
+	 * Scales the specified range of indices in the trace cube
+	 * to equal the specified value.  The inverse of aggregatePeriod().
+	 * The range modified includes the start index and the end index.
+	 * &lt;p&gt;
+	 * If the end index is before the start index the trace cube will not be modified.
+	 * &lt;p&gt;
+	 * If there are no valid data points in the specified trace, no action is taken
+	 * and no exception is thrown.
+	 * 
+	 * @param cube
+	 * @param traceType
+	 * @param targetValue
+	 * @param startIndex
+	 * @param endIndex
+	 * @throws ArrayIndexOutOfBoundsException if &lt;code&gt;startTime&lt;/code&gt; or &lt;code&gt;endTime&lt;/code&gt;
+	 * falls outside the time period covered by the trace cube.
+	 */
+	private static void scalePeriodTrace(
+			TraceCube cube,
+			short traceType,
+			int targetValue,
+			int startIndex,
+			int endIndex) {
+<span class="nc" id="L362">		TraceDistribution distribution = getTraceDistribution(cube, traceType, startIndex, endIndex);</span>
+<span class="nc bnc" id="L363" title="All 2 branches missed.">		if (distribution.isValid()) {</span>
+<span class="nc" id="L364">			scalePeriodTraceWithDistribution(cube, traceType, targetValue, distribution, startIndex, endIndex);</span>
+		}
+<span class="nc" id="L366">	}</span>
+
+	/**
+	 * Scales a particular interval of a trace so that its aggregate value is the specified
+	 * target value, using the supplied distribution.
+	 * &lt;p&gt;
+	 * If the distribution is invalid, no action is taken and no exception is thrown.
+	 * 
+	 * @param cube
+	 * @param traceType
+	 * @param targetValue
+	 * @param distribution
+	 * @param startIndex
+	 * @param endIndex
+	 */
+	public static void scalePeriodTraceWithDistribution(
+			TraceCube cube,
+			short traceType,
+			int targetValue,
+			TraceDistribution distribution,
+			int startIndex,
+			int endIndex) {
+
+<span class="nc bnc" id="L389" title="All 2 branches missed.">		if (distribution.isValid()) {</span>
+			/*TODO: the TraceOperator.aggregatePeriod has the following snippet of code in it:
+			 &lt;code&gt;
+					if (traceType == Trace.FTE || traceType == Trace.STAFFING) {
+						return result / (valueArray.length &gt; Trace.HOURPOINTS ? Trace.HOURPOINTS : valueArray.length);
+					}
+			 &lt;/code&gt;
+			 It seems as though when we are aggregating FTE or Staffing data for display purposes,
+			 the data is divided by 4 since for these data types since we want to show hourly staffing (the 15 minute
+			 intervals would be summed up and then divided by 4 to get the hourly staffing).
+			 
+			 This was causing a problem here in the scalePeriodTraceWithDistribution method, because the hourly staffing 
+			 was getting distributed to the fifteen minute intervals without taking the previously mentioned
+			 code into account.  The net result of this was that the values getting distributed to the 15 minute
+			 intervals were about 4 times smaller than they should be.  The code below was inserted to correct this
+			 problem.  A proper long term solution would be to remove display logic from these methods entirely.
+			 */
+			//BEGIN FIX for FTE and STAFFING types
+<span class="nc bnc" id="L407" title="All 10 branches missed.">			if (Trace.isValidValue(targetValue) &amp;&amp;</span>
+			        (traceType == Trace.FTE || traceType == Trace.STAFFING || traceType == Trace.AFTE || traceType == Trace.ASTAFFING)) {
+
+<span class="nc" id="L410">				int intervalCount = (endIndex - startIndex) + 1;</span>
+<span class="nc bnc" id="L411" title="All 2 branches missed.">				targetValue = targetValue * (intervalCount &gt; Trace.HOURPOINTS ? Trace.HOURPOINTS : intervalCount);</span>
+			}
+			//END FIX for FTE and STAFFING types
+<span class="nc" id="L414">			int[] scaledValues = distribution.getScaledIntegerValues(targetValue);</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">			for (int i = 0; i &lt; scaledValues.length; ++i) {</span>
+<span class="nc" id="L416">				cube.setTraceValue(traceType, scaledValues[i], startIndex + i, true);</span>
+			}
+		}
+<span class="nc" id="L419">	}</span>
+
+	/**
+	 * Determines the weights characterizing the distribution of a trace across a 
+	 * range of indices.  These weights can be used when scaling or distributing
+	 * a value.
+	 * 
+	 * @param cube
+	 * @param traceType
+	 * @param startIndex
+	 * @param endIndex
+	 * @return a &lt;code&gt;TraceDistribution&lt;/code&gt; object that can be used for scaling or distribution,
+	 * or Trace.INVALID_DISTRIBUTION if the distribution could not be calculated for any reason.
+	 */
+	public static TraceDistribution getTraceDistribution(TraceCube cube, short traceType, int startIndex, int endIndex) {
+<span class="nc" id="L434">		return getTraceDistribution( cube,  traceType,  startIndex,  endIndex,Trace.getTraceConstraints(traceType, cube.isRequiredData())); </span>
+	}
+	
+	/**
+	 * Overloaded version of the original method getTraceDistribution(TraceCube cube, short traceType, int startIndex, int endIndex) 
+	 * if the caller has the constraints available with they can be passed directly to get the TraceDisribution
+	 * 
+	 * @param cube
+	 * @param traceType
+	 * @param startIndex
+	 * @param endIndex
+	 * @param constraints 
+	 * @return a &lt;code&gt;TraceDistribution&lt;/code&gt; object that can be used for scaling or distribution,
+	 * or Trace.INVALID_DISTRIBUTION if the distribution could not be calculated for any reason.
+	 */
+	public static TraceDistribution getTraceDistribution(TraceCube cube, short traceType, int startIndex, int endIndex,DataValueConstraints constraints) {
+		
+<span class="nc" id="L451">		AggregationType aggregationType = getAggregationTypeForTimeAggregation(traceType, cube.isRequiredData());</span>
+<span class="nc bnc" id="L452" title="All 2 branches missed.">		if ( ! aggregationType.supportsScale() ) {</span>
+<span class="nc" id="L453">			return TraceDistribution.INVALID_DISTRIBUTION;</span>
+		}
+<span class="nc" id="L455">		double[] sourceValues = cube.getTraceValueD(traceType, startIndex, endIndex);</span>
+<span class="nc bnc" id="L456" title="All 4 branches missed.">		if (sourceValues == null || !hasValidValue(sourceValues)) {</span>
+<span class="nc" id="L457">			return TraceDistribution.INVALID_DISTRIBUTION;</span>
+		}
+<span class="nc" id="L459">		double dependentValueArrays[][] = null;</span>
+<span class="nc" id="L460">		short[] dependentTypeArray = null;</span>
+<span class="nc bnc" id="L461" title="All 2 branches missed.">		if (aggregationType.isWeightedAverage()) {</span>
+			//TODO: replace this with actual call to get media map -OR- devise a better way to obtain
+			// dependent values.
+<span class="nc" id="L464">			dependentTypeArray = getDependentTypeForWeightedAvgForPeriod(traceType, null);</span>
+<span class="nc" id="L465">			dependentValueArrays = new double[dependentTypeArray.length][sourceValues.length];</span>
+<span class="nc bnc" id="L466" title="All 2 branches missed.">			for (int j = 0; j &lt; dependentTypeArray.length; j++) {</span>
+<span class="nc" id="L467">				dependentValueArrays[j] = cube.getTraceValueD(dependentTypeArray[j], startIndex, endIndex);</span>
+			}
+		}
+<span class="nc" id="L470">		return getArrayDistribution(sourceValues, dependentValueArrays, aggregationType, Trace.getTraceConstraints(traceType, cube.isRequiredData()));</span>
+	}
+
+	/**
+	 * Blindly duplicates the target value into the specified range of indices of the specified
+	 * trace, from &lt;code&gt;startTime&lt;/code&gt; to &lt;code&gt;endTime&lt;/code&gt;, inclusive.
+	 * &lt;p&gt;
+	 * This method is most appropriate for replicating error values.  It will overwrite any
+	 * previous values, including error values.
+	 * 
+	 * @param cube
+	 * @param traceType
+	 * @param value
+	 * @param startTime
+	 * @param endTime
+	 */
+	public static void setTraceToValueForPeriod(TraceCube cube, short traceType, int value, Date startTime, Date endTime) {
+<span class="nc" id="L487">		int startIndex = TraceUtil.gapOffSet(cube.getStartDate(), cube.getStartOffSet(), startTime);</span>
+<span class="nc" id="L488">		int endIndex = TraceUtil.gapOffSet(cube.getStartDate(), cube.getStartOffSet(), endTime);</span>
+		// If the specified range is empty, return without modifying the cube.
+<span class="nc bnc" id="L490" title="All 2 branches missed.">		if (endIndex &lt; startIndex) {</span>
+<span class="nc" id="L491">			return;</span>
+		}
+<span class="nc bnc" id="L493" title="All 2 branches missed.">		for (int offset = startIndex; offset &lt;= endIndex; ++offset) {</span>
+<span class="nc" id="L494">			cube.setTraceValue(traceType, value, offset, true);</span>
+		}
+<span class="nc" id="L496">	}</span>
+
+	/**
+	 * The inverse of combineQueue().  Distributes the contents of the specified trace
+	 * cube across an array of constituent trace cubes at each data offset in a time interval.
+	 * 
+	 * @param combinedCube contains the target combined values that are to be distributed
+	 * across &lt;code&gt;constituentCubes&lt;/code&gt;.
+	 * @param constituentCubes the constituent cubes that are to be populated with the
+	 * distributed values.
+	 * @param queueMediaMap
+	 * @throws BbmTimeSeriesException
+	 */
+	public static void distributeQueue(TraceCube combinedCube, TraceCube[] constituentCubes, short traceType, Date startTime, Date endTime, HashMap&lt;ID,ID&gt; queueMediaMap)
+			throws BbmTimeSeriesException {
+
+<span class="nc" id="L512">		int startIndex = TraceUtil.gapOffSet(combinedCube.getStartDate(), combinedCube.getStartOffSet(), startTime);</span>
+<span class="nc" id="L513">		int endIndex = TraceUtil.gapOffSet(combinedCube.getStartDate(), combinedCube.getStartOffSet(), endTime);</span>
+		// If the specified range is empty, return without modifying the cube.
+<span class="nc bnc" id="L515" title="All 2 branches missed.">		if (endIndex &lt; startIndex) {</span>
+<span class="nc" id="L516">			return;</span>
+		}
+<span class="nc" id="L518">		distributeQueue(combinedCube, constituentCubes, traceType, startIndex, endIndex, queueMediaMap);</span>
+<span class="nc" id="L519">	}</span>
+
+	/**
+	 * The inverse of combineQueue().  Distributes the contents of the specified trace
+	 * cube and type across an array of constituent trace cubes at each data offset in a range of
+	 * offsets.
+	 * 
+	 * @param combinedCube contains the target combined values that are to be distributed
+	 * across &lt;code&gt;constituentCubes&lt;/code&gt;.
+	 * @param constituentCubes the constituent cubes that are to be populated with the
+	 * distributed values.
+	 * @param queueMediaMap
+	 * @throws BbmTimeSeriesException if the specified trace cubes differ in length or
+	 * supported trace types.  Note that two trace cubes must list the same trace types
+	 * &lt;em&gt;in the same order&lt;/em&gt; to count as supporting the same trace types.  This
+	 * should not be a problem normally but is something to keep in mind when defining
+	 * a new trace cube type.
+	 */
+	public static void distributeQueue(TraceCube combinedCube, TraceCube[] constituentCubes, short traceType, int startIndex, int endIndex, HashMap&lt;ID,ID&gt; queueMediaMap)
+			throws BbmTimeSeriesException {
+
+		// Ensure that all trace cubes are compatible and at least one is non-null.
+<span class="nc" id="L541">		TraceCube tc = TraceUtil.validateTraceCubes(constituentCubes);</span>
+<span class="nc bnc" id="L542" title="All 2 branches missed.">		if (tc == null) {</span>
+<span class="nc" id="L543">			return;</span>
+		}
+<span class="nc" id="L545">		short[] types = tc.getTraceTypes();</span>
+<span class="nc bnc" id="L546" title="All 2 branches missed.">		if (tc instanceof AggrRequiredTraceCube) {// special handle AggrRequireTraceCube</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">			if (((AggrRequiredTraceCube) tc).getForecastTrace() != null) {</span>
+<span class="nc" id="L548">				short[] nTypes = new short[types.length + 2];// Add CV &amp; VAR in addition to existing types</span>
+<span class="nc" id="L549">				nTypes[0] = Trace.CV;</span>
+<span class="nc" id="L550">				nTypes[1] = Trace.VAR;</span>
+<span class="nc" id="L551">				System.arraycopy(types, 0, nTypes, 2, types.length);</span>
+<span class="nc" id="L552">				types = nTypes;</span>
+			}
+		}
+<span class="nc bnc" id="L555" title="All 2 branches missed.">		if (tc.getMaximumLength(types) &lt; startIndex)</span>
+		{
+			// No point in trying to distribute outside the range of the traces.
+<span class="nc" id="L558">			return;</span>
+		}
+		// Check if combine operation required types exist or not
+<span class="nc" id="L561">		HashSet&lt;ID&gt; mediaSet = new HashSet&lt;ID&gt;(queueMediaMap.values());</span>
+<span class="nc bnc" id="L562" title="All 2 branches missed.">		boolean isMultiMedia = (mediaSet.size() != 1);</span>
+<span class="nc bnc" id="L563" title="All 4 branches missed.">		if (isMultiMedia || isTraceTypeSupportedForMedia(traceType, (ID) mediaSet.toArray()[0])) {</span>
+<span class="nc bnc" id="L564" title="All 2 branches missed.">			if (getAggregationTypeForTimeAggregation(traceType, combinedCube.isRequiredData()) == AggregationType.SUM) {</span>
+<span class="nc" id="L565">				TraceDistributionBuilder distributionBuilder = new TraceDistributionBuilder(AggregationType.SUM, Trace.getTraceConstraints(traceType, combinedCube.isRequiredData()));</span>
+<span class="nc" id="L566">				int totalAggregate = 0;</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">				for (int cubeIndex = 0; cubeIndex &lt; constituentCubes.length; ++cubeIndex) {</span>
+<span class="nc" id="L568">					int cubeAggregate = TraceUtil.roundDouble(aggregatePeriod(constituentCubes[cubeIndex], traceType, startIndex, endIndex));</span>
+<span class="nc" id="L569">					distributionBuilder.addValue(cubeAggregate, null, cubeIndex);</span>
+<span class="nc" id="L570">					totalAggregate += cubeAggregate;</span>
+				}
+<span class="nc bnc" id="L572" title="All 2 branches missed.">				if (totalAggregate == 0) {</span>
+					// When starting from zero data we use a specialized algorithm.
+<span class="nc" id="L574">					distributeQueueForSumsWithNoPreviousData(</span>
+							combinedCube,
+							constituentCubes,
+<span class="nc" id="L577">							distributionBuilder.getTraceDistribution(),</span>
+							traceType,
+							startIndex,
+							endIndex);
+					// For summed constituent cubes with no prior data we return immediately.
+					// All other cases fall through to the more general algorithm.
+<span class="nc" id="L583">					return;</span>
+				}
+			}
+<span class="nc bnc" id="L586" title="All 2 branches missed.">			for (int j = startIndex; j &lt;= endIndex; j++) {</span>
+<span class="nc" id="L587">				int targetValue = combinedCube.getTraceValue(traceType, j);</span>
+<span class="nc bnc" id="L588" title="All 2 branches missed.">				if (targetValue &gt;= 0) {</span>
+<span class="nc" id="L589">					TraceDistribution distribution = getMultiQueueDistribution(constituentCubes, traceType, j);</span>
+<span class="nc" id="L590">					distributeQueueFromDistribution(constituentCubes, traceType, j, distribution, targetValue);</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">				} else if (targetValue != Trace.TRACENA) {</span>
+					// TRACENA would arise from a weighted value with zero weights
+					// and then get redistributed to the constituent queues,
+					// overwriting zeros with TRACENA.
+<span class="nc" id="L595">					setTraceValueAcrossCubes(constituentCubes, traceType, j, targetValue);</span>
+				}
+			}
+		}
+<span class="nc" id="L599">	}</span>
+
+	/**
+	 * Distributes the contents of the specified trace cube and type, whose aggregation type must
+	 * be summation, across an array of constituent trace cubes at each data offset in a
+	 * range of offsets.  The constituent trace cubes are assumed to have no non-zero data
+	 * to begin with.
+	 * &lt;p&gt;
+	 * To distribute a queue across constituent queues that already have data, use
+	 * {@link #distributeQueue(TraceCube, TraceCube[], short, int, int, HashMap)}.
+	 * 
+	 * @param combinedCube a cube containing target values for each time interval
+	 * @param constituentCubes
+	 * @param traceType the trace type to distribute, which must aggregate using summation
+	 * @param startIndex
+	 * @param endIndex
+	 * 
+	 * @throws IllegalArgumentException if {@code traceType}'s aggregation type is anything other
+	 * than {@link AggregationType#SUM}.
+	 * @throws BbmTimeSeriesException if protective copying of the combined cube fails.
+	 */
+	private static void distributeQueueForSumsWithNoPreviousData(
+			TraceCube combinedCube,
+			TraceCube[] constituentCubes,
+			TraceDistribution distributionAcrossCubes,
+			short traceType,
+			int startIndex,
+			int endIndex)
+				throws BbmTimeSeriesException {
+<span class="nc bnc" id="L628" title="All 2 branches missed.">		if (getAggregationTypeForTimeAggregation(traceType, combinedCube.isRequiredData()) != AggregationType.SUM) {</span>
+<span class="nc" id="L629">			throw new IllegalArgumentException(&quot;distributeQueueForSums may only be used on trace types that use summation.  Tried to use on aggregation type &quot; + getAggregationTypeForTimeAggregation(traceType, combinedCube.isRequiredData()));</span>
+		}
+<span class="nc" id="L631">		TraceCube combinedCopy = combinedCube.cloneTraceCube();</span>
+<span class="nc" id="L632">		combinedCopy.setTraceValue(traceType, combinedCube.getTraceValueD(traceType));</span>
+		// Here we take the grand total of the new values in the combined queue and divide them between
+		// the constituent queues according to their original relative totals.
+<span class="nc" id="L635">		int targetAggregate = TraceUtil.roundDouble(aggregatePeriod(combinedCube, traceType, startIndex, endIndex));</span>
+<span class="nc" id="L636">		int[] cubeTargets = distributionAcrossCubes.getScaledIntegerValues(targetAggregate);</span>
+<span class="nc bnc" id="L637" title="All 2 branches missed.">		for (int cubeIndex = 0; cubeIndex &lt; constituentCubes.length; ++cubeIndex) {</span>
+			// When distributing a combined queue from zero, we use the combined queue itself
+			// to determine the shape of the resulting curve in each constituent trace.
+<span class="nc" id="L640">			TraceDistribution distribution = getTraceDistribution(combinedCopy, traceType, startIndex, endIndex);</span>
+<span class="nc bnc" id="L641" title="All 2 branches missed.">			if (distribution.isValid()) {</span>
+				// We apply the shape of the combined queue to the value alloted to this constituent queue...
+<span class="nc" id="L643">				scalePeriodTraceWithDistribution(constituentCubes[cubeIndex], traceType, cubeTargets[cubeIndex], distribution, startIndex, endIndex);</span>
+				// ...then we subtract the result from the combined queue so that subsequent queues will fill
+				// in the gaps in coverage that we left.
+<span class="nc" id="L646">				subtractTrace(combinedCopy, constituentCubes[cubeIndex], traceType, startIndex, endIndex);</span>
+			}
+		}
+<span class="nc" id="L649">	}</span>
+
+	/**
+	 * Subtracts one trace from another trace.  Each trace value of the specified type in
+	 * {@code cubeToSubtract} is subtracted from the corresponding trace value in
+	 * {@code totalCube}, and the result is stored in {@code totalCube}.
+	 * 
+	 * @param totalCube
+	 * @param cubeToSubtract
+	 * @param traceType
+	 * @param startIndex
+	 * @param endIndex
+	 */
+	private static void subtractTrace(
+			TraceCube totalCube,
+			TraceCube cubeToSubtract,
+			short traceType,
+			int startIndex,
+			int endIndex) {
+<span class="nc" id="L668">		subtractTrace(totalCube, cubeToSubtract, traceType, startIndex, endIndex, startIndex);</span>
+<span class="nc" id="L669">	}</span>
+
+	/**
+	 * Subtracts one trace from another trace, where the cube to subtract may have a different
+	 * start offset from the total cube.  Each trace value of the specified type in
+	 * {@code cubeToSubtract} is subtracted from the corresponding trace value in
+	 * {@code totalCube}, and the result is stored in {@code totalCube}.
+	 * &lt;p&gt;
+	 * Any intervals for which either cube has an invalid value (Trace.TRACENA, etc.) are
+	 * skipped and the resulting value for that interval is the same as the original
+	 * value for that interval.
+	 * 
+	 * @param totalCube
+	 * @param cubeToSubtract
+	 * @param traceType
+	 * @param startOffset
+	 * @param endOffset
+	 * @param cubeToSubtractStartOffset
+	 */
+	private static void subtractTrace(
+			TraceCube totalCube,
+			TraceCube cubeToSubtract,
+			short traceType,
+			int startOffset,
+			int endOffset,
+			int cubeToSubtractStartOffset) {
+<span class="fc bfc" id="L695" title="All 2 branches covered.">		for (int offsetIntoTotal = startOffset; offsetIntoTotal &lt;= endOffset; ++offsetIntoTotal) {</span>
+<span class="fc" id="L696">			double totalValue = totalCube.getTraceValueD(traceType, offsetIntoTotal);</span>
+<span class="fc" id="L697">			double valueToSubtract = cubeToSubtract.getTraceValueD(traceType, offsetIntoTotal - startOffset + cubeToSubtractStartOffset);</span>
+<span class="pc bpc" id="L698" title="1 of 4 branches missed.">			if (Trace.isValidValue(totalValue) &amp;&amp; Trace.isValidValue(valueToSubtract)) {</span>
+<span class="fc" id="L699">				totalCube.setTraceValue(traceType, totalValue - valueToSubtract, offsetIntoTotal, true);</span>
+			}
+		}
+<span class="fc" id="L702">	}</span>
+
+	/**
+	 * Distributes the contents of the specified trace cube across the specified array
+	 * of constituent trace cubes using a precomputed value distribution.
+	 * &lt;p&gt;
+	 * If the supplied distribution is invalid, no action is taken and no exception is
+	 * thrown.
+	 * 
+	 * @param targetCubes
+	 * @param traceType
+	 * @param offset
+	 * @param distribution
+	 * @param targetValue
+	 */
+	private static void distributeQueueFromDistribution(TraceCube[] targetCubes, short traceType, int offset, TraceDistribution distribution, int targetValue) {
+<span class="nc bnc" id="L718" title="All 2 branches missed.">		if (distribution.isValid()) {</span>
+<span class="nc" id="L719">			int[] distributedValues = distribution.getScaledIntegerValues(targetValue);</span>
+<span class="nc bnc" id="L720" title="All 2 branches missed.">			for (int cubeIndex = 0; cubeIndex &lt; targetCubes.length; ++cubeIndex) {</span>
+<span class="nc" id="L721">				targetCubes[cubeIndex].setTraceValue(traceType, distributedValues[cubeIndex], offset, true);</span>
+			}
+		}
+<span class="nc" id="L724">	}</span>
+
+	/**
+	 * Blindly duplicates the target value into the specified index of the specified traces.
+	 * &lt;p&gt;
+	 * This method is most appropriate for replicating error values.  It will overwrite any
+	 * previous values, including error values.
+	 * 
+	 * @param targetCubes
+	 * @param traceType
+	 * @param offset
+	 * @param targetValue
+	 */
+	private static void setTraceValueAcrossCubes(TraceCube[] targetCubes, short traceType, int offset, int targetValue) {
+<span class="nc bnc" id="L738" title="All 2 branches missed.">		for (int cubeIndex = 0; cubeIndex &lt; targetCubes.length; ++cubeIndex) {</span>
+<span class="nc" id="L739">			targetCubes[cubeIndex].setTraceValue(traceType, targetValue, offset, true);</span>
+		}
+<span class="nc" id="L741">	}</span>
+
+	/**
+	 * Determines the weights characterizing the distribution of the value of a particular
+	 * trace at a particular time across a collection of different trace cubes.  These
+	 * weights can be used when scaling or distributing a value.
+	 * 
+	 * @param cubes
+	 * @param traceType
+	 * @param startIndex
+	 * @param endIndex
+	 * @return a &lt;code&gt;TraceDistribution&lt;/code&gt; object that can be used for scaling or distribution,
+	 * or Trace.INVALID_DISTRIBUTION if the distribution could not be calculated for any reason.
+	 */
+	public static TraceDistribution getMultiQueueDistribution(TraceCube[] cubes, short traceType, int offset) {
+
+<span class="nc" id="L757">		AggregationType aggregationType = getAggregationTypeForTimeAggregation(traceType, cubes[0].isRequiredData());</span>
+<span class="nc bnc" id="L758" title="All 2 branches missed.">		if ( ! aggregationType.supportsScale() ) {</span>
+<span class="nc" id="L759">			return TraceDistribution.INVALID_DISTRIBUTION;</span>
+		}
+<span class="nc" id="L761">		double[] sourceValues = new double[cubes.length];</span>
+<span class="nc bnc" id="L762" title="All 2 branches missed.">		for (int cubeIndex = 0; cubeIndex &lt; cubes.length; ++cubeIndex)</span>
+		{
+<span class="nc" id="L764">			sourceValues[cubeIndex] = cubes[cubeIndex].getTraceValueD(traceType, offset);</span>
+		}
+<span class="nc bnc" id="L766" title="All 2 branches missed.">		if (!hasValidValue(sourceValues)) {</span>
+<span class="nc" id="L767">			return TraceDistribution.INVALID_DISTRIBUTION;</span>
+		}
+<span class="nc" id="L769">		double dependentValueArrays[][] = null;</span>
+<span class="nc" id="L770">		short[] dependentTypeArray = null;</span>
+<span class="nc bnc" id="L771" title="All 2 branches missed.">		if (aggregationType.isWeightedAverage()) {</span>
+			//TODO: replace this with actual call to get media map -OR- devise a better way to obtain
+			// dependent values.
+			// Media type does not appear to be necessary for correct behavior; it would
+			// be more efficient to have the correct media type but using null just gets
+			// us an extra dependent type for AHT that doesn't have any data, and unpopulated 
+			// dependent values will simply be ignored.
+<span class="nc" id="L778">			dependentTypeArray = getDependentTypeForWeightedAvgForPeriod(traceType, null);</span>
+<span class="nc" id="L779">			dependentValueArrays = new double[dependentTypeArray.length][sourceValues.length];</span>
+<span class="nc bnc" id="L780" title="All 2 branches missed.">			for (int dependentTypeIndex = 0; dependentTypeIndex &lt; dependentTypeArray.length; dependentTypeIndex++) {</span>
+<span class="nc" id="L781">				dependentValueArrays[dependentTypeIndex] = new double[cubes.length];</span>
+<span class="nc bnc" id="L782" title="All 2 branches missed.">				for (int cubeIndex = 0; cubeIndex &lt; cubes.length; ++cubeIndex)</span>
+				{
+<span class="nc" id="L784">					dependentValueArrays[dependentTypeIndex][cubeIndex] = cubes[cubeIndex].getTraceValueD(dependentTypeArray[dependentTypeIndex], offset);</span>
+				}
+			}
+		}
+<span class="nc" id="L788">		return getArrayDistribution(sourceValues, dependentValueArrays, aggregationType, Trace.getTraceConstraints(traceType, cubes[0].isRequiredData()));</span>
+	}
+
+	/**
+	 * Determines the weights characterizing the distribution of an array across its
+	 * entire length.  These weights can be used when scaling or distributing
+	 * a value.
+	 * 
+	 * @param sourceValues
+	 * @param dependentValueArrays
+	 * @param aggregationType
+	 * @return a &lt;code&gt;TraceDistribution&lt;/code&gt; object that can be used for scaling or distribution,
+	 * or Trace.INVALID_DISTRIBUTION if the distribution could not be calculated for any reason.
+	 */
+	private static TraceDistribution getArrayDistribution(double[] sourceValues, double dependentValueArrays[][], AggregationType aggregationType, DataValueConstraints constraints) {
+
+<span class="nc" id="L804">		TraceDistributionBuilder builder = new TraceDistributionBuilder(aggregationType, constraints);</span>
+<span class="nc" id="L805">		int sourceValueCount = sourceValues.length;</span>
+<span class="nc bnc" id="L806" title="All 2 branches missed.">		for (int i = 0; i &lt; sourceValueCount; i++) {</span>
+<span class="nc" id="L807">			double traceValue = sourceValues[i];</span>
+<span class="nc" id="L808">			builder.addValue(traceValue, dependentValueArrays, i);</span>
+		}
+<span class="nc" id="L810">		return builder.getTraceDistribution();</span>
+	}
+
+	/**
+	 * Return everything stored in TraceCube for specific TraceTypes, agg on 30
+	 * minutes
+	 *
+	 * @param TraceCube,
+	 *            cube
+	 * @param TimeZone,
+	 *            tz
+	 * @param short,
+	 *            type
+	 * @param return
+	 *            int[]
+	 */
+	public static double[] getHalfHourlyTraceValue(TraceCube cube, TimeZone tz,
+			short type) {
+<span class="nc" id="L828">		double[] value = cube.getTraceValueD(type);</span>
+<span class="nc bnc" id="L829" title="All 2 branches missed.">		if (value == null)</span>
+<span class="nc" id="L830">			return null;</span>
+<span class="nc" id="L831">		Date start = cube.getRawStartDate();</span>
+<span class="nc bnc" id="L832" title="All 4 branches missed.">		if (start == null || tz == null)</span>
+<span class="nc" id="L833">			return null;</span>
+<span class="nc" id="L834">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L835">		cal.setTime(start);</span>
+<span class="nc" id="L836">		int startMin = cal.get(Calendar.MINUTE);</span>
+		// Get the absolute position
+<span class="nc" id="L838">		int pos = startMin / 15;</span>
+		// Need figure out how many half hours
+<span class="nc" id="L840">		int totalLength = value.length;</span>
+<span class="nc" id="L841">		int begin = 0;</span>
+		// If pos is odd, which means the first half hour, it has only one point
+<span class="nc" id="L843">		int end = 1 - pos % 2;</span>
+<span class="nc bnc" id="L844" title="All 2 branches missed.">		int chunks = 1 + (totalLength - end - 1) / 2</span>
+		+ ((totalLength - end - 1) % 2 == 0 ? 0 : 1);
+		// Cal based on each half hour
+<span class="nc" id="L847">		double[] result = new double[chunks];</span>
+<span class="nc bnc" id="L848" title="All 2 branches missed.">		for (int i = 0; i &lt; chunks; i++) {</span>
+<span class="nc" id="L849">			result[i] = TraceUtil.roundDouble(aggregatePeriod(cube, type,</span>
+					begin, end));
+<span class="nc" id="L851">			begin = end + 1;</span>
+<span class="nc bnc" id="L852" title="All 2 branches missed.">			if (begin &gt;= totalLength)</span>
+<span class="nc" id="L853">				break;</span>
+<span class="nc" id="L854">			end += 2;</span>
+<span class="nc bnc" id="L855" title="All 2 branches missed.">			end = end &gt;= totalLength ? (totalLength - 1) : end;</span>
+		}
+<span class="nc" id="L857">		return result;</span>
+	}
+
+	/**
+	 * Return everything stored in TraceCube for specific TraceTypes, agg on 30
+	 * minutes
+	 *
+	 * @param TraceCube,
+	 *            cube
+	 * @param TimeZone,
+	 *            tz
+	 * @param short[],
+	 *            types
+	 * @param return
+	 *            int[][]
+	 */
+	public static double[][] getHalfHourlyTraceValue(TraceCube cube, TimeZone tz,
+			short[] types) {
+<span class="nc bnc" id="L875" title="All 2 branches missed.">		if (types == null)</span>
+<span class="nc" id="L876">			return null;</span>
+<span class="nc" id="L877">		double[][] result = new double[types.length][];</span>
+<span class="nc bnc" id="L878" title="All 2 branches missed.">		for (int j = 0; j &lt; types.length; j++) {</span>
+<span class="nc" id="L879">			result[j] = getHalfHourlyTraceValue(cube, tz, types[j]);</span>
+		}
+<span class="nc" id="L881">		return result;</span>
+	}
+
+	/**
+	 * Return everything stored in TraceCube for specific TraceTypes
+	 *
+	 * @param TraceCube,
+	 *            cube
+	 * @param TimeZone,
+	 *            tz
+	 * @param short[],
+	 *            types
+	 * @param return
+	 *            int[][]
+	 */
+	public static double[][] getHourlyTraceValue(TraceCube cube, TimeZone tz,
+			short[] types) {
+<span class="nc bnc" id="L898" title="All 2 branches missed.">		if (types == null)</span>
+<span class="nc" id="L899">			return null;</span>
+<span class="nc" id="L900">		double[][] result = new double[types.length][];</span>
+<span class="nc bnc" id="L901" title="All 2 branches missed.">		for (int j = 0; j &lt; types.length; j++) {</span>
+<span class="nc" id="L902">			result[j] = getHourlyTraceValue(cube, tz, types[j]);</span>
+		}
+<span class="nc" id="L904">		return result;</span>
+	}
+
+	/**
+	 * Return everything stored in TraceCube for specific TraceTypes, agg on
+	 * Hour
+	 *
+	 * @param TraceCube,
+	 *            cube
+	 * @param TimeZone,
+	 *            tz
+	 * @param short,
+	 *            type
+	 * @param return
+	 *            int[]
+	 */
+	public static double[] getHourlyTraceValue(TraceCube cube, TimeZone tz,
+			short type) {
+<span class="nc" id="L922">		double[] value = cube.getTraceValueD(type);</span>
+<span class="nc bnc" id="L923" title="All 2 branches missed.">		if (value == null)</span>
+<span class="nc" id="L924">			return null;</span>
+<span class="nc" id="L925">		Date start = cube.getRawStartDate();</span>
+<span class="nc bnc" id="L926" title="All 4 branches missed.">		if (start == null || tz == null)</span>
+<span class="nc" id="L927">			return null;</span>
+<span class="nc" id="L928">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L929">		cal.setTime(start);</span>
+<span class="nc" id="L930">		int startMin = cal.get(Calendar.MINUTE);</span>
+<span class="nc" id="L931">		cal.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L932">		cal.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L933">		cal.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L934">		cal.add(Calendar.HOUR_OF_DAY, 1);</span>
+		// Get the absolute position
+<span class="nc" id="L936">		int pos = startMin / 15;</span>
+		// Need figure out how many hours
+<span class="nc" id="L938">		int totalLength = value.length;</span>
+<span class="nc" id="L939">		totalLength -= (pos + 1);</span>
+<span class="nc" id="L940">		int hours = 1;</span>
+<span class="nc" id="L941">		int begin = 0;</span>
+		// if end point is already 3, then firt hour only one point
+<span class="nc bnc" id="L943" title="All 2 branches missed.">		int end = (3 - pos) == 0 ? 3 : (3 - pos);</span>
+<span class="nc bnc" id="L944" title="All 2 branches missed.">		for (; totalLength &gt; 0; totalLength -= 4, hours++)</span>
+			;
+		// Cal each hour
+<span class="nc" id="L947">		double[] result = new double[hours];</span>
+<span class="nc bnc" id="L948" title="All 2 branches missed.">		for (int i = 0; i &lt; hours; i++) {</span>
+<span class="nc" id="L949">			result[i] = TraceUtil.roundDouble(aggregatePeriod(cube, type,</span>
+					begin, end));
+<span class="nc" id="L951">			begin = end + 1;</span>
+<span class="nc bnc" id="L952" title="All 2 branches missed.">			if (begin &gt;= value.length)</span>
+<span class="nc" id="L953">				break;</span>
+<span class="nc" id="L954">			end += 4;</span>
+<span class="nc bnc" id="L955" title="All 2 branches missed.">			end = end &gt;= value.length ? (value.length - 1) : end;</span>
+		}
+<span class="nc" id="L957">		return result;</span>
+	}
+
+	/**
+	 * For verification of Report dump aggregation result
+	 *
+	 * @param TraceCube the cube from which a trace is to be aggregated
+	 * @param traceType the trace to aggregate
+	 * @param day the day on which the aggregation is to be performed
+	 * @param start start time in minutes past midnight on &lt;code&gt;day&lt;/code&gt;
+	 * @param end end time in minutes past midnight on &lt;code&gt;day&lt;/code&gt;
+	 * @param tz the time zone to be used in interpreting &lt;code&gt;day&lt;/code&gt;, &lt;code&gt;start&lt;/code&gt;,
+	 * and &lt;code&gt;end&lt;/code&gt;
+	 * @return double
+	 */
+	public static double aggregatePeriod(TraceCube cube, short traceType, Date day,	int start, int end, TimeZone tz) {
+		// Get midnight first
+<span class="nc" id="L974">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L975">		cal.setTime(day);</span>
+<span class="nc" id="L976">		cal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="nc" id="L977">		cal.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L978">		cal.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L979">		cal.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L980">		cal.add(Calendar.MINUTE, start);</span>
+<span class="nc" id="L981">		Date realStart = cal.getTime();</span>
+<span class="nc" id="L982">		cal.add(Calendar.MINUTE, -start);</span>
+<span class="nc" id="L983">		cal.add(Calendar.MINUTE, end);</span>
+<span class="nc" id="L984">		Date realEnd = cal.getTime();</span>
+<span class="nc" id="L985">		int beginOffSet = TraceUtil.gapOffSet(cube.getStartDate(), cube</span>
+<span class="nc" id="L986">				.getStartOffSet(), realStart);</span>
+<span class="nc" id="L987">		int endOffSet = TraceUtil.gapOffSet(cube.getStartDate(), cube</span>
+<span class="nc" id="L988">				.getStartOffSet(), realEnd);</span>
+<span class="nc" id="L989">		return aggregatePeriod(cube, traceType, beginOffSet, endOffSet);</span>
+	}
+
+
+
+	/*
+	This method will return true only if one or more cubes has missing data for
+	trace type or dependent trace type for given interval.
+	 will not return true if all cubes do not have data for given interval.
+	*/
+	public static boolean flagCombineQueue(TraceCube[] cubes, short type, int offSet,boolean isMultiMedia, Map&lt;ID,ID&gt; queueMediaMap) {
+<span class="fc" id="L1000">		boolean flag = false;</span>
+<span class="fc bfc" id="L1001" title="All 2 branches covered.">		short dependentType[] = getDependentTypeForWeightedAvgForPeriod(type, isMultiMedia ? null : queueMediaMap.get(cubes[0].getQueueID()));</span>
+<span class="fc bfc" id="L1002" title="All 2 branches covered.">		short[] typeArray = new short[(dependentType == null ? 1 : dependentType.length + 1)];</span>
+<span class="fc" id="L1003">		typeArray[0] = type;</span>
+<span class="fc bfc" id="L1004" title="All 2 branches covered.">		if (typeArray.length &gt; 1) {</span>
+<span class="fc" id="L1005">			System.arraycopy(dependentType, 0, typeArray, 1, dependentType.length);</span>
+		}
+<span class="fc bfc" id="L1007" title="All 2 branches covered.">		for (int j = 0; j &lt; typeArray.length; j++) {</span>
+<span class="fc" id="L1008">			int missingValueCount = 0;</span>
+<span class="fc" id="L1009">			type =typeArray[j];</span>
+<span class="pc bpc" id="L1010" title="1 of 4 branches missed.">			if(!isMultiMedia&amp;&amp;!isTraceTypeSupportedForMedia(type, queueMediaMap.get(cubes[0].getQueueID()))){</span>
+<span class="nc" id="L1011">				continue;</span>
+			}
+<span class="fc bfc" id="L1013" title="All 2 branches covered.">			for (int i = 0; i &lt; cubes.length; i++) {</span>
+<span class="fc bfc" id="L1014" title="All 4 branches covered.">				if(isMultiMedia &amp;&amp;!isTraceTypeSupportedForMedia(type, queueMediaMap.get(cubes[i].getQueueID()))){</span>
+<span class="fc" id="L1015">					continue;</span>
+				}
+<span class="fc" id="L1017">				double typeValue = cubes[i].getTraceValueD(typeArray[j], offSet);</span>
+<span class="pc bpc" id="L1018" title="1 of 2 branches missed.">				if (typeValue == Trace.TRACEINCOMP) {</span>
+<span class="nc" id="L1019">					flag = true;</span>
+<span class="nc" id="L1020">					return flag;</span>
+				}
+<span class="fc bfc" id="L1022" title="All 2 branches covered.">				if (!Trace.isValidValue(typeValue)) {</span>
+<span class="fc" id="L1023">					missingValueCount++;</span>
+				}
+			}
+<span class="fc bfc" id="L1026" title="All 4 branches covered.">			if (missingValueCount &gt; 0 &amp;&amp; missingValueCount != cubes.length) {</span>
+<span class="fc" id="L1027">				flag = true;</span>
+<span class="fc" id="L1028">				return flag;</span>
+			}
+		}
+<span class="fc" id="L1031">		return flag;</span>
+	}
+
+    public static boolean flagPeriod(TraceCube cube, short type, int begin, int endOfPeriod, Date now) {
+<span class="nc" id="L1035">        boolean flag = false;</span>
+<span class="nc" id="L1036">        short dependentType[] = getDependentTypeForWeightedAvgForPeriod(type, cube.getQueueID());</span>
+<span class="nc bnc" id="L1037" title="All 2 branches missed.">        short[] typeArray = new short[(dependentType == null ? 1 : dependentType.length + 1)];</span>
+<span class="nc" id="L1038">        typeArray[0] = type;</span>
+<span class="nc bnc" id="L1039" title="All 2 branches missed.">        if (typeArray.length &gt; 1) {</span>
+<span class="nc" id="L1040">            System.arraycopy(dependentType, 0, typeArray, 1, dependentType.length);</span>
+        }
+        //this is done so that we will flag periods only  upto the given time (now)
+<span class="nc" id="L1043">        int cutOffPoint = -1;</span>
+<span class="nc bnc" id="L1044" title="All 2 branches missed.">        if (cube.getEndDate().after(now)) {</span>
+<span class="nc" id="L1045">            cutOffPoint = TraceUtil.gapOffSet(cube.getStartDate(), cube.getStartOffSet(), now) - 1;</span>
+        } else {
+            /*Fix for Bug# 92897 ;for the last day of the last week, the asterisk determination
+              seems to only look at data until a certain time depending on the viewing TimeZone.*/
+            //cutOffPoint = TraceUtil.gapOffSet(cube.getStartDate(), cube.getStartOffSet(), cube.getEndDate());
+<span class="nc" id="L1050">            cutOffPoint = endOfPeriod;</span>
+        }
+<span class="nc bnc" id="L1052" title="All 2 branches missed.">        if (cutOffPoint &lt;= begin) {</span>
+<span class="nc" id="L1053">            return flag;</span>
+        }
+<span class="nc bnc" id="L1055" title="All 4 branches missed.">        endOfPeriod = ((begin &lt; cutOffPoint &amp;&amp; cutOffPoint &lt; endOfPeriod) ? cutOffPoint : endOfPeriod);</span>
+<span class="nc bnc" id="L1056" title="All 2 branches missed.">        for (int j = 0; j &lt; typeArray.length; j++) {</span>
+            /*
+            if(!isTraceTypeSupportedForMedia(typeArray[j], cube.getQueueID())){
+                continue; //ignore checking this dependent type since it is not supported for this media
+            }*/
+<span class="nc" id="L1061">			double[] typeValueArray = cube.getTraceValueD(typeArray[j], begin, endOfPeriod);</span>
+<span class="nc bnc" id="L1062" title="All 6 branches missed.">            if (typeValueArray == null || allNAPoints(typeValueArray) || allOFFPoints(typeValueArray)) {</span>
+<span class="nc bnc" id="L1063" title="All 2 branches missed.">                if (j == 0) {//this is the Primary trace type for which we need to flag period</span>
+<span class="nc" id="L1064">                    flag = false;</span>
+<span class="nc" id="L1065">                    return flag;</span>
+                } else {
+                    continue;
+                }
+            }
+<span class="nc" id="L1070">            boolean foundMissingValue = false;</span>
+<span class="nc bnc" id="L1071" title="All 2 branches missed.">            for (int i = 0; i &lt; typeValueArray.length; i++) {</span>
+<span class="nc bnc" id="L1072" title="All 2 branches missed.">                if (typeValueArray[i] == Trace.TRACEINCOMP) {</span>
+<span class="nc" id="L1073">                    flag = true;</span>
+<span class="nc" id="L1074">                    return flag;</span>
+                }
+<span class="nc bnc" id="L1076" title="All 4 branches missed.">                if (!Trace.isValidValue(typeValueArray[i]) &amp;&amp; (typeValueArray[i] != Trace.TRACEOFF)) {</span>
+<span class="nc" id="L1077">                    foundMissingValue = true;</span>
+                }
+<span class="nc bnc" id="L1079" title="All 4 branches missed.">                if (foundMissingValue &amp;&amp; typeValueArray[i] &gt;= 0) {</span>
+<span class="nc" id="L1080">                    flag = true;</span>
+<span class="nc" id="L1081">                    return flag;</span>
+                }
+            }
+<span class="nc bnc" id="L1084" title="All 4 branches missed.">            if (foundMissingValue &amp;&amp; flag == false) { //check till the end of given trace period to see if there is any problem</span>
+<span class="nc" id="L1085">                typeValueArray = cube.getTraceValueD(typeArray[j], endOfPeriod, cutOffPoint);</span>
+<span class="nc bnc" id="L1086" title="All 2 branches missed.">                for (int i = 0; i &lt; typeValueArray.length; i++) {</span>
+<span class="nc bnc" id="L1087" title="All 4 branches missed.">                    if (typeValueArray[i] == Trace.TRACEINCOMP || typeValueArray[i] &gt;= 0) {</span>
+<span class="nc" id="L1088">                        flag = true;</span>
+<span class="nc" id="L1089">                        return flag;</span>
+                    }
+                }
+            }
+        }
+<span class="nc" id="L1094">        return flag;</span>
+    }
+
+	public static Pair&lt;double[],boolean[]&gt; getHourlyFlags(TraceCube cube, TimeZone tz, short type, Date now) {
+<span class="nc" id="L1098">		double[] typeArray = cube.getTraceValueD(type);</span>
+<span class="nc" id="L1099">		Date start = cube.getRawStartDate();</span>
+<span class="nc bnc" id="L1100" title="All 6 branches missed.">		if (typeArray == null || start == null || tz == null) {</span>
+<span class="nc" id="L1101">			return null;</span>
+		}
+<span class="nc" id="L1103">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L1104">		cal.setTime(start);</span>
+<span class="nc" id="L1105">		int startMin = cal.get(Calendar.MINUTE);</span>
+		// Get the absolute position
+<span class="nc" id="L1107">		int pos = startMin / Trace.INTERVAL;</span>
+		// Need figure out how many hours
+<span class="nc" id="L1109">		int hours = 1;</span>
+<span class="nc" id="L1110">		int totalLength = typeArray.length - (pos + 1);</span>
+<span class="nc bnc" id="L1111" title="All 2 branches missed.">		for (; totalLength &gt; 0; totalLength -= 4, hours++) ;</span>
+<span class="nc" id="L1112">		int begin = 0;</span>
+<span class="nc bnc" id="L1113" title="All 2 branches missed.">		int end = (3 - pos) == 0 ? 3 : (3 - pos);// if end point is already 3, then firt hour only one point</span>
+		//this is done so that we will flag periods only  upto the given time (now)
+		//int cutOffPoint = TraceUtil.gapOffSet(cube.getStartDate(),(short)0, now)-1;
+		// Cal each hour
+<span class="nc" id="L1117">		boolean[] flagArray = new boolean[hours];</span>
+<span class="nc" id="L1118">		double[] valueArray = new double[hours];</span>
+<span class="nc bnc" id="L1119" title="All 2 branches missed.">		for (int i = 0; i &lt; hours; i++) {</span>
+			//flag the period only upto given time ignore valid values after that because they are trended values.
+			//if( cutOffPoint &gt;= end|| (cutOffPoint&lt;end&amp;&amp;cutOffPoint&gt;=begin)){
+<span class="nc" id="L1122">			flagArray[i] = flagPeriod(cube, type, begin, end, now);</span>
+			//}
+<span class="nc" id="L1124">			valueArray[i] = TraceUtil.roundDouble(aggregatePeriod(cube, type, begin, end));</span>
+<span class="nc" id="L1125">			begin = end + 1;</span>
+<span class="nc bnc" id="L1126" title="All 2 branches missed.">			if (begin &gt;= typeArray.length)</span>
+<span class="nc" id="L1127">				break;</span>
+<span class="nc" id="L1128">			end += 4;</span>
+<span class="nc bnc" id="L1129" title="All 2 branches missed.">			end = (end &gt;= typeArray.length ? (typeArray.length - 1) : end);</span>
+		}
+<span class="nc" id="L1131">		Pair&lt;double[],boolean[]&gt; objPair = new Pair&lt;double[],boolean[]&gt;(valueArray, flagArray);</span>
+<span class="nc" id="L1132">		return objPair;</span>
+	}
+
+	//TODO: Make the return type a predefined, immutable set and stop modifying it in the 
+	// client code.
+	public static short[] getDependentTypeForWeightedAvgForPeriod(int type, ID mediaID) {
+<span class="pc bpc" id="L1138" title="1 of 11 branches missed.">		switch (type) {</span>
+			case Trace.ASA:
+			case Trace.SERVICE_GOALS_ASA:
+<span class="fc" id="L1141">				return new short[]{Trace.CV, Trace.ABANDONMENT};</span>
+			case Trace.PCA:
+			case Trace.SERVICE_GOALS_PCA_IMMEDIATE:
+			case Trace.SERVICE_GOALS_PCA_DEFERRED:
+<span class="fc" id="L1145">				return new short[]{Trace.VAR};   //CV for immediate media and VH for deferred</span>
+			case Trace.DEADLINE_TIME:
+			case Trace.SERVICE_GOALS_DEADLINE_TIME:
+<span class="nc" id="L1148">				return new short[]{Trace.CV};</span>
+			case Trace.AHT:
+<span class="pc bpc" id="L1150" title="1 of 4 branches missed.">				if (mediaID == null || mediaID.toInt() == -10) {</span>
+<span class="fc" id="L1151">					return new short[]{Trace.CV_VH, Trace.CONNECTS};</span>
+				} else {
+<span class="fc bfc" id="L1153" title="All 2 branches covered.">					return new short[]{ Media.MEDIA_ID_PHONE_OUTBOUND.equals(mediaID)? Trace.CONNECTS : Trace.CV_VH};</span>
+				}
+			case Trace.OCCUPANCY:
+<span class="fc" id="L1156">				return new short[]{Trace.STAFFING};</span>
+			case Trace.CRATE:
+<span class="fc" id="L1158">				return new short[]{Trace.DIALS};</span>
+			case Trace.RPCAHT:
+<span class="fc" id="L1160">				return new short[]{Trace.RPC};</span>
+			case Trace.RPCRATE:
+<span class="fc" id="L1162">				return new short[]{Trace.DIALS};</span>
+			case Trace.FORECASTING_AHT:
+<span class="pc bpc" id="L1164" title="2 of 4 branches missed.">				if (mediaID == null || mediaID.toInt() == -10) {</span>
+<span class="nc" id="L1165">					return new short[]{Trace.CV_VH, Trace.FORECASTING_CRATE};</span>
+				} else {
+<span class="pc bpc" id="L1167" title="1 of 2 branches missed.">					return new short[]{ Media.MEDIA_ID_PHONE_OUTBOUND.equals(mediaID)? Trace.FORECASTING_CRATE : Trace.CV_VH};</span>
+				}
+			case Trace.FORECASTING_RPCAHT:
+<span class="fc" id="L1170">				return new short[]{Trace.FORECASTING_RPCRATE};</span>
+			default:
+<span class="fc" id="L1172">				return null;</span>
+		}
+	}
+
+	// Can't typesafe this array because you can't create an array of a generic type.
+	// It's really Set&lt;ID&gt;[].  TODO: Maybe use a list or map instead?
+<span class="fc" id="L1178">	private static Object[] traceTypeMediaMatrix = null;</span>
+<span class="fc" id="L1179">	private static HashMap&lt;ID,Object[]&gt; mediaTraceTypeMatrixMap = null; // UNUSED</span>
+
+	public static Object[] getTraceTypeMediaMatrix() {
+		// elingman: I added &quot;facetoface&quot;; usually same traces as &quot;phone&quot;
+		/*
+		 MEDIA_ID_FACETOFACE = new ID(-11);
+         MEDIA_ID_OPERATIONS = new ID(-9);
+         MEDIA_ID_PROJECT = new ID(-8);
+         MEDIA_ID_PHONE_OUTBOUND = new ID(-7);
+		 MEDIA_ID_CALLBACK = new ID(-6);
+		 MEDIA_ID_FAX = new ID(-5);
+		 MEDIA_ID_EMAIL = new ID(-4);
+		 MEDIA_ID_CHAT = new ID(-3);
+		 MEDIA_ID_VOIP = new ID(-2);
+		 MEDIA_ID_PHONE = new ID(-1);
+		 MEDIA_ID_SOCIAL_POST =  new ID(-14);
+		*/
+<span class="fc bfc" id="L1196" title="All 2 branches covered.">		if (traceTypeMediaMatrix == null) {</span>
+<span class="fc" id="L1197">			traceTypeMediaMatrix = new Object[Trace.MAX_TYPE];</span>
+<span class="fc" id="L1198">			mediaTraceTypeMatrixMap = new HashMap&lt;ID, Object[]&gt;();</span>
+<span class="fc" id="L1199">			Map&lt;ID, Set&lt;Short&gt;&gt; mediaTraceTypeScratchMap = new HashMap&lt;ID, Set&lt;Short&gt;&gt;();</span>
+<span class="fc" id="L1200">			String[] traceTypeMediaMatrixStrings = new String[Trace.MAX_TYPE];</span>
+<span class="fc" id="L1201">			traceTypeMediaMatrixStrings[Trace.CV] = &quot;-1,-2,-3,-4,-5,-6,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1202">			traceTypeMediaMatrixStrings[Trace.AHT] = &quot;-1,-2,-3,-4,-5,-6,-7,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1203">			traceTypeMediaMatrixStrings[Trace.PCA] = &quot;-1,-2,-3,-4,-5,-6,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1204">			traceTypeMediaMatrixStrings[Trace.SERVICE_GOALS_PCA_IMMEDIATE] = &quot;-1,-2,-3,-4,-5,-6,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1205">			traceTypeMediaMatrixStrings[Trace.SERVICE_GOALS_PCA_DEFERRED] = &quot;-1,-2,-3,-4,-5,-6,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1206">			traceTypeMediaMatrixStrings[Trace.ASA] = &quot;-1,-2,-3,-4,-5,-6,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1207">			traceTypeMediaMatrixStrings[Trace.SERVICE_GOALS_ASA] = &quot;-1,-2,-3,-4,-5,-6,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1208">			traceTypeMediaMatrixStrings[Trace.ABANDONMENT] = &quot;-1,-2,-3,-7,-11&quot;;</span>
+<span class="fc" id="L1209">			traceTypeMediaMatrixStrings[Trace.BACKLOG] = &quot;-4,-5,-6,-7,-9,-13,-14&quot;;</span>
+<span class="fc" id="L1210">			traceTypeMediaMatrixStrings[Trace.STAFFING] = &quot;-1,-2,-3,-4,-5,-6,-7,-8,-9,-11,-13,14&quot;;</span>
+<span class="fc" id="L1211">			traceTypeMediaMatrixStrings[Trace.OCCUPANCY] = &quot;-1,-2,-3,-4,-5,-6,-7,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1212">			traceTypeMediaMatrixStrings[Trace.FTE] = &quot;-1,-2,-3,-4,-5,-6,-7,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1213">			traceTypeMediaMatrixStrings[Trace.DIALS] = &quot;-7&quot;;</span>
+<span class="fc" id="L1214">			traceTypeMediaMatrixStrings[Trace.CONNECTS] = &quot;-7&quot;;</span>
+<span class="fc" id="L1215">			traceTypeMediaMatrixStrings[Trace.CRATE] = &quot;-7&quot;;</span>
+<span class="fc" id="L1216">			traceTypeMediaMatrixStrings[Trace.RPC] = &quot;-7&quot;;</span>
+<span class="fc" id="L1217">			traceTypeMediaMatrixStrings[Trace.RPCRATE] = &quot;-7&quot;;</span>
+<span class="fc" id="L1218">			traceTypeMediaMatrixStrings[Trace.RPCAHT] = &quot;-7&quot;;</span>
+<span class="fc" id="L1219">			traceTypeMediaMatrixStrings[Trace.VH] = &quot;-1,-2,-3,-4,-5,-6,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1220">			traceTypeMediaMatrixStrings[Trace.VAR] = &quot;-1,-2,-3,-4,-5,-6,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1221">			traceTypeMediaMatrixStrings[Trace.CV_VH] = &quot;-1,-2,-3,-4,-5,-6,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1222">			traceTypeMediaMatrixStrings[Trace.DEADLINE_TIME] = &quot;-4,-5,-6,-9,-13,-14&quot;;</span>
+<span class="fc" id="L1223">			traceTypeMediaMatrixStrings[Trace.SERVICE_GOALS_DEADLINE_TIME] = &quot;-4,-5,-6,-9,-13,-14&quot;;</span>
+<span class="fc" id="L1224">			traceTypeMediaMatrixStrings[Trace.FORECASTING_CRATE] = &quot;-7&quot;;</span>
+<span class="fc" id="L1225">			traceTypeMediaMatrixStrings[Trace.FORECASTING_AHT] = &quot;-1,-2,-3,-4,-5,-6,-7,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1226">			traceTypeMediaMatrixStrings[Trace.FORECASTING_RPCRATE] = &quot;-7&quot;;</span>
+<span class="fc" id="L1227">			traceTypeMediaMatrixStrings[Trace.FORECASTING_RPCAHT] = &quot;-7&quot;;</span>
+<span class="fc" id="L1228">			traceTypeMediaMatrixStrings[Trace.MAX_DIALS] = &quot;-7&quot;;</span>
+<span class="fc" id="L1229">			traceTypeMediaMatrixStrings[Trace.ASTAFFING] = &quot;-1,-2,-3,-4,-5,-6,-7,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1230">			traceTypeMediaMatrixStrings[Trace.AFTE] = &quot;-1,-2,-3,-4,-5,-6,-7,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1231">			traceTypeMediaMatrixStrings[Trace.NETSTAFFING] = &quot;-1,-2,-3,-4,-5,-6,-7,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc" id="L1232">			traceTypeMediaMatrixStrings[Trace.OVER_UNDER] = &quot;-1,-2,-3,-4,-5,-6,-7,-8,-9,-11,-13,-14&quot;;</span>
+<span class="fc bfc" id="L1233" title="All 2 branches covered.">			for (short i = 0; i &lt; traceTypeMediaMatrixStrings.length; i++) {</span>
+<span class="fc" id="L1234">				Set&lt;ID&gt; mediaSet = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L1235">				StringTokenizer st = new StringTokenizer(traceTypeMediaMatrixStrings[i], &quot;,&quot;);</span>
+<span class="fc bfc" id="L1236" title="All 2 branches covered.">				while (st.hasMoreTokens()) {</span>
+<span class="fc" id="L1237">					ID mediaID = new ID(Integer.parseInt(st.nextToken()));</span>
+<span class="fc" id="L1238">					mediaSet.add(mediaID);</span>
+<span class="fc" id="L1239">					Set&lt;Short&gt; traceTypeSet = mediaTraceTypeScratchMap.get(mediaID);</span>
+<span class="fc bfc" id="L1240" title="All 2 branches covered.">					if (traceTypeSet == null) {</span>
+<span class="fc" id="L1241">						traceTypeSet = new HashSet&lt;Short&gt;();</span>
+<span class="fc" id="L1242">						mediaTraceTypeScratchMap.put(mediaID, traceTypeSet);</span>
+					}
+<span class="fc" id="L1244">					traceTypeSet.add(new Short(i));</span>
+<span class="fc" id="L1245">				}</span>
+<span class="fc" id="L1246">				traceTypeMediaMatrix[i] = mediaSet;</span>
+			}
+<span class="fc" id="L1248">			Set&lt;ID&gt; mediaSet = mediaTraceTypeScratchMap.keySet();</span>
+<span class="fc bfc" id="L1249" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; iterator = mediaSet.iterator(); iterator.hasNext();) {</span>
+<span class="fc" id="L1250">				ID mediaID = iterator.next();</span>
+<span class="fc" id="L1251">				Set&lt;Short&gt; traceTypeSet = mediaTraceTypeScratchMap.get(mediaID);</span>
+<span class="fc" id="L1252">				mediaTraceTypeMatrixMap.put(mediaID, traceTypeSet.toArray());</span>
+<span class="fc" id="L1253">			}</span>
+		}
+<span class="fc" id="L1255">		return traceTypeMediaMatrix;</span>
+	}
+
+	//TODO: Change traceType to short.
+	public static boolean isTraceTypeSupportedForMedia(int traceType, ID mediaID) {
+<span class="fc" id="L1260">		getTraceTypeMediaMatrix();</span>
+<span class="pc bpc" id="L1261" title="1 of 4 branches missed.">		if (mediaID == null || mediaID.toInt() == -10) {    //always return true for combined media</span>
+<span class="fc" id="L1262">			return true;</span>
+		}
+<span class="fc" id="L1264">		return ((Set) traceTypeMediaMatrix[traceType]).contains(mediaID);</span>
+	}
+
+	/**
+	 * Combine function to aggregate Trace values based on Trace Type for multiple
+	 * queues.  Assumes all TraceCubes have the same starting point.  Used in multi-queue
+	 * combined mode, mainly in Tracking/Forecast View.
+	 *
+	 * @param cubes the trace cubes to be combined
+	 * @param needAllValid if true then at any time where any constituent value
+	 *  is invalid the combined value at that time will be Trace.TRACENA.
+	 * @param queueMediaMap a map from trace cube ID to media ID
+	 * @return TraceCube a TraceCube whose runtime class is the same as that of the first element
+	 * of the &lt;code&gt;cubes&lt;/code&gt; array, and that contains the aggregates of the traces contained
+	 * in the &lt;code&gt;cubes&lt;/code&gt; array.
+	 */
+	public static TraceCube combineQueue(TraceCube[] cubes, boolean needAllValid, Map&lt;ID,ID&gt; queueMediaMap) throws BbmTimeSeriesException {
+		// Validation check and get the combined queue TraceCube
+<span class="fc" id="L1282">		TraceCube tc = TraceUtil.validateTraceCubes(cubes);</span>
+<span class="pc bpc" id="L1283" title="1 of 2 branches missed.">		if (tc == null) {</span>
+<span class="nc" id="L1284">			return null;</span>
+		}
+<span class="fc" id="L1286">		short[] types = tc.getTraceTypes();</span>
+<span class="fc bfc" id="L1287" title="All 2 branches covered.">		if (tc instanceof AggrRequiredTraceCube) {// special handle AggrRequireTraceCube</span>
+<span class="pc bpc" id="L1288" title="1 of 2 branches missed.">			if (((AggrRequiredTraceCube) tc).getForecastTrace() != null) {</span>
+<span class="fc" id="L1289">				short[] nTypes = new short[types.length + 2];// Add CV &amp; VAR in addition to existing types</span>
+<span class="fc" id="L1290">				nTypes[0] = Trace.CV;</span>
+<span class="fc" id="L1291">				nTypes[1] = Trace.VAR;</span>
+<span class="fc" id="L1292">				System.arraycopy(types, 0, nTypes, 2, types.length);</span>
+<span class="fc" id="L1293">				types = nTypes;</span>
+			}
+		}
+		// Check if combine operation required types are existent or not
+<span class="fc" id="L1297">		HashSet&lt;ID&gt; mediaSet = new HashSet&lt;ID&gt;(queueMediaMap.values());</span>
+<span class="pc bpc" id="L1298" title="1 of 4 branches missed.">		boolean isMultiMedia = (mediaSet == null || mediaSet.size() != 1);</span>
+<span class="fc" id="L1299">		int size = tc.getMaximumLength(types);</span>
+<span class="fc bfc" id="L1300" title="All 2 branches covered.">		for (int k = 0; k &lt; types.length; k++) {</span>
+<span class="fc" id="L1301">			short traceType = types[k];</span>
+<span class="fc bfc" id="L1302" title="All 4 branches covered.">			if (isMultiMedia || isTraceTypeSupportedForMedia(traceType, (ID) mediaSet.toArray()[0])) {</span>
+<span class="fc" id="L1303">				AggregationType aggregationType = getAggregationTypeForQueueCombination(traceType, cubes[0].isRequiredData());</span>
+<span class="fc bfc" id="L1304" title="All 2 branches covered.">				short[] dependentTypeArray = getDependentTypeForWeightedAvgForPeriod(traceType, (!isMultiMedia ? (ID) mediaSet.toArray()[0] : null));</span>
+<span class="fc" id="L1305">				double[] result = new double[size];</span>
+<span class="fc bfc" id="L1306" title="All 2 branches covered.">				if (cubes.length == 1) {</span>
+<span class="fc" id="L1307">					result = cubes[0].getTraceValueD(traceType);</span>
+				} else {
+<span class="fc bfc" id="L1309" title="All 2 branches covered.">					for (int j = 0; j &lt; size; j++) {</span>
+<span class="fc" id="L1310">						double val = combineQueue(cubes, traceType, j, needAllValid, queueMediaMap, isMultiMedia, dependentTypeArray, aggregationType);</span>
+<span class="fc" id="L1311">						result[j] = TraceUtil.roundDouble(val);</span>
+					}
+				}
+<span class="fc" id="L1314">				tc.setTraceValue(traceType, result);</span>
+<span class="fc" id="L1315">			} else {</span>
+<span class="fc" id="L1316">				tc.initTraceValue(traceType, Trace.TRACENA);</span>
+			}
+		}
+<span class="fc" id="L1319">		return tc;</span>
+	}
+
+    /**
+     * this method returns true if the trace type is supported for combining indvl queues to get value for the combined queue.
+     * right now Occupancy and staffing are not supported for combining of indvl queues since they are derived from staffing calculator.
+     *
+     * @param type
+     * @return
+     */
+    public static boolean isTraceTypeSupportedForCombined(short type) {
+<span class="fc bfc" id="L1330" title="All 2 branches covered.">        switch (type) {</span>
+            case Trace.OCCUPANCY:
+            case Trace.STAFFING:
+			case Trace.NETSTAFFING:
+<span class="fc" id="L1334">                return false;</span>
+            default:
+<span class="fc" id="L1336">                return true;</span>
+        }
+    }
+
+	private static double combineQueue(
+			TraceCube[] cubes,
+			short traceType,
+			int offSet,
+			boolean needAllValid,
+			Map&lt;ID,ID&gt; queueMediaMap,
+			boolean isMultiMedia,
+			short dependentTypeArray[],
+			AggregationType aggregationType) {
+
+        // check if the trace type is supported for combining of individual queues.
+<span class="fc bfc" id="L1351" title="All 2 branches covered.">        if (!isTraceTypeSupportedForCombined(traceType)) {</span>
+<span class="fc" id="L1352">            return Trace.TRACENA;</span>
+        }
+        // check whether the aggregation type supports combining
+<span class="pc bpc" id="L1355" title="1 of 2 branches missed.">        if ( ! aggregationType.supportsCombine() )</span>
+        {
+<span class="nc" id="L1357">        	return Trace.TRACENA;</span>
+        }
+		// check for holes; i.e. missing value in one or more Queues (but not all) for given trace interval
+<span class="fc bfc" id="L1360" title="All 4 branches covered.">		if (needAllValid&amp;&amp; flagCombineQueue(cubes, traceType, offSet, isMultiMedia, queueMediaMap)) {</span>
+<span class="fc" id="L1361">			return Trace.TRACEINCOMP;</span>
+		}
+<span class="fc" id="L1363">        double result = Trace.TRACENA;</span>
+<span class="fc" id="L1364">        double weightedSum = Trace.TRACENA;</span>
+        // The sum of valid values
+<span class="fc" id="L1366">		double sum = Trace.TRACENA;</span>
+		// The number of value values
+<span class="fc" id="L1368">		int counter = 0;</span>
+<span class="fc" id="L1369">		double dependTypeValSum = Trace.TRACENA;</span>
+
+<span class="fc bfc" id="L1371" title="All 2 branches covered.">		for (int i = 0; i &lt; cubes.length; i++) {</span>
+<span class="fc bfc" id="L1372" title="All 4 branches covered.">			if (isMultiMedia &amp;&amp; !isTraceTypeSupportedForMedia(traceType, queueMediaMap.get(cubes[i].getQueueID()))) {</span>
+<span class="fc" id="L1373">				continue;</span>
+			}
+<span class="fc" id="L1375">			double value = cubes[i].getTraceValueD(traceType, offSet);</span>
+<span class="fc bfc" id="L1376" title="All 2 branches covered.">			if (!Trace.isValidValue(value)) {</span>
+				// Hours of operation are defined per SP so if one queue is off at this time,
+				// they'll all be off.
+<span class="pc bpc" id="L1379" title="1 of 2 branches missed.">				if (value == Trace.TRACEOFF) {</span>
+<span class="nc" id="L1380">					return Trace.TRACEOFF;</span>
+<span class="fc bfc" id="L1381" title="All 2 branches covered.">				} else if (needAllValid) {</span>
+<span class="fc" id="L1382">					return Trace.TRACENA;</span>
+				} else {
+					continue; // where all valid points are not needed
+				}
+			}
+
+<span class="fc bfc" id="L1388" title="All 2 branches covered.">			sum = (sum == Trace.TRACENA ? 0 : sum);</span>
+<span class="fc" id="L1389">			counter++;</span>
+<span class="fc bfc" id="L1390" title="All 4 branches covered.">			if ((aggregationType != AggregationType.SIMPLE_AVERAGE_EXCLUDE_ZEROS) || (value &gt; 0))</span>
+			{
+<span class="fc" id="L1392">				sum += value;</span>
+			}
+
+<span class="fc bfc" id="L1395" title="All 2 branches covered.">			if (aggregationType.isWeightedAverage()) {</span>
+<span class="fc" id="L1396">				double depValSum = Trace.TRACENA;</span>
+<span class="fc bfc" id="L1397" title="All 2 branches covered.">				for (int j = 0; j &lt; dependentTypeArray.length; j++) {</span>
+<span class="fc bfc" id="L1398" title="All 4 branches covered.">					if (isMultiMedia &amp;&amp; !isTraceTypeSupportedForMedia(dependentTypeArray[j], queueMediaMap.get(cubes[i].getQueueID()))) {</span>
+<span class="fc" id="L1399">						continue;</span>
+					}
+<span class="fc" id="L1401">					double dependentVal = cubes[i].getTraceValueD(dependentTypeArray[j], offSet);</span>
+<span class="fc bfc" id="L1402" title="All 2 branches covered.">					if (dependentVal &gt;= 0) {</span>
+<span class="pc bpc" id="L1403" title="2 of 8 branches missed.">						if (aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT ||</span>
+							aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS ||
+							aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT ||
+							aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS) {//Special condition for ASA
+<span class="fc" id="L1407">							double cv = cubes[i].getTraceValueD(Trace.CV, offSet);</span>
+<span class="pc bpc" id="L1408" title="1 of 2 branches missed.">							if (cv &lt; 0) { //CV always need to be present</span>
+<span class="nc" id="L1409">								return Trace.TRACENA;</span>
+							}
+<span class="pc bpc" id="L1411" title="2 of 4 branches missed.">							if (aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT ||</span>
+								aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS) {
+<span class="nc" id="L1413">								double abn = cubes[i].getTraceValueD(Trace.ABANDONMENT, offSet); //Special condition for ASA where SUM (CV-ABN)*ASA/(SUM(CV-ABN)</span>
+<span class="nc bnc" id="L1414" title="All 2 branches missed.">								depValSum = (abn &lt; 0? Trace.TRACENA : cv * (100 - abn));</span>
+<span class="nc" id="L1415">								break;</span>
+							} else {
+<span class="fc bfc" id="L1417" title="All 2 branches covered.">								depValSum = (depValSum == Trace.TRACENA ? dependentVal : Math.abs(depValSum - dependentVal)); //Special condition for ASA where SUM (CV-ABN)*ASA/(SUM(CV-ABN)</span>
+							}
+<span class="fc" id="L1419">						} else {</span>
+<span class="pc bpc" id="L1420" title="1 of 2 branches missed.">							depValSum = (depValSum == Trace.TRACENA ? dependentVal : (depValSum + dependentVal)); //assign val if not already intialized else sum it</span>
+						}
+					}
+				}
+<span class="fc bfc" id="L1424" title="All 2 branches covered.">				if (!Trace.isValidValue(depValSum)) {</span>
+<span class="pc bpc" id="L1425" title="1 of 2 branches missed.">					if (needAllValid) {</span>
+<span class="fc" id="L1426">						return Trace.TRACENA;</span>
+					} else {
+						continue; // where all valid points are not needed
+					}
+				}
+<span class="fc bfc" id="L1431" title="All 2 branches covered.">				weightedSum = (weightedSum == Trace.TRACENA ? 0 : weightedSum) + (depValSum * value);</span>
+<span class="fc bfc" id="L1432" title="All 2 branches covered.">				dependTypeValSum = (dependTypeValSum == Trace.TRACENA ? 0 : dependTypeValSum) + depValSum;</span>
+			}
+		}
+<span class="fc bfc" id="L1435" title="All 2 branches covered.">		if (aggregationType.isWeightedAverage()) {</span>
+<span class="fc bfc" id="L1436" title="All 4 branches covered.">			if (weightedSum &gt;= 0 &amp;&amp; dependTypeValSum &gt; 0) {</span>
+<span class="fc" id="L1437">				result = weightedSum / dependTypeValSum;</span>
+<span class="pc bpc" id="L1438" title="1 of 2 branches missed.">			} else if (dependTypeValSum &lt;= 0 &amp;&amp;</span>
+<span class="fc bfc" id="L1439" title="All 4 branches covered.">					   aggregationType.isSimpleAverageIfNoWeights() &amp;&amp;</span>
+					   counter &gt; 0) {
+<span class="fc" id="L1441">				result = sum / counter;</span>
+<span class="pc bpc" id="L1442" title="1 of 4 branches missed.">			} else if (weightedSum == 0 &amp;&amp; dependTypeValSum == 0){</span>
+<span class="fc" id="L1443">				result = 0;</span>
+			}
+<span class="pc bpc" id="L1445" title="1 of 4 branches missed.">		} else if (aggregationType == AggregationType.SIMPLE_AVERAGE || aggregationType == AggregationType.SIMPLE_AVERAGE_EXCLUDE_ZEROS) {</span>
+<span class="pc bpc" id="L1446" title="1 of 2 branches missed.">			if (counter &gt; 0) {</span>
+<span class="fc" id="L1447">				result = sum / counter;</span>
+			}
+<span class="pc bpc" id="L1449" title="1 of 2 branches missed.">		} else if (aggregationType == AggregationType.SUM) {</span>
+<span class="fc" id="L1450">			result = sum;</span>
+		}
+<span class="fc" id="L1452">		return result;</span>
+	}
+
+	// Trace type might be represented better as an enum, and the aggregation type
+	// could be queried directly from each enum value.
+	public static AggregationType getAggregationTypeForQueueCombination(short traceType, boolean isRequiredData) {
+<span class="pc bpc" id="L1458" title="2 of 8 branches missed.">		switch (traceType) {</span>
+			case Trace.CV:
+			case Trace.ABANDONMENT:
+			case Trace.STAFFING:
+			case Trace.FTE:
+			case Trace.DIALS:
+			case Trace.CONNECTS:
+			case Trace.RPC:
+			case Trace.VH:
+			case Trace.VAR:
+			case Trace.CV_VH:
+			case Trace.BACKLOG:
+			case Trace.ASTAFFING:
+			case Trace.AFTE:
+			case Trace.NETSTAFFING:
+<span class="fc" id="L1473">				return AggregationType.SUM;</span>
+			case Trace.FORECASTING_CRATE:
+			case Trace.FORECASTING_RPCRATE:
+<span class="fc" id="L1476">				return AggregationType.SIMPLE_AVERAGE_EXCLUDE_ZEROS;</span>
+			case Trace.MAX_DIALS:	
+<span class="nc" id="L1478">				return AggregationType.SIMPLE_AVERAGE;</span>
+			case Trace.PCA:
+			case Trace.AHT:
+			case Trace.FORECASTING_AHT:
+			case Trace.OCCUPANCY:
+			case Trace.CRATE:
+			case Trace.RPCRATE:
+			case Trace.RPCAHT:
+			case Trace.FORECASTING_RPCAHT:
+<span class="fc" id="L1487">				return AggregationType.WEIGHTED_AVERAGE;</span>
+			case Trace.ASA:
+<span class="fc bfc" id="L1489" title="All 2 branches covered.">				return isRequiredData ? AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT :</span>
+										AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT;
+			case Trace.SERVICE_GOALS_PCA_IMMEDIATE:
+			case Trace.SERVICE_GOALS_PCA_DEFERRED:
+			case Trace.DEADLINE_TIME:
+			case Trace.SERVICE_GOALS_DEADLINE_TIME:
+<span class="fc" id="L1495">				return AggregationType.WEIGHTED_AVERAGE_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS;</span>
+			case Trace.SERVICE_GOALS_ASA:
+<span class="pc bpc" id="L1497" title="1 of 2 branches missed.">				return isRequiredData ? AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS :</span>
+										AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS;
+		}
+<span class="nc" id="L1500">		return AggregationType.SUM;</span>
+	}
+
+	// Trace type might be represented better as an enum, and the aggregation type
+	// could be queried directly from each enum value.
+	public static AggregationType getAggregationTypeForTimeAggregation(short traceType, boolean isRequiredData) {
+<span class="nc bnc" id="L1506" title="All 8 branches missed.">		switch (traceType) {</span>
+			case Trace.CV:
+			case Trace.ABANDONMENT:
+			case Trace.STAFFING:
+			case Trace.FTE:
+			case Trace.DIALS:
+			case Trace.CONNECTS:
+			case Trace.RPC:
+			case Trace.VH:
+			case Trace.VAR:
+			case Trace.CV_VH:
+			case Trace.ASTAFFING:
+			case Trace.AFTE:
+			case Trace.NETSTAFFING:
+<span class="nc" id="L1520">				return AggregationType.SUM;</span>
+			case Trace.FORECASTING_CRATE:
+			case Trace.FORECASTING_RPCRATE:
+			case Trace.MAX_DIALS:
+<span class="nc" id="L1524">				return AggregationType.SIMPLE_AVERAGE;</span>
+			case Trace.BACKLOG:
+<span class="nc" id="L1526">				return AggregationType.LAST_VALID_VALUE;</span>
+			case Trace.PCA:
+			case Trace.AHT:
+			case Trace.FORECASTING_AHT:
+			case Trace.OCCUPANCY:
+			case Trace.CRATE:
+			case Trace.RPCRATE:
+			case Trace.RPCAHT:
+			case Trace.FORECASTING_RPCAHT:
+<span class="nc" id="L1535">				return AggregationType.WEIGHTED_AVERAGE;</span>
+			case Trace.ASA:
+<span class="nc bnc" id="L1537" title="All 2 branches missed.">				return isRequiredData ? AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT:</span>
+										AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT;
+			case Trace.SERVICE_GOALS_PCA_IMMEDIATE:
+			case Trace.SERVICE_GOALS_PCA_DEFERRED:
+			case Trace.DEADLINE_TIME:
+			case Trace.SERVICE_GOALS_DEADLINE_TIME:
+<span class="nc" id="L1543">				return AggregationType.WEIGHTED_AVERAGE_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS;</span>
+			case Trace.SERVICE_GOALS_ASA:
+<span class="nc bnc" id="L1545" title="All 2 branches missed.">				return isRequiredData ? AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS:</span>
+										AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS;
+		}
+<span class="nc" id="L1548">		return AggregationType.SUM;</span>
+	}
+	
+	/**
+	 * Returns the aggregate value of the specified trace over the specified interval.
+	 * &lt;p&gt;
+	 * The result is not necessarily an integer.  If an integer value is desired
+	 * use TraceUtil.roundDouble to round the value to an integer.
+	 *
+	 * @param TraceCube cube
+	 * @param traceType the trace to aggregate within the cube
+	 * @param begin interval start point
+	 * @param end interval end point
+	 * @return the aggregate value for the specified period.  This value is not necessarily integral.  If
+	 * an integer value is desired use TraceUtil.roundDouble to round the value to an integer.
+	 */
+	public static double aggregatePeriod(TraceCube cube, short traceType, int begin, int end) {
+<span class="nc" id="L1565">		return aggregatePeriod(cube, traceType, begin, end, null);</span>
+	}
+	public static double aggregatePeriod(TraceCube cube, short traceType, int end, boolean[] excPoints) {
+<span class="nc" id="L1568">		return aggregatePeriod(cube, traceType, 0, end, excPoints);</span>
+	}
+	public static double aggregatePeriod(TraceCube cube, short traceType, int begin, int end, boolean[] excPoints) {
+		/*
+		if (!isTraceTypeSupportedForMedia(type, cube.getQueueID())) {
+			return Trace.TRACENA;
+		}*/
+<span class="nc bnc" id="L1575" title="All 2 branches missed.">		if (begin == end) {</span>
+<span class="nc" id="L1576">			return cube.getTraceValueD(traceType, begin);</span>
+		}
+<span class="nc" id="L1578">		double[] valueArray = cube.getTraceValueD(traceType, begin, end);</span>
+<span class="nc bnc" id="L1579" title="All 4 branches missed.">		if (valueArray == null || allNAPoints(valueArray)) {</span>
+<span class="nc" id="L1580">			return Trace.TRACENA;</span>
+<span class="nc bnc" id="L1581" title="All 2 branches missed.">		} else if (allOFFPoints(valueArray)) {</span>
+<span class="nc" id="L1582">			return Trace.TRACEOFF;</span>
+		}
+<span class="nc" id="L1584">		double dependentValueArrays[][] = null;</span>
+<span class="nc" id="L1585">		short[] dependentTypeArray = null;</span>
+<span class="nc" id="L1586">		AggregationType aggregationType = getAggregationTypeForTimeAggregation(traceType, cube.isRequiredData());</span>
+<span class="nc bnc" id="L1587" title="All 2 branches missed.">		if (aggregationType.isWeightedAverage())</span>
+		{
+<span class="nc" id="L1589">			HashMap&lt;ID,ID&gt; queueMediaMap = new HashMap&lt;ID,ID&gt;(); // getMediaForQueues(new TraceCube[]{cube}); TODO: replace this with actual call to get medias</span>
+<span class="nc" id="L1590">			dependentTypeArray = getDependentTypeForWeightedAvgForPeriod(traceType, queueMediaMap.get(cube.getQueueID()));</span>
+<span class="nc" id="L1591">			dependentValueArrays = new double[dependentTypeArray.length][valueArray.length];</span>
+<span class="nc bnc" id="L1592" title="All 2 branches missed.">			for (int j = 0; j &lt; dependentTypeArray.length; j++) {</span>
+<span class="nc" id="L1593">				dependentValueArrays[j] = cube.getTraceValueD(dependentTypeArray[j], begin, end);</span>
+			}
+		}
+<span class="nc" id="L1596">		double result = aggregateArrayD(valueArray, aggregationType, dependentValueArrays, excPoints);</span>
+		//TODO: This sort of thing belongs in the client code, not in a foundational calculation.
+		// The word &quot;display&quot; in a foundation calculation is something of a red flag.
+		// Special handling for Staffing &amp; FTE,
+		// We need to display hourly aggregation (instead of 15 min) after summation.
+		// Sum(Staffing)/4; To obtain Hourly Staffing if valueArray.length &gt;= 4,else just valueArray.length
+		// This code is affecting the scalePeriodTraceWithDistribution method.  Please see the comments in that
+		// method to see how it is impacted.
+<span class="nc bnc" id="L1604" title="All 12 branches missed.">		if (Trace.isValidValue(result)&amp;&amp;(traceType == Trace.FTE || traceType == Trace.STAFFING||traceType == Trace.AFTE || traceType == Trace.ASTAFFING || traceType== Trace.NETSTAFFING)){</span>
+<span class="nc bnc" id="L1605" title="All 2 branches missed.">			return result / (valueArray.length &gt; Trace.HOURPOINTS ? Trace.HOURPOINTS : valueArray.length);</span>
+		}
+<span class="nc" id="L1607">		return result;</span>
+	}
+
+	/**
+	 * Performs the actual work of aggregation.  This method could potentially be reused for
+	 * combining queues as well.
+	 *
+	 * @param sourceValues
+	 * @param aggregationType
+	 * @param dependentValueArrays
+	 * @param excPoints
+	 * @return
+	 */
+	// TODO: There is huge duplication between this method and code in TraceDistributionBuilder.
+	// Need to determine if this code is even needed any more or if we can use TraceDistributionBuilder
+	// exclusively.
+	public static double aggregateArray(
+			int[] sourceValues,
+			AggregationType aggregationType,
+			int[][] dependentValueArrays,
+			boolean[] excPoints) {
+
+<span class="nc" id="L1629">		double result = Trace.TRACENA;</span>
+<span class="nc" id="L1630">		double weightedSum = Trace.TRACENA;</span>
+<span class="nc" id="L1631">		double sum = Trace.TRACENA;</span>
+<span class="nc" id="L1632">		int counter = 0;</span>
+<span class="nc" id="L1633">		double dependTypeValSum = Trace.TRACENA;</span>
+<span class="nc" id="L1634">		double lastValidBacklogBucketValue = Trace.TRACENA;</span>
+
+<span class="nc bnc" id="L1636" title="All 2 branches missed.">		for (int i = 0; i &lt; sourceValues.length; i++) {</span>
+<span class="nc bnc" id="L1637" title="All 6 branches missed.">			if (!Trace.isValidValue(sourceValues[i]) || (excPoints != null &amp;&amp; excPoints[i])) {</span>
+				// only aggregate for points that are valid &amp;  should not be excluded
+<span class="nc" id="L1639">				continue;</span>
+			}
+<span class="nc" id="L1641">			counter++; //always increment for valid values.</span>
+<span class="nc bnc" id="L1642" title="All 2 branches missed.">			sum = (sum == Trace.TRACENA ? 0 : sum) + sourceValues[i];</span>
+<span class="nc bnc" id="L1643" title="All 2 branches missed.">			if (aggregationType.isWeightedAverage()) {</span>
+<span class="nc" id="L1644">				int depValSum = Trace.TRACENA;</span>
+<span class="nc bnc" id="L1645" title="All 2 branches missed.">				for (int j = 0; j &lt; dependentValueArrays.length; j++) {</span>
+<span class="nc bnc" id="L1646" title="All 4 branches missed.">					if (dependentValueArrays[j] == null || dependentValueArrays[j].length &lt; i) {</span>
+<span class="nc" id="L1647">						continue;</span>
+					}
+<span class="nc" id="L1649">					int dependentVal = dependentValueArrays[j][i];</span>
+<span class="nc bnc" id="L1650" title="All 2 branches missed.">					if (!Trace.isValidValue(dependentVal)) {</span>
+<span class="nc" id="L1651">						continue;</span>
+					}
+<span class="nc bnc" id="L1653" title="All 8 branches missed.">					if (aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT ||</span>
+							aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS ||
+							aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT ||
+							aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS) {//Special condition for ASA ( has CV at j=0 and ABN at J=1)
+<span class="nc" id="L1657">						int cv = dependentValueArrays[0][i];</span>
+<span class="nc bnc" id="L1658" title="All 2 branches missed.">						if (dependentValueArrays[1] != null) {</span>
+							// If abandonment is available as a time series, it is used to
+							// modify volume either by subtracting absolute numbers (abandonment
+							// count) or by subtracting a percentage of volume (abandonment
+							// percentage).
+<span class="nc" id="L1663">							int abn = dependentValueArrays[1][i];</span>
+<span class="nc bnc" id="L1664" title="All 4 branches missed.">							if (aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT ||</span>
+									aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS) {
+<span class="nc bnc" id="L1666" title="All 4 branches missed.">								depValSum = (cv &lt; 0 || abn &lt; 0) ? Trace.TRACENA : cv * (100 - abn);//Special condition for ASA where SUM (CV-ABN)*ASA/(SUM(CV-ABN)</span>
+							} else {
+<span class="nc bnc" id="L1668" title="All 2 branches missed.">								abn = (abn &lt; 0) ? 0 : abn; //ESR#4232092: Abandons don't apply to Operations media, so the aggregation should only weigh on CV when ABN is null.</span>
+<span class="nc bnc" id="L1669" title="All 4 branches missed.">								depValSum = (cv &lt; 0 || abn &lt; 0) ? Trace.TRACENA : cv - abn;</span>
+							}
+<span class="nc" id="L1671">						} else {</span>
+							// If abandonment is not available as a time series, it must be
+							// constant across time and therefore does not influence weighting.
+<span class="nc" id="L1674">							depValSum = cv;</span>
+						}
+						// Because ASA weighting is handled as a special case, we break out
+						// of the summation loop with an explicitly computed weight sum.
+<span class="nc" id="L1678">						break;</span>
+					} else {
+<span class="nc bnc" id="L1680" title="All 2 branches missed.">						depValSum = (depValSum == Trace.TRACENA ? dependentVal : (depValSum + dependentVal)); //assign val if not already initialized else sum it</span>
+					}
+				}
+<span class="nc bnc" id="L1683" title="All 2 branches missed.">				if (depValSum &lt; 0) {           //ignore values less than Zero</span>
+<span class="nc" id="L1684">					continue;</span>
+				}
+<span class="nc bnc" id="L1686" title="All 2 branches missed.">				weightedSum = (weightedSum == Trace.TRACENA ? 0 : weightedSum) + (depValSum * sourceValues[i]);</span>
+<span class="nc bnc" id="L1687" title="All 2 branches missed.">				dependTypeValSum = (dependTypeValSum == Trace.TRACENA ? 0 : dependTypeValSum) + depValSum;</span>
+<span class="nc bnc" id="L1688" title="All 2 branches missed.">			} else if (aggregationType == AggregationType.LAST_VALID_VALUE) {</span>
+				// Finding the last block's value. In each iteration, this value will be
+				// overwritten by the new valid value. This way, we will have the last valid
+				// value at the end of the iteration. Doing this step as there could invalid
+				// values towards the end and we need to identify the last valid value.
+<span class="nc" id="L1693">				lastValidBacklogBucketValue = sourceValues[i];</span>
+			}
+		}
+
+<span class="nc" id="L1697">		result = aggregateSum(sum, weightedSum, dependTypeValSum, lastValidBacklogBucketValue, counter, aggregationType);</span>
+
+<span class="nc" id="L1699">		return result;</span>
+	}
+
+	/**
+	 * Returns the aggregate value of the specified trace over the specified interval, with Double precision.
+	 * &lt;p&gt;
+	 * The result is not necessarily an integer.  If an integer value is desired
+	 * use TraceUtil.roundDouble to round the value to an integer.
+	 *
+	 * @param TraceCube cube
+	 * @param traceType the trace to aggregate within the cube
+	 * @param begin interval start point
+	 * @param end interval end point
+	 * @return the aggregate value for the specified period.  This value is not necessarily integral.  If
+	 * an integer value is desired use TraceUtil.roundDouble to round the value to an integer.
+	 */
+	public static double aggregatePeriodD(TraceCube cube, short traceType, int begin, int end) {
+<span class="nc" id="L1716">		return aggregatePeriod(cube, traceType, begin, end, null);</span>
+	}
+	public static double aggregatePeriodD(TraceCube cube, short traceType, int end, boolean[] excPoints) {
+<span class="nc" id="L1719">		return aggregatePeriod(cube, traceType, 0, end, excPoints);</span>
+	}
+	public static double aggregatePeriodD(TraceCube cube, short traceType, int begin, int end, boolean[] excPoints) {
+		/*
+		if (!isTraceTypeSupportedForMedia(type, cube.getQueueID())) {
+			return Trace.TRACENA;
+		}*/
+<span class="nc bnc" id="L1726" title="All 2 branches missed.">		if (begin == end) {</span>
+<span class="nc" id="L1727">			return cube.getTraceValueD(traceType, begin);</span>
+		}
+<span class="nc" id="L1729">		double[] valueArray = cube.getTraceValueD(traceType, begin, end);</span>
+<span class="nc bnc" id="L1730" title="All 4 branches missed.">		if (valueArray == null || allNAPoints(valueArray)) {</span>
+<span class="nc" id="L1731">			return Trace.TRACENA;</span>
+<span class="nc bnc" id="L1732" title="All 2 branches missed.">		} else if (allOFFPoints(valueArray)) {</span>
+<span class="nc" id="L1733">			return Trace.TRACEOFF;</span>
+		}
+<span class="nc" id="L1735">		double dependentValueArrays[][] = null;</span>
+<span class="nc" id="L1736">		short[] dependentTypeArray = null;</span>
+<span class="nc" id="L1737">		AggregationType aggregationType = getAggregationTypeForTimeAggregation(traceType, cube.isRequiredData());</span>
+<span class="nc bnc" id="L1738" title="All 2 branches missed.">		if (aggregationType.isWeightedAverage())</span>
+		{
+<span class="nc" id="L1740">			HashMap&lt;ID,ID&gt; queueMediaMap = new HashMap&lt;ID,ID&gt;(); // getMediaForQueues(new TraceCube[]{cube}); TODO: replace this with actual call to get medias</span>
+<span class="nc" id="L1741">			dependentTypeArray = getDependentTypeForWeightedAvgForPeriod(traceType, queueMediaMap.get(cube.getQueueID()));</span>
+<span class="nc" id="L1742">			dependentValueArrays = new double[dependentTypeArray.length][valueArray.length];</span>
+<span class="nc bnc" id="L1743" title="All 2 branches missed.">			for (int j = 0; j &lt; dependentTypeArray.length; j++) {</span>
+<span class="nc" id="L1744">				dependentValueArrays[j] = cube.getTraceValueD(dependentTypeArray[j], begin, end);</span>
+			}
+		}
+<span class="nc" id="L1747">		double result = aggregateArrayD(valueArray, aggregationType, dependentValueArrays, excPoints);</span>
+		//TODO: This sort of thing belongs in the client code, not in a foundational calculation.
+		// The word &quot;display&quot; in a foundation calculation is something of a red flag.
+		// Special handling for Staffing &amp; FTE,
+		// We need to display hourly aggregation (instead of 15 min) after summation.
+		// Sum(Staffing)/4; To obtain Hourly Staffing if valueArray.length &gt;= 4,else just valueArray.length
+		// This code is affecting the scalePeriodTraceWithDistribution method.  Please see the comments in that
+		// method to see how it is impacted.
+<span class="nc bnc" id="L1755" title="All 12 branches missed.">		if (Trace.isValidValue(result)&amp;&amp;(traceType == Trace.FTE || traceType == Trace.STAFFING||traceType == Trace.AFTE || traceType == Trace.ASTAFFING || traceType== Trace.NETSTAFFING)){</span>
+<span class="nc bnc" id="L1756" title="All 2 branches missed.">			return result / (valueArray.length &gt; Trace.HOURPOINTS ? Trace.HOURPOINTS : valueArray.length);</span>
+		}
+<span class="nc" id="L1758">		return result;</span>
+	}
+
+	/**
+	 * Performs the actual work of aggregation with Double precision.  This method could potentially be reused for
+	 * combining queues as well.
+	 *
+	 * @param sourceValues
+	 * @param aggregationType
+	 * @param dependentValueArrays
+	 * @param excPoints
+	 * @return
+	 */
+	public static double aggregateArrayD(
+			double[] sourceValues,
+			AggregationType aggregationType,
+			double[][] dependentValueArrays,
+			boolean[] excPoints) {
+
+<span class="nc" id="L1777">		double result = Trace.TRACENA;</span>
+<span class="nc" id="L1778">		double weightedSum = Trace.TRACENA;</span>
+<span class="nc" id="L1779">		double sum = Trace.TRACENA;</span>
+<span class="nc" id="L1780">		int counter = 0;			//Number of data values</span>
+<span class="nc" id="L1781">		double dependTypeValSum = Trace.TRACENA;</span>
+<span class="nc" id="L1782">		double lastValidBacklogBucketValue = Trace.TRACENA;</span>
+
+<span class="nc bnc" id="L1784" title="All 2 branches missed.">		for (int i = 0; i &lt; sourceValues.length; i++) {</span>
+<span class="nc bnc" id="L1785" title="All 6 branches missed.">			if (!Trace.isValidValue(sourceValues[i]) || (excPoints != null &amp;&amp; excPoints[i])) {</span>
+				// only aggregate for points that are valid &amp;  should not be excluded
+<span class="nc" id="L1787">				continue;</span>
+			}
+<span class="nc" id="L1789">			counter++; //always increment for valid values.</span>
+<span class="nc bnc" id="L1790" title="All 2 branches missed.">			sum = (sum == Trace.TRACENA ? 0 : sum) + sourceValues[i];</span>
+<span class="nc bnc" id="L1791" title="All 2 branches missed.">			if (aggregationType.isWeightedAverage()) {</span>
+<span class="nc" id="L1792">				double depValSum = Trace.TRACENA;</span>
+<span class="nc bnc" id="L1793" title="All 2 branches missed.">				for (int j = 0; j &lt; dependentValueArrays.length; j++) {</span>
+<span class="nc bnc" id="L1794" title="All 4 branches missed.">					if (dependentValueArrays[j] == null || dependentValueArrays[j].length &lt; i) {</span>
+<span class="nc" id="L1795">						continue;</span>
+					}
+<span class="nc" id="L1797">					double dependentVal = dependentValueArrays[j][i];</span>
+<span class="nc bnc" id="L1798" title="All 2 branches missed.">					if (!Trace.isValidValue(dependentVal)) {</span>
+<span class="nc" id="L1799">						continue;</span>
+					}
+<span class="nc bnc" id="L1801" title="All 8 branches missed.">					if (aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT ||</span>
+							aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS ||
+							aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT ||
+							aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS) {//Special condition for ASA ( has CV at j=0 and ABN at J=1)
+<span class="nc" id="L1805">						double cv = dependentValueArrays[0][i];</span>
+<span class="nc bnc" id="L1806" title="All 2 branches missed.">						if (dependentValueArrays[1] != null) {</span>
+							// If abandonment is available as a time series, it is used to
+							// modify volume either by subtracting absolute numbers (abandonment
+							// count) or by subtracting a percentage of volume (abandonment
+							// percentage).
+<span class="nc" id="L1811">							double abn = dependentValueArrays[1][i];</span>
+<span class="nc bnc" id="L1812" title="All 4 branches missed.">							if (aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT ||</span>
+									aggregationType == AggregationType.WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS) {
+<span class="nc bnc" id="L1814" title="All 4 branches missed.">								depValSum = (cv &lt; 0 || abn &lt; 0) ? Trace.TRACENA : cv * (100.0d - abn);//Special condition for ASA where SUM (CV-ABN)*ASA/(SUM(CV-ABN)</span>
+							} else {
+<span class="nc bnc" id="L1816" title="All 2 branches missed.">								abn = (abn &lt; 0) ? 0 : abn; //ESR#4232092: Abandons don't apply to Operations media, so the aggregation should only weigh on CV when ABN is null.</span>
+<span class="nc bnc" id="L1817" title="All 4 branches missed.">								depValSum = (cv &lt; 0 || abn &lt; 0) ? Trace.TRACENA : cv - abn;</span>
+							}
+<span class="nc" id="L1819">						} else {</span>
+							// If abandonment is not available as a time series, it must be
+							// constant across time and therefore does not influence weighting.
+<span class="nc" id="L1822">							depValSum = cv;</span>
+						}
+						// Because ASA weighting is handled as a special case, we break out
+						// of the summation loop with an explicitly computed weight sum.
+<span class="nc" id="L1826">						break;</span>
+					} else {
+<span class="nc bnc" id="L1828" title="All 2 branches missed.">						depValSum = (depValSum == Trace.TRACENA ? dependentVal : (depValSum + dependentVal)); //assign val if not already initialized else sum it</span>
+					}
+				}
+<span class="nc bnc" id="L1831" title="All 2 branches missed.">				if (depValSum &lt; 0) {           //ignore values less than Zero</span>
+<span class="nc" id="L1832">					continue;</span>
+				}
+<span class="nc bnc" id="L1834" title="All 2 branches missed.">				weightedSum = (weightedSum == Trace.TRACENA ? 0.0d : weightedSum) + (depValSum * sourceValues[i]);</span>
+<span class="nc bnc" id="L1835" title="All 2 branches missed.">				dependTypeValSum = (dependTypeValSum == Trace.TRACENA ? 0.0d : dependTypeValSum) + depValSum;</span>
+<span class="nc bnc" id="L1836" title="All 2 branches missed.">			} else if (aggregationType == AggregationType.LAST_VALID_VALUE) {</span>
+				// Finding the last block's value. In each iteration, this value will be
+				// overwritten by the new valid value. This way, we will have the last valid
+				// value at the end of the iteration. Doing this step as there could invalid
+				// values towards the end and we need to identify the last valid value.
+<span class="nc" id="L1841">				lastValidBacklogBucketValue = sourceValues[i];</span>
+			}
+		}
+
+<span class="nc" id="L1845">		result = aggregateSum(sum, weightedSum, dependTypeValSum, lastValidBacklogBucketValue, counter, aggregationType);</span>
+
+<span class="nc" id="L1847">		return result;</span>
+	}
+
+	private static double aggregateSum(double sum, double weightedSum, double dependTypeValSum, double lastValidBacklogBucketValue,
+									   int counter, TraceOperator.AggregationType aggregationType)
+	{
+<span class="nc" id="L1853">		double result = Trace.TRACENA;</span>
+
+<span class="nc bnc" id="L1855" title="All 6 branches missed.">		switch (aggregationType)</span>
+		{
+			case SUM:
+<span class="nc" id="L1858">				result = sum;</span>
+<span class="nc" id="L1859">				break;</span>
+			case SIMPLE_AVERAGE:
+<span class="nc bnc" id="L1861" title="All 2 branches missed.">				if (counter &gt; 0) {</span>
+<span class="nc" id="L1862">					result = sum / counter;</span>
+				}
+				break;
+			case WEIGHTED_AVERAGE:
+			case WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT:
+			case WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT:
+<span class="nc bnc" id="L1868" title="All 4 branches missed.">				if (weightedSum &gt;= 0 &amp;&amp; dependTypeValSum &gt; 0) {</span>
+<span class="nc" id="L1869">					result = weightedSum / dependTypeValSum;</span>
+<span class="nc bnc" id="L1870" title="All 4 branches missed.">				} else if (weightedSum == 0 &amp;&amp; dependTypeValSum == 0) {</span>
+<span class="nc" id="L1871">					result = 0;</span>
+				}
+				break;
+			case WEIGHTED_AVERAGE_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS:
+			case WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS:
+			case WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS:
+<span class="nc bnc" id="L1877" title="All 2 branches missed.">				if (weightedSum &gt;= 0) {</span>
+<span class="nc bnc" id="L1878" title="All 2 branches missed.">					if (dependTypeValSum &gt; 0) {</span>
+<span class="nc" id="L1879">						result = weightedSum / dependTypeValSum;</span>
+					} else {
+<span class="nc" id="L1881">						result = sum / counter;</span>
+					}
+				}
+				break;
+			case LAST_VALID_VALUE:
+<span class="nc" id="L1886">				result = lastValidBacklogBucketValue;</span>
+				break;
+		}
+<span class="nc" id="L1889">		return result;</span>
+	}
+
+	/**
+	 * Averages an array of data assumed to be specified at 15-minute intervals to
+	 * the specified granularity.
+	 * &lt;p&gt;
+	 * If {@code granularity} is 15 minutes, the input array is returned.
+	 * Otherwise, a new array is returned having the same number of data
+	 * points as the input array, with each point duplicated at each 15-minute interval
+	 * within the specified granularity.  The specified granularity must be a multiple
+	 * of 15 minutes.
+	 * &lt;p&gt;
+	 * The interval covered by the source array doesn't have to be an even multiple of
+	 * the granularity but if it is not then it is assumed that the first element of the
+	 * array is aligned with the start of an aggregation interval.
+	 * 
+	 * @param sourceValues
+	 * @return
+	 */
+	public static double[] averageArrayWithGranularity(double[] sourceValues, Duration granularity) {
+<span class="nc bnc" id="L1910" title="All 2 branches missed.">		if (granularity.getDurationInMinutes() == 15) {</span>
+<span class="nc" id="L1911">			return sourceValues;</span>
+		}
+<span class="nc bnc" id="L1913" title="All 2 branches missed.">		if (granularity.getDurationInMinutes() % 15 != 0) {</span>
+<span class="nc" id="L1914">			throw new IllegalArgumentException(&quot;Granularity must be a multiple of 15 minutes: &quot; + granularity);</span>
+		}
+<span class="nc" id="L1916">		double[] result = new double[sourceValues.length];</span>
+<span class="nc" id="L1917">		int valuesPerInterval = granularity.getDurationInMinutes() / 15;</span>
+
+<span class="nc bnc" id="L1919" title="All 2 branches missed.">		for (int intervalBase = 0; intervalBase &lt; sourceValues.length; intervalBase += valuesPerInterval) {</span>
+<span class="nc" id="L1920">			double cumulativeValue = 0;</span>
+<span class="nc" id="L1921">			int intervalOffset = 0;</span>
+<span class="nc bnc" id="L1922" title="All 4 branches missed.">			for (intervalOffset = 0; intervalOffset &lt; valuesPerInterval &amp;&amp; intervalBase + intervalOffset &lt; sourceValues.length; intervalOffset++) {</span>
+<span class="nc" id="L1923">				cumulativeValue += sourceValues[intervalBase + intervalOffset];</span>
+			}
+			// intervalOffset will be less than valuesPerInterval if the length of
+			// sourceValues isn't an even multiple of valuesPerInterval.
+<span class="nc" id="L1927">			cumulativeValue /= intervalOffset;</span>
+<span class="nc bnc" id="L1928" title="All 4 branches missed.">			for (intervalOffset = 0; intervalOffset &lt; valuesPerInterval &amp;&amp; intervalBase + intervalOffset &lt; sourceValues.length; intervalOffset++) {</span>
+<span class="nc" id="L1929">				result[intervalBase + intervalOffset] = cumulativeValue;</span>
+			}
+		}
+<span class="nc" id="L1932">		return result;</span>
+	}
+
+	/**
+	 * Distributes data from the parent cube to the child cubes according to the specified
+	 * percentage weights.  All of the specified trace types are allocated independently
+	 * of each other.
+	 * &lt;p&gt;
+	 * It is required that all the trace cubes have the same raw start date.
+	 * TODO: Check correct handling of children from different time zones.
+	 * 
+	 * @param parentCube the source data to be allocated among the child cubes
+	 * @param childCubes a map from each child spQueueId to the destination cube to receive
+	 * the allocated data
+	 * @param typesToAllocate the trace types to be allocated.  Existing child data for
+	 * other trace types will be unaffected.
+	 * @param allocationPercentageWeights a map from child spQueueId to weight array; the weights to
+	 * apply to the data, represented as time series data.  Each weight should be a 
+	 * double-precision value between 0.0 and 100.0.
+	 * The sum of all weights for a given array index should be 100.0.
+	 * It is the responsibility of the client code to ensure that allocation weights 
+	 * are valid.
+	 */
+	public static void distributeParentToChildren(TraceCube parentCube, Map&lt;ID, TraceCube&gt; childCubes, short[] typesToAllocate, Map&lt;ID, double[]&gt; allocationPercentageWeights)
+			throws BbmTimeSeriesException {
+<span class="fc bfc" id="L1957" title="All 2 branches covered.">		for (ID childId : childCubes.keySet()) {</span>
+<span class="fc" id="L1958">			TraceCube childCube = childCubes.get(childId);</span>
+<span class="pc bpc" id="L1959" title="1 of 2 branches missed.">			if ( ! childCube.getRawStartDate().equals(parentCube.getRawStartDate())) {</span>
+<span class="nc" id="L1960">				throw new IllegalArgumentException(&quot;Parent and child cube do not have the same raw start date.&quot;);</span>
+			}
+<span class="fc" id="L1962">		}</span>
+		// Ensure that the child queues have a well-defined sequence.
+<span class="fc" id="L1964">		List&lt;ID&gt; childIdList = new ArrayList&lt;ID&gt;(childCubes.keySet());</span>
+<span class="fc bfc" id="L1965" title="All 2 branches covered.">		for (short traceType : typesToAllocate) {</span>
+<span class="fc" id="L1966">			int parentStartOffset = parentCube.getRawStartOffset();</span>
+<span class="fc" id="L1967">			TraceCube parentCopy = parentCube.cloneTraceCube();</span>
+<span class="fc" id="L1968">			parentCopy.setTraceValue(traceType, parentCube.getTraceValueD(traceType));</span>
+<span class="fc" id="L1969">			TraceDistributionBuilder childTargetDistributionBuilder = new TraceDistributionBuilder(AggregationType.SUM, Trace.getTraceConstraints(traceType, parentCube.isRequiredData()));</span>
+<span class="fc" id="L1970">			int totalAggregate = 0;</span>
+			// We use carry-over rounding when determining child aggregate values so
+			// that we can be sure the total of the children is the same as the given
+			// total volume.
+<span class="fc" id="L1974">			double childTargetAccumulator = 0.5;</span>
+<span class="fc bfc" id="L1975" title="All 2 branches covered.">			for (int childIndex = 0; childIndex &lt; childIdList.size(); ++childIndex) {</span>
+<span class="fc" id="L1976">				ID childId = childIdList.get(childIndex);</span>
+<span class="fc" id="L1977">				TraceCube childCube = childCubes.get(childId);</span>
+<span class="fc bfc" id="L1978" title="All 2 branches covered.">				for (int parentOffset = parentStartOffset, weightOffset = 0; parentOffset &lt;= parentCube.getRawEndOffset(); ++parentOffset, ++weightOffset) {</span>
+<span class="fc" id="L1979">					int childOffset = parentOffset - parentStartOffset + childCube.getRawStartOffset();</span>
+<span class="pc bpc" id="L1980" title="1 of 2 branches missed.">					if (childOffset &gt;= childCube.getRawStartOffset() &amp;&amp;</span>
+<span class="pc bpc" id="L1981" title="1 of 2 branches missed.">						childOffset &lt;= childCube.getRawEndOffset() &amp;&amp;</span>
+<span class="pc bpc" id="L1982" title="1 of 2 branches missed.">						parentCube.getTraceValueD(traceType, parentOffset) &gt;= 0 &amp;&amp;</span>
+<span class="fc bfc" id="L1983" title="All 2 branches covered.">						allocationPercentageWeights.get(childId)[weightOffset] &gt;= 0) {</span>
+<span class="fc" id="L1984">						childTargetAccumulator += parentCube.getTraceValueD(traceType, parentOffset) * allocationPercentageWeights.get(childId)[weightOffset] / 100.;</span>
+					}
+				}
+<span class="fc" id="L1987">				int childTarget = (int)childTargetAccumulator;</span>
+<span class="fc" id="L1988">				childTargetAccumulator %= 1.0;</span>
+<span class="fc" id="L1989">				childTargetDistributionBuilder.addValue(childTarget, null, childIndex);</span>
+<span class="fc" id="L1990">				totalAggregate += childTarget;</span>
+			}
+<span class="fc" id="L1992">			double[] residualWeights = new double[allocationPercentageWeights.get(childIdList.get(0)).length];</span>
+			// To start with, every point in time has 100% of the parent volume left to allocate.
+			// As each point in each child queue is allocated, the residual weight for that
+			// point will be decreased by that child's weight at that point.  This allows us
+			// to scale the remaining parent volume correctly.
+			//Arrays.fill(residualWeights, 100.);
+			// Whoops!  Since some sources are rounding allocation percentages to 2 digits to the
+			// right of the decimal we can't just rely on total percentage eqaualing 100; we have
+			// to calculate total percentage as the sum of the weights or else we get rounding
+			// errors.
+<span class="fc bfc" id="L2002" title="All 2 branches covered.">			for (int childIndex = 0; childIndex &lt; childIdList.size(); ++childIndex) {</span>
+<span class="fc" id="L2003">				ID childId = childIdList.get(childIndex);</span>
+<span class="fc" id="L2004">				double[] childWeights = allocationPercentageWeights.get(childId);</span>
+<span class="fc bfc" id="L2005" title="All 2 branches covered.">				for (int weightOffset = 0; weightOffset &lt; childWeights.length; ++weightOffset) {</span>
+<span class="fc bfc" id="L2006" title="All 2 branches covered.">					if (childWeights[weightOffset] &gt; 0) {</span>
+<span class="fc" id="L2007">						residualWeights[weightOffset] += childWeights[weightOffset];</span>
+					}
+				}
+			}
+<span class="fc" id="L2011">			int[] childTargets = childTargetDistributionBuilder.getTraceDistribution().getScaledIntegerValues(totalAggregate);</span>
+<span class="fc bfc" id="L2012" title="All 2 branches covered.">			for (int childIndex = 0; childIndex &lt; childIdList.size(); ++childIndex) {</span>
+<span class="fc" id="L2013">				ID childId = childIdList.get(childIndex);</span>
+<span class="fc" id="L2014">				TraceCube childCube = childCubes.get(childId);</span>
+<span class="fc" id="L2015">				double[] childWeights = allocationPercentageWeights.get(childId);</span>
+				// For each child trace we build a distribution over time.
+<span class="fc" id="L2017">				TraceDistributionBuilder childTraceDistributionBuilder = new TraceDistributionBuilder(AggregationType.SUM, Trace.getTraceConstraints(traceType, parentCube.isRequiredData()));</span>
+<span class="fc bfc" id="L2018" title="All 2 branches covered.">				for (int parentOffset = parentStartOffset, weightOffset = 0; parentOffset &lt;= parentCube.getRawEndOffset(); ++parentOffset, ++weightOffset) {</span>
+<span class="fc" id="L2019">					int childOffset = parentOffset - parentStartOffset + childCube.getRawStartOffset();</span>
+					// It only makes sense to allocate when we are currently within the child 
+					// cube bounds and the current weight is nonnegative.
+<span class="pc bpc" id="L2022" title="1 of 2 branches missed.">					if (childOffset &gt;= childCube.getRawStartOffset() &amp;&amp;</span>
+<span class="pc bpc" id="L2023" title="1 of 4 branches missed.">						childOffset &lt;= childCube.getRawEndOffset() &amp;&amp;</span>
+						childWeights[weightOffset] &gt;= 0 &amp;&amp;
+<span class="pc bpc" id="L2025" title="1 of 2 branches missed.">						parentCopy.getTraceValueD(traceType, parentOffset) &gt;= 0) {</span>
+
+						// Each point in the distribution is based on the remaining parent volume to
+						// allocate at that interval and the interval's child weight as a proportion
+						// of the remaining weight to allocate at the interval.
+<span class="pc bpc" id="L2030" title="1 of 2 branches missed.">						if (childWeights[weightOffset] &gt; 0) {</span>
+<span class="fc" id="L2031">							childTraceDistributionBuilder.addValue(</span>
+<span class="fc" id="L2032">									parentCopy.getTraceValueD(traceType, parentOffset)</span>
+										* childWeights[weightOffset]
+										/ residualWeights[weightOffset],
+									false,
+									0);
+<span class="fc" id="L2037">							residualWeights[weightOffset] -= childWeights[weightOffset];</span>
+						} else {
+<span class="nc" id="L2039">							childTraceDistributionBuilder.addValue(0, false, 0);</span>
+						}
+					} else {
+<span class="pc bpc" id="L2042" title="1 of 2 branches missed.">						if (childWeights[weightOffset] &lt; 0) {</span>
+<span class="fc" id="L2043">							childTraceDistributionBuilder.addValue(childWeights[weightOffset], false, 0);</span>
+						} else {
+<span class="nc" id="L2045">							childTraceDistributionBuilder.addValue(Trace.TRACENA, false, 0);</span>
+						}
+					}
+				}
+<span class="fc" id="L2049">				childCube.setTraceValue(</span>
+						traceType,
+<span class="fc" id="L2051">						childTraceDistributionBuilder.getTraceDistribution().getScaledIntegerValues(childTargets[childIndex]),</span>
+<span class="fc" id="L2052">						childCube.getRawStartOffset());</span>
+				// Child weights were subtracted piecemeal inside the loop; here we subtract
+				// the child volume all at once.
+<span class="fc" id="L2055">				subtractTrace(parentCopy, childCube, traceType, parentStartOffset, parentCube.getRawEndOffset(), childCube.getRawStartOffset());</span>
+			}
+		}
+<span class="fc" id="L2058">	}</span>
+	
+	/**
+	 * Sets TRACEOFF for each data point in an off hour
+	 * @param tc
+	 * @param hoo
+	 * 
+	 * @throws OpenHoursMissingException if there is a day in {@code tc} for which
+	 * there are no open hours defined in {@code hooCol}
+	 */
+	public static void setOffHours(TraceCube tc, TimeZone tz, Collection&lt;? extends HOOAssignment&gt; hooCol) {
+<span class="fc" id="L2069">		setOffHours(tc.getTraceTypes(), tc, tz, hooCol);</span>
+<span class="fc" id="L2070">	}</span>
+	
+	/**
+	 * Sets TRACEOFF for each data point in an off hour
+	 * @param tc
+	 * @param hoo
+	 * 
+	 * @throws OpenHoursMissingException if there is a day in {@code tc} for which
+	 * there are no open hours defined in {@code hooCol}
+	 */
+	public static void setOffHours(short[] types, TraceCube tc, TimeZone tz, Collection&lt;? extends HOOAssignment&gt; hooCol) {
+		//FIXME:  This code shouldn't depend on time zone at all.  HOOs are defined in terms
+		// of minutes after the start of the SP, which is independent of time zone.
+<span class="fc" id="L2083">		Date start = tc.getRawStartDate();</span>
+<span class="fc" id="L2084">		Date end = tc.getRawEndDate();</span>
+<span class="fc" id="L2085">		Calendar dayBoundaryCursorCal = Calendar.getInstance(tz);</span>
+<span class="fc" id="L2086">		Calendar nextDayCal = Calendar.getInstance(tz);</span>
+<span class="fc" id="L2087">		Calendar timeCursorCal = Calendar.getInstance(tz);</span>
+<span class="fc" id="L2088">		dayBoundaryCursorCal.setTime(start);</span>
+<span class="fc" id="L2089">		nextDayCal.setTime(start);</span>
+<span class="fc" id="L2090">		nextDayCal.add(Calendar.DAY_OF_MONTH, 1);</span>
+<span class="fc" id="L2091">		timeCursorCal.setTime(start);</span>
+<span class="fc" id="L2092">		HOOAssignment currentHOO = null;</span>
+<span class="fc bfc" id="L2093" title="All 2 branches covered.">		while (timeCursorCal.getTime().before(end)) {</span>
+<span class="fc" id="L2094">			Date timeCursor = timeCursorCal.getTime();</span>
+			// Find Current HOO
+<span class="fc bfc" id="L2096" title="All 2 branches covered.">			if (	currentHOO == null </span>
+<span class="pc bpc" id="L2097" title="1 of 2 branches missed.">					|| currentHOO.getStartTime().after(timeCursor) </span>
+<span class="pc bpc" id="L2098" title="1 of 2 branches missed.">					|| ! currentHOO.getEndTime().after(timeCursor)) {</span>
+<span class="fc" id="L2099">				boolean found = false;</span>
+<span class="pc bpc" id="L2100" title="1 of 2 branches missed.">				for (HOOAssignment hoo : hooCol) {</span>
+					// if timeCursor falls in the interval [getStartTime, getEndTime)...
+<span class="pc bpc" id="L2102" title="2 of 4 branches missed.">					if ( ! timeCursor.before(hoo.getStartTime()) &amp;&amp; timeCursor.before(hoo.getEndTime()) ) {</span>
+						// ...then we have found the correct HOO object.
+<span class="fc" id="L2104">						currentHOO = hoo;</span>
+<span class="fc" id="L2105">						found = true;</span>
+<span class="fc" id="L2106">						break;</span>
+					}
+<span class="nc" id="L2108">				}</span>
+<span class="pc bpc" id="L2109" title="1 of 2 branches missed.">				if (! found) throw new OpenHoursMissingException(&quot;HOO not specified for date: &quot; + timeCursor, timeCursor);</span>
+			}
+
+<span class="fc bfc" id="L2112" title="All 2 branches covered.">			if ( ! nextDayCal.getTime().after(timeCursor) ) {</span>
+<span class="fc" id="L2113">				dayBoundaryCursorCal.setTime(nextDayCal.getTime());</span>
+<span class="fc" id="L2114">				nextDayCal.add(Calendar.DAY_OF_MONTH, 1);</span>
+			}
+<span class="fc" id="L2116">			Date open = currentHOO.getDayOpen(dayBoundaryCursorCal.getTime(), tz);</span>
+<span class="fc" id="L2117">			Date close = currentHOO.getDayClose(dayBoundaryCursorCal.getTime(), tz);</span>
+<span class="fc" id="L2118">			Date nextOpen = currentHOO.getDayOpen(nextDayCal.getTime(), tz);</span>
+<span class="fc" id="L2119">			Date nextClose = currentHOO.getDayClose(nextDayCal.getTime(), tz);</span>
+<span class="pc bpc" id="L2120" title="1 of 4 branches missed.">			boolean withinTodaysHOOs = </span>
+				open != null &amp;&amp; close != null &amp;&amp;
+<span class="fc bfc" id="L2122" title="All 2 branches covered.">				! timeCursor.before(open) &amp;&amp;</span>
+<span class="fc bfc" id="L2123" title="All 2 branches covered.">				timeCursor.before(close);</span>
+<span class="pc bpc" id="L2124" title="1 of 4 branches missed.">			boolean withinTomorrowsHOOs =</span>
+				nextOpen != null &amp;&amp; nextClose != null &amp;&amp;
+<span class="pc bpc" id="L2126" title="1 of 2 branches missed.">				! timeCursor.before(nextOpen) &amp;&amp;</span>
+<span class="pc bnc" id="L2127" title="All 2 branches missed.">				timeCursor.before(nextClose);</span>
+				
+<span class="pc bpc" id="L2129" title="1 of 4 branches missed.">			if ( ! withinTodaysHOOs &amp;&amp; ! withinTomorrowsHOOs ) {</span>
+<span class="fc bfc" id="L2130" title="All 2 branches covered.">				for (short type : types) {</span>
+<span class="fc" id="L2131">					boolean isDirty = tc.isDirty(type);</span>
+<span class="fc" id="L2132">					tc.setTraceValue(type, Trace.TRACEOFF, timeCursor, true);</span>
+					//This is done here because setting the off hours
+					//  has the unfortunate side effect of setting the dirty flag.  So,
+					//  we will clear out the dirty flag caused by this change unless
+					//  the cube was already dirty beforehand.
+<span class="pc bpc" id="L2137" title="1 of 2 branches missed.">					if (!isDirty) {</span>
+<span class="fc" id="L2138">						tc.setTypeDirty(type, false);</span>
+					}
+				}
+			}
+			
+<span class="fc" id="L2143">			timeCursorCal.add(Calendar.MINUTE, Trace.INTERVAL);</span>
+<span class="fc" id="L2144">		}</span>
+<span class="fc" id="L2145">	}</span>
+
+	/**
+	 * Applies the specified hours of operation to the given array of {@code double} values, by
+	 * setting every value that falls outside the hours of operation to Trace.TRACEOFF.
+	 * &lt;p&gt;
+	 * This method is needed because {@link TraceCube}s don't support floating-point data, but
+	 * there exists time-based data that is floating point and must adhere to hours of
+	 * operation.
+	 * &lt;p&gt;
+	 * Except that now TraceCubes *do* support floating-point data.  But now it turns out that
+	 * the time interval aggregation strategy required for the forecast allocation percentages
+	 * that make up this floating point data is very unlikely to be supported in TraceCubes
+	 * any time soon.
+	 * 
+	 * @param values the values to which hours of operation are to be applied
+	 * @param queueId the queue ID associated with the values.  Only used to create
+	 * a dummy {@link TraceCube} so not especially critical
+	 * @param startDate the time corresponding to the first element of {@code values}
+	 * @param endDate the time immediately after the last element of {@code values}
+	 * @param tz the time zone in which dates are to be interpreted
+	 * @param childHoo the hours of operation to be applied
+	 * 
+	 * @throws OpenHoursMissingException if there is a day in {@code tc} for which
+	 * there are no open hours defined in {@code hooCol}
+	 */
+	public static void setOffHours(
+			double[] values,
+			ID queueId,
+			Date startDate,
+			Date endDate,
+			TimeZone tz,
+			Collection&lt;? extends HOOAssignment&gt; childHoo) {
+		try {
+<span class="nc" id="L2179">			short[] types =  new short[] { Trace.CV };</span>
+<span class="nc" id="L2180">			ForecastTraceCube dummyCube = new ForecastTraceCube(queueId, startDate, endDate, types);</span>
+<span class="nc" id="L2181">			double[] hooValues = new double[values.length];</span>
+<span class="nc" id="L2182">			Arrays.fill(hooValues, 0);</span>
+<span class="nc" id="L2183">			dummyCube.setTraceValue(Trace.CV, hooValues);</span>
+			// Get TraceOperator to set HOOs on a dummy trace cube, then transcribe the
+			// results into the given array.
+<span class="nc" id="L2186">			TraceOperator.setOffHours(types, dummyCube, tz, childHoo);</span>
+			// Unnecessary but inexpensive the way trace operations are done now.  Would be
+			// necessary (and more expensive) if trace cubes did defensive copying.
+<span class="nc" id="L2189">			hooValues = dummyCube.getTraceValueD(Trace.CV);</span>
+<span class="nc bnc" id="L2190" title="All 2 branches missed.">			for (int index = 0; index &lt; hooValues.length; ++index) {</span>
+<span class="nc bnc" id="L2191" title="All 2 branches missed.">				if (hooValues[index] == Trace.TRACEOFF) {</span>
+<span class="nc" id="L2192">					values[index] = Trace.TRACEOFF;</span>
+				}
+			}
+		}
+<span class="nc" id="L2196">		catch (BbmTimeSeriesException btse) {</span>
+			// This exception can only originate from the constructor for ForecastTraceCube,
+			// and only if ForecastTraceCube stops supporting the CV trace type.
+<span class="nc" id="L2199">		}</span>
+<span class="nc" id="L2200">	}</span>
+
+	public static TimeRange[] getWeeklyRanges(TimeZone tz, Date startDate, Date endDate) {
+<span class="nc" id="L2203">		TimeRange[] weekRanges = null;</span>
+<span class="nc" id="L2204">		Date weekEndDate = null;</span>
+<span class="nc" id="L2205">		ArrayList&lt;TimeRange&gt; aWeekRanges = new ArrayList&lt;TimeRange&gt;();</span>
+		//Must use campaign TZ to determine SP weeks. The week ranges are not affected by the viewing TimeZone.
+<span class="nc" id="L2207">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L2208">		Date nextStartDate = startDate;</span>
+<span class="nc" id="L2209">		cal.setTime(startDate);</span>
+<span class="nc" id="L2210">		int startHour = cal.get(Calendar.HOUR_OF_DAY);</span>
+
+		do {
+<span class="nc" id="L2213">			startDate = nextStartDate;</span>
+<span class="nc" id="L2214">			cal.setTime(startDate);</span>
+<span class="nc" id="L2215">			cal.add(Calendar.DATE, 7);</span>
+
+			//If day boundary is 2AM, on Spring DST day, adding a week to 2AM start date will
+			//result in end date at 1AM instead of 3AM. We must manually correct for this.
+<span class="nc bnc" id="L2219" title="All 2 branches missed.">			if (cal.get(Calendar.HOUR_OF_DAY) &lt; startHour)</span>
+<span class="nc" id="L2220">				cal.add(Calendar.HOUR_OF_DAY, 1);</span>
+<span class="nc bnc" id="L2221" title="All 2 branches missed.">			else if (cal.get(Calendar.HOUR_OF_DAY) &gt; startHour) //undo our hour addition for the following week</span>
+<span class="nc" id="L2222">				cal.add(Calendar.HOUR_OF_DAY, -1);</span>
+
+<span class="nc" id="L2224">			nextStartDate = cal.getTime();</span>
+<span class="nc" id="L2225">			cal.add(Calendar.SECOND, -1);</span>
+<span class="nc" id="L2226">			weekEndDate = cal.getTime();</span>
+<span class="nc" id="L2227">			aWeekRanges.add(new TimeRange(startDate, weekEndDate));</span>
+<span class="nc bnc" id="L2228" title="All 2 branches missed.">		} while (nextStartDate.before(endDate));</span>
+
+		//now convert our ArrayList into an array
+		//weekRanges = (TimeRange[])aWeekRanges.toArray(); //Why does this fail?
+
+<span class="nc bnc" id="L2233" title="All 2 branches missed.">		if (aWeekRanges != null) {</span>
+<span class="nc" id="L2234">			int numWeeks = aWeekRanges.size();</span>
+<span class="nc" id="L2235">			weekRanges = new TimeRange[numWeeks];</span>
+<span class="nc" id="L2236">			int w = 0;</span>
+<span class="nc bnc" id="L2237" title="All 2 branches missed.">			for (Iterator&lt;TimeRange&gt; it = aWeekRanges.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L2238">				TimeRange curWeek = it.next();</span>
+<span class="nc" id="L2239">				weekRanges[w++] = curWeek;</span>
+<span class="nc" id="L2240">			}</span>
+		}
+<span class="nc" id="L2242">		return weekRanges;</span>
+	}
+	
+	/**
+	 * Returns a cube that consists of data that is concatenated from the cubes in traceCubesToConcatenate.
+	 * It is assumed that the cubes in traceCubesToConcatenate all have the same trace types.
+	 * It is assumed that the TraceCubes being handed in are all adjacent to one another.
+	 * The date range of the returned TraceCube will be the earliest raw start date and latest
+	 * raw end date of the trace cubes in traceCubesToConcatenate.
+	 */
+	public static TraceCube concatenateTraceCubes(Collection&lt;TraceCube&gt; traceCubesToConcatenate)
+			throws BbmTimeSeriesException {
+
+<span class="nc bnc" id="L2255" title="All 4 branches missed.">		if (traceCubesToConcatenate == null || traceCubesToConcatenate.size() == 0) {</span>
+<span class="nc" id="L2256">			return null;</span>
+		}
+		
+<span class="nc" id="L2259">		Date earliestStartDate = null;</span>
+<span class="nc" id="L2260">		Date latestEndDate = null;</span>
+<span class="nc" id="L2261">		TraceCube retVal = null;</span>
+
+		//Find the earliest start / latest end dates for the cube collection.  These dates will
+		//correspond to the start/end dates of the concatenated cube that will be returned
+<span class="nc bnc" id="L2265" title="All 2 branches missed.">		for (TraceCube cube : traceCubesToConcatenate) {</span>
+<span class="nc bnc" id="L2266" title="All 2 branches missed.">			if (earliestStartDate == null) {</span>
+<span class="nc" id="L2267">				earliestStartDate = cube.getRawStartDate();</span>
+			}
+<span class="nc bnc" id="L2269" title="All 2 branches missed.">			if (latestEndDate == null) {</span>
+<span class="nc" id="L2270">				latestEndDate = cube.getRawEndDate();</span>
+			}
+<span class="nc bnc" id="L2272" title="All 2 branches missed.">			if (cube.getRawStartDate().before(earliestStartDate)) {</span>
+<span class="nc" id="L2273">				earliestStartDate = cube.getRawStartDate();</span>
+			}
+<span class="nc bnc" id="L2275" title="All 2 branches missed.">			if (cube.getRawEndDate().after(latestEndDate)) {</span>
+<span class="nc" id="L2276">				latestEndDate = cube.getRawEndDate();</span>
+			}
+<span class="nc" id="L2278">		}</span>
+
+		//Sort the trace cubes chronologically before concatenating
+<span class="nc" id="L2281">		List&lt;TraceCube&gt; sortedTraceCubesToConcatenate = new ArrayList&lt;TraceCube&gt;(traceCubesToConcatenate);</span>
+<span class="nc" id="L2282">		Collections.sort(sortedTraceCubesToConcatenate, new TraceCubeRawStartDateComparator());</span>
+<span class="nc bnc" id="L2283" title="All 2 branches missed.">		for (TraceCube cube : sortedTraceCubesToConcatenate) {</span>
+<span class="nc bnc" id="L2284" title="All 2 branches missed.">			if (cube != null) {</span>
+<span class="nc bnc" id="L2285" title="All 2 branches missed.">				if (retVal == null) {</span>
+<span class="nc" id="L2286">					retVal = cube.newInstance(cube.getQueueID(), earliestStartDate,</span>
+<span class="nc" id="L2287">							latestEndDate, cube.getTraceTypes());</span>
+				}
+
+				// We rely on cube to have accurate information about its populated trace types.
+<span class="nc bnc" id="L2291" title="All 2 branches missed.">				for (short traceType : cube.getTraceTypes()) {</span>
+<span class="nc bnc" id="L2292" title="All 2 branches missed.">					if (cube.getTraceValueD(traceType) != null) {</span>
+<span class="nc" id="L2293">						retVal.setTraceValue(traceType, cube.getTraceValueD(traceType), cube.getRawStartDate());</span>
+					}
+				}
+			}
+<span class="nc" id="L2297">		}</span>
+
+<span class="nc" id="L2299">		return retVal;</span>
+	}
+	
+	/**
+	 * Comparator used to sort TraceCubes chronologically by their RawStartDates.
+	 */
+<span class="nc" id="L2305">	private static class TraceCubeRawStartDateComparator implements Comparator&lt;TraceCube&gt; {</span>
+		@Override
+		public int compare(TraceCube o1, TraceCube o2) {
+<span class="nc bnc" id="L2308" title="All 8 branches missed.">			if ((o1 == null || o1.getRawStartDate() == null) &amp;&amp; (o2 == null || o2.getRawStartDate() == null)) return 0;</span>
+<span class="nc bnc" id="L2309" title="All 8 branches missed.">			if ((o1 == null || o1.getRawStartDate() == null) &amp;&amp; (o2 != null &amp;&amp; o2.getRawStartDate() != null)) return -1;</span>
+<span class="nc bnc" id="L2310" title="All 8 branches missed.">			if ((o2 == null || o2.getRawStartDate() == null) &amp;&amp; (o1 != null &amp;&amp; o1.getRawStartDate() != null)) return 1;</span>
+<span class="nc bnc" id="L2311" title="All 2 branches missed.">			if (o1.getRawStartDate().after(o2.getRawStartDate())) return 1; </span>
+<span class="nc bnc" id="L2312" title="All 2 branches missed.">			if (o1.getRawStartDate().equals(o2.getRawStartDate())) return 0;</span>
+<span class="nc" id="L2313">			return -1;</span>
+		}
+	}
+
+	/**
+	 * This enum captures the different kinds of aggregation.
+	 * 
+	 * It could be expanded to provide the actual business logic for these aggregation types.
+	 */
+<span class="pc" id="L2322">	public static enum AggregationType {</span>
+		/** Adds constituent values together. */
+<span class="fc" id="L2324">		SUM(true, true, true, false, false),</span>
+		/** Averages constituent values without weighting. */
+<span class="fc" id="L2326">		SIMPLE_AVERAGE(true, true, true, false, false),</span>
+		/** Averages constituent values without weighting, but we exclude and 0 values from the average. */
+<span class="fc" id="L2328">		SIMPLE_AVERAGE_EXCLUDE_ZEROS(true, true, true, false, false),</span>
+		/** Averages constituent values using another trace type to weight each value. */
+<span class="fc" id="L2330">		WEIGHTED_AVERAGE(true, true, true, true, false),</span>
+		/** Takes the last valid value as the aggregate for an entire interval.  All earlier values are ignored. */
+<span class="fc" id="L2332">		LAST_VALID_VALUE(false, false, false, false, false),</span>
+		// The following two aggregation types reduce volume by a function of abandonment
+		// to obtain a weight
+<span class="fc" id="L2335">		WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT(true, true, true, true, false),</span>
+<span class="fc" id="L2336">		WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT(true, true, true, true, false),</span>
+		// The following three aggregation types are used for data types where for
+		// some reason we want to be able to view and modify
+		// aggregated weighted averages even when no weights exist.
+<span class="fc" id="L2340">		WEIGHTED_AVERAGE_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS(true, true, true, true, true),</span>
+<span class="fc" id="L2341">		WEIGHTED_AVERAGE_WITH_ABANDONMENT_COUNT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS(true, true, true, true, true),</span>
+<span class="fc" id="L2342">		WEIGHTED_AVERAGE_WITH_ABANDONMENT_PERCENT_USE_SIMPLE_AVERAGE_IF_NO_WEIGHTS(true, true, true, true, true),</span>
+		;
+
+		private final boolean m_supportsCombine;
+		private final boolean m_supportsScale;
+		private final boolean m_supportsDistribute;
+		private final boolean m_isWeightedAverage;
+		private final boolean m_useSimpleAverageIfNoWeights;
+
+<span class="fc" id="L2351">		private AggregationType(boolean supportsCombine, boolean supportsScale, boolean supportsDistribute, boolean isWeightedAverage, boolean useSimpleAverageIfNoWeights) {</span>
+
+<span class="fc" id="L2353">			m_supportsCombine = supportsCombine;</span>
+<span class="fc" id="L2354">			m_supportsScale = supportsScale;</span>
+<span class="fc" id="L2355">			m_supportsDistribute = supportsDistribute;</span>
+<span class="fc" id="L2356">			m_isWeightedAverage = isWeightedAverage;</span>
+<span class="fc" id="L2357">			m_useSimpleAverageIfNoWeights = useSimpleAverageIfNoWeights;</span>
+<span class="fc" id="L2358">		}</span>
+
+		/**
+		 * Returns whether traces having this aggregation type can meaningfully combine values
+		 * from multiple queues.
+		 * 
+		 * @return
+		 */
+		public boolean supportsCombine() {
+<span class="fc" id="L2367">			return m_supportsCombine;</span>
+		}
+
+		/**
+		 * Returns whether traces having this aggregation type can meaningfully scale values
+		 * across time intervals.
+		 * 
+		 * @return
+		 */
+		public boolean supportsScale() {
+<span class="nc" id="L2377">			return m_supportsScale;</span>
+		}
+
+		/**
+		 * Returns whether traces having this aggregation type can meaningfully distribute
+		 * values across multiple queues.
+		 * 
+		 * @return
+		 */
+		public boolean supportsDistribute() {
+<span class="nc" id="L2387">			return m_supportsDistribute;</span>
+		}
+
+		/**
+		 * Returns whether this aggregation type averages using a separate set of weights.
+		 * 
+		 * @return
+		 */
+		public boolean isWeightedAverage() {
+<span class="fc" id="L2396">			return m_isWeightedAverage;</span>
+		}
+
+		/**
+		 * Returns whether this aggregation type is a weighted average that behaves like
+		 * a simple average when all weights are zero or missing.
+		 * 
+		 * @return
+		 */
+		public boolean isSimpleAverageIfNoWeights() {
+<span class="fc" id="L2406">			return m_useSimpleAverageIfNoWeights;</span>
+		}
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

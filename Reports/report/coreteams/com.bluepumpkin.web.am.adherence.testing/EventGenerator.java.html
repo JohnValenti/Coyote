@@ -1,0 +1,821 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>EventGenerator.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.am.adherence.testing</a> &gt; <span class="el_source">EventGenerator.java</span></div><h1>EventGenerator.java</h1><pre class="source lang-java linenums">
+package com.bluepumpkin.web.am.adherence.testing;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Random;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.ejb.bbm.rtaamanager.model.EmployeeData;
+import com.bluepumpkin.ejb.bbm.rtaamanager.model.RTAAData;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.web.am.adherence.keys.AdherenceKeys;
+import com.bluepumpkin.web.am.adherence.util.AdherenceUtils;
+
+
+/**
+ *  Defines an event generator that will randomly generates activities used
+ *  by the adherence module.
+ */
+public class EventGenerator extends Thread {
+
+	// **************** static ***************************************
+
+	/**
+	 *  Activities library
+	 */
+<span class="nc" id="L34">	static private final String[] ACTIVITY_COLORS =</span>
+	{&quot;F7FFCF&quot;, &quot;C2FFCF&quot;, &quot;80FFCF&quot;, &quot;B7E0CF&quot;, &quot;F7CCCF&quot;,
+	 &quot;F7B4CF&quot;, &quot;F78CCF&quot;, &quot;F760FF&quot;, &quot;F7FF7F&quot;, &quot;ABD3D0&quot;,
+	 &quot;83B8B4&quot;, &quot;CBE1FF&quot;, &quot;FF8040&quot;};
+
+	/**
+	 *  Event Types
+	 */
+	static private final int SCHEDULE_EVENTTYPE = 0;
+	static private final int ACTUAL_EVENTTYPE = 1;
+	static private final int EXCEPTIONS_EVENTTYPE = 2;
+	static private final int EVENTTYPES = EXCEPTIONS_EVENTTYPE + 1;
+
+
+	/*
+	 *
+	 */
+	static private final int MILLISEC_IN_MINUTE = 1000 * 60;
+
+	/**
+	 *
+	 */
+<span class="nc" id="L56">	static private int m_id = 0;</span>
+
+	/**
+	 *  Some random behavior
+	 */
+<span class="nc" id="L61">	static private Random m_random = new Random();</span>
+
+
+	// **************** instance ***************************************
+
+	// ------------ instance variables -----------------
+	/**
+	 *  The number of events to generate/modify per cycle.
+	 */
+	private int m_numEventsPerCycle;
+
+	/**
+	 *  Cycle time (in milliseconds)
+	 */
+	private long m_cycleTime;
+
+	/**
+	 *  Has the thread been stopped.
+	 */
+<span class="nc" id="L80">	private boolean m_running = true;</span>
+
+	/**
+	 *  A collection of the employee data's the
+	 *  generator is managing.
+	 *
+	 */
+<span class="nc" id="L87">	private Collection m_employeeIDs = Collections.EMPTY_LIST;</span>
+
+	/**
+	 *  A hashmap
+	 *
+	 *  empID -&gt; EmployeeData
+	 */
+	private HashMap m_edMap;
+
+	/**
+	 *  An arrayList of EmployeeData created.
+	 *
+	 *  EmployeeData[]
+	 */
+	private EmployeeData[] m_edArray;
+
+	/**
+	 *  A map of all the defined activities
+	 *  ID -&gt; Activity
+	 */
+	private HashMap m_activities;
+
+	/**
+	 *  The earliest start time for all the events created.
+	 */
+	private long m_start;
+
+	/**
+	 *  The latest end time for all the events created.
+	 */
+	private long m_end;
+
+	/**
+	 *  The duration for each event created (in milliseconds);
+	 */
+	private int m_interval;
+
+	/**
+	 *  The number of available event slots per list.
+	 */
+	private int m_slots;
+
+	/**
+	 *  last validated time stamp
+	 */
+	private Date m_validatedTimeStamp;
+
+
+	/**
+	 *  whether we are using a random generator
+	 */
+	private boolean m_isRandom;
+
+
+	/**
+	 *  Following are used if we are not using random to generate numbers
+	 */
+<span class="nc" id="L144">	private int m_nextEmployeeOffset = 0;</span>
+<span class="nc" id="L145">	private int m_nextEventType = 0;</span>
+<span class="nc" id="L146">	private int m_nextTimeSlot = 0;</span>
+<span class="nc" id="L147">	private int m_nextActivity = 0;</span>
+
+
+	// ------------ instance methods -----------------
+	/**
+	 *  Constructor
+	 *
+	 *  @param name  The thread name
+	 *  @param eventsPerCycle  The number of events to generate/modify per cycle.
+	 *  @param cycleTime  The cycle time (in milliseconds)
+	 *  @param employeeIDs  The list of employee ID's
+	 *  @param start    The earliest start date for all the events created.
+	 *  @param end      The latest start date for all the events created.
+	 *  @param interval  The duration for each event created (in minutes).
+	 */
+	public EventGenerator(String name, int eventsPerCycle, long cycleTime,
+						  Collection employeeIDs, Date start, Date end, int eventInterval) {
+<span class="nc" id="L164">		super(name);</span>
+<span class="nc" id="L165">		m_numEventsPerCycle = eventsPerCycle;</span>
+<span class="nc" id="L166">		m_cycleTime = cycleTime;</span>
+<span class="nc" id="L167">		m_start = start.getTime();</span>
+<span class="nc" id="L168">		m_end = end.getTime();</span>
+<span class="nc" id="L169">		setEmployeeIDs(employeeIDs);</span>
+<span class="nc" id="L170">		m_interval = eventInterval * MILLISEC_IN_MINUTE;  // convert to milliseconds.</span>
+<span class="nc" id="L171">		m_slots = (int)(m_end - m_start) / m_interval;</span>
+
+<span class="nc" id="L173">		m_activities = new HashMap(16);</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">		for (int i = 0; i &lt; ACTIVITY_COLORS.length; i++) {</span>
+<span class="nc" id="L175">			Activity a = new Activity();</span>
+<span class="nc" id="L176">			a.setColor(ACTIVITY_COLORS[i]);</span>
+<span class="nc" id="L177">			a.setID(new ID(i));</span>
+<span class="nc" id="L178">			a.setName(&quot;Activity &quot; + i);</span>
+<span class="nc" id="L179">			m_activities.put(a.getID(), a);</span>
+		}
+<span class="nc" id="L181">	}</span>
+
+	public EventGenerator(String name, int eventsPerCycle, long cycleTime,
+						  Collection employeeIDs, Date start, Date end, int eventInterval,
+				   boolean random) {
+<span class="nc" id="L186">		this(name, eventsPerCycle, cycleTime, employeeIDs, start, end, eventInterval);</span>
+<span class="nc" id="L187">		m_isRandom = random;</span>
+<span class="nc" id="L188">	}</span>
+
+	synchronized public void setEmployeeIDs(Collection employeeIDs) {
+<span class="nc" id="L191">		m_employeeIDs = employeeIDs;</span>
+<span class="nc" id="L192">		System.out.println(&quot;Now has &quot; + m_employeeIDs.size() + &quot; employees&quot;);</span>
+<span class="nc" id="L193">		initEDMapAndArray(employeeIDs);</span>
+<span class="nc" id="L194">	}</span>
+
+	synchronized public Collection getEmployeeIDs() {
+<span class="nc" id="L197">		return m_employeeIDs;</span>
+	}
+
+	/**
+	 *  Should be invoked whenever the employeeIDs's roster has been changed.
+	 */
+	private void initEDMapAndArray(Collection employeeIDs) {
+<span class="nc" id="L204">		m_edMap = new HashMap(employeeIDs.size() * 2);</span>
+<span class="nc" id="L205">		m_edArray = new EmployeeData[employeeIDs.size()];</span>
+
+<span class="nc" id="L207">		int i = 0;</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">		for (Iterator empIter = employeeIDs.iterator();empIter.hasNext(); i++) {</span>
+<span class="nc" id="L209">			ID empID = (ID)empIter.next();</span>
+<span class="nc" id="L210">			EmployeeName ename = new EmployeeName();</span>
+<span class="nc" id="L211">			ename.setFirstName(&quot;Employee&quot;);</span>
+<span class="nc" id="L212">			ename.setLastName(&quot;&quot; + i);</span>
+<span class="nc" id="L213">			EmployeeData ed =</span>
+				new EmployeeData(empID,
+								 ename,
+								 new ArrayList(),
+								 new ArrayList(),
+								 new ArrayList(),
+								 null,
+								 null,
+								 null,
+								 null,
+								 null,
+								 false,
+								 0);
+			// put to the hash map
+<span class="nc" id="L227">			m_edMap.put(empID, ed);</span>
+
+			// insert to array
+<span class="nc" id="L230">			m_edArray[i] = ed;</span>
+		}
+<span class="nc" id="L232">	}</span>
+
+	/**
+	 *  The main loop
+	 */
+	public void run() {
+<span class="nc bnc" id="L238" title="All 2 branches missed.">		while (m_running) {</span>
+<span class="nc" id="L239">			generateEvents(m_numEventsPerCycle);</span>
+<span class="nc" id="L240">			unInterruptedSleep();</span>
+		}
+<span class="nc" id="L242">	}</span>
+
+	/**
+	 *  This will return the next random/pre-determined number.
+	 *
+	 *  @param size  If we are in random mode, a random # from 0 to 'size'
+	 *               will be generated.
+	 *               If we are in non-random mode, it will return the
+	 *               pre-determined value of its specific type.
+	 *  @param type  The type of data to return, only applies when in
+	 *               non-random mode.
+	 *
+	 *  @return The next number.
+	 */
+	private int nextNumber(int size, int type) {
+<span class="nc bnc" id="L257" title="All 2 branches missed.">		if (m_isRandom) {</span>
+<span class="nc" id="L258">			return m_random.nextInt(size);</span>
+		} else {
+<span class="nc bnc" id="L260" title="All 4 branches missed.">			switch (type) {</span>
+			case 0: // employee
+<span class="nc" id="L262">				return m_nextEmployeeOffset;</span>
+			case 1: // event type
+<span class="nc" id="L264">				return m_nextEventType;</span>
+			case 2: // slot #
+<span class="nc" id="L266">				return m_nextTimeSlot;</span>
+			case 3: // activity
+			default:
+<span class="nc" id="L269">				int ret = m_nextActivity;</span>
+
+				// needs to update some value.
+<span class="nc" id="L272">				m_nextActivity = (m_nextActivity + 1) % ACTIVITY_COLORS.length;</span>
+<span class="nc" id="L273">				m_nextTimeSlot = (m_nextTimeSlot + 1) % m_slots;</span>
+
+<span class="nc bnc" id="L275" title="All 2 branches missed.">				if (m_nextTimeSlot == 0) {</span>
+<span class="nc" id="L276">					m_nextEventType = (m_nextEventType+1) % EVENTTYPES;</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">					if (m_nextEventType == 0) {</span>
+<span class="nc" id="L278">						m_nextEmployeeOffset = (m_nextEmployeeOffset+1) % m_edArray.length;</span>
+					}
+				}
+<span class="nc" id="L281">				return ret;</span>
+			}
+		}
+	}
+
+	/**
+	 *  Generates new events.  Each event generated will be shoved in a random list.
+	 *
+	 *  @param count  The number of events to generate.
+	 */
+	synchronized private void generateEvents(int count) {
+<span class="nc bnc" id="L292" title="All 4 branches missed.">		if (m_edArray == null || m_edArray.length == 0) {</span>
+			// nothing to generate...
+<span class="nc" id="L294">			return;</span>
+		}
+<span class="nc bnc" id="L296" title="All 2 branches missed.">		for (int i = 0; i &lt; count; i++) {</span>
+			// pick an employee randomly
+<span class="nc" id="L298">			EmployeeData ed = m_edArray[nextNumber(m_edArray.length,0)];</span>
+
+			// pick a queue randomly (scheduled, actual, or exception)
+<span class="nc" id="L301">			int eventType = nextNumber(EVENTTYPES,1);</span>
+			Collection eventList;
+<span class="nc bnc" id="L303" title="All 3 branches missed.">			switch (eventType) {</span>
+			case SCHEDULE_EVENTTYPE:
+<span class="nc" id="L305">				eventList = ed.getPlannedEvents();</span>
+<span class="nc" id="L306">				break;</span>
+			case ACTUAL_EVENTTYPE:
+<span class="nc" id="L308">				eventList = ed.getActualEvents();</span>
+<span class="nc" id="L309">				break;</span>
+			case EXCEPTIONS_EVENTTYPE:
+			default:
+<span class="nc" id="L312">				eventList = ed.getAdheranceViolations();</span>
+				break;
+			}
+
+			// pick a time slot randomly
+<span class="nc" id="L317">			long start_time = m_start + nextNumber(m_slots,2) * m_interval;</span>
+<span class="nc" id="L318">			long end_time = start_time + m_interval;</span>
+
+			// determine if time slot already occupied, if so, we only modify
+			// the timestamp and the activity, otherwise, we create a new
+			// event.
+<span class="nc" id="L323">			AdherenceEvent event = getEvent(eventList, start_time);</span>
+<span class="nc" id="L324">			ID id = new ID(nextNumber(ACTIVITY_COLORS.length,3));</span>
+<span class="nc bnc" id="L325" title="All 2 branches missed.">			if (event == null) {</span>
+<span class="nc bnc" id="L326" title="All 2 branches missed.">				if (eventType == EXCEPTIONS_EVENTTYPE) {</span>
+<span class="nc" id="L327">					event = new RTAAException(ed.getEmployeeID(),</span>
+											  new Date(start_time),
+											  new Date(end_time),
+											  id,
+											  false,
+<span class="nc" id="L332">											  new Date(System.currentTimeMillis()));</span>
+				} else {
+<span class="nc" id="L334">					event = new SimpleEvent(new ID(m_id++),</span>
+											0,
+											&quot;SimpleEvent&quot;,
+											new Date(start_time),
+											new Date(end_time),
+											id,
+											false,
+											false,
+											null,
+<span class="nc" id="L343">											new Date(System.currentTimeMillis()));</span>
+				}
+
+				// add to the front
+<span class="nc" id="L347">				((ArrayList)eventList).add(0,event);</span>
+			} else {
+<span class="nc" id="L349">				event.setActivityID(id);</span>
+<span class="nc" id="L350">				event.setTimestamp(new Date(System.currentTimeMillis()));</span>
+<span class="nc bnc" id="L351" title="All 2 branches missed.">				if (event instanceof RTAAException) {</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">					((RTAAException)event).setApproved(!((RTAAException) event).isApproved());</span>
+				}
+<span class="nc" id="L354">				eventList.remove(event);</span>
+
+				// put back to the front
+<span class="nc" id="L357">				((ArrayList)eventList).add(0,event);</span>
+			}
+		}
+<span class="nc" id="L360">	}</span>
+
+	/**
+	 *  Retrieves an event from the list.
+	 *
+	 *  @param list  The list to retrieve from.
+	 *  @param startTime  The start time used as the key retrieval
+	 *
+	 *  @return  An AdherenceEvent object, or &lt;code&gt;null&lt;/code&gt; if not found.
+	 */
+	private AdherenceEvent getEvent(Collection list, long startTime) {
+<span class="nc bnc" id="L371" title="All 2 branches missed.">		for (Iterator eventIter = list.iterator(); eventIter.hasNext();) {</span>
+<span class="nc" id="L372">			AdherenceEvent event = (AdherenceEvent)eventIter.next();</span>
+
+<span class="nc bnc" id="L374" title="All 2 branches missed.">			if (event.getStartTime().getTime() == startTime)</span>
+<span class="nc" id="L375">				return event;</span>
+<span class="nc" id="L376">		}</span>
+<span class="nc" id="L377">		return null;</span>
+	}
+
+	/**
+	 *  Gets the recently changed records.
+	 *
+	 *  @param  employeeIDs  The set of employess of interest.
+	 *  @param  startDate    The start range of activities of interest.
+	 *  @param  endDate      The end range of activities of interest.
+	 *  @param  lastTimestamp  The time to determine &quot;recentless&quot;
+	 *                         If &lt;code&gt;null&lt;/code&gt;  returns all, or no
+	 *                         filter.
+	 * @param pageNum For pagination, the current page number being viewed.
+	 *                When negative, there is no pagination involved.
+	 * @param pageSize For pagination, the current page size
+	 *                 not used, when 'pageNum' is negative.
+	 * @param sortKey  The key for sorting.  If negative, use the default sort key.
+	 */
+	synchronized public RTAAData getAdherenceChanges(Collection employeeIDs,
+													 Date startDate,
+													 Date endDate,
+													 Date lastTimestamp,
+													 int pageNum,
+													 int pageSize,
+													 int sortKey)
+	{
+<span class="nc bnc" id="L403" title="All 4 branches missed.">		if (startDate.getTime() != m_start || endDate.getTime() != m_end) {</span>
+			// if request dates have changes, then we clean up.
+<span class="nc" id="L405">			cleanEventLists();</span>
+<span class="nc" id="L406">			m_start = startDate.getTime();</span>
+<span class="nc" id="L407">			m_end = endDate.getTime();</span>
+		}
+
+<span class="nc bnc" id="L410" title="All 4 branches missed.">		if (lastTimestamp == null &amp;&amp; !AdherenceUtils.areCollectionsEqual(m_employeeIDs, employeeIDs)) {</span>
+<span class="nc" id="L411">			System.out.println(&quot;Setting employee IDs to new list &quot; + employeeIDs + &quot; with &quot; + employeeIDs.size() + &quot; employees&quot;);</span>
+<span class="nc" id="L412">			setEmployeeIDs(employeeIDs);</span>
+		}
+
+<span class="nc" id="L415">		HashMap activities = new HashMap();</span>
+<span class="nc" id="L416">		Collection selectedEmployeeIDs = employeeIDs;</span>
+
+<span class="nc bnc" id="L418" title="All 2 branches missed.">		if (pageNum &gt;= 0) {</span>
+			// with pagination, new list of employees return
+<span class="nc" id="L420">			selectedEmployeeIDs = sort(pageNum, pageSize, sortKey);</span>
+		}
+
+<span class="nc" id="L423">		Collection employeeData = new ArrayList(selectedEmployeeIDs.size());</span>
+<span class="nc" id="L424">		m_validatedTimeStamp = new Date(System.currentTimeMillis());</span>
+
+<span class="nc" id="L426">		fetchChangedData(employeeData, activities, selectedEmployeeIDs, startDate, endDate, lastTimestamp);</span>
+
+<span class="nc" id="L428">		RTAAData ret = new RTAAData(employeeData,</span>
+									activities,
+									startDate,
+									endDate,
+									null);
+<span class="nc" id="L433">		ret.setTimestamp(m_validatedTimeStamp);</span>
+<span class="nc" id="L434">		ret.setEmployeeIDs(selectedEmployeeIDs);</span>
+<span class="nc" id="L435">		return ret;</span>
+	}
+
+	/**
+	 *  Returns a sorted list of employee IDs based on the
+	 *  sorting/pagination parameters.
+	 */
+	private Collection sort(int pageNum, int pageSize, int sortKey) {
+<span class="nc" id="L443">		EmployeeData[] tmpED = new EmployeeData[m_edArray.length];</span>
+<span class="nc" id="L444">		System.arraycopy(m_edArray, 0, tmpED, 0, tmpED.length);</span>
+
+<span class="nc bnc" id="L446" title="All 3 branches missed.">		switch (sortKey) {</span>
+		case AdherenceKeys.SORT_NONE:
+			//Arrays.sort(tmpED, new NameComparator(0));
+<span class="nc" id="L449">			break;</span>
+		case AdherenceKeys.SORT_NAME:
+			//Arrays.sort(tmpED, new NameComparator(1));
+<span class="nc" id="L452">			break;</span>
+		case AdherenceKeys.SORT_START_TIME:
+		case AdherenceKeys.SORT_END_TIME:
+		case AdherenceKeys.SORT_SCHEDULED_START_TIME:
+		case AdherenceKeys.SORT_SCHEDULED_END_TIME:
+		case AdherenceKeys.SORT_ADHERENCE_STATUS:
+			break;
+		}
+
+<span class="nc" id="L461">		int start = pageNum * pageSize;</span>
+<span class="nc" id="L462">		int length = pageSize;</span>
+<span class="nc bnc" id="L463" title="All 2 branches missed.">		if (start + length &gt; m_edArray.length) {</span>
+<span class="nc" id="L464">			length = m_edArray.length - start;</span>
+		}
+
+<span class="nc" id="L467">		EmployeeData[] sortedEmployeeData = new EmployeeData[length];</span>
+<span class="nc" id="L468">		System.arraycopy(tmpED, start, sortedEmployeeData, 0, length);</span>
+
+<span class="nc" id="L470">		ArrayList returnList = new ArrayList(length);</span>
+<span class="nc bnc" id="L471" title="All 2 branches missed.">		for (int i = 0; i &lt; length; i++) {</span>
+<span class="nc" id="L472">			returnList.add(sortedEmployeeData[i].getEmployeeID());</span>
+		}
+
+<span class="nc" id="L475">		return returnList;</span>
+	}
+
+	/**
+	 *  Returns a collection of items that are in 'newItems' but not in original
+	 */
+	private Collection difference(Collection original, Collection newItems) {
+<span class="nc" id="L482">		HashSet diffSet = new HashSet(original.size());</span>
+
+<span class="nc bnc" id="L484" title="All 2 branches missed.">		for (Iterator iter = newItems.iterator();iter.hasNext();) {</span>
+<span class="nc" id="L485">			ID newID = (ID)iter.next();</span>
+<span class="nc bnc" id="L486" title="All 2 branches missed.">			if (!original.contains(newID)) {</span>
+<span class="nc" id="L487">				diffSet.add(newID);</span>
+			}
+<span class="nc" id="L489">		}</span>
+<span class="nc" id="L490">		return diffSet;</span>
+	}
+
+
+	private EmployeeData getEmployeeData(ID employeeID) {
+<span class="nc" id="L495">		System.out.println(&quot;Getting employee data for &quot; + employeeID);</span>
+<span class="nc" id="L496">		return (EmployeeData) m_edMap.get(employeeID);</span>
+	}
+
+	synchronized public void authorizeExceptions(Collection exceptions) {
+<span class="nc" id="L500">		exceptionApprovalHelper(exceptions, true);</span>
+<span class="nc" id="L501">	}</span>
+
+	synchronized public void unauthorizeExceptions(Collection exceptions) {
+<span class="nc" id="L504">		exceptionApprovalHelper(exceptions, false);</span>
+<span class="nc" id="L505">	}</span>
+
+	synchronized public void massApproveExceptions(ID employeeID, Collection timeRangesToAuthorize, Collection timeRangesToUnauthorize) {
+<span class="nc" id="L508">		Collection sortedTimeRangesToAuthorize = AdherenceUtils.sortTimeRangeList(timeRangesToAuthorize);</span>
+<span class="nc" id="L509">		Collection sortedTimeRangesToUnauthorize = AdherenceUtils.sortTimeRangeList(timeRangesToUnauthorize);</span>
+<span class="nc" id="L510">		EmployeeData empData = getEmployeeData(employeeID);</span>
+<span class="nc" id="L511">		Collection unsortedAdheranceViolations = empData.getAdheranceViolations();</span>
+<span class="nc" id="L512">		massAuthorizeExceptions(unsortedAdheranceViolations, sortedTimeRangesToAuthorize, true);</span>
+<span class="nc" id="L513">		massAuthorizeExceptions(unsortedAdheranceViolations, sortedTimeRangesToUnauthorize, false);</span>
+<span class="nc" id="L514">	}</span>
+
+	synchronized public void groupAuthorizeExceptions(Collection empIDs, Date start, Date end, boolean authorized)
+	{
+<span class="nc bnc" id="L518" title="All 2 branches missed.">		for (Iterator empIter = empIDs.iterator(); empIter.hasNext();) {</span>
+<span class="nc" id="L519">			ID empID = (ID)empIter.next();</span>
+
+<span class="nc" id="L521">			EmployeeData empData = getEmployeeData(empID);</span>
+<span class="nc" id="L522">			Collection exceptions = empData.getAdheranceViolations();</span>
+
+<span class="nc" id="L524">			ArrayList sortedExceptions = new ArrayList(AdherenceUtils.sortExceptionList(exceptions));</span>
+<span class="nc" id="L525">			int size = sortedExceptions.size();</span>
+			
+<span class="nc bnc" id="L527" title="All 2 branches missed.">			for (int i = 0; i &lt; size; i++) {</span>
+<span class="nc" id="L528">				RTAAException exc = (RTAAException)sortedExceptions.get(i);</span>
+
+<span class="nc bnc" id="L530" title="All 2 branches missed.">				if (exc.getStartTime().after(end))</span>
+<span class="nc" id="L531">					break;</span>
+
+<span class="nc bnc" id="L533" title="All 2 branches missed.">				if (AdherenceUtils.dateRangesOverlap(exc.getStartTime(), exc.getEndTime(),</span>
+													 start, end)) {
+
+<span class="nc" id="L536">					exc.setTimestamp(new Date(System.currentTimeMillis()));</span>
+<span class="nc" id="L537">					exc.setApproved(authorized);</span>
+<span class="nc" id="L538">					exceptions.remove(exc);</span>
+
+					// put back to the front.
+<span class="nc" id="L541">					((ArrayList) exceptions).add(0, exc);</span>
+				}
+			}
+<span class="nc" id="L544">		}</span>
+<span class="nc" id="L545">	}</span>
+
+	private void massAuthorizeExceptions(Collection listOriginalExceptions, Collection listSortedTimeRanges, boolean authorize) {
+<span class="nc bnc" id="L548" title="All 2 branches missed.">		if (listOriginalExceptions == null) {</span>
+<span class="nc" id="L549">			return;</span>
+		}
+<span class="nc" id="L551">		ArrayList listSortedExceptions = new ArrayList(AdherenceUtils.sortExceptionList(listOriginalExceptions));</span>
+<span class="nc" id="L552">		int numExceptions = listSortedExceptions.size();</span>
+<span class="nc" id="L553">		ArrayList listEvents = new ArrayList(numExceptions);</span>
+<span class="nc" id="L554">		int nextTimeRangeIndex = 0;</span>
+<span class="nc" id="L555">		TimeRange [] timeRanges = (TimeRange []) listSortedTimeRanges.toArray(new TimeRange[0]);</span>
+<span class="nc bnc" id="L556" title="All 2 branches missed.">		TimeRange nextTimeRange = timeRanges.length == 0 ? null : timeRanges[nextTimeRangeIndex];</span>
+<span class="nc bnc" id="L557" title="All 2 branches missed.">		for (int i = 0; i &lt; numExceptions; i++) {</span>
+<span class="nc" id="L558">			RTAAException nextException = (RTAAException) listSortedExceptions.get(i);</span>
+			// if the current exception occurs after the current scheduled event, let's iterate through
+			// the list of scheduled events until we come to the next scheduled event that overlaps or is
+			// after this exception
+<span class="nc bnc" id="L562" title="All 4 branches missed.">			while (nextTimeRange != null &amp;&amp; !nextTimeRange.getEndDate().after(nextException.getStartTime())) {</span>
+<span class="nc" id="L563">				nextTimeRangeIndex++;</span>
+<span class="nc bnc" id="L564" title="All 2 branches missed.">				nextTimeRange = nextTimeRangeIndex &lt; timeRanges.length ? timeRanges[nextTimeRangeIndex] : null;</span>
+			}
+<span class="nc bnc" id="L566" title="All 2 branches missed.">			if (nextTimeRange == null) {</span>
+				// no more time ranges
+<span class="nc" id="L568">				break;</span>
+			} else {
+<span class="nc bnc" id="L570" title="All 2 branches missed.">				if (AdherenceUtils.dateRangesOverlap(nextException.getStartTime(), nextException.getEndTime(),</span>
+<span class="nc" id="L571">						nextTimeRange.getStartDate(), nextTimeRange.getEndDate())) {</span>
+<span class="nc" id="L572">					nextException.setTimestamp(new Date(System.currentTimeMillis()));</span>
+<span class="nc" id="L573">					nextException.setApproved(authorize);</span>
+<span class="nc" id="L574">					listOriginalExceptions.remove(nextException);</span>
+
+					// put back to the front
+<span class="nc" id="L577">					((ArrayList) listOriginalExceptions).add(0, nextException);</span>
+				}
+			}
+		}
+
+<span class="nc" id="L582">	}</span>
+
+	// expects to be called by a synchronized method
+	private void exceptionApprovalHelper(Collection exceptions, boolean shouldApprove) {
+<span class="nc" id="L586">		Iterator itExceptions = exceptions.iterator();</span>
+<span class="nc bnc" id="L587" title="All 2 branches missed.">		while (itExceptions.hasNext()) {</span>
+<span class="nc" id="L588">			RTAAException nextException = (RTAAException) itExceptions.next();</span>
+<span class="nc" id="L589">			ID nextEmpID = nextException.getEmployeeID();</span>
+<span class="nc" id="L590">			EmployeeData ed = getEmployeeData(nextEmpID);</span>
+<span class="nc" id="L591">			Collection adheranceViolations = ed.getAdheranceViolations();</span>
+<span class="nc" id="L592">			AdherenceEvent event = getEvent(adheranceViolations, nextException.getStartTime().getTime());</span>
+<span class="nc bnc" id="L593" title="All 4 branches missed.">			if (event != null &amp;&amp; event instanceof RTAAException) {</span>
+<span class="nc bnc" id="L594" title="All 2 branches missed.">				System.out.println(&quot;setting event for ID=&quot; + nextEmpID + &quot; starting at &quot; + (nextException.getStartTime().getTime() - m_start) + &quot; to be &quot; + (shouldApprove ? &quot;approved&quot; : &quot;unapproved&quot;));</span>
+<span class="nc" id="L595">				((RTAAException) event).setApproved(shouldApprove);</span>
+<span class="nc" id="L596">				event.setTimestamp(new Date(System.currentTimeMillis()));</span>
+<span class="nc" id="L597">				adheranceViolations.remove(event);</span>
+				// put back to the front
+<span class="nc" id="L599">				((ArrayList) adheranceViolations).add(0, event);</span>
+			} else {
+<span class="nc" id="L601">				System.out.println(&quot;FAILED TO UN/APPROVE EXCEPTION:&quot;);</span>
+<span class="nc" id="L602">				System.out.println(&quot;looking for event for employee ID = &quot; + nextEmpID + &quot; starting at &quot; + (nextException.getStartTime().getTime() - m_start));</span>
+<span class="nc" id="L603">				System.out.println(&quot;exceptions in memory:&quot;);</span>
+<span class="nc" id="L604">				dumpEventList(adheranceViolations, m_start);</span>
+			}
+<span class="nc" id="L606">		}</span>
+<span class="nc" id="L607">	}</span>
+
+	/**
+	 *  Removes all of the event lists previously created in the system.
+	 */
+	private void cleanEventLists() {
+<span class="nc" id="L613">		Collection edCollection = m_edMap.values();</span>
+<span class="nc bnc" id="L614" title="All 2 branches missed.">		for (Iterator edIter = edCollection.iterator(); edIter.hasNext();) {</span>
+<span class="nc" id="L615">			EmployeeData ed = (EmployeeData)edIter.next();</span>
+<span class="nc" id="L616">			ed.getPlannedEvents().clear();</span>
+<span class="nc" id="L617">			ed.getActualEvents().clear();</span>
+<span class="nc" id="L618">			ed.getAdheranceViolations().clear();</span>
+<span class="nc" id="L619">		}</span>
+<span class="nc" id="L620">	}</span>
+
+	/**
+	 *  Fetches the recently changed records, by filling in the data in
+	 *  the 'employeeData' collection and the 'activities' HashMap.
+	 *
+	 *  @param  employeeData The collection where data is filled.
+	 *  @param  activities   The set of activities.
+	 *  @param  employeeIDs  The set of employess of interest.
+	 *  @param  startDate    The start range of activities of interest.
+	 *  @param  endDate      The end range of activities of interest.
+	 *  @param  lastTimestamp  The time to determine &quot;recentless&quot;
+	 *                         If &lt;code&gt;null&lt;/code&gt;  returns all, or no
+	 *                         filter.
+	 */
+	private void fetchChangedData(Collection employeeData,
+								  HashMap activities,
+								  Collection employeeIDs,
+								  Date startDate,
+								  Date endDate,
+								  Date lastTimestamp)
+	{
+<span class="nc bnc" id="L642" title="All 2 branches missed.">		for (Iterator empIter = employeeIDs.iterator();empIter.hasNext();) {</span>
+<span class="nc" id="L643">			ID empID = (ID)empIter.next();</span>
+
+<span class="nc" id="L645">			EmployeeData srcED = (EmployeeData)m_edMap.get(empID);</span>
+
+			// done, if the emp ID is unknown
+<span class="nc bnc" id="L648" title="All 2 branches missed.">			if (srcED == null)</span>
+<span class="nc" id="L649">				continue;</span>
+
+<span class="nc" id="L651">			Date timestamp = lastTimestamp;</span>
+
+			// if we actually want all the data, then overwrite validated time to
+			// null.
+			//if (fetchAllDataEmpIDs.contains(empID))
+			//timestamp = null;
+
+<span class="nc" id="L658">			Collection scheduled =</span>
+<span class="nc" id="L659">				filterEvents(activities, startDate, endDate, timestamp, srcED.getPlannedEvents());</span>
+<span class="nc" id="L660">			Collection actual =</span>
+<span class="nc" id="L661">				filterEvents(activities, startDate, endDate, timestamp, srcED.getActualEvents());</span>
+<span class="nc" id="L662">			Collection exceptions =</span>
+<span class="nc" id="L663">				filterEvents(activities, startDate, endDate, timestamp, srcED.getAdheranceViolations());</span>
+
+<span class="nc" id="L665">			EmployeeData destED =</span>
+				new EmployeeData(empID,
+<span class="nc" id="L667">								 srcED.getEmployeeName(),</span>
+								 scheduled,
+								 actual,
+								 exceptions,
+								 null,
+								 null,
+								 null,
+								 null,
+								 null,
+								 false,
+								 0);
+<span class="nc" id="L678">			employeeData.add(destED);</span>
+<span class="nc" id="L679">		}</span>
+<span class="nc" id="L680">	}</span>
+
+	/**
+	 *  Filter events to be returned based on the relevant date range
+	 *  and the validated time stamp.  Returns a list of qualified events.
+	 *
+	 *  @return An ArrayList of qualified &quot;events&quot;, or
+	 *  &lt;code&gt;Collections.EMPTY_LIST&lt;/code&gt; if nothing matches
+	 */
+	private Collection filterEvents(HashMap activities,
+									Date startDate,
+									Date endDate,
+									Date lastTimestamp,
+									Collection events)
+	{
+<span class="nc" id="L695">		Collection eventList = new ArrayList();</span>
+<span class="nc bnc" id="L696" title="All 2 branches missed.">		for (Iterator eventIter = events.iterator(); eventIter.hasNext();) {</span>
+<span class="nc" id="L697">			AdherenceEvent event = (AdherenceEvent)eventIter.next();</span>
+
+			// the events are sorted based on the last modified timestamp
+			// so we can quit once we find one that's not as recent
+			// as the last validated timestamp
+<span class="nc bnc" id="L702" title="All 2 branches missed.">			if (!isMoreRecent(event.getTimestamp(), lastTimestamp))</span>
+<span class="nc" id="L703">				break;</span>
+
+			// make sure the events are within our range of interests
+<span class="nc bnc" id="L706" title="All 2 branches missed.">			if (AdherenceUtils.dateRangesOverlap(event.getStartTime(),</span>
+<span class="nc" id="L707">												 event.getEndTime(),</span>
+												 startDate,
+												 endDate)) {
+
+				// need to pass back a cloned item so that the client
+				// can modify.
+				AdherenceEvent retEvent;
+<span class="nc bnc" id="L714" title="All 2 branches missed.">				if (event instanceof SimpleEvent) {</span>
+<span class="nc" id="L715">					retEvent = new SimpleEvent(((SimpleEvent)event).getID(),</span>
+											   0,
+											   &quot;SimpleEvent&quot;,
+<span class="nc" id="L718">											   event.getStartTime(),</span>
+<span class="nc" id="L719">											   event.getEndTime(),</span>
+<span class="nc" id="L720">											   event.getActivityID(),</span>
+											   false,
+											   false,
+											   null,
+<span class="nc" id="L724">											   event.getTimestamp());</span>
+				} else {
+<span class="nc" id="L726">					retEvent = new RTAAException(((RTAAException)event).getEmployeeID(),</span>
+<span class="nc" id="L727">												 event.getStartTime(),</span>
+<span class="nc" id="L728">												 event.getEndTime(),</span>
+<span class="nc" id="L729">												 event.getActivityID(),</span>
+<span class="nc" id="L730">												 ((RTAAException) event).isApproved(),</span>
+<span class="nc" id="L731">												 event.getTimestamp());</span>
+				}
+<span class="nc" id="L733">				eventList.add(retEvent);</span>
+
+				// add to activities hashmap
+<span class="nc" id="L736">				ID activityID = event.getActivityID();</span>
+<span class="nc" id="L737">				activities.put(activityID, m_activities.get(activityID));</span>
+			}
+<span class="nc" id="L739">		}</span>
+
+<span class="nc bnc" id="L741" title="All 2 branches missed.">		if (eventList.size() == 0)</span>
+<span class="nc" id="L742">			return Collections.EMPTY_LIST;</span>
+<span class="nc" id="L743">		return eventList;</span>
+	}
+
+	/**
+	 *  Determines if the time stamp in an event record more
+	 *  recent than the last validated time stamp.
+	 *
+	 *  @return &lt;code&gt;true&lt;/code&gt;  If event record is more recent, or if there
+	 *                             is no validated time stamp.
+	 *          &lt;code&gt;false&lt;/code&gt; otherwise.
+	 */
+	private boolean isMoreRecent(Date eventTimeStamp, Date validatedTimeStamp) {
+<span class="nc bnc" id="L755" title="All 2 branches missed.">		if (validatedTimeStamp == null)</span>
+<span class="nc" id="L756">			return true;</span>
+<span class="nc bnc" id="L757" title="All 2 branches missed.">		if (eventTimeStamp.compareTo(validatedTimeStamp) &gt;= 0) {</span>
+<span class="nc" id="L758">			return true;</span>
+		} else {
+<span class="nc" id="L760">			return false;</span>
+		}
+	}
+
+	/**
+	 *  Sleeps for a while, make sure we won't be
+	 *  interrupted.
+	 */
+	private void unInterruptedSleep() {
+<span class="nc" id="L769">		long now = System.currentTimeMillis();</span>
+<span class="nc" id="L770">		long endOfSleepTime = now + m_cycleTime;</span>
+<span class="nc bnc" id="L771" title="All 2 branches missed.">		while (now &lt; endOfSleepTime) {</span>
+			try {
+<span class="nc" id="L773">				sleep(endOfSleepTime - now);</span>
+<span class="nc" id="L774">			} catch (InterruptedException ex) {}</span>
+<span class="nc" id="L775">			now = System.currentTimeMillis();</span>
+		}
+<span class="nc" id="L777">	}</span>
+
+	/**
+	 *  Terminates the thread.
+	 */
+	public void terminate() {
+<span class="nc" id="L783">		m_running = false;</span>
+<span class="nc" id="L784">	}</span>
+
+	/**
+	 *
+	 */
+	public void memoryDump() {
+<span class="nc bnc" id="L790" title="All 2 branches missed.">		for (int i = 0; i &lt; m_edArray.length; i++) {</span>
+<span class="nc" id="L791">			EmployeeData ed = m_edArray[i];</span>
+
+<span class="nc" id="L793">            System.out.println(&quot;&gt;&gt;&gt;&gt;&gt;&gt;&gt; Employee ID= &quot; + ed.getEmployeeID() + &quot; &lt;&lt;&lt;&lt;&lt;&lt;&lt;&quot;);</span>
+
+<span class="nc" id="L795">			System.out.println(&quot;  &gt;&gt;&gt;&gt;&gt; ScheduledEvents&lt;&lt;&lt;&lt;&lt;&lt;&lt;&quot;);</span>
+<span class="nc" id="L796">			dumpEventList(ed.getPlannedEvents());</span>
+
+<span class="nc" id="L798">			System.out.println(&quot;  &gt;&gt;&gt;&gt;&gt; ActualEvents&lt;&lt;&lt;&lt;&lt;&lt;&lt;&quot;);</span>
+<span class="nc" id="L799">			dumpEventList(ed.getActualEvents());</span>
+
+<span class="nc" id="L801">			System.out.println(&quot;  &gt;&gt;&gt;&gt;&gt; ScheduledEvents&lt;&lt;&lt;&lt;&lt;&lt;&lt;&quot;);</span>
+<span class="nc" id="L802">			dumpEventList(ed.getAdheranceViolations());</span>
+		}
+<span class="nc" id="L804">	}</span>
+
+	static public void dumpEventList(Collection list, long offset) {
+<span class="nc bnc" id="L807" title="All 2 branches missed.">		for (Iterator eventIter = list.iterator(); eventIter.hasNext();) {</span>
+<span class="nc" id="L808">			AdherenceEvent event = (AdherenceEvent)eventIter.next();</span>
+<span class="nc" id="L809">			System.out.println(&quot;    ST=&quot; + (event.getStartTime().getTime()-offset) +</span>
+<span class="nc" id="L810">							   &quot; ET=&quot; + (event.getEndTime().getTime()-offset) +</span>
+<span class="nc" id="L811">							   &quot; Act=&quot; + event.getActivityID() +</span>
+<span class="nc" id="L812">							   &quot; TS=&quot; + event.getTimestamp().getTime());</span>
+<span class="nc" id="L813">		}</span>
+<span class="nc" id="L814">	}</span>
+
+	static public void dumpEventList(Collection list) {
+<span class="nc" id="L817">		dumpEventList(list, 0);</span>
+<span class="nc" id="L818">	}</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

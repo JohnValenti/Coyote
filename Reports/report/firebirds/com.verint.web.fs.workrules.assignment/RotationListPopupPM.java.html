@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RotationListPopupPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.workrules.assignment</a> &gt; <span class="el_source">RotationListPopupPM.java</span></div><h1>RotationListPopupPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.workrules.assignment;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.PaginationPair;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.vo.DBSortField;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectIDListComparator;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workrules.model.Rotation;
+import com.bluepumpkin.web.core.l10n.CoreWebBundleKey;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.web.fs.widgets.FindToolbarPageComponent;
+import com.verint.web.fs.workrules.WorkRulesModelHandler;
+import com.verint.web.fs.workrules.WorkRulesSelectionPopupPM;
+import com.verint.web.fs.workrules.WorkRulesSelectionPopupRH;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarTextButton;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.CacheUtil;
+
+public class RotationListPopupPM extends WorkRulesSelectionPopupPM {
+	private static final long serialVersionUID = 1L;
+
+	public static final String FORM_ACTION = &quot;rotation_list_popup&quot;;
+	public static final String POPUP_ID = &quot;POPUP_ROTATION&quot;;
+	public static final String POPUP_ARGS = &quot;selectedIDs,viewStartDate,viewEndDate,isInfoPopup&quot;;
+	public static final String POPUP_ARG_SELECTED_IDS = &quot;selectedIDs&quot;;
+	public static final String POPUP_ARG_ROTATION_ID = &quot;rotationID&quot;;
+	public static final String POPUP_ARG_IS_INFO_POPUP = &quot;isInfoPopup&quot;;
+	public static final String ROTATION_POPUPLIST_SORTCOLUMN = RotationListPC.ROTATION_POPUPLIST_SORTCOLUMN;
+	public static final String ROTATION_POPUPLIST_SORTORDER = RotationListPC.ROTATION_POPUPLIST_SORTORDER;
+
+	private ArrayList&lt;Rotation&gt; rotations;
+<span class="fc" id="L43">	private HashSet&lt;ID&gt; selectedIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L44">	private Map&lt;ID, Organization&gt; orgMap = new HashMap&lt;ID, Organization&gt;();</span>
+	private Calendar viewStartDate;
+	private Calendar viewEndDate;
+<span class="fc" id="L47">	private boolean isInfoPopup = false;		//if this is an info popup, the add button will be removed and we will be displaying the rotations given in the selectedIDs argument</span>
+	private RotationListPC m_rotationListPC;
+	
+	public RotationListPopupPM(RequestContext context) {
+<span class="fc" id="L51">		super(context);</span>
+<span class="fc" id="L52">		setIsMultiRowSelectable(false);</span>
+<span class="fc" id="L53">	}</span>
+
+	public static RotationListPopupPM getInstance(RequestContext context) {
+<span class="fc" id="L56">		return (RotationListPopupPM)getInstance(context, RotationListPopupPM.class);</span>
+	}
+	
+	protected void initializeModel() {
+<span class="fc bfc" id="L60" title="All 2 branches covered.">		if (m_isInitialized) return;</span>
+<span class="fc" id="L61">		super.initializeModel();</span>
+		
+<span class="pc bpc" id="L63" title="1 of 2 branches missed.">		if (isInfoPopup == false) {</span>
+<span class="fc" id="L64">			FindToolbarPageComponent findToolBar = new FindToolbarPageComponent(m_context, getToolbar(),</span>
+					FIND_ITEM_FN, WorkRulesSelectionPopupRH.FIND_ACTION,
+<span class="fc" id="L66">					getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_FIND_ROTATIONS));	</span>
+<span class="fc" id="L67">			getToolbar().addToolbarComponent(findToolBar);</span>
+<span class="fc" id="L68">			getToolbar().addDivider(); </span>
+<span class="fc" id="L69">			ToolbarTextButton addButton = m_toolbar.createCloseWindowButton(</span>
+<span class="fc" id="L70">					&quot;addRotations&quot;, m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+					FsWebBundleKey.FS_ADD_SELECTED_ROTATION), true);
+<span class="fc" id="L72">			StringBuffer addButtonJS = new StringBuffer();</span>
+<span class="fc" id="L73">			addButtonJS.append(m_toolbar.getName())</span>
+<span class="fc" id="L74">			.append(&quot;.disableButton('addRotations'); &quot;)</span>
+<span class="fc" id="L75">			.append(&quot;if(window.opener.rotationTable) {&quot;)</span>
+<span class="fc" id="L76">			.append(&quot; RowInsertionUtil.addNewDynamicRow('rotation', eval('window.opener.rotationTable'), &quot;)</span>
+<span class="fc" id="L77">			.append(&quot;'&quot; + EmployeeAssignmentInlineEditComponentRH.URL + &quot;', &quot;)</span>
+<span class="fc" id="L78">			.append(&quot;'&quot; + EmployeeAssignmentInlineEditComponentRH.PARAM_TYPE + &quot;=&quot; +</span>
+					EmployeeAssignmentInlineEditComponentRH.ROTATION_RULE_TYPE + &quot;&amp;&quot;)
+<span class="fc" id="L80">			.append(EmployeeAssignmentInlineEditComponentRH.PARAM_START_DATE + &quot;=&quot; + viewStartDate.getTimeInMillis() + &quot;&amp;&quot;)</span>
+<span class="fc" id="L81">			.append(EmployeeAssignmentInlineEditComponentRH.PARAM_END_DATE + &quot;=&quot; + viewEndDate.getTimeInMillis())</span>
+<span class="fc" id="L82">			.append(&quot;'); }&quot;);</span>
+			
+<span class="fc" id="L84">			addButton.setCustomJS(addButtonJS.toString());</span>
+<span class="fc" id="L85">			m_toolbar.addToolbarElement(addButton);</span>
+<span class="fc" id="L86">			m_toolbar.addCloseWindowTextButton(&quot;cancel&quot;, m_localizer.i18n(</span>
+					CoreWebBundleKey.BUNDLE_NAME, CoreWebBundleKey.TOOLBAR_CANCEL), true);
+		}
+<span class="fc" id="L89">	}</span>
+	
+	protected void initUtilityPane() {
+<span class="fc" id="L92">		getUtilityPane().setIsHelpEnabled(false);</span>
+<span class="fc" id="L93">	}</span>
+	
+	protected void initContentTitle() {
+<span class="fc" id="L96">		m_contentTitlePC.setPageTitle(getLocalizer().i18n(</span>
+			FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_ROTATION_DETAILS));
+<span class="fc" id="L98">	}</span>
+	
+	protected void loadData() throws Exception {
+<span class="fc" id="L101">		String employeeIDStr = CacheUtil.getCachedValue(m_context, CacheUtil.CACHE_MODE_SESSION,</span>
+				WorkRulesEmployeeAssignmentPM.EMPLOYEE_ID_LIST_CONTEXT_KEY);
+<span class="pc bpc" id="L103" title="1 of 2 branches missed.">		if (isInfoPopup) {</span>
+<span class="nc" id="L104">			rotations = new ArrayList&lt;Rotation&gt;(WorkRulesModelHandler.getRotationsByIDs(m_context, selectedIDs));</span>
+<span class="pc bpc" id="L105" title="1 of 2 branches missed.">		} else if (employeeIDStr != null) {</span>
+<span class="fc" id="L106">			Collection&lt;ID&gt; employeeIDs = StringUtil.parseIDStringToCollection(employeeIDStr);</span>
+<span class="pc bpc" id="L107" title="1 of 2 branches missed.">			if (isPaginationNavPressed()) {</span>
+<span class="nc" id="L108">				rotations = new ArrayList&lt;Rotation&gt;(WorkRulesModelHandler.getRotationsByIDs(m_context, getPageIDs()));</span>
+			} else {
+<span class="fc" id="L110">				PaginationPair&lt;Rotation&gt; rotationData = WorkRulesModelHandler.getAvailableRotationsForEmployees(m_context, </span>
+<span class="fc" id="L111">						employeeIDs, viewStartDate.getTime(), viewEndDate.getTime(), m_list.getHeader().isAscending(), getPageIDSize(),</span>
+<span class="fc" id="L112">						getPagePaginationIndex(), new LinkedHashMap&lt;DBSortField, Comparator&gt;(m_rotationListPC.getSortFields()), selectedIDs,getTextToFind(itemToFind));</span>
+<span class="fc" id="L113">				rotations = new ArrayList&lt;Rotation&gt;(rotationData.getValues());</span>
+<span class="fc" id="L114">				initPaginationIDs(rotationData.getIDs());					</span>
+			}
+
+<span class="fc" id="L117">			Collections.sort(rotations, new ValueObjectIDListComparator(new ArrayList&lt;ID&gt;(getPageIDs())));</span>
+<span class="fc" id="L118">		} else {</span>
+<span class="nc" id="L119">			throw new Exception(getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+					FsWebBundleKey.FS_ASSIGNMENT_RULE_POPUP_NO_EMPLOYEES_ERROR));
+		}
+		// Collections of IDs of objects we will need for display
+<span class="fc" id="L123">		Collection&lt;ID&gt; orgIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">		for(Rotation rotation : rotations) {</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">			if (rotation.getOrganizationID() != null) orgIDs.add(rotation.getOrganizationID());</span>
+<span class="fc" id="L126">		}</span>
+		
+<span class="fc" id="L128">		orgMap = WorkRulesModelHandler.getOrgs(m_context, orgIDs);		</span>
+<span class="fc" id="L129">	}</span>
+
+	protected RotationListPC initList() {
+<span class="fc" id="L132">		m_rotationListPC = new RotationListPC(getRequestContext(), rotations, orgMap,true);</span>
+<span class="fc" id="L133">		m_rotationListPC.setMultiRowSelectable(false);</span>
+<span class="fc" id="L134">		return m_rotationListPC;</span>
+	}
+	
+	public String getHtmlDisplay() {
+<span class="pc bpc" id="L138" title="1 of 2 branches missed.">		if (m_list != null) {</span>
+<span class="fc" id="L139">			return m_list.getHtmlDisplay();</span>
+		}
+<span class="nc" id="L141">		return &quot;&quot;;</span>
+	}
+	
+	public void setSelectedIDs(String selectedIDs) {
+<span class="nc" id="L145">		this.selectedIDs = new HashSet&lt;ID&gt;(StringUtil.parseIDStringToCollection(selectedIDs));</span>
+<span class="nc" id="L146">	}</span>
+	
+	public void setViewStartDate(String startDate) {
+<span class="fc" id="L149">		viewStartDate = Calendar.getInstance();</span>
+<span class="fc" id="L150">		viewStartDate.setTimeInMillis(Long.parseLong(startDate));</span>
+<span class="fc" id="L151">	}</span>
+	
+	public void setViewEndDate(String endDate) {
+<span class="fc" id="L154">		viewEndDate = Calendar.getInstance();</span>
+<span class="fc" id="L155">		viewEndDate.setTimeInMillis(Long.parseLong(endDate));		</span>
+<span class="fc" id="L156">	}</span>
+	
+	public void setIsInfoPopup(boolean isInfoPopup) {
+<span class="nc" id="L159">		this.isInfoPopup = isInfoPopup;</span>
+<span class="nc" id="L160">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

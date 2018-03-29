@@ -1,0 +1,717 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>FlexTimeRequestsMH.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.requests.flextime</a> &gt; <span class="el_source">FlexTimeRequestsMH.java</span></div><h1>FlexTimeRequestsMH.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.requests.flextime;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.ResourceBundle;
+import java.util.Set;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityProperties;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.activity.model.EventUtils;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignWorkResource;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.CalendarEventAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignmentFields;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TimeOffLengthCalculator;
+import com.bluepumpkin.ejb.bbm.workrules.ejb.WorkRuleManager;
+import com.bluepumpkin.ejb.bbm.workrules.model.Shift;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftOTExtension;
+import com.bluepumpkin.ejb.facade.base.FacadeException;
+import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestDetailLevel;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestFieldInfo;
+import com.bluepumpkin.ejb.rm.requests.flextime.ejb.FlexTimeRequestManager;
+import com.bluepumpkin.ejb.rm.requests.timeoff.hoursperday.ejb.TOHoursPerDayUtil;
+import com.bluepumpkin.ejb.rm.requests.timeoff.hoursperday.model.TOHoursPerDay;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.FlexRequestMakeup;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TOValidationCache;
+import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.web.bbm.activity.ActivityModelHandler;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.rm.keys.RmKeys;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.requests.RequestsMH;
+import com.bluepumpkin.web.rm.requests.custshift.CustomShiftRequestsMH;
+import com.bluepumpkin.web.rm.requests.custshift.CustomShiftRequestsMH.CSDetailData;
+import com.bluepumpkin.web.rm.requests.custshift.CustomShiftUtil;
+import com.bluepumpkin.web.rm.requests.flextime.ShiftAssignmentDetailData.ShiftAssignmentInfo;
+import com.bluepumpkin.web.rm.requests.flextime.ShiftAssignmentDetailData.ShiftExtension;
+import com.bluepumpkin.web.rm.requests.timeoff.TimeOffRequestUtil;
+import com.bluepumpkin.web.rm.requests.timeoff.TimeOffRequestsMH;
+import com.bluepumpkin.web.rm.requests.timeoff.TimeOffRequestsMH.TODetailData;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.witness.ejb.core.security.model.User;
+import com.witness.web.uif.pagecomponent.picker.time.TimePickerPC;
+import com.witness.web.uif.system.RequestContext;
+
+<span class="fc" id="L75">public class FlexTimeRequestsMH extends RequestsMH {</span>
+
+	private static final String SHIFT_ASSIGNMENTS_CACHE_NAME = &quot;shiftAssignments&quot;;
+
+	private static final float PER_HOUR_DIVISION = 60f;
+
+	private static final int HTML_ARRAY_LENGTH = 3;
+
+	private static FlexTimeRequestManager getFTRequestManager() throws BbmCreateException {
+<span class="nc" id="L84">		return m_managerFactory.getFlexTimeRequestManager();</span>
+	}
+
+
+	/**
+	 * Approve Flex Time Request
+	 *
+	 * @param requestID The ID of the Request
+	 * @param toChoiceID The ID of the TimeOff Choice
+	 * @param requestVersion The Request Value Object version
+	 * @param comment The comment associated with the action
+	 */
+	public void approveFTRequest(ID requestID, ID toChoiceID, String requestVersion, String comment) throws Exception {
+<span class="nc" id="L97">		getFTRequestManager().approveRequestByID(requestID, toChoiceID, requestVersion, comment);</span>
+<span class="nc" id="L98">	}</span>
+
+	/**
+	 * Deny Flex Time Request
+	 *
+	 * @param requestID The ID of the Request
+	 * @param requestVersion The Request Value Object version
+	 * @param comment The comment associated with the action
+	 */
+	public void denyFTRequest(ID requestID, String requestVersion, String comment) throws Exception {
+<span class="nc" id="L108">		getFTRequestManager().denyRequestByID(requestID, requestVersion, comment);</span>
+<span class="nc" id="L109">	}</span>
+
+	////////////////  Save Flex Time requests
+
+	public ID createFTRequest(TORequest request, String comment) throws Exception {
+		// always save Flex requests as TimeOff requests
+<span class="nc" id="L115">		request.getAggregatedRequest().setFieldValue(RequestFieldInfo.REQUEST_S_REQUESTTYPE, Request.REQUESTTYPE_TIMEOFF);</span>
+<span class="nc" id="L116">		return getFTRequestManager().createRequest(request, comment) ;</span>
+	}
+
+	public void updateFTRequest(TORequest request, String comment) throws Exception {
+		// always save Flex requests as TimeOff requests
+<span class="nc" id="L121">		request.getAggregatedRequest().setFieldValue(RequestFieldInfo.REQUEST_S_REQUESTTYPE, Request.REQUESTTYPE_TIMEOFF);</span>
+<span class="nc" id="L122">		getFTRequestManager().updateRequest(request, comment);</span>
+<span class="nc" id="L123">	}</span>
+
+
+	////////////////////  Query Flex Time - Shift Request info methods
+
+	public TODetailData getFlexTimeDetailData(RequestContext context, ID empID, TORequest request,
+			boolean isFromNetStaffingRibbon) throws Exception {
+		// Only flex Requests are pulled from backend
+<span class="nc" id="L131">		return TimeOffRequestsMH.getTimeOffOrFlexDetailData(context, empID, request, isFromNetStaffingRibbon, ActivityProperties.FLEX_TIME);</span>
+	}
+
+	public TODetailData getFlexTimeDetailDataForManager(RequestContext context, User user, ID empID,
+			boolean isNewRequest, TORequest request, boolean isFromNetStaffingRibbon)
+					throws RemoteException, BbmException, FacadeException, RmHardValidationException {
+<span class="nc" id="L137">		return TimeOffRequestsMH.getTimeOffOrFlexDetailDataForManager(context, user, empID, isNewRequest, request, isFromNetStaffingRibbon, ActivityProperties.FLEX_TIME);</span>
+	}
+
+	@SuppressWarnings(&quot;deprecation&quot;)
+	public short getWeekStartDateForEmpOrg(RequestContext context, ID employeeID) throws Exception {
+<span class="nc" id="L142">		ID requestOpenerOrgID = CustomShiftRequestsMH.getEmpOrgID(context, employeeID);</span>
+<span class="nc" id="L143">		OrganizationSetting orgSetting = CustomShiftRequestsMH.getOrgSetting(requestOpenerOrgID);</span>
+<span class="nc" id="L144">		return OrganizationModelHandler.getOrganization(context, new ID(orgSetting.getCurrentOrgId())).getWeekStartDate();</span>
+	}
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	public ShiftAssignmentDetailData getShiftAssignmentDetail(RequestContext context, ID requestOpenerEmployeeID,
+			ID requestForEmployeeID, Date date) throws Exception {
+		ShiftAssignmentDetailData result;
+
+<span class="nc" id="L152">		Map&lt;Date, ShiftAssignmentDetailData&gt; cache =</span>
+<span class="nc" id="L153">				(Map&lt;Date, ShiftAssignmentDetailData&gt;) context.getAttribute(RequestContext.REQUEST_SCOPE, SHIFT_ASSIGNMENTS_CACHE_NAME);</span>
+
+<span class="nc bnc" id="L155" title="All 2 branches missed.">		if (cache == null) {</span>
+<span class="nc" id="L156">			cache = new HashMap&lt;Date, ShiftAssignmentDetailData&gt;();</span>
+<span class="nc" id="L157">			context.setAttribute(RequestContext.REQUEST_SCOPE, SHIFT_ASSIGNMENTS_CACHE_NAME, cache);</span>
+		}
+<span class="nc bnc" id="L159" title="All 2 branches missed.">		if (cache.containsKey(date)) {</span>
+<span class="nc" id="L160">			result = cache.get(date);</span>
+		} else {
+
+<span class="nc" id="L163">			Pair&lt;Date, Date&gt; dates = getFullDayRange(date, context.getViewingTimeZone());</span>
+
+<span class="nc" id="L165">			result = new ShiftAssignmentDetailData();</span>
+
+<span class="nc" id="L167">			ID requestOpenerOrgID = CustomShiftRequestsMH.getEmpOrgID(context, requestOpenerEmployeeID);</span>
+
+<span class="nc" id="L169">			OrganizationSetting orgSetting = CustomShiftRequestsMH.getOrgSetting(requestOpenerOrgID);</span>
+
+<span class="nc" id="L171">			CSDetailData data = new CSDetailData(requestForEmployeeID, null, orgSetting, Collections.emptyList());</span>
+
+<span class="nc" id="L173">			CustomShiftRequestsMH.populateCSDetailData(data, context, requestForEmployeeID, dates.getFirst(), dates.getSecond(), null, null, false,</span>
+<span class="nc" id="L174">					context.getLocalizer().getBundle(RmWebBundleKey.BUNDLE_NAME), context.getViewingTimeZone(), true);</span>
+
+<span class="nc" id="L176">			ShiftAssignment shiftAssignment = data.getShiftAssignment();</span>
+
+<span class="nc bnc" id="L178" title="All 2 branches missed.">			if (shiftAssignment != null) {</span>
+				// SHIFT ASSIGNMENT
+<span class="nc" id="L180">				result.setShiftAssignmentInfo(getShiftAssignmentInfo(context, shiftAssignment));</span>
+<span class="nc" id="L181">				result.setShiftAssignment(shiftAssignment);</span>
+
+				@SuppressWarnings(&quot;rawtypes&quot;)
+<span class="nc" id="L184">				Set allElligibleActivities = new HashSet();</span>
+<span class="nc" id="L185">				allElligibleActivities.addAll(data.getActivities());</span>
+<span class="nc" id="L186">				allElligibleActivities.addAll(data.getExtBeforeActivities());</span>
+<span class="nc" id="L187">				allElligibleActivities.addAll(data.getExtAfterActivities());</span>
+<span class="nc" id="L188">				List&lt;Activity&gt; extActivitiesAsList = new ArrayList(allElligibleActivities);</span>
+<span class="nc" id="L189">				CustomShiftUtil.sort(extActivitiesAsList, true, context.getLocaleContext());</span>
+<span class="nc" id="L190">				result.setExtensionActivities(extActivitiesAsList);</span>
+
+				// BEFORE
+<span class="nc" id="L193">				result.setBeforeExtension(getBeforeExtension(context, shiftAssignment));</span>
+
+				// AFTER
+<span class="nc" id="L196">				result.setAfterExtension(getAfterExtension(context, shiftAssignment));</span>
+			}
+
+<span class="nc" id="L199">			cache.put(date, result);</span>
+		}
+<span class="nc" id="L201">		return result;</span>
+	}
+
+	public TimeRange getDurationFromFirstAvailableBlock(ID empID, Date start, Date end, int maxDurationInMinute) throws Exception {
+<span class="nc" id="L205">		TimeRange duration = getFirstAvailableBlock(empID, start, end);</span>
+<span class="nc bnc" id="L206" title="All 4 branches missed.">		if (duration != null &amp;&amp; duration.getDurationMin() &gt; maxDurationInMinute) {</span>
+<span class="nc" id="L207">			Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L208">			cal.setTime(duration.getStartDate());</span>
+<span class="nc" id="L209">			cal.add(Calendar.MINUTE, maxDurationInMinute);</span>
+<span class="nc" id="L210">			Date endTime = cal.getTime();</span>
+<span class="nc" id="L211">			duration = new TimeRange(duration.getStartDate(), endTime);</span>
+		}
+<span class="nc" id="L213">		return duration;</span>
+	}
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	private TimeRange getFirstAvailableBlock(ID empID, Date start, Date end) throws Exception {
+		TimeRange result;
+
+<span class="nc" id="L220">		Collection&lt;TimeRange&gt; availableBlocks = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="nc" id="L221">		availableBlocks.add(new TimeRange(start, end));</span>
+
+		// remove time off (and unavailabitily) durations
+		@SuppressWarnings(&quot;rawtypes&quot;)
+<span class="nc" id="L225">		Collection calendarEvents = getScheduleAccessManager().getPublishedEventsForWorkResourceByType(</span>
+				Event.EVENT_TYPE_TIME_OFF | Event.EVENT_TYPE_UNAVAILABILITY, empID, start, end);
+<span class="nc bnc" id="L227" title="All 2 branches missed.">		for (Object object : calendarEvents) {</span>
+<span class="nc" id="L228">			CalendarEventAssignment event = (CalendarEventAssignment) object;</span>
+<span class="nc" id="L229">			Collection&lt;TimeRange&gt; newAvailableBlocks = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">			for (TimeRange availableBlock : availableBlocks) {</span>
+<span class="nc" id="L231">				newAvailableBlocks.addAll(availableBlock.splitOrTrim(new TimeRange(event.getStartTime(), event.getEndTime())));</span>
+<span class="nc" id="L232">			}</span>
+<span class="nc" id="L233">			availableBlocks = newAvailableBlocks;</span>
+<span class="nc" id="L234">		}</span>
+
+<span class="nc bnc" id="L236" title="All 2 branches missed.">		if (!availableBlocks.isEmpty()) {</span>
+<span class="nc" id="L237">			result = Collections.min(availableBlocks);</span>
+		} else {
+<span class="nc" id="L239">			result = null;</span>
+		}
+<span class="nc" id="L241">		return result;</span>
+	}
+
+	protected ScheduleAccessManager getScheduleAccessManager() throws BbmEJBCreateException {
+<span class="nc" id="L245">		return WfmManagerFactory.getScheduleAccessManager();</span>
+	}
+
+	public ShiftExtension getAfterExtension(RequestContext context, ShiftAssignment shiftAssignment)
+			throws Exception {
+<span class="nc" id="L250">		ShiftExtension after = new ShiftExtension();</span>
+
+<span class="nc" id="L252">		int afterLength = 0;</span>
+<span class="nc" id="L253">		int afterGap = 0;</span>
+<span class="nc" id="L254">		ID afterActivityId = null;</span>
+		// there is no user requested activity ID, then find calendar after extension's activity if any and set field to readonly
+<span class="nc bnc" id="L256" title="All 4 branches missed.">		if (shiftAssignment.getOTExtensionAfterID() != null &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L257">			ShiftOTExtension shiftOTE = getShiftOTExtensionByID(context, shiftAssignment.getOTExtensionAfterID());</span>
+<span class="nc" id="L258">			afterActivityId = shiftOTE.getActivityID();</span>
+<span class="nc" id="L259">			afterLength = shiftOTE.getDuration();</span>
+<span class="nc" id="L260">			afterGap = shiftOTE.getMinGap();</span>
+		}
+		// customized activity
+<span class="nc bnc" id="L263" title="All 4 branches missed.">		if (shiftAssignment.getOTExtensionAfterActivityID() != null &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L264">			afterActivityId = shiftAssignment.getOTExtensionAfterActivityID();</span>
+		}
+		// customized on duration and gap
+<span class="nc bnc" id="L267" title="All 4 branches missed.">		if (shiftAssignment.getExtensionAfter() &gt; 0 &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L268">			int duration = shiftAssignment.getExtensionAfter();</span>
+			// is there any gap?
+<span class="nc" id="L270">			int gap = getOTExtensionGapDuration(shiftAssignment, 2);</span>
+<span class="nc" id="L271">			afterLength = duration - gap;</span>
+<span class="nc" id="L272">			afterGap = gap;</span>
+		}
+
+<span class="nc" id="L275">		after.setLength(afterLength);</span>
+<span class="nc" id="L276">		after.setGap(afterGap);</span>
+<span class="nc" id="L277">		after.setActivityId(afterActivityId);</span>
+
+<span class="nc" id="L279">		return after;</span>
+	}
+
+	private ShiftAssignmentInfo getShiftAssignmentInfo(RequestContext context, ShiftAssignment shiftAssignment)
+			throws Exception {
+<span class="nc" id="L284">		ShiftAssignmentInfo shiftAssignmentInfo = new ShiftAssignmentInfo();</span>
+<span class="nc" id="L285">		shiftAssignmentInfo.setShiftAssignmentId(shiftAssignment.getID());</span>
+<span class="nc" id="L286">		shiftAssignmentInfo.setShiftStartTime(formatShiftStartTime(context, shiftAssignment.getStartTime()));</span>
+<span class="nc" id="L287">		shiftAssignmentInfo.setShiftName(getShiftName(context, shiftAssignment));</span>
+<span class="nc" id="L288">		shiftAssignmentInfo.setShiftDurationMinutes(getShiftDuration(shiftAssignment));</span>
+<span class="nc" id="L289">		shiftAssignmentInfo.setShiftActivityName(getShiftActivityName(context, shiftAssignment));</span>
+<span class="nc" id="L290">		return shiftAssignmentInfo;</span>
+	}
+
+	public ShiftExtension getBeforeExtension(RequestContext context, ShiftAssignment shiftAssignment)
+			throws Exception {
+<span class="nc" id="L295">		ShiftExtension before = new ShiftExtension();</span>
+
+<span class="nc" id="L297">		int beforeLength = 0;</span>
+<span class="nc" id="L298">		int beforeGap = 0;</span>
+<span class="nc" id="L299">		ID beforeActivityId = null;</span>
+		// there is no user requested activity ID, then find calendar before extension's activity if any and set field to readonly
+<span class="nc bnc" id="L301" title="All 4 branches missed.">		if (shiftAssignment.getOTExtensionBeforeID() != null &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L302">			ShiftOTExtension shiftOTE = getShiftOTExtensionByID(context, shiftAssignment.getOTExtensionBeforeID());</span>
+<span class="nc" id="L303">			beforeActivityId = shiftOTE.getActivityID();</span>
+<span class="nc" id="L304">			beforeLength = shiftOTE.getDuration();</span>
+<span class="nc" id="L305">			beforeGap = shiftOTE.getMinGap();</span>
+		}
+		// customized activity
+<span class="nc bnc" id="L308" title="All 4 branches missed.">		if (shiftAssignment.getOTExtensionBeforeActivityID() != null &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L309">			beforeActivityId = shiftAssignment.getOTExtensionBeforeActivityID();</span>
+		}
+		// customized on duration and gap
+<span class="nc bnc" id="L312" title="All 4 branches missed.">		if (shiftAssignment.getExtensionBefore() &gt; 0 &amp;&amp; !EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L313">			int duration = shiftAssignment.getExtensionBefore();</span>
+			// is there any gap?
+<span class="nc" id="L315">			int gap = getOTExtensionGapDuration(shiftAssignment, 1);</span>
+<span class="nc" id="L316">			beforeLength = duration - gap;</span>
+<span class="nc" id="L317">			beforeGap = gap;</span>
+		}
+
+<span class="nc" id="L320">		before.setLength(beforeLength);</span>
+<span class="nc" id="L321">		before.setGap(beforeGap);</span>
+<span class="nc" id="L322">		before.setActivityId(beforeActivityId);</span>
+<span class="nc" id="L323">		return before;</span>
+	}
+
+
+
+	@SuppressWarnings(&quot;rawtypes&quot;)
+	private static int getOTExtensionGapDuration(ShiftAssignment shift, int gapType) {
+<span class="nc" id="L330">		int duration = 0;</span>
+<span class="nc" id="L331">		Collection shiftEvents = shift.getChildObjects(ShiftAssignmentFields.CHILD_SHIFT_EVENT);</span>
+<span class="nc" id="L332">		ShiftEventAssignment event = null;</span>
+<span class="nc bnc" id="L333" title="All 2 branches missed.">		for (Iterator i = shiftEvents.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L334">			event = (ShiftEventAssignment) i.next();</span>
+<span class="nc bnc" id="L335" title="All 2 branches missed.">			if (event.getOverTimeGapType() == gapType) {</span>
+<span class="nc" id="L336">				return event.getDuration();</span>
+			}
+		}
+
+<span class="nc" id="L340">		return duration;</span>
+	}
+	private String getShiftActivityName(RequestContext context, ShiftAssignment shiftAssignment) throws Exception {
+<span class="nc" id="L343">		return getActivity(context, shiftAssignment.getActivityID()).getName();</span>
+	}
+
+	private int getShiftDuration(ShiftAssignment shiftAssignment) {
+		int duration;
+<span class="nc bnc" id="L348" title="All 2 branches missed.">		if (EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L349">			duration = shiftAssignment.getExtensionAfter();</span>
+		} else {
+<span class="nc" id="L351">			duration = shiftAssignment.getDuration() - shiftAssignment.getExtensionAfter() - shiftAssignment.getExtensionBefore();</span>
+		}
+<span class="nc" id="L353">		return duration;</span>
+	}
+
+	public int getShiftDuration(FlexRequestMakeup makeup) {
+<span class="nc" id="L357">		return (int) new TimeRange(makeup.getShiftStartTime(), makeup.getShiftEndTime()).getDurationMin();</span>
+	}
+
+	public String formatShiftStartTime(RequestContext context, Date shiftStart) {
+
+<span class="nc" id="L362">		Calendar cal = Calendar.getInstance(context.getViewingTimeZone());</span>
+<span class="nc" id="L363">		cal.setTime(shiftStart);</span>
+<span class="nc" id="L364">		int shiftStartTime = (cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)) * 60;</span>
+
+<span class="nc" id="L366">		TimePickerPC picker = new TimePickerPC(context, null, true);</span>
+<span class="nc" id="L367">		picker.setTime(shiftStartTime);</span>
+<span class="nc" id="L368">		return picker.getDisplayTime();</span>
+	}
+
+	private String getShiftName(RequestContext context, ShiftAssignment shiftAssignment) throws Exception {
+		String shiftName;
+<span class="nc bnc" id="L373" title="All 2 branches missed.">		if (shiftAssignment.getShiftID() != null) {</span>
+<span class="nc" id="L374">			Shift shift = getShift(context, shiftAssignment.getShiftID());</span>
+<span class="nc" id="L375">			shiftName = shift.getName();</span>
+<span class="nc" id="L376">		} else {</span>
+			// custom shift
+<span class="nc" id="L378">			Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L379">			shiftName = localizer.i18n(localizer.getBundle(RmWebBundleKey.BUNDLE_NAME), RmWebBundleKey.FLEX_SHIFT_REQUEST_SHIFT_NAME_CUSTOM_SHIFT);</span>
+		}
+<span class="nc" id="L381">		return shiftName;</span>
+	}
+
+	/**
+	 * Given a date, return the start of the day and end of the day in the view time zone.
+	 */
+	private Pair&lt;Date, Date&gt; getFullDayRange(Date date, TimeZone tz) {
+<span class="nc" id="L388">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc bnc" id="L389" title="All 2 branches missed.">		if (date != null) {</span>
+<span class="nc" id="L390">			cal.setTime(date);</span>
+		}
+<span class="nc" id="L392">		cal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="nc" id="L393">		cal.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L394">		cal.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L395">		cal.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L396">		Date startDate = cal.getTime();</span>
+<span class="nc" id="L397">		cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L398">		cal.add(Calendar.SECOND, -1);</span>
+
+<span class="nc" id="L400">		return new Pair&lt;Date, Date&gt;(startDate, cal.getTime());</span>
+	}
+
+	private Shift getShift(RequestContext context, ID shiftID) throws BbmEJBCreateException, BbmFinderException, RemoteException {
+<span class="nc" id="L404">		WorkRuleManager workRuleManager = WfmManagerFactory.getWorkRuleManager(context.isInWhatIfMode());</span>
+<span class="nc" id="L405">		return workRuleManager.getShift(shiftID);</span>
+	}
+
+	private Activity getActivity(RequestContext context, ID activityID) throws RemoteException, BbmException {
+<span class="nc" id="L409">		return ActivityModelHandler.getActivityByID(context, activityID);</span>
+	}
+
+	private ShiftOTExtension getShiftOTExtensionByID(RequestContext context, ID shiftOTExtensionID) throws Exception {
+		ShiftOTExtension result;
+<span class="nc" id="L414">		WorkRuleManager workRuleManager = WfmManagerFactory.getWorkRuleManager(context.isInWhatIfMode());</span>
+<span class="nc" id="L415">		Collection&lt;ShiftOTExtension&gt; exts = workRuleManager.getShiftOTExtensionsByIDs(Collections.singletonList(shiftOTExtensionID));</span>
+<span class="nc bnc" id="L416" title="All 4 branches missed.">		if (exts != null &amp;&amp; !exts.isEmpty()) {</span>
+<span class="nc" id="L417">			result = exts.iterator().next();</span>
+		} else {
+<span class="nc" id="L419">			result = null;</span>
+		}
+<span class="nc" id="L421">		return result;</span>
+	}
+
+	public Pair&lt;Date, Date&gt; getMainShiftStartEnd(RequestContext context, ShiftAssignment shiftAssignment) throws Exception {
+<span class="nc" id="L425">		ShiftExtension before = getBeforeExtension(context, shiftAssignment);</span>
+<span class="nc" id="L426">		ShiftExtension after = getAfterExtension(context, shiftAssignment);</span>
+<span class="nc" id="L427">		Date mainShiftStart = new Date(shiftAssignment.getStartTime().getTime() + (before.getLength() + before.getGap()) * TimeZoneUtil.MINUTE_IN_MILLISECONDS_LONG);</span>
+<span class="nc" id="L428">		Date mainShiftEnd = new Date(shiftAssignment.getEndTime().getTime() - (after.getLength() + after.getGap()) * TimeZoneUtil.MINUTE_IN_MILLISECONDS_LONG);</span>
+<span class="nc" id="L429">		return new Pair&lt;Date, Date&gt;(mainShiftStart, mainShiftEnd);</span>
+	}
+
+	public boolean isBeforeExtensionEditable(ShiftAssignment shiftAssignment) {
+		boolean editable;
+<span class="nc bnc" id="L434" title="All 2 branches missed.">		if (EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L435">			editable = false;</span>
+<span class="nc bnc" id="L436" title="All 4 branches missed.">		} else if (shiftAssignment.getOTExtensionBeforeID() == null &amp;&amp; shiftAssignment.getOTExtensionBeforeActivityID() == null) {</span>
+<span class="nc" id="L437">			editable = true;</span>
+		} else {
+<span class="nc" id="L439">			editable = false;</span>
+		}
+<span class="nc" id="L441">		return editable;</span>
+	}
+
+	public boolean isAfterExtensionEditable(ShiftAssignment shiftAssignment) {
+		boolean editable;
+<span class="nc bnc" id="L446" title="All 2 branches missed.">		if (EventUtils.isOTShift(shiftAssignment)) {</span>
+<span class="nc" id="L447">			editable = false;</span>
+<span class="nc bnc" id="L448" title="All 4 branches missed.">		} else if (shiftAssignment.getOTExtensionAfterID() == null &amp;&amp; shiftAssignment.getOTExtensionAfterActivityID() == null) {</span>
+<span class="nc" id="L449">			editable = true;</span>
+		} else {
+<span class="nc" id="L451">			editable = false;</span>
+		}
+<span class="nc" id="L453">		return editable;</span>
+	}
+
+	/*
+	 * Modified from CustomShiftRequestsMH.addSPIDToCSDetailData() method
+	 */
+	public ID getSPID(RequestContext context, ID empId, Date date) throws Exception {
+<span class="nc" id="L460">		ID result = null;</span>
+<span class="nc" id="L461">		CampaignManager campaignManager = WfmManagerFactory.getCampaignManager(context.isInWhatIfMode());</span>
+
+<span class="nc" id="L463">		Pair&lt;Date, Date&gt; dates = getFullDayRange(date, context.getViewingTimeZone());</span>
+<span class="nc" id="L464">		Collection&lt;CampaignWorkResource&gt; assignments = campaignManager.getWorkResourceCampaignAssignments(empId, dates.getFirst(), dates.getSecond());</span>
+<span class="nc bnc" id="L465" title="All 4 branches missed.">		if (assignments != null &amp;&amp; assignments.size() &gt; 0) {</span>
+<span class="nc bnc" id="L466" title="All 2 branches missed.">			for (CampaignWorkResource assignment : assignments) {</span>
+<span class="nc bnc" id="L467" title="All 4 branches missed.">				if (assignment != null &amp;&amp; assignment.getSPID() != null) {</span>
+<span class="nc" id="L468">					result = assignment.getSPID();</span>
+<span class="nc" id="L469">					break;</span>
+				}
+<span class="nc" id="L471">			}</span>
+		}
+<span class="nc" id="L473">		return result;</span>
+	}
+
+	public String formatMakeupLength(RequestContext context, int lengthInMinutes) {
+<span class="nc" id="L477">		return TimeOffRequestUtil.getMinutesDisplay(context.getLocalizer(), lengthInMinutes);</span>
+	}
+
+	/**
+	 * @param context
+	 * @param empId
+	 * @param timeOffTypeId
+	 * @param startDate
+	 * @param endDate
+	 * @return
+	 * @throws Exception
+	 */
+	public String[] calculateTOLengthAndAccountedHours(RequestContext context,  ID empId, ID timeOffTypeId, Date startDate, Date endDate, boolean isApproved) throws Exception {
+
+		//set the input values to be sent across for retrieving data
+		// this is a way to hack the save functionality and just retrieve the values without passing them to DB
+<span class="nc" id="L493">		TORequest toReq = new TORequest(RequestDetailLevel.DL_TIMEOFF_CHOICES_LENGTH|RequestDetailLevel.DL_TIMEOFF_CHOICES|RequestDetailLevel.DL_TIMEOFF_FLEXMAKEUP);</span>
+<span class="nc" id="L494">		toReq.setTimeOffDebitType(TORequest.DEBITTYPE_DEBIT);</span>
+<span class="nc" id="L495">		toReq.setTimeOffType(timeOffTypeId);</span>
+<span class="nc" id="L496">		toReq.setEmployeeID(empId);</span>
+<span class="nc" id="L497">		toReq.setRequestStatus(RequestAuditTrail.STATUS_PENDING);</span>
+
+<span class="nc" id="L499">		TOChoice choice = new TOChoice();</span>
+<span class="nc" id="L500">		choice.setStartDate(startDate);</span>
+<span class="nc" id="L501">		choice.setEndDate(endDate);</span>
+<span class="nc" id="L502">		choice.setIsWaitlist(false);</span>
+
+<span class="nc" id="L504">		toReq.setRequestChoiceList(Arrays.asList(choice));</span>
+
+<span class="nc" id="L506">		TimeOffLengthCalculator calc = new TOValidationCache(toReq).getTimeOffLengthCalculator();</span>
+<span class="nc" id="L507">		TOHoursPerDay hoursPerDay = TOHoursPerDayUtil.calcMinutesForToChoice(toReq, calc, choice);</span>
+<span class="nc" id="L508">		choice.setHoursPerDay(hoursPerDay);</span>
+
+		//just the accounted hours without html fragment
+<span class="nc" id="L511">		int totalMins = hoursPerDay.getTotalMinutes();</span>
+<span class="nc" id="L512">		choice.setLength(totalMins / PER_HOUR_DIVISION);</span>
+
+<span class="nc" id="L514">		Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L515">		ResourceBundle rmBundle = localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+
+		// Length, accounted hours, alerts with html fragment
+<span class="nc" id="L518">		String[] htmlArray = TimeOffRequestUtil.getTimeOffChoiceLenAndAlerts(choice, localizer, context.getViewingTimeZone(), rmBundle, isApproved, true);</span>
+<span class="nc" id="L519">		String[] finalArray = new String[4];</span>
+<span class="nc" id="L520">		System.arraycopy(htmlArray, 0, finalArray, 0, HTML_ARRAY_LENGTH);</span>
+<span class="nc" id="L521">		finalArray[HTML_ARRAY_LENGTH] = String.valueOf(totalMins);</span>
+<span class="nc" id="L522">		return finalArray;</span>
+	}
+
+	/**
+	 * Return All Postings For a Employee
+	 */
+	private static Collection getRequestsByEmployee(ID empID, boolean incExpired)
+		throws RemoteException, BbmException, RmHardValidationException {
+<span class="nc" id="L530">		return RequestsMH.fixRequestTypeForFlexRequests(getFTRequestManager().getRequestsByEmployee(empID, incExpired, true,</span>
+				TORequest.DL_AUDIT_TRAIL |
+				TORequest.DL_TIMEOFF_CHOICES|
+				TORequest.DL_TIMEOFF_CHOICES_LENGTH|
+				TORequest.DL_TIMEOFF_WITHDRAW |
+				TORequest.DL_TIMEOFF_FLEXMAKEUP));
+
+	}
+
+	/**
+	 * Return Data for My Time Off Request Page
+	 */
+	public Map getMyFlexRequestData(RequestContext context, ID empID, boolean incExpired)
+			throws RemoteException, BbmException, BbmFinderException, BbmEJBCreateException, RmHardValidationException {
+<span class="nc" id="L544">		Map map = new HashMap();</span>
+
+		// Request Information
+<span class="nc" id="L547">		Collection requestList = getRequestsByEmployee(empID, incExpired);</span>
+<span class="nc" id="L548">		map.put(RmKeys.DATA_MY_TO_REQUESTS, requestList);</span>
+
+		// Time Off Type Map
+<span class="nc" id="L551">		Map toTypeMap = getTimeOffTypeMap(context, empID);</span>
+<span class="nc" id="L552">		map.put(RmKeys.DATA_MY_TO_TYPES, toTypeMap);</span>
+
+		// Information for Time Off Calendar
+<span class="nc" id="L555">		OrganizationSetting orgSetting = getOrgSettingForEmployee(context, empID);</span>
+<span class="nc" id="L556">		map.put(RmKeys.DATA_MY_TO_ORG_SETTING, orgSetting);</span>
+
+<span class="nc" id="L558">		return map;</span>
+	}
+
+	/**
+	 * Return Time Off Type Map
+	 */
+	private static Map getTimeOffTypeMap(RequestContext context, ID empID)
+			throws RemoteException, BbmException {
+<span class="nc" id="L566">		Collection toTypeList = getTimeOffTypesForEmployee(context, empID);</span>
+<span class="nc" id="L567">		Map toTypeMap = new HashMap();</span>
+<span class="nc bnc" id="L568" title="All 2 branches missed.">		for(Iterator it=toTypeList.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L569">			Activity activity = (Activity)it.next();</span>
+<span class="nc" id="L570">			toTypeMap.put(activity.getID(), activity.getName());</span>
+<span class="nc" id="L571">		}</span>
+<span class="nc" id="L572">		return toTypeMap;</span>
+	}
+
+	/**
+	 * Return TimeOff Types for the specified Employee ID
+	 *
+	 * @param empID The Employee ID
+	 * @return Collection of ActivityType
+	 */
+	private static Collection getTimeOffTypesForEmployee(RequestContext context, ID empID)
+			throws RemoteException, BbmException {
+<span class="nc" id="L583">		ID orgID = getEmpOrgID(context, empID);</span>
+<span class="nc bnc" id="L584" title="All 2 branches missed.">		if (orgID == null) {</span>
+<span class="nc" id="L585">			return Collections.emptyList();</span>
+		} else {
+<span class="nc" id="L587">			return getTimeOffTypes(orgID);</span>
+		}
+	}
+
+	/**
+	 * Return TimeOff Types for the specified Organization ID
+	 *
+	 * @param orgID The Organization ID
+	 * @return Collection of ActivityType
+	 */
+	private static Collection getTimeOffTypes(ID orgID)
+			throws BbmFinderException, BbmCreateException, RemoteException {
+		// need to be modified later
+<span class="nc" id="L600">		return getFTRequestManager().getTimeOffTypes(orgID);</span>
+	}
+
+	/**
+	 * Get the flex time TORequest object by the requestID
+	 * @param requestID
+	 * @return
+	 * @throws BbmFinderException
+	 * @throws BbmCreateException
+	 * @throws RemoteException
+	 * @throws RmHardValidationException
+	 */
+	public TORequest getFTRequest(ID requestID) throws
+			BbmFinderException, BbmCreateException, RemoteException, RmHardValidationException {
+<span class="nc" id="L614">		return (TORequest) getFTRequestManager().getRequestByID(requestID, true, true,</span>
+				TORequest.DL_AUDIT_TRAIL |
+				TORequest.DL_TIMEOFF_CHOICES |
+				TORequest.DL_TIMEOFF_CHOICES_LENGTH |
+				TORequest.DL_TIMEOFF_WAITLIST |
+				TORequest.DL_TIMEOFF_WITHDRAW |
+				TORequest.DL_TIMEOFF_FLEXMAKEUP);
+	}
+
+	/**
+	 * The makeup start date is the start of the first makeup on that day, and the makeup end date is the end
+	 * of the last makeup on that day. For example:
+	 * - If there is only a makeup before the shift, then the makeup Start date is the start of that extension before the shift,
+	 *   and  the makeup End date is the end of that extension before the shift.
+	 * - If there is only a makeup after the shift, then the makeup Start date is the start of that extension after the shift,
+	 *   and the makeup End date is the end of that extension after the shift.
+	 *   If there is a makeup before the shift and a makeup after the shift, then the makeup Start date is the start of the
+	 *   extension before the shift, and the makeup End date is the end of the extension after the shift (the shift is included).
+	 * @param flexMakeup - we will set the makeup start and end dates here.
+	 */
+	public void setMakeupStartAndEnd(FlexRequestMakeup flexMakeup, RequestContext context) {
+<span class="nc" id="L635">		Calendar cal = Calendar.getInstance(context.getViewingTimeZone());</span>
+
+<span class="nc" id="L637">		Date beforeStartTime = null;</span>
+<span class="nc" id="L638">		Date beforeEndTime = null;</span>
+
+<span class="nc" id="L640">		Date afterStartTime = null;</span>
+<span class="nc" id="L641">		Date afterEndTime = null;</span>
+
+<span class="nc bnc" id="L643" title="All 2 branches missed.">		if (flexMakeup.getExtBeforeActivityID() != null) {</span>
+<span class="nc" id="L644">			cal.setTime(flexMakeup.getShiftStartTime());</span>
+<span class="nc" id="L645">			cal.add(Calendar.MINUTE, - (flexMakeup.getExtBeforeGap() + flexMakeup.getExtBeforeDuration()));</span>
+<span class="nc" id="L646">			beforeStartTime = cal.getTime();</span>
+<span class="nc" id="L647">			cal.add(Calendar.MINUTE, flexMakeup.getExtBeforeDuration());</span>
+<span class="nc" id="L648">			beforeEndTime = cal.getTime();</span>
+		}
+
+<span class="nc bnc" id="L651" title="All 2 branches missed.">		if (flexMakeup.getExtAfterActivityID() != null) {</span>
+<span class="nc" id="L652">			cal.setTime(flexMakeup.getShiftEndTime());</span>
+<span class="nc" id="L653">			cal.add(Calendar.MINUTE, flexMakeup.getExtAfterGap());</span>
+<span class="nc" id="L654">			afterStartTime = cal.getTime();</span>
+<span class="nc" id="L655">			cal.add(Calendar.MINUTE, flexMakeup.getExtAfterDuration());</span>
+<span class="nc" id="L656">			afterEndTime = cal.getTime();</span>
+		}
+
+		// Finally, set the starttime and endtime for the entire request
+<span class="nc" id="L660">		flexMakeup.setStartTime(minOfTwoDates(beforeStartTime, afterStartTime));</span>
+<span class="nc" id="L661">		flexMakeup.setEndTime(maxOfTwoDates(beforeEndTime, afterEndTime));</span>
+
+<span class="nc bnc" id="L663" title="All 2 branches missed.">		if (flexMakeup.getStartTime() == null) {</span>
+<span class="nc" id="L664">			flexMakeup.setStartTime(flexMakeup.getShiftStartTime());</span>
+		}
+<span class="nc bnc" id="L666" title="All 2 branches missed.">		if (flexMakeup.getEndTime() == null) {</span>
+<span class="nc" id="L667">			flexMakeup.setEndTime(flexMakeup.getShiftEndTime());</span>
+		}
+<span class="nc" id="L669">	}</span>
+
+	/**
+	 * Return the minimum non-null Date.
+	 */
+	private Date minOfTwoDates(Date d1, Date d2) {
+<span class="nc bnc" id="L675" title="All 4 branches missed.">		if (d1 == null &amp;&amp; d2 == null) {</span>
+<span class="nc" id="L676">			return null;</span>
+		}
+
+<span class="nc bnc" id="L679" title="All 2 branches missed.">		if (d1 == null) {</span>
+<span class="nc" id="L680">			return d2;</span>
+		}
+
+<span class="nc bnc" id="L683" title="All 2 branches missed.">		if (d2 == null) {</span>
+<span class="nc" id="L684">			return d1;</span>
+		}
+
+<span class="nc bnc" id="L687" title="All 2 branches missed.">		if (d1.before(d2)) {</span>
+<span class="nc" id="L688">			return d1;</span>
+		}
+
+<span class="nc" id="L691">		return d2;</span>
+	}
+
+	/**
+	 * Return the maximum non-null Date.
+	 */
+	private Date maxOfTwoDates(Date d1, Date d2) {
+<span class="nc bnc" id="L698" title="All 4 branches missed.">		if (d1 == null &amp;&amp; d2 == null) {</span>
+<span class="nc" id="L699">			return null;</span>
+		}
+
+<span class="nc bnc" id="L702" title="All 2 branches missed.">		if (d1 == null) {</span>
+<span class="nc" id="L703">			return d2;</span>
+		}
+
+<span class="nc bnc" id="L706" title="All 2 branches missed.">		if (d2 == null) {</span>
+<span class="nc" id="L707">			return d1;</span>
+		}
+
+<span class="nc bnc" id="L710" title="All 2 branches missed.">		if (d1.after(d2)) {</span>
+<span class="nc" id="L711">			return d1;</span>
+		}
+
+<span class="nc" id="L714">		return d2;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

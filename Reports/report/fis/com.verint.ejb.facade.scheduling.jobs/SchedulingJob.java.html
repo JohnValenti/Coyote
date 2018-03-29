@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SchedulingJob.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.ejb.facade.scheduling.jobs</a> &gt; <span class="el_source">SchedulingJob.java</span></div><h1>SchedulingJob.java</h1><pre class="source lang-java linenums">package com.verint.ejb.facade.scheduling.jobs;
+
+import org.quartz.StatefulJob;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.Lock;
+import com.bluepumpkin.ejb.bbm.Log;
+import com.bluepumpkin.ejb.facade.FacadeManagerFactory;
+import com.verint.ejb.facade.scheduling.ScheduleMessageScheduler;
+
+import java.util.*;
+
+/**
+ * Class to Schedule the requests in the WSAutoScheduleRequest table
+ */
+<span class="fc" id="L17">public class SchedulingJob implements StatefulJob {</span>
+<span class="fc" id="L18">	private static Category m_cat = Log.initCategory(SchedulingJob.class.getName());</span>
+	/**
+	 * lock to ensure that this job is not reexecuted while an earlier instance
+	 * is still executing.
+	 */
+<span class="fc" id="L23">	static Lock m_jobExecLock = new Lock();</span>
+	/*
+	 * @see org.quartz.Job#execute(org.quartz.JobExecutionContext)
+	 */
+<span class="fc" id="L27">	static long lastRunTime = 0;</span>
+<span class="fc" id="L28">	static int lastKnownRunHour = 0;</span>
+
+	public void execute(JobExecutionContext execCtxt) throws JobExecutionException {
+<span class="fc" id="L31">		String methodName = &quot;execute&quot;;</span>
+<span class="fc" id="L32">		long start = System.currentTimeMillis();</span>
+		try {
+			// try to obtain the lock.
+<span class="pc bpc" id="L35" title="1 of 2 branches missed.">			if (!m_jobExecLock.lock()) {</span>
+<span class="nc" id="L36">				m_cat.debug(&quot;Quartz job not executed as an earlier job is still executing&quot;);</span>
+<span class="nc" id="L37">				return;</span>
+			}
+
+<span class="fc" id="L40">			ScheduleMessageScheduler scheduler = FacadeManagerFactory.getScheduleMessageScheduler();</span>
+<span class="fc" id="L41">			updateStatus(scheduler);</span>
+<span class="fc" id="L42">			scheduleRequests(scheduler);</span>
+<span class="fc" id="L43">			clearOrphanRecords(scheduler);</span>
+<span class="nc" id="L44">		} catch (Exception e) {			</span>
+<span class="nc" id="L45">			m_cat.error(methodName, e);</span>
+<span class="nc" id="L46">			throw new JobExecutionException(e, false);</span>
+		}finally{
+			// release lock if it is being held.
+<span class="pc bpc" id="L49" title="5 of 6 branches missed.">			if (m_jobExecLock.isLocked()) {</span>
+<span class="pc" id="L50">				m_jobExecLock.releaseLock();</span>
+			}
+<span class="pc" id="L52">			m_cat.debug(&quot;Time for Execution = &quot; + (System.currentTimeMillis() - start) / 1000 + &quot; seconds&quot;);</span>
+<span class="fc" id="L53">		}</span>
+<span class="fc" id="L54">	}</span>
+
+	private void updateStatus(ScheduleMessageScheduler scheduler) {
+		try {
+<span class="fc" id="L58">			scheduler.updateStatusAndClearCompletedRequests();</span>
+<span class="nc" id="L59">		} catch (Exception any) {</span>
+<span class="nc" id="L60">			m_cat.error(&quot;Could not update/clear scheduling states.&quot;, any);</span>
+<span class="fc" id="L61">		}</span>
+<span class="fc" id="L62">	}</span>
+
+	private void scheduleRequests(ScheduleMessageScheduler scheduler) {
+		try {
+<span class="fc" id="L66">			scheduler.scheduleReadyRequests();</span>
+<span class="nc" id="L67">		} catch (Exception any) {</span>
+<span class="nc" id="L68">			m_cat.error(&quot;Could not schedule requests.&quot;, any);</span>
+<span class="fc" id="L69">		}</span>
+<span class="fc" id="L70">	}</span>
+
+	private void clearOrphanRecords(ScheduleMessageScheduler scheduler) {
+		try {
+<span class="fc" id="L74">			scheduler.clearOrphanRequests();</span>
+<span class="nc" id="L75">		} catch (Exception any) {</span>
+<span class="nc" id="L76">			m_cat.error(&quot;Could not clear new / in-progress scheduling requests not mapped to message&quot;, any);</span>
+<span class="fc" id="L77">		}</span>
+<span class="fc" id="L78">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

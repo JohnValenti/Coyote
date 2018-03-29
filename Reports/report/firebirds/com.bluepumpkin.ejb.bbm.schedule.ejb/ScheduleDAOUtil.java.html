@@ -1,0 +1,535 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ScheduleDAOUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.schedule.ejb</a> &gt; <span class="el_source">ScheduleDAOUtil.java</span></div><h1>ScheduleDAOUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.schedule.ejb;
+
+import java.rmi.RemoteException;
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  Utility methods shared by schedule-related DAO classes
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, inc
+ * @author       Greg Fichtenholtz
+ * @version 1.0
+ */
+import java.util.*;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriod;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodImpl;
+import com.bluepumpkin.ejb.bbm.l10n.BbmEjbBundleKey;
+import com.bluepumpkin.ejb.bbm.schedule.model.*;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+
+<span class="nc" id="L26">public class ScheduleDAOUtil {</span>
+	/**
+	 * Takes a collection of work resource IDs and a array of collections of
+	 * associated events and massages it in a way to return a collection that
+	 * combines all types of events
+	 */
+	static &lt;T&gt; List&lt;Collection&lt;T&gt;&gt; combineEventCollections(Collection&lt;ID&gt; workResourceIDs,
+			Collection&lt;Collection&lt;Collection&lt;T&gt;&gt;&gt; allEvents) {
+<span class="fc" id="L34">		Map&lt;ID, Collection&lt;T&gt;&gt; mapWrkIDToEvents = new HashMap&lt;ID, Collection&lt;T&gt;&gt;();</span>
+
+<span class="fc bfc" id="L36" title="All 2 branches covered.">		for (Iterator&lt;Collection&lt;Collection&lt;T&gt;&gt;&gt; i = allEvents.iterator(); i.hasNext();) {</span>
+<span class="fc" id="L37">			Iterator&lt;ID&gt; itID = workResourceIDs.iterator();</span>
+<span class="fc" id="L38">			Iterator&lt;Collection&lt;T&gt;&gt; itEvent = (i.next()).iterator();</span>
+<span class="pc bpc" id="L39" title="1 of 4 branches missed.">			while (itID.hasNext() &amp;&amp; itEvent.hasNext()) {</span>
+<span class="fc" id="L40">				ID workResourceID = itID.next();</span>
+<span class="fc" id="L41">				Collection&lt;T&gt; colEventsAlreadyInMap = mapWrkIDToEvents.get(workResourceID);</span>
+<span class="fc" id="L42">				Collection&lt;T&gt; colNewEvents = itEvent.next();</span>
+
+				Collection&lt;T&gt; colCombinedEvents;
+
+<span class="fc bfc" id="L46" title="All 4 branches covered.">				if (colNewEvents != null &amp;&amp; colEventsAlreadyInMap != null) {</span>
+<span class="fc" id="L47">					colCombinedEvents = colEventsAlreadyInMap;</span>
+<span class="fc" id="L48">					colCombinedEvents.addAll(colNewEvents);</span>
+<span class="fc bfc" id="L49" title="All 2 branches covered.">				} else if (colNewEvents != null) {</span>
+<span class="fc" id="L50">					colCombinedEvents = colNewEvents;</span>
+				} else {
+<span class="fc" id="L52">					colCombinedEvents = colEventsAlreadyInMap;</span>
+				}
+<span class="fc" id="L54">				mapWrkIDToEvents.put(workResourceID, colCombinedEvents);</span>
+<span class="fc" id="L55">			}</span>
+<span class="fc" id="L56">		}</span>
+
+<span class="fc" id="L58">		List&lt;Collection&lt;T&gt;&gt; listEvents = new ArrayList&lt;Collection&lt;T&gt;&gt;(workResourceIDs.size());</span>
+<span class="fc bfc" id="L59" title="All 2 branches covered.">		for (Iterator&lt;ID&gt; it = workResourceIDs.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L60">			ID empID = it.next();</span>
+<span class="fc" id="L61">			listEvents.add(mapWrkIDToEvents.get(empID));</span>
+<span class="fc" id="L62">		}</span>
+<span class="fc" id="L63">		return listEvents;</span>
+	}
+
+	/**
+	 * Takes a collection of events returned as a result of an SQL query, and a
+	 * collection of work resource IDs and returns a collection where there is
+	 * either a collection of events that correspond to each work resource ID
+	 * given, or null, if the work resource has no events
+	 */
+	public static &lt;T extends Event&gt; Collection&lt;Collection&lt;T&gt;&gt; groupEventsByWorkResources(Collection&lt;T&gt; listEvents,
+			Collection&lt;ID&gt; workResourceIDs) {
+<span class="pc bpc" id="L74" title="1 of 4 branches missed.">		if (workResourceIDs == null || workResourceIDs.size() &lt;= 1) {</span>
+			// no need to group
+<span class="fc" id="L76">			Collection&lt;Collection&lt;T&gt;&gt; returnList = new ArrayList&lt;Collection&lt;T&gt;&gt;();</span>
+<span class="fc" id="L77">			returnList.add(listEvents);</span>
+<span class="fc" id="L78">			return returnList;</span>
+		}
+		/**
+		 * now go through this collection and construct the map keyed by
+		 * workresource ID with values being the corresponding collection of
+		 * event assignments
+		 */
+<span class="fc" id="L85">		Map&lt;ID, List&lt;T&gt;&gt; mapWrkResIDToEvents = new HashMap&lt;ID, List&lt;T&gt;&gt;();</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">		for (Iterator&lt;T&gt; itEvent = listEvents.iterator(); itEvent.hasNext();) {</span>
+<span class="fc" id="L87">			T event = itEvent.next();</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; itWrk = event.getWorkResourceIDs().iterator(); itWrk.hasNext();) {</span>
+<span class="fc" id="L89">				ID workResourceID = itWrk.next();</span>
+<span class="fc" id="L90">				List&lt;T&gt; wrkEvents = mapWrkResIDToEvents.get(workResourceID);</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">				if (wrkEvents == null) {</span>
+<span class="fc" id="L92">					wrkEvents = new ArrayList&lt;T&gt;();</span>
+<span class="fc" id="L93">					mapWrkResIDToEvents.put(workResourceID, wrkEvents);</span>
+				}
+<span class="fc" id="L95">				wrkEvents.add(event);</span>
+<span class="fc" id="L96">			}</span>
+<span class="fc" id="L97">		}</span>
+
+<span class="fc" id="L99">		List&lt;Collection&lt;T&gt;&gt; returnList = new ArrayList&lt;Collection&lt;T&gt;&gt;();</span>
+<span class="fc bfc" id="L100" title="All 2 branches covered.">		for (Iterator&lt;ID&gt; it = workResourceIDs.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L101">			ID workResourceID = it.next();</span>
+<span class="fc" id="L102">			returnList.add(mapWrkResIDToEvents.get(workResourceID));</span>
+<span class="fc" id="L103">		}</span>
+<span class="fc" id="L104">		return returnList;</span>
+	}
+
+	/**
+	 * Takes a collection of collection of events and &quot;flattens&quot; it into a a
+	 * list that contains clones of each event in the original collection This
+	 * utility method is used in publishing and reverting back to publishing
+	 * schedules
+	 */
+	static &lt;T extends PlannedEvent&gt; Collection&lt;T&gt; cloneEventsForPublishing(Collection&lt;Collection&lt;T&gt;&gt; listEvents) {
+		/*
+		 * we don't want to publish the same event more than once, even if it
+		 * has multiple work resources attending
+		 */
+<span class="fc" id="L118">		Set&lt;T&gt; setClonedEvents = new HashSet&lt;T&gt;();</span>
+
+<span class="fc bfc" id="L120" title="All 2 branches covered.">		for (Iterator&lt;Collection&lt;T&gt;&gt; i = listEvents.iterator(); i.hasNext();) {</span>
+<span class="fc" id="L121">			Collection&lt;T&gt; wrkEvents = i.next();</span>
+<span class="pc bpc" id="L122" title="2 of 4 branches missed.">			if (wrkEvents != null &amp;&amp; !wrkEvents.isEmpty()) {</span>
+<span class="fc bfc" id="L123" title="All 2 branches covered.">				for (Iterator&lt;T&gt; j = wrkEvents.iterator(); j.hasNext();) {</span>
+<span class="fc" id="L124">					PlannedEvent cloneable = j.next();</span>
+<span class="fc" id="L125">					setClonedEvents.add((T)cloneable.cloneForPublishing());	//TODO: refactor PlannedEvent.cloneForPublishing to return T</span>
+<span class="fc" id="L126">				}</span>
+			}
+<span class="fc" id="L128">		}</span>
+<span class="fc" id="L129">		return setClonedEvents;</span>
+	}
+
+	/**
+	 * This helper method is used by the schedule conflict-checking DAO classes
+	 * to help format the conflict messages with employee's names
+	 */
+	static void findEmployeeNames(Collection&lt;BbmScheduleConflict&gt; listConflicts) {
+<span class="pc bpc" id="L137" title="2 of 4 branches missed.">		if (listConflicts == null || listConflicts.isEmpty()) {</span>
+<span class="fc" id="L138">			return;</span>
+		}
+
+		/*
+		 * first, find the list of all possible work resource IDs that we'll
+		 * need to get names for
+		 */
+<span class="nc" id="L145">		Set&lt;ID&gt; setIDs = new HashSet&lt;ID&gt;();</span>
+
+<span class="nc bnc" id="L147" title="All 2 branches missed.">		for (Iterator&lt;BbmScheduleConflict&gt; it = listConflicts.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L148">			BbmScheduleConflict conflict = it.next();</span>
+<span class="nc" id="L149">			Collection&lt;ID&gt; workResourceIDs = conflict.getWorkResourceIDs();</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">			if (workResourceIDs != null) {</span>
+<span class="nc" id="L151">				setIDs.addAll(workResourceIDs);</span>
+			}
+<span class="nc" id="L153">		}</span>
+
+<span class="nc bnc" id="L155" title="All 2 branches missed.">		if (!setIDs.isEmpty()) {</span>
+			/* now find the names of the employees with corresponding IDs */
+<span class="nc" id="L157">			CachePerEJBMethod cache = CachePerEJBMethod.getCache();</span>
+<span class="nc" id="L158">			Map&lt;ID, EmployeeName&gt; mapNames = cache.getEmployeeNames(setIDs);</span>
+
+			/*
+			 * finally, go through the conflicts collection and initialize the
+			 * employee name for each conflict
+			 */
+<span class="nc bnc" id="L164" title="All 2 branches missed.">			for (Iterator&lt;BbmScheduleConflict&gt; it = listConflicts.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L165">				BbmScheduleConflict conflict = it.next();</span>
+<span class="nc" id="L166">				Collection&lt;ID&gt; workResourceIDs = conflict.getWorkResourceIDs();</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">				if (workResourceIDs != null) {</span>
+<span class="nc" id="L168">					ArrayList&lt;EmployeeName&gt; listNames = new ArrayList&lt;EmployeeName&gt;(workResourceIDs.size());</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">					for (Iterator&lt;ID&gt; it2 = workResourceIDs.iterator(); it2.hasNext();) {</span>
+<span class="nc" id="L170">						ID workResourceID = it2.next();</span>
+<span class="nc" id="L171">						listNames.add(mapNames.get(workResourceID));</span>
+<span class="nc" id="L172">					}</span>
+<span class="nc" id="L173">					conflict.setEmployeeNames(listNames);</span>
+				}
+<span class="nc" id="L175">			}</span>
+		}
+<span class="nc" id="L177">	}</span>
+
+	// ///////////////////// DK start /////////////////////
+	/**
+	 * Takes a collection of work resource IDs and two collections of associated
+	 * templates and massages it in a way to return a collection that combines
+	 * all types of templates. Returns ArrayList of ArrayLists ordered the same
+	 * order as workResourceIDs is
+	 */
+	static List&lt;Collection&lt;? extends CalendarEventTemplate&gt;&gt; combineTemplateCollections(Collection&lt;ID&gt; workResourceIDs,
+			Collection&lt;? extends CalendarEventTemplate&gt; t1, Collection&lt;? extends CalendarEventTemplate&gt; t2)
+					throws BbmFinderException {
+<span class="fc" id="L189">		Map&lt;ID, Collection&lt;CalendarEventTemplate&gt;&gt; map = new HashMap&lt;ID, Collection&lt;CalendarEventTemplate&gt;&gt;();</span>
+<span class="fc" id="L190">		List&lt;Collection&lt;? extends CalendarEventTemplate&gt;&gt; result =</span>
+<span class="fc" id="L191">				new ArrayList&lt;Collection&lt;? extends CalendarEventTemplate&gt;&gt;(workResourceIDs.size());</span>
+<span class="fc bfc" id="L192" title="All 2 branches covered.">		for (Iterator&lt;ID&gt; itWrk = workResourceIDs.iterator(); itWrk.hasNext();) {</span>
+<span class="fc" id="L193">			ID workResourceID = itWrk.next();</span>
+<span class="fc" id="L194">			List&lt;CalendarEventTemplate&gt; al = new ArrayList&lt;CalendarEventTemplate&gt;();</span>
+<span class="fc" id="L195">			result.add(al);</span>
+<span class="fc" id="L196">			map.put(workResourceID, al);</span>
+<span class="fc" id="L197">		}</span>
+<span class="fc" id="L198">		addTemplateCollectionToMap(map, t1);</span>
+<span class="fc" id="L199">		addTemplateCollectionToMap(map, t2);</span>
+<span class="fc" id="L200">		return result;</span>
+	}
+
+	private static void addTemplateCollectionToMap(Map&lt;ID, Collection&lt;CalendarEventTemplate&gt;&gt; map,
+			Collection&lt;? extends CalendarEventTemplate&gt; tt) throws BbmFinderException {
+<span class="fc bfc" id="L205" title="All 2 branches covered.">		for (Iterator&lt;? extends CalendarEventTemplate&gt; iTempl = tt.iterator(); iTempl.hasNext();) {</span>
+<span class="fc" id="L206">			CalendarEventTemplate ob = iTempl.next();</span>
+<span class="pc bpc" id="L207" title="1 of 2 branches missed.">			if (!(ob instanceof CalendarEventTemplate)) {</span>
+<span class="nc" id="L208">				throw new BbmFinderException(BbmEjbBundleKey.SCHEDULE_EVENT_TEMPLATE_INVALID, null);</span>
+			}
+			// iterate all attendees of the template
+<span class="fc" id="L211">			CalendarEventTemplate te = ob;</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; itWrk = te.getWorkResourceIDs().iterator(); itWrk.hasNext();) {</span>
+<span class="fc" id="L213">				ID workResourceID = itWrk.next();</span>
+<span class="fc" id="L214">				Collection&lt;CalendarEventTemplate&gt; al = map.get(workResourceID);</span>
+<span class="fc bfc" id="L215" title="All 2 branches covered.">				if (al != null) {</span>
+<span class="fc" id="L216">					al.add(te);</span>
+				}
+<span class="fc" id="L218">			}</span>
+<span class="fc" id="L219">		}</span>
+<span class="fc" id="L220">	}</span>
+
+	/**
+	 * Takes a collection of EventTemplate IDs and a collection of associated
+	 * CalendarEventAssignments and reorders it in a same order as
+	 * cidEventTemplates goes
+	 */
+	static List&lt;Collection&lt;CalendarEventAssignment&gt;&gt; reorderEventsByTemplateIds(Collection&lt;ID&gt; cidEventTemplates,
+			Collection&lt;CalendarEventAssignment&gt; t) {
+<span class="fc" id="L229">		Map&lt;ID, List&lt;CalendarEventAssignment&gt;&gt; map = new HashMap&lt;ID, List&lt;CalendarEventAssignment&gt;&gt;();</span>
+<span class="fc" id="L230">		List&lt;Collection&lt;CalendarEventAssignment&gt;&gt; result = new ArrayList&lt;Collection&lt;CalendarEventAssignment&gt;&gt;(</span>
+<span class="fc" id="L231">				cidEventTemplates.size());</span>
+<span class="fc bfc" id="L232" title="All 2 branches covered.">		for (Iterator&lt;ID&gt; itEvTemplId = cidEventTemplates.iterator(); itEvTemplId.hasNext();) {</span>
+<span class="fc" id="L233">			ID evTemplId = itEvTemplId.next();</span>
+<span class="fc" id="L234">			List&lt;CalendarEventAssignment&gt; al = new ArrayList&lt;CalendarEventAssignment&gt;();</span>
+<span class="fc" id="L235">			result.add(al);</span>
+<span class="fc" id="L236">			map.put(evTemplId, al);</span>
+<span class="fc" id="L237">		}</span>
+<span class="fc bfc" id="L238" title="All 2 branches covered.">		for (Iterator&lt;CalendarEventAssignment&gt; itCEA = t.iterator(); itCEA.hasNext();) {</span>
+			// This defensive code is because calling code is casting
+			// dao.getObjects(strSQL.toString())
+			// to Collection&lt;CalendarEventAssignment&gt; so in theory it could be
+			// exercised.
+<span class="fc" id="L243">			Object ob = itCEA.next();</span>
+<span class="fc" id="L244">			CalendarEventAssignment cea = (CalendarEventAssignment) ob;</span>
+<span class="fc" id="L245">			ID etID = cea.getEventTemplateID();</span>
+<span class="fc" id="L246">			List&lt;CalendarEventAssignment&gt; al = map.get(etID);</span>
+<span class="pc bpc" id="L247" title="1 of 2 branches missed.">			if (al != null) {</span>
+<span class="fc" id="L248">				al.add(cea);</span>
+			}
+<span class="fc" id="L250">		}</span>
+<span class="fc" id="L251">		return result;</span>
+	}
+
+	/**
+	 * This method only check if all the conflicts have resolutions. Client side
+	 * should make sure the resolution can work well with the specific conflict
+	 * type.
+	 * 
+	 * @author ayu
+	 *
+	 *         To change the template for this generated type comment go to
+	 *         Window - Preferences - Java - Code Generation - Code and Comments
+	 */
+	static boolean areConflictsResolvable(Collection&lt;BbmScheduleConflict&gt; conflicts,
+			BbmScheduleConflictResolutions resolutions) {
+<span class="nc" id="L266">		BbmScheduleConflict conflict = null;</span>
+<span class="nc" id="L267">		int[] validResolutions = null;</span>
+<span class="nc" id="L268">		int resolution = -1;</span>
+<span class="nc bnc" id="L269" title="All 2 branches missed.">		for (Iterator&lt;BbmScheduleConflict&gt; i = conflicts.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L270">			conflict = i.next();</span>
+<span class="nc" id="L271">			validResolutions = conflict.getResolutions();</span>
+<span class="nc" id="L272">			resolution = resolutions.getResolution(conflict.getConflictType());</span>
+<span class="nc bnc" id="L273" title="All 2 branches missed.">			if (isInList(validResolutions, resolution)) {</span>
+<span class="nc" id="L274">				continue;</span>
+			} else {
+<span class="nc" id="L276">				return false;</span>
+			}
+		}
+<span class="nc" id="L279">		return true;</span>
+	}
+
+	private static boolean isInList(int[] list, int item) {
+<span class="nc bnc" id="L283" title="All 4 branches missed.">		if (list == null || list.length == 0) {</span>
+<span class="nc" id="L284">			return false;</span>
+		}
+<span class="nc bnc" id="L286" title="All 2 branches missed.">		for (int ix = 0; ix &lt; list.length; ix++) {</span>
+<span class="nc bnc" id="L287" title="All 2 branches missed.">			if (list[ix] == item) {</span>
+<span class="nc" id="L288">				return true;</span>
+			}
+		}
+<span class="nc" id="L291">		return false;</span>
+	}
+
+	/**
+	 * Currently only recurring overlap calender event or shift assignment can
+	 * be resolved
+	 * 
+	 * the whole purpose of valueObj parameter is for passing template id for
+	 * removing one instance of newly created template. Since the event object
+	 * in BbmScheduleConflict does not have id set.
+	 * 
+	 * @param conflicts
+	 * @param resolutions
+	 * @throws RemoteException 
+	 * @throws MultiUserException 
+	 */
+	static void resolveConflicts(ScheduleAccessManagerEJB manager, Collection&lt;BbmScheduleConflict&gt; conflicts,
+			BbmScheduleConflictResolutions resolutions) throws BbmScheduleConflictException, BbmRemoveException, BbmCreateException,
+			BbmFinderException, MultiUserException, RemoteException {
+<span class="nc" id="L310">		BbmScheduleConflict conflict = null;</span>
+<span class="nc" id="L311">		int conflictType = 0;</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">		for (Iterator&lt;BbmScheduleConflict&gt; i = conflicts.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L313">			conflict = i.next();</span>
+<span class="nc" id="L314">			conflictType = conflict.getConflictType();</span>
+<span class="nc" id="L315">			int resolution = resolutions.getResolution(conflictType);</span>
+<span class="nc bnc" id="L316" title="All 9 branches missed.">			switch (conflictType) {</span>
+			case BbmScheduleConflict.CONFLICT_OVERLAP_SHIFT:
+<span class="nc" id="L318">				throw new BbmScheduleConflictException(conflicts);</span>
+			case BbmScheduleConflict.CONFLICT_MULTIPLE_SHIFTS_ON_SINGLE_DAY:
+<span class="nc" id="L320">				throw new BbmScheduleConflictException(conflicts);</span>
+			case BbmScheduleConflict.CONFLICT_OVERLAP_SHIFT_EVENT:
+<span class="nc" id="L322">				throw new BbmScheduleConflictException(conflicts);</span>
+			case BbmScheduleConflict.CONFLICT_OVERLAP_RECURRING:
+<span class="nc" id="L324">				throw new BbmScheduleConflictException(conflicts);</span>
+			case BbmScheduleConflict.CONFLICT_OVERLAP_EVENT:
+<span class="nc bnc" id="L326" title="All 2 branches missed.">				if (resolution == BbmScheduleConflictResolutions.RESOLUTION_REMOVE_CALENDAREVENT) {</span>
+<span class="nc" id="L327">					removeCalendarEvent(manager, conflict, conflicts);</span>
+				} else {
+					// wrong resolution.
+<span class="nc" id="L330">					throw new BbmScheduleConflictException(conflicts);</span>
+				}
+				break;
+			case BbmScheduleConflict.CONFLICT_SHIFT_OVERLAP_EVENT:
+				// for this conflict specificly,
+				// shift is always top and event is alway bottom in conflict
+				// object
+<span class="nc bnc" id="L337" title="All 2 branches missed.">				if (resolution == BbmScheduleConflictResolutions.RESOLUTION_REMOVE_SHIFT) {</span>
+<span class="nc" id="L338">					removeShiftAssignment(conflict, conflicts);</span>
+<span class="nc bnc" id="L339" title="All 2 branches missed.">				} else if (resolution == BbmScheduleConflictResolutions.RESOLUTION_REMOVE_CALENDAREVENT) {</span>
+<span class="nc" id="L340">					removeCalendarEvent(manager, conflict, conflicts);</span>
+				} else {
+					// wrong resolution.
+<span class="nc" id="L343">					throw new BbmScheduleConflictException(conflicts);</span>
+				}
+				break;
+			case BbmScheduleConflict.CONFLICT_RECURRING_OVERLAP_EVENT:
+<span class="nc bnc" id="L347" title="All 2 branches missed.">				if (resolution == BbmScheduleConflictResolutions.RESOLUTION_REMOVE_RECURRINGINSTANCE) {</span>
+<span class="nc" id="L348">					RecurringEventTemplateBase template = conflict.getRecurringTemplate();</span>
+<span class="nc" id="L349">					CalendarEventAssignment cea = conflict.getCalendarEvent();</span>
+<span class="nc bnc" id="L350" title="All 4 branches missed.">					if (template == null || cea == null) {</span>
+						// wrong resolution.
+<span class="nc" id="L352">						throw new BbmScheduleConflictException(conflicts);</span>
+					}
+<span class="nc" id="L354">					removeRecurringInstance(template, cea);</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">				} else if (resolution == BbmScheduleConflictResolutions.RESOLUTION_REMOVE_CALENDAREVENT) {</span>
+<span class="nc" id="L356">					removeCalendarEvent(manager, conflict, conflicts);</span>
+				} else {
+					// wrong resolution.
+<span class="nc" id="L359">					throw new BbmScheduleConflictException(conflicts);</span>
+				}
+				break;
+			case BbmScheduleConflict.CONFLICT_RECURRING_OVERLAP_SHIFT:
+<span class="nc bnc" id="L363" title="All 2 branches missed.">				if (resolution == BbmScheduleConflictResolutions.RESOLUTION_REMOVE_RECURRINGINSTANCE) {</span>
+<span class="nc" id="L364">					RecurringEventTemplateBase template = conflict.getRecurringTemplate();</span>
+<span class="nc" id="L365">					ShiftAssignment shift = conflict.getShiftAssignment();</span>
+<span class="nc bnc" id="L366" title="All 4 branches missed.">					if (template == null || shift == null) {</span>
+						// wrong resolution.
+<span class="nc" id="L368">						throw new BbmScheduleConflictException(conflicts);</span>
+					}
+<span class="nc" id="L370">					removeRecurringInstance(template, shift);</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">				} else if (resolution == BbmScheduleConflictResolutions.RESOLUTION_REMOVE_SHIFT) {</span>
+<span class="nc" id="L372">					removeShiftAssignment(conflict, conflicts);</span>
+				} else {
+					// wrong resolution.
+<span class="nc" id="L375">					throw new BbmScheduleConflictException(conflicts);</span>
+				}
+				break;
+			}
+<span class="nc" id="L379">		}</span>
+<span class="nc" id="L380">	}</span>
+
+	private static void removeCalendarEvent(ScheduleAccessManagerEJB manager, BbmScheduleConflict conflict,
+			Collection&lt;BbmScheduleConflict&gt; conflicts) throws BbmScheduleConflictException, BbmRemoveException, MultiUserException,
+			RemoteException {
+<span class="nc" id="L385">		CalendarEventAssignment event = conflict.getCalendarEvent();</span>
+<span class="nc bnc" id="L386" title="All 2 branches missed.">		if (event == null) {</span>
+			// event is not on bottom. wrong resolution.
+<span class="nc" id="L388">			throw new BbmScheduleConflictException(conflicts);</span>
+		}
+		// just in case, the DE client wants server to remove the
+		// newly created or updated event
+<span class="nc" id="L392">		ID eventID = event.getID();</span>
+<span class="nc bnc" id="L393" title="All 4 branches missed.">		if (eventID == null || eventID.toInt() &lt;= 0) {</span>
+<span class="nc" id="L394">			return;</span>
+		}
+<span class="nc" id="L396">		manager.deleteCalendarEventAssignments(Arrays.asList(eventID));</span>
+<span class="nc" id="L397">		return;</span>
+	}
+
+	private static void removeShiftAssignment(BbmScheduleConflict conflict, Collection&lt;BbmScheduleConflict&gt; conflicts)
+			throws BbmScheduleConflictException, BbmRemoveException {
+<span class="nc" id="L402">		ShiftAssignment shift = conflict.getShiftAssignment();</span>
+<span class="nc bnc" id="L403" title="All 2 branches missed.">		if (shift == null) {</span>
+			// shift is not on bottom. wrong resolution.
+<span class="nc" id="L405">			throw new BbmScheduleConflictException(conflicts);</span>
+		}
+		// just in case, the DE client wants server to remove
+		// the newly created or updated event.
+<span class="nc" id="L409">		ID shiftID = shift.getID();</span>
+<span class="nc bnc" id="L410" title="All 4 branches missed.">		if (shiftID == null || shiftID.toInt() &lt;= 0) {</span>
+<span class="nc" id="L411">			return;</span>
+		}
+<span class="nc" id="L413">		ShiftAssignmentDAO daoShift = new ShiftAssignmentDAO();</span>
+<span class="nc" id="L414">		daoShift.deleteObject(shift.getID());</span>
+<span class="nc" id="L415">		return;</span>
+	}
+
+	private static void removeRecurringInstance(RecurringEventTemplateBase template, Event event)
+			throws BbmCreateException, BbmRemoveException {
+<span class="nc" id="L420">		Collection&lt;CalendarEventAssignment&gt; overlappingInstances = template.whichInstancesOverlapWithEvent(event);</span>
+		// whichInstancesOverlapWithEvent will return the instance with all the
+		// attendees
+		// but we should only create a hole for the attendees who has event
+		// overlapped
+<span class="nc" id="L425">		keepAttendeesHavingOverlap(overlappingInstances, event);</span>
+<span class="nc" id="L426">		RecurringEventTemplateDAO daoRecur = new RecurringEventTemplateDAO();</span>
+<span class="nc" id="L427">		daoRecur.deleteOverlappingInstances(template, overlappingInstances);</span>
+<span class="nc" id="L428">		return;</span>
+	}
+
+	private static void keepAttendeesHavingOverlap(Collection&lt;CalendarEventAssignment&gt; instances, Event event) {
+<span class="nc" id="L432">		CalendarEventAssignment calEvent = null;</span>
+<span class="nc" id="L433">		Collection&lt;CalendarEventAttendee&gt; attendees = null;</span>
+<span class="nc" id="L434">		Collection&lt;ID&gt; keptAttendees = event.getWorkResourceIDs();</span>
+<span class="nc bnc" id="L435" title="All 2 branches missed.">		for (Iterator&lt;CalendarEventAssignment&gt; i = instances.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L436">			calEvent = i.next();</span>
+<span class="nc" id="L437">			attendees = calEvent.getCreatedChildObjects(CalendarEventAssignmentFields.CHILD_ATTENDEE);</span>
+<span class="nc bnc" id="L438" title="All 2 branches missed.">			for (Iterator&lt;CalendarEventAttendee&gt; ix = attendees.iterator(); ix.hasNext();) {</span>
+<span class="nc" id="L439">				CalendarEventAttendee att = ix.next();</span>
+<span class="nc bnc" id="L440" title="All 2 branches missed.">				if (keptAttendees.contains(att.getWorkResourceID())) {</span>
+<span class="nc" id="L441">					continue;</span>
+				} else {
+<span class="nc" id="L443">					ix.remove();</span>
+				}
+<span class="nc" id="L445">			}</span>
+		}
+<span class="nc" id="L447">	}</span>
+
+	// For QA 35812
+	/*
+	 * This method combines events for all work resources into single flat
+	 * collection
+	 */
+	static &lt;T&gt; Set&lt;T&gt; getUniqueEvents(Collection&lt;Collection&lt;T&gt;&gt; listEvents) {
+
+<span class="fc" id="L456">		Set&lt;T&gt; eventSet = new HashSet&lt;T&gt;();</span>
+
+		// Iterate over the list events (list events is collection of collection
+		// objects
+		// which correspond to work resources)
+<span class="fc bfc" id="L461" title="All 2 branches covered.">		for (Iterator&lt;Collection&lt;T&gt;&gt; i = listEvents.iterator(); i.hasNext();) {</span>
+<span class="fc" id="L462">			Collection&lt;T&gt; wrkEvents = i.next();</span>
+<span class="fc bfc" id="L463" title="All 4 branches covered.">			if (wrkEvents != null &amp;&amp; !wrkEvents.isEmpty()) {</span>
+<span class="fc bfc" id="L464" title="All 2 branches covered.">				for (Iterator&lt;T&gt; j = wrkEvents.iterator(); j.hasNext();) {</span>
+<span class="fc" id="L465">					T event = j.next();</span>
+<span class="pc bpc" id="L466" title="1 of 2 branches missed.">					if (event != null) {</span>
+<span class="fc" id="L467">						eventSet.add(event);</span>
+					}
+<span class="fc" id="L469">				}</span>
+			}
+<span class="fc" id="L471">		}</span>
+<span class="fc" id="L472">		return eventSet;</span>
+	}
+
+	// QA 38793: Silk 80826 To filter the shifts after termination date
+	/**
+	 * Filters the event list based on the employee end date
+	 */
+	protected static &lt;T extends Event&gt; Collection&lt;Collection&lt;T&gt;&gt; filterShiftsByEmpEndDate(
+			Collection&lt;Collection&lt;T&gt;&gt; listEvents, Collection&lt;ID&gt; workResources, Map&lt;ID, Date&gt; terminatedWRKS) {
+		// Iterate over the initial work resource list
+<span class="nc" id="L482">		Iterator&lt;ID&gt; wrkIt = workResources.iterator();</span>
+		// Iterate over the List Events corresponding to every work resource
+<span class="nc bnc" id="L484" title="All 4 branches missed.">		for (Iterator&lt;Collection&lt;T&gt;&gt; it = listEvents.iterator(); it.hasNext() &amp;&amp; wrkIt.hasNext();) {</span>
+<span class="nc" id="L485">			Collection&lt;T&gt; events = it.next();</span>
+<span class="nc" id="L486">			ID wrkResourceID = wrkIt.next();</span>
+			// if wrkresource id is same as the terminated wrks, remove all the
+			// events after the end time
+<span class="nc bnc" id="L489" title="All 6 branches missed.">			if (terminatedWRKS.get(wrkResourceID) != null &amp;&amp; events != null &amp;&amp; !events.isEmpty()) {</span>
+<span class="nc" id="L490">				Date termTime = terminatedWRKS.get(wrkResourceID);</span>
+<span class="nc bnc" id="L491" title="All 2 branches missed.">				for (Iterator&lt;T&gt; eventIt = events.iterator(); eventIt.hasNext();) {</span>
+<span class="nc" id="L492">					T event = eventIt.next();</span>
+<span class="nc bnc" id="L493" title="All 4 branches missed.">					if (event != null &amp;&amp; event.getStartTime().compareTo(termTime) &gt; 0) {</span>
+<span class="nc" id="L494">						eventIt.remove();</span>
+					}
+<span class="nc" id="L496">				}</span>
+			}
+<span class="nc" id="L498">		}</span>
+
+<span class="nc" id="L500">		return listEvents;</span>
+	}
+
+	public static &lt;T extends Event&gt; TimePeriod getTimePeriod(Collection&lt;T&gt; eventList) {
+<span class="nc" id="L504">		Collections.sort(new ArrayList(eventList));		//FIXME: This line seems unnecessary</span>
+<span class="nc" id="L505">		Iterator&lt;T&gt; i = eventList.iterator();</span>
+<span class="nc" id="L506">		T firstEvent = i.next();</span>
+<span class="nc" id="L507">		T lastEvent = firstEvent;</span>
+<span class="nc bnc" id="L508" title="All 2 branches missed.">		for (; i.hasNext();) {</span>
+<span class="nc" id="L509">			lastEvent = i.next();</span>
+		}
+<span class="nc" id="L511">		return new TimePeriodImpl(firstEvent.getStartTime(), lastEvent.getEndTime());</span>
+	}
+
+	/**
+	 * Find the overlapping events with the start/end time
+	 * @param events events list
+	 * @param start start time for the overlap
+	 * @param end end time for the overlap event
+	 * @param &lt;T&gt;
+	 * @return list of Events overlapping
+	 */
+	public static &lt;T extends Event&gt; Collection&lt;T&gt; findOverlap(Collection&lt;T&gt; events, Date start, Date end) {
+<span class="nc" id="L523">		T event = null;</span>
+<span class="nc" id="L524">		List&lt;T&gt; overlaps = new ArrayList&lt;T&gt;();</span>
+<span class="nc bnc" id="L525" title="All 2 branches missed.">		for (Iterator&lt;T&gt; i = events.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L526">			event = i.next();</span>
+<span class="nc bnc" id="L527" title="All 4 branches missed.">			if (event.getStartTime().before(end) &amp;&amp; event.getEndTime().after(start)) {</span>
+<span class="nc" id="L528">				overlaps.add(event);</span>
+			}
+		}
+<span class="nc" id="L531">		return overlaps;</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

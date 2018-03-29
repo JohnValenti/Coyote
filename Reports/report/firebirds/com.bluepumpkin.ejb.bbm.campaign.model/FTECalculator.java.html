@@ -1,0 +1,391 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>FTECalculator.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.campaign.model</a> &gt; <span class="el_source">FTECalculator.java</span></div><h1>FTECalculator.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.campaign.model;
+
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  static class contains the FTE Calculator logic
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin S	oftware, inc
+ * @author       Jason Fama
+ * @version      1.0
+ */
+
+import java.util.*;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.activity.model.EventUtils;
+import com.bluepumpkin.ejb.bbm.activity.model.SimpleEvent;
+import com.bluepumpkin.ejb.bbm.base.BbmTimeSeriesException;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.util.TraceOperator;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeTemplate;
+import com.verint.ejb.bbm.forecast.model.ForecastProfileProject;
+
+public class FTECalculator implements java.io.Serializable {
+	static final long serialVersionUID = 1L;
+
+	public LinkedHashMap&lt;ID, Double&gt; m_hEmployeeIDsToWages;
+	public LinkedHashMap&lt;ID, ID&gt; m_hPhantomIDsToEmpTemplateIDs;
+	public Collection&lt;EmployeeTemplate&gt; m_cEmpTemplates;
+	public TraceCube m_tRequirements;
+	public Map&lt;ID, Collection&lt;ID&gt;&gt; m_hActivityMedias;
+	public Date m_dtStart;
+	public Date m_dtEnd;
+	public TimeZone m_pTZ;
+	public Collection&lt;ForecastProfileProject&gt; m_projects; // Collection of
+															// ForecastProfileProject's.
+															// If not null, we
+															// also calculate
+															// the Project
+															// Statistics.
+	public Map&lt;ID, String&gt; m_projectQueueIdNameMap;
+	public Map&lt;ID, ID&gt; m_projectQueueIdSIDMap;
+	public Map&lt;ID, Collection&lt;ID&gt;&gt; m_hActivityQueues;
+
+	public double m_defaultWage;
+	public boolean m_bUseDefaultWage; // this will be true if at least one
+										// employee/phantom has a wage of $0.00.
+										// This indicates that we need to use
+										// the default wage when calculating.
+	public ID m_SPID; // the ID of the scheduling period. We only count events
+						// for this SP.
+	public Map&lt;ID, Collection&lt;Event&gt;&gt; m_wrIdsToEventsMap; // a map of the
+															// SP's
+															// employee/phantom
+															// ID's -&gt; the
+															// filtered events
+															// for each.
+
+	// A collection of the employee/phantom ID's to be calculated.
+	protected Collection&lt;ID&gt; wrIdsToCalculate;
+
+	/**
+	 * Constructor.
+	 * 
+	 * @param hEmployeeIDsToWages
+	 *            - A an ordered Map of employee ID to employee wage (Double)
+	 *            for all of the employees in the SP
+	 * @param hPhantomIDsToEmpTemplateIDs
+	 *            - An ordered map of PhantomIDs to EmployeeTemplateIDs
+	 * @param cEmpTemplates
+	 *            - The EmployeeTemplates corresponding to the Phantoms in
+	 *            cPhantoms, followed by any remaining Staffing Profiles
+	 *            (EmployeeTemplates) for this scheduling period that have not
+	 *            been scheduled.
+	 * @param tRequirements
+	 *            - The Required FTE TraceCube for the SP
+	 * @param hActivityMedias
+	 *            - Map of activity ID (key) and collection of Media Ids
+	 *            (value), for all activities in the schedules for the SP
+	 * @param dtStart
+	 *            - Start date for the SP
+	 * @param dtEnd
+	 *            - End date for the SP
+	 * @param pTZ
+	 *            - TimeZone for the Campaign
+	 * @param projects
+	 *            - Collection of ForecastProfileProject's. If not null, we also
+	 *            calculate the Project Statistics.
+	 * @param projectQueueIdNameMap
+	 *            - a map of project queue DEID's to names
+	 * @param projectQueueIdSIDMap
+	 *            - a map of project queue DEID to SID
+	 * @param hActivityQueues
+	 *            - a map of activityIDs (SID) to queueIDs (SID)
+	 * @param spID
+	 *            - the ID of the scheduling period. We only count events for
+	 *            this SP.
+	 * @param wrIdsToEventsMap
+	 *            - a map of the SP's employee/phantom ID's -&gt; the filtered
+	 *            events for each.
+	 * @param defaultWage
+	 *            - The default wage to use when the employee's wage is $0.0,
+	 *            for calculating the &quot;Total Scheduled Cost&quot;.
+	 */
+	public FTECalculator(LinkedHashMap&lt;ID, Double&gt; hEmployeeIDsToWages, LinkedHashMap&lt;ID, ID&gt; hPhantomIDsToEmpTemplateIDs,
+			Collection&lt;EmployeeTemplate&gt; cEmpTemplates, TraceCube tRequirements, Map&lt;ID, Collection&lt;ID&gt;&gt; hActivityMedias,
+			Date dtStart, Date dtEnd, TimeZone pTZ, Collection&lt;ForecastProfileProject&gt; projects,
+			Map&lt;ID, String&gt; projectQueueIdNameMap, Map&lt;ID, ID&gt; projectQueueIdSIDMap,
+<span class="nc" id="L112">			Map&lt;ID, Collection&lt;ID&gt;&gt; hActivityQueues, ID spID, Map&lt;ID, Collection&lt;Event&gt;&gt; wrIdsToEventsMap, double defaultWage) {</span>
+<span class="nc" id="L113">		m_hEmployeeIDsToWages = hEmployeeIDsToWages;</span>
+<span class="nc" id="L114">		m_hPhantomIDsToEmpTemplateIDs = hPhantomIDsToEmpTemplateIDs;</span>
+<span class="nc" id="L115">		m_cEmpTemplates = cEmpTemplates;</span>
+<span class="nc" id="L116">		m_tRequirements = tRequirements;</span>
+<span class="nc" id="L117">		m_hActivityMedias = hActivityMedias;</span>
+<span class="nc" id="L118">		m_dtStart = dtStart;</span>
+<span class="nc" id="L119">		m_dtEnd = dtEnd;</span>
+<span class="nc" id="L120">		m_pTZ = pTZ;</span>
+<span class="nc" id="L121">		m_projects = projects;</span>
+<span class="nc" id="L122">		m_projectQueueIdNameMap = projectQueueIdNameMap;</span>
+<span class="nc" id="L123">		m_projectQueueIdSIDMap = projectQueueIdSIDMap;</span>
+<span class="nc" id="L124">		m_hActivityQueues = hActivityQueues;</span>
+<span class="nc" id="L125">		m_bUseDefaultWage = false;</span>
+<span class="nc" id="L126">		m_SPID = spID;</span>
+<span class="nc" id="L127">		m_wrIdsToEventsMap = wrIdsToEventsMap;</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">		wrIdsToCalculate = m_wrIdsToEventsMap==null ? null : new ArrayList&lt;ID&gt;(m_wrIdsToEventsMap.keySet());</span>
+<span class="nc" id="L129">		m_defaultWage = defaultWage;</span>
+<span class="nc" id="L130">	}</span>
+
+	/**
+	 * @param wrID
+	 *            - The workResource ID (Employee or Phantom)
+	 * @param cShiftAssignments
+	 * @param dWage
+	 * @param hActivityMedias
+	 * @param dtStart
+	 * @param anStaffing
+	 * @param fteCalc
+	 * @param pStat
+	 * 
+	 */
+	private void CountHours(ID wrID, Collection&lt;Event&gt; cShiftAssignments, double dWage,
+			Map&lt;ID, Collection&lt;ID&gt;&gt; hActivityMedias, Date dtStart, int[] anStaffing, FTECalculation fteCalc,
+			FTECalculation.TemplateStat pStat) {
+<span class="nc" id="L147">		int nPaid = 0;</span>
+<span class="nc" id="L148">		int nContact = 0;</span>
+
+		// flatten the Event collection first.
+<span class="nc" id="L151">		Collection&lt;SimpleEvent&gt; colFlattenedEvents = EventUtils.convertEventsToTimelineForSingleEmployee(cShiftAssignments,</span>
+				null, null, null, true);
+
+<span class="nc bnc" id="L154" title="All 2 branches missed.">		for (Iterator&lt;SimpleEvent&gt; i = colFlattenedEvents.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L155">			SimpleEvent pEvent = i.next();</span>
+			// if the event has an SPID, then we must verify it. Otherwise,
+			// allow it
+			// (ex: a calendar event)
+<span class="nc bnc" id="L159" title="All 4 branches missed.">			if (pEvent.getSPID() == null || pEvent.getSPID().equals(m_SPID)) {</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">				if (pEvent.getPaid()) {</span>
+<span class="nc" id="L161">					nPaid += pEvent.getDuration();</span>
+				}
+
+<span class="nc" id="L164">				Collection&lt;ID&gt; cMedias = hActivityMedias.get(pEvent.getActivityID());</span>
+<span class="nc bnc" id="L165" title="All 4 branches missed.">				if (cMedias != null &amp;&amp; cMedias.size() &gt; 0) {</span>
+<span class="nc" id="L166">					nContact += pEvent.getDuration();</span>
+<span class="nc" id="L167">					incStaffing(anStaffing, dtStart, pEvent.getStartTime(), pEvent.getDuration());</span>
+
+<span class="nc bnc" id="L169" title="All 2 branches missed.">					if (cMedias.contains(Media.MEDIA_ID_PROJECT)) {</span>
+<span class="nc" id="L170">						updateProjectStats(fteCalc, wrID, dWage, pEvent);</span>
+					}
+				}
+			}
+<span class="nc" id="L174">		}</span>
+
+<span class="nc" id="L176">		fteCalc.m_nScheduledContact += nContact;</span>
+<span class="nc" id="L177">		fteCalc.m_nScheduledPaid += nPaid;</span>
+<span class="nc" id="L178">		fteCalc.m_dScheduledCost += (nPaid * dWage / 60.0);</span>
+
+<span class="nc bnc" id="L180" title="All 2 branches missed.">		if (pStat != null) {</span>
+			// this is a non-hidden Phantom
+<span class="nc" id="L182">			pStat.nContactHours += nContact;</span>
+<span class="nc" id="L183">			pStat.nPaidHours += nPaid;</span>
+<span class="nc" id="L184">			pStat.dHourlyCost += (nPaid * dWage / 60.0);</span>
+		}
+<span class="nc" id="L186">	}</span>
+
+	/**
+	 * Update project statistics for an event.
+	 * 
+	 * @param fteCalc
+	 * @param wrID
+	 *            - The workResource ID (Employee or Phantom)
+	 * @param pEvent
+	 */
+	private void updateProjectStats(FTECalculation fteCalc, ID wrID, double dWage, Event pEvent) {
+<span class="nc" id="L197">		Collection&lt;ForecastProfileProject&gt; projects = fteCalc.m_projects;</span>
+
+<span class="nc bnc" id="L199" title="All 2 branches missed.">		if (fteCalc.m_activityQueues != null) {</span>
+<span class="nc" id="L200">			Collection&lt;ID&gt; activityQueueIDs = fteCalc.m_activityQueues.get(pEvent.getActivityID());</span>
+
+<span class="nc bnc" id="L202" title="All 4 branches missed.">			if (activityQueueIDs != null &amp;&amp; activityQueueIDs.size() &gt; 0) {</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">				for (Iterator&lt;ForecastProfileProject&gt; projectIt = projects.iterator(); projectIt.hasNext();) {</span>
+<span class="nc" id="L204">					ForecastProfileProject project = projectIt.next();</span>
+
+<span class="nc" id="L206">					ID projectQueueID = project.getQueueID();</span>
+					// get the queue SID for this DEID
+<span class="nc" id="L208">					projectQueueID = fteCalc.m_projectQueueIdSIDMap.get(projectQueueID);</span>
+
+<span class="nc bnc" id="L210" title="All 4 branches missed.">					if (projectQueueID != null &amp;&amp; activityQueueIDs.contains(projectQueueID)) {</span>
+<span class="nc" id="L211">						TimeRange projectRange = new TimeRange(project.getStartTime(), project.getEndTime());</span>
+<span class="nc" id="L212">						TimeRange eventRange = new TimeRange(pEvent.getStartTime(), new Date(pEvent.getEndTime().getTime())); // -1));</span>
+																																// //TBD
+																																// GQ
+<span class="nc" id="L215">						Double overlapSeconds = projectRange.getOverlapDuration(eventRange) / 1000.0;</span>
+
+<span class="nc bnc" id="L217" title="All 2 branches missed.">						if (overlapSeconds &gt; 0.0) {</span>
+<span class="nc" id="L218">							ID projectID = project.getID();</span>
+<span class="nc" id="L219">							fteCalc.addProjectEmployee(projectID, wrID);</span>
+<span class="nc" id="L220">							fteCalc.addProjectScheduled(projectID, overlapSeconds.intValue());</span>
+<span class="nc" id="L221">							fteCalc.addProjectCost(projectID, ((overlapSeconds / 3600.0d) * dWage));</span>
+						}
+					}
+<span class="nc" id="L224">				}</span>
+			}
+		}
+<span class="nc" id="L227">	}</span>
+
+	private void incStaffing(int[] anStaffing, Date dtStart, Date dtIncStart, int nDuration) {
+<span class="nc" id="L230">		int nOffset = (int) (dtIncStart.getTime() - dtStart.getTime()) / (1000 * 60);</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">		for (int n = 0; n &lt; nDuration; n++) {</span>
+<span class="nc bnc" id="L232" title="All 4 branches missed.">			if (nOffset + n &gt;= 0 &amp;&amp; nOffset + n &lt; anStaffing.length) {</span>
+<span class="nc" id="L233">				anStaffing[nOffset + n]++;</span>
+			}
+		}
+<span class="nc" id="L236">	}</span>
+
+	/**
+	 * @param cEvents
+	 *            - The scedules in the SP, in the following order: cEmployees,
+	 *            cPhantoms
+	 * @param defaultWage
+	 *            - The default wage to use when the emplyee's wage is $0.0, for
+	 *            calculating the &quot;Total Scheduled Cost&quot;.
+	 *
+	 *            public void setEventsAndWage(List&lt;Collection&lt;Event&gt;&gt; cEvents,
+	 *            double defaultWage) { m_cEvents = cEvents; m_defaultWage =
+	 *            defaultWage; }
+	 */
+
+	/**
+	 * @param defaultWage
+	 *            - The default wage to use when the emplyee's wage is $0.0, for
+	 *            calculating the &quot;Total Scheduled Cost&quot;.
+	 */
+	public void setWage(double defaultWage) {
+<span class="nc" id="L257">		m_defaultWage = defaultWage;</span>
+<span class="nc" id="L258">	}</span>
+
+	/**
+	 * Calculate and return the FTECalculation data for the Web suite's FTE
+	 * Calculator. You must call setEventsAndWage() prior to this method.
+	 * 
+	 * @return The FTECalculation data for the SP.
+	 * @throws BbmTimeSeriesException
+	 */
+	public FTECalculation calculateFTE() throws BbmTimeSeriesException {
+<span class="nc" id="L268">		FTECalculation fteCalc = new FTECalculation();</span>
+<span class="nc" id="L269">		int nMinutes = (int) ((m_dtEnd.getTime() - m_dtStart.getTime()) / 60000);</span>
+<span class="nc" id="L270">		int[] anStaffing = new int[nMinutes];</span>
+
+<span class="nc" id="L272">		Arrays.fill(anStaffing, 0);</span>
+
+<span class="nc bnc" id="L274" title="All 2 branches missed.">		if (m_projects != null) {</span>
+<span class="nc" id="L275">			fteCalc.initProjectStatistics(m_projects, m_projectQueueIdNameMap, m_projectQueueIdSIDMap, m_hActivityQueues);</span>
+		}
+
+<span class="nc bnc" id="L278" title="All 2 branches missed.">		for (Iterator&lt;ID&gt; empIt = m_hEmployeeIDsToWages.keySet().iterator(); empIt.hasNext();) {</span>
+<span class="nc" id="L279">			ID employeeID = empIt.next();</span>
+<span class="nc" id="L280">			countHoursForEmployee(fteCalc, anStaffing, employeeID);</span>
+<span class="nc" id="L281">		}</span>
+
+<span class="nc" id="L283">		Iterator&lt;EmployeeTemplate&gt; etIt = m_cEmpTemplates.iterator();</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">		for (Iterator&lt;ID&gt; pIt = m_hPhantomIDsToEmpTemplateIDs.keySet().iterator(); pIt.hasNext();) {</span>
+<span class="nc" id="L285">			ID phantomID = pIt.next();</span>
+<span class="nc" id="L286">			countHoursForPhantom(fteCalc, anStaffing, etIt, phantomID);</span>
+<span class="nc" id="L287">		}</span>
+
+<span class="nc bnc" id="L289" title="All 2 branches missed.">		while (etIt.hasNext()) {</span>
+			// Add any remaining Staffing Profiles linked to this SP that have
+			// not been scheduled.
+<span class="nc" id="L292">			EmployeeTemplate empTemplate = etIt.next();</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">			if (!empTemplate.getIsHidden()) {</span>
+<span class="nc" id="L294">				FTECalculation.TemplateStat pStat = fteCalc.m_hTemplateStats.get(empTemplate.getID());</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">				if (pStat == null) {</span>
+					// This template is a staffing profile that hasn't been
+					// scheduled. We will set all calculations to 0.
+
+					// get a new TemplateStat. Does not affect fteCalc.
+<span class="nc" id="L300">					pStat = fteCalc.addTemplateStat(empTemplate.getName());</span>
+
+					// add the TemplateStat to fteCalc
+<span class="nc" id="L303">					fteCalc.m_hTemplateStats.put(empTemplate.getID(), pStat);</span>
+				}
+			}
+<span class="nc" id="L306">		}</span>
+
+<span class="nc bnc" id="L308" title="All 2 branches missed.">		if (m_tRequirements != null) {</span>
+<span class="nc" id="L309">			int nLength = m_tRequirements.getMaximumLength(new short[] { Trace.FTE }) - 1;</span>
+<span class="nc" id="L310">			fteCalc.m_nRequired = (int) (60 * TraceOperator.aggregatePeriod(m_tRequirements, Trace.FTE, 0, nLength));</span>
+		}
+
+<span class="nc bnc" id="L313" title="All 2 branches missed.">		for (int n = 0; n &lt; anStaffing.length; n++) {</span>
+<span class="nc bnc" id="L314" title="All 2 branches missed.">			if (anStaffing[n] != -1) {</span>
+<span class="nc bnc" id="L315" title="All 2 branches missed.">				if (anStaffing[n] &lt; fteCalc.m_nMinConcurrant) {</span>
+<span class="nc" id="L316">					fteCalc.m_nMinConcurrant = anStaffing[n];</span>
+				}
+<span class="nc bnc" id="L318" title="All 2 branches missed.">				if (anStaffing[n] &gt; fteCalc.m_nMaxConcurrant) {</span>
+<span class="nc" id="L319">					fteCalc.m_nMaxConcurrant = anStaffing[n];</span>
+				}
+			}
+		}
+<span class="nc" id="L323">		return fteCalc;</span>
+	}
+
+	private void countHoursForPhantom(FTECalculation fteCalc, int[] anStaffing, Iterator&lt;EmployeeTemplate&gt; etIt, ID phantomID) {
+<span class="nc bnc" id="L327" title="All 2 branches missed.">		if (wrIdsToCalculate.contains(phantomID)) {</span>
+<span class="nc" id="L328">            ID empTemplateID = m_hPhantomIDsToEmpTemplateIDs.get(phantomID);</span>
+
+<span class="nc" id="L330">            EmployeeTemplate empTemplate = etIt.next();</span>
+
+<span class="nc" id="L332">            FTECalculation.TemplateStat pStat = null;</span>
+<span class="nc bnc" id="L333" title="All 2 branches missed.">            if (!empTemplate.getIsHidden()) {</span>
+                // This template corresponds to a Phantom that was created from
+                // a true staffing profile (rather than
+                // having been converted from a real agent's schedule). It will
+                // appear in the &quot;Staffing Profile Statistics&quot;.
+<span class="nc" id="L338">                pStat = fteCalc.m_hTemplateStats.get(empTemplateID);</span>
+<span class="nc bnc" id="L339" title="All 2 branches missed.">                if (pStat == null) {</span>
+					// get a new TemplateStat. Does not affect fteCalc.
+<span class="nc" id="L341">                    pStat = fteCalc.addTemplateStat(empTemplate.getName());</span>
+
+					// add the TemplateStat to fteCalc
+<span class="nc" id="L344">                    fteCalc.m_hTemplateStats.put(empTemplateID, pStat);</span>
+                }
+<span class="nc" id="L346">                pStat.nNumberScheduled++;</span>
+            }
+
+<span class="nc" id="L349">            Collection&lt;Event&gt; cShiftAssignments = m_wrIdsToEventsMap.get(phantomID);</span>
+<span class="nc bnc" id="L350" title="All 2 branches missed.">            if (cShiftAssignments != null) {</span>
+<span class="nc" id="L351">                double dWage = empTemplate.getWage();</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">                if (dWage == 0.0d) {</span>
+<span class="nc" id="L353">                    dWage = m_defaultWage;</span>
+<span class="nc" id="L354">                    m_bUseDefaultWage = true;</span>
+                }
+<span class="nc" id="L356">                CountHours(phantomID, cShiftAssignments, dWage, m_hActivityMedias, m_dtStart, anStaffing, fteCalc, pStat);</span>
+            }
+        }
+<span class="nc" id="L359">	}</span>
+
+	private void countHoursForEmployee(FTECalculation fteCalc, int[] anStaffing, ID employeeID) {
+<span class="nc bnc" id="L362" title="All 2 branches missed.">		if (wrIdsToCalculate.contains(employeeID)) {</span>
+<span class="nc" id="L363">            Collection&lt;Event&gt; cShiftAssignments = m_wrIdsToEventsMap.get(employeeID);</span>
+<span class="nc bnc" id="L364" title="All 2 branches missed.">            if (cShiftAssignments != null) {</span>
+<span class="nc" id="L365">                double dWage = m_hEmployeeIDsToWages.get(employeeID).doubleValue();</span>
+<span class="nc bnc" id="L366" title="All 2 branches missed.">                if (dWage == 0.0d) {</span>
+<span class="nc" id="L367">                    dWage = m_defaultWage;</span>
+<span class="nc" id="L368">                    m_bUseDefaultWage = true;</span>
+                }
+<span class="nc" id="L370">                CountHours(employeeID, cShiftAssignments, dWage, m_hActivityMedias, m_dtStart, anStaffing, fteCalc, null);</span>
+            }
+        }
+<span class="nc" id="L373">	}</span>
+
+	public void refreshSchedule(Map&lt;ID, Collection&lt;Event&gt;&gt; newSchedule, Map activityMedias,
+			Map&lt;ID, Collection&lt;ID&gt;&gt; activityQueues) {
+<span class="nc" id="L377">		m_wrIdsToEventsMap = newSchedule;</span>
+<span class="nc" id="L378">		wrIdsToCalculate = new ArrayList&lt;ID&gt;(m_wrIdsToEventsMap.keySet());</span>
+<span class="nc" id="L379">		this.m_hActivityMedias = activityMedias;</span>
+<span class="nc" id="L380">		this.m_hActivityQueues = activityQueues;</span>
+<span class="nc" id="L381">	}</span>
+
+	public void setWrIdsToCalculate(Collection&lt;ID&gt; wrIdsToCalculate) {
+<span class="nc" id="L384">		this.wrIdsToCalculate = wrIdsToCalculate;</span>
+<span class="nc" id="L385">	}</span>
+
+	public void setActivityQueues(Map&lt;ID, Collection&lt;ID&gt;&gt; activityQueues) {
+<span class="nc" id="L388">		this.m_hActivityQueues = activityQueues;</span>
+<span class="nc" id="L389">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

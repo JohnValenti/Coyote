@@ -1,0 +1,1538 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeRecordModel.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.am.timerecords</a> &gt; <span class="el_source">TimeRecordModel.java</span></div><h1>TimeRecordModel.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.am.timerecords;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.ResourceBundle;
+import java.util.TimeZone;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.l10n.RegionalFormatBundleKey;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.HtmlEncoder;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmTimePeriodOverlapException;
+import com.bluepumpkin.ejb.bbm.base.BbmTimeRecordException;
+import com.witness.ejb.core.licensing.LicenseKeys;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeEntrySourceCode;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeInterval;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeRecord;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeRecordEntry;
+import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
+import com.bluepumpkin.ejb.core.CoreManagerFactory;
+import com.bluepumpkin.ejb.core.profile.model.UserProfile;
+import com.bluepumpkin.web.am.Log;
+import com.bluepumpkin.web.am.keys.AmJavaScriptFileID;
+import com.bluepumpkin.web.am.l10n.AmWebBundleKey;
+import com.bluepumpkin.web.am.l10n.AmWebLogBundleKey;
+import com.bluepumpkin.web.am.util.JSPUtil;
+import com.bluepumpkin.web.bbm.employee.EmployeeModelHandler;
+import com.bluepumpkin.web.bbm.helper.AccessRightHelper;
+import com.bluepumpkin.web.core.user.profile.UserProfileManager;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.ImageFileID;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.list.MultiColListPC;
+import com.witness.web.uif.pagecomponent.picker.date.DatePickerPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarTextButton;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.pagemodel.WorkpanePageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.TimeZoneHelper;
+
+/**
+ * Title:        Blue Pumpkin Software Activity Management
+ * Description:  Display the time records for an employee
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, Inc
+ * @author       Swati Tewari
+ * @version 1.0
+ */
+
+public class TimeRecordModel extends WorkpanePageModel{
+<span class="fc" id="L68">	private static Category cat  = Log.initCategory(TimeRecordModel.class.getName());</span>
+
+	// Page Actions
+	public static final String APPROVEDAY_ACTION = &quot;APPROVEDAY_ACTION&quot;;
+	public static final String APPROVETR_ACTION = &quot;APPROVETR_ACTION&quot;;
+	public static final String DELETETR_ACTION = &quot;DELETETR_ACTION&quot;;
+	public static final String VIEWADHERENCE_ACTION = &quot;VIEWADHERENCE_ACTION&quot;;
+	public static final String CANCEL_ACTION = &quot;CANCEL_ACTION&quot;;
+	public static final String DONE_ACTION = &quot;DONE_ACTION&quot;;
+	public static final String REFRESH_ACTION = &quot;REFRESH_ACTION&quot;;
+	public static final String DELETETE_ACTION = &quot;DELETETE_ACTION&quot;;
+
+	public static final String PREV_ACTION = &quot;PREV_ACTION&quot;;
+	public static final String NEXT_ACTION = &quot;NEXT_ACTION&quot;;
+
+	// field names
+	public static final String SELECTED_DATE_FN = &quot;sel&quot;;
+
+	public static final String LOAD_SCOPE_PRIV_ACTION = &quot;loadScopePriv&quot;;
+
+<span class="fc" id="L88">	private Collection timeRecordsForEmployee = new ArrayList();</span>
+	private ID empId;
+	private ID supervisorId;
+	private ID orgId;
+	private int recordId;
+	private ID timeEntryID;
+	private long version;
+<span class="fc" id="L95">	private TimeRecord timeRecord = null;</span>
+	private Date m_selectedDate;
+
+	private boolean approved;
+<span class="fc" id="L99">	private int selYear = -1;</span>
+	private int selMonth;
+	private int selDay;
+<span class="fc" id="L102">	private long longDate = -1;</span>
+	private ResourceBundle m_bundle;
+
+<span class="fc" id="L105">	private String boundaryTimeSpan = null;</span>
+
+<span class="fc" id="L107">	private ArrayList selectedIndex = new ArrayList();</span>
+<span class="fc" id="L108">	private int detailSelectedIndex = -1;</span>
+<span class="fc" id="L109">	private int mediatorNum = -1;</span>
+<span class="fc" id="L110">	private int position = -1;</span>
+<span class="fc" id="L111">	private boolean aggregated = false;</span>
+	private boolean direction;
+
+	// Contained List
+<span class="fc" id="L115">	private TRDayDetailPC aPC = null;</span>
+	private MultiColListPC aList;
+	private DatePickerPC m_datePicker;
+
+	//privilege variables
+	int viewTRForEmployee;
+<span class="fc" id="L121">	boolean approveTRPrivilege = false;</span>
+<span class="fc" id="L122">	boolean editTRPrivilege = false;</span>
+<span class="fc" id="L123">	boolean viewAdherencePrivilege = false;</span>
+<span class="fc" id="L124">	boolean viewTIPrivilege = false;</span>
+<span class="fc" id="L125">	boolean editTIPrivilege = false;</span>
+
+<span class="fc" id="L127">	boolean isDayLocked = true;</span>
+<span class="fc" id="L128">	boolean m_hasTRELicense = false;</span>
+
+<span class="fc" id="L130">	private boolean m_isInitiated = false;</span>
+
+	/**
+	 * Constructor
+	 */
+	public TimeRecordModel(RequestContext context){
+<span class="fc" id="L136">		super(context, PageModel.FRAMED_MODEL);</span>
+<span class="fc" id="L137">	setDefaultPageIDSize(1);</span>
+<span class="fc" id="L138">	setPageIDResizeEnabled(false);</span>
+
+<span class="fc" id="L140">		m_bundle = m_localizer.getBundle(AmWebBundleKey.BUNDLE_NAME);</span>
+
+		// Component specific required JavaScript Files
+<span class="fc" id="L143">		addRequiredJavaScriptFile(JavaScriptFileID.MEDIATOR_WORKPANE);</span>
+<span class="fc" id="L144">		setJSMediator(AmJavaScriptFileID.MEDIATOR_TRDAYDETAIL_WORKPANE);</span>
+<span class="fc" id="L145">		addRequiredJavaScriptFile(JavaScriptFileID.DIALOG_PICKERS);</span>
+<span class="fc" id="L146">		setName(&quot;workpaneMediator&quot;);</span>
+
+<span class="fc" id="L148">		aList = new MultiColListPC(context);</span>
+<span class="fc" id="L149">		aList.setName(&quot;TRList&quot;);</span>
+<span class="fc" id="L150">		addChildComponent(aList);</span>
+
+<span class="fc" id="L152">		aPC = new TRDayDetailPC(context);</span>
+<span class="fc" id="L153">		addChildComponent(aPC);</span>
+
+		//--- add a DatePicker Dialog Box to the model
+		// It is enclosed in a DialogBoxPageModel to provide DialogMediator support.
+<span class="fc" id="L157">		m_datePicker = new DatePickerPC(context, SELECTED_DATE_FN);</span>
+<span class="fc" id="L158">		addChildComponent(m_datePicker);</span>
+
+<span class="fc" id="L160">		extractParameters(context.getRequest());</span>
+<span class="fc" id="L161">		setValuesFromProfile(context);</span>
+
+		//create time interval
+<span class="fc" id="L164">		addPopupArgs( &quot;POPUP_CREATE_TIME_INTERVAL&quot;, &quot;createtimeinterval&quot;,</span>
+			null, &quot;selectedID,curIndex,pageAction,startYear,startMonth,startDay,timeZone&quot;, &quot;1000, 360, ctr, ctr&quot;, true, 1);
+		//edit time interval
+<span class="fc" id="L167">		addPopupArgs( &quot;POPUP_EDIT_TIME_INTERVAL&quot;, &quot;createtimeinterval&quot;,</span>
+			null, &quot;selectedID,curIndex,pageAction,recordID,timeZone&quot;, &quot;1000, 360, ctr, ctr&quot;, true, 1);
+		//create time record
+<span class="fc" id="L170">		addPopupArgs( &quot;POPUP_CREATE_RECORD&quot;, &quot;addtimerecord&quot;,</span>
+			null, &quot;selectedID,curIndex,pageAction,startYear,startMonth,startDay&quot;, &quot;875, 425, 150, 65&quot;, true, 1);
+		//edit remark
+<span class="fc" id="L173">		addPopupArgs( &quot;POPUP_EDIT_REMARK&quot;, &quot;edittimerecord&quot;,</span>
+			null, &quot;selectedID,curIndex,pageAction,recordID,version,timeZone,orgId&quot;, &quot;350, 250, ctr, ctr&quot;, true, 1);
+		//insert time record entry
+<span class="fc" id="L176">		addPopupArgs( &quot;POPUP_INSERT_ENTRY&quot;, &quot;edittimerecord&quot;,</span>
+			&quot;entryValues&quot;, &quot;pageAction&quot;, &quot;900, 360, ctr, ctr&quot;, true, 1);
+		//delete time record entry
+<span class="fc" id="L179">		addPopupArgs( &quot;POPUP_DELETE_ENTRY&quot;, &quot;edittimerecord&quot;,</span>
+			&quot;entryValues&quot;, &quot;pageAction&quot;, &quot;400, 220, ctr, ctr&quot;, true, 1);
+		//edit time record entry
+<span class="fc" id="L182">		addPopupArgs( &quot;POPUP_EDIT_ENTRY&quot;, &quot;edittimerecord&quot;,</span>
+			&quot;entryValues&quot;, &quot;pageAction&quot;, &quot;900, 360, ctr, ctr&quot;, true, 1);
+		//create end shift
+<span class="fc" id="L185">		addPopupArgs( &quot;POPUP_CREATE_ENDSHIFT&quot;, &quot;edittimerecord&quot;,</span>
+			null, &quot;selectedID,curIndex,pageAction,recordID,timeZone&quot;, &quot;350, 300, ctr, ctr&quot;, true, 1);
+
+		//add javascript variables
+<span class="fc" id="L189">		addJSVariable(&quot;oConfirmDeleteTR&quot;, m_bundle, AmWebBundleKey.MSG_JS_CONFIRM_DELETETR);</span>
+<span class="fc" id="L190">		addJSVariable(&quot;oConfirmDeleteTE&quot;, m_bundle, AmWebBundleKey.MSG_JS_CONFIRM_DELETETE);</span>
+<span class="fc" id="L191">		addJSVariable(&quot;oUnapproveTRLabel&quot;, m_bundle, AmWebBundleKey.UNAPPROVE_TR);</span>
+<span class="fc" id="L192">		addJSVariable(&quot;oApproveTRLabel&quot;, m_bundle, AmWebBundleKey.APPROVE_TR);</span>
+<span class="fc" id="L193">	}</span>
+
+	/**
+	 * Return instance of Model which is ready to be rendered
+	 */
+	public static TimeRecordModel getInstance(RequestContext context){
+<span class="fc" id="L199">		return (TimeRecordModel)getInstance(context, TimeRecordModel.class);</span>
+	}
+
+	/**
+	 * Return the resource bundle associated with the page model
+	 */
+	public ResourceBundle getBundle() {
+<span class="nc" id="L206">		return m_bundle;</span>
+	}
+
+	/**
+	 * Initialize Model with Data
+	 */
+	protected void initializeModel() {
+		try {
+<span class="fc bfc" id="L214" title="All 2 branches covered.">			if (m_isInitiated) return;</span>
+<span class="fc" id="L215">			processTimeRecordForEmployee(m_context);</span>
+<span class="fc" id="L216">			setContentTitle(m_context);</span>
+<span class="fc" id="L217">			setDisplay(m_context);</span>
+<span class="fc" id="L218">			this.setHeader();</span>
+<span class="fc" id="L219">			setToolbar(m_context);</span>
+<span class="fc" id="L220">			m_isInitiated = true;</span>
+<span class="nc" id="L221">		} catch (Exception ex){</span>
+<span class="nc" id="L222">			handleUnableToLoadDataError(log, ex);</span>
+<span class="fc" id="L223">		}</span>
+<span class="fc" id="L224">	}</span>
+
+	/**
+	 * setAllRequiredPrivileges()
+	 */
+	private void setAllRequiredPrivileges(RequestContext context)
+	throws Exception{
+<span class="fc" id="L231">		ArrayList empColl = new ArrayList();</span>
+<span class="fc" id="L232">		empColl.add(this.getEmpId());</span>
+
+<span class="fc" id="L234">		Calendar aCalendar = Calendar.getInstance(context.getViewingTimeZone());</span>
+<span class="fc" id="L235">		aCalendar.set(this.getSelYear(), this.getSelMonth(), this.getSelDay(), 0, 0, 0);</span>
+<span class="fc" id="L236">		aCalendar.set(Calendar.MILLISECOND, 0);</span>
+<span class="fc" id="L237">		Date date = aCalendar.getTime();</span>
+<span class="fc" id="L238">		this.checkForTRELicense();</span>
+
+		//view time records for employee
+<span class="fc" id="L241">		this.viewTRForEmployee = AccessRightHelper.getAuthorizationCode(context, context.getUser(),</span>
+			PrivilegeKeys.AM_VIEWEMPLOYEETIMERECORDS, empColl, date)[0];
+		//view adherence privilege
+<span class="pc bpc" id="L244" title="1 of 2 branches missed.">		this.viewAdherencePrivilege = AccessRightHelper.getAuthorizationCode(context, context.getUser(),</span>
+			PrivilegeKeys.AM_VIEWADHERENCE, empColl, date)[0] == AccessRightHelper.EMP_IS_AUTHORIZED;
+		//approve time record privilege
+<span class="pc bpc" id="L247" title="1 of 2 branches missed.">		this.approveTRPrivilege = AccessRightHelper.getAuthorizationCode(context, context.getUser(),</span>
+			PrivilegeKeys.AM_APPROVETIMERECORDS, empColl, date)[0] == AccessRightHelper.EMP_IS_AUTHORIZED;
+		//edit time record privilege
+<span class="pc bpc" id="L250" title="1 of 2 branches missed.">		this.editTRPrivilege = AccessRightHelper.getAuthorizationCode(context, context.getUser(),</span>
+			PrivilegeKeys.AM_EDITEMPLOYEETIMERECORDS, empColl, date)[0] == AccessRightHelper.EMP_IS_AUTHORIZED;
+
+<span class="pc bpc" id="L253" title="1 of 2 branches missed.">		if (this.editTRPrivilege)</span>
+		{//allow viewing if allowed to edit
+<span class="fc" id="L255">			this.viewTRForEmployee = 0;</span>
+		}
+
+		//view time interval
+<span class="pc bpc" id="L259" title="1 of 2 branches missed.">		this.viewTIPrivilege = AccessRightHelper.getAuthorizationCode(context, context.getUser(),</span>
+			PrivilegeKeys.AM_VIEWEMPLOYEETIMEINTERVALS, empColl)[0] == AccessRightHelper.EMP_IS_AUTHORIZED;
+		//edit time interval
+<span class="pc bpc" id="L262" title="1 of 2 branches missed.">		this.editTIPrivilege = AccessRightHelper.getAuthorizationCode(context, context.getUser(),</span>
+			PrivilegeKeys.AM_EDITEMPLOYEETIMEINTERVALS, empColl)[0] == AccessRightHelper.EMP_IS_AUTHORIZED;
+<span class="fc" id="L264">	}</span>
+
+	/**
+	 * Returns the selected date
+	 */
+	public Date getSelectedDate() {
+<span class="nc" id="L270">		return m_selectedDate;</span>
+	}
+
+	/**
+	 * Sets the selected date
+	 */
+	public void setSelectedDate(Date selectedDate) {
+<span class="nc" id="L277">		m_selectedDate = selectedDate;</span>
+<span class="nc" id="L278">	}</span>
+
+	/**
+	 * setValuesFromProfile
+	 * This method allows for setting of the page model variables
+	 * that derive from the user profile
+	 */
+	private void setValuesFromProfile(RequestContext context){
+		try {
+<span class="fc" id="L287">			UserProfile aProfile = UserProfileManager.getUserProfile(context,</span>
+<span class="fc" id="L288">						context.getUser().getID());</span>
+
+<span class="fc" id="L290">			TimeZone tz = context.getViewingTimeZone();</span>
+<span class="fc" id="L291"> 			Calendar aCal = Calendar.getInstance(tz);</span>
+
+			//get from profile if year==0
+<span class="fc bfc" id="L294" title="All 2 branches covered.">			if (this.getSelYear()  == -1){</span>
+<span class="fc bfc" id="L295" title="All 2 branches covered.">				if (aProfile.getProperty(&quot;DAYDETAIL_DATE&quot;) != null){</span>
+<span class="fc" id="L296">					aCal.setTime(JSPUtil.toDateObj(aProfile.getProperty(&quot;DAYDETAIL_DATE&quot;),</span>
+												   &quot;MM_dd_yyyy_H_mm&quot;,
+												   tz));
+				}
+<span class="fc" id="L300">				this.setSelYear(aCal.get(Calendar.YEAR));</span>
+<span class="fc" id="L301">				this.setSelMonth(aCal.get(Calendar.MONTH));</span>
+<span class="fc" id="L302">				this.setSelDay(aCal.get(Calendar.DAY_OF_MONTH));</span>
+			} else {
+<span class="fc" id="L304">				aCal.set(this.getSelYear(), this.getSelMonth(), this.getSelDay());</span>
+			}
+
+<span class="fc" id="L307">			aCal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="fc" id="L308">			aCal.set(Calendar.MINUTE, 0);</span>
+<span class="fc" id="L309">			aCal.set(Calendar.SECOND, 0);</span>
+<span class="fc" id="L310">			aProfile.setProperty(&quot;DAYDETAIL_DATE&quot;,</span>
+<span class="fc" id="L311">								 JSPUtil.formatDate(aCal.getTime(), &quot;MM_dd_yyyy_H_mm&quot;, tz),</span>
+								 false);
+
+			//set aggregated field
+<span class="pc bpc" id="L315" title="1 of 2 branches missed.">			if (this.getSelYear() == -1){</span>
+<span class="nc" id="L316">				aProfile.loadProperty(&quot;DAYDETAIL_VIEWTYPE&quot;);</span>
+<span class="nc bnc" id="L317" title="All 2 branches missed.">				if (aProfile.getProperty(&quot;DAYDETAIL_VIEWTYPE&quot;) != null){</span>
+<span class="nc" id="L318">					this.setAggregated(Boolean.valueOf(aProfile.getProperty(&quot;DAYDETAIL_VIEWTYPE&quot;)).booleanValue());</span>
+				}
+			}
+<span class="fc" id="L321">			aProfile.setProperty(&quot;DAYDETAIL_VIEWTYPE&quot;, String.valueOf(this.getAggregated()), true);</span>
+
+			//save the profile
+<span class="fc" id="L324">			UserProfileManager.setUserProfile(context, aProfile);</span>
+<span class="nc" id="L325">		} catch (Exception ex){</span>
+
+<span class="fc" id="L327">		}</span>
+<span class="fc" id="L328">	}</span>
+
+	/**
+	 * Set the content title for the page
+	 */
+	public void setContentTitle(RequestContext context)
+	throws BbmException, RemoteException{
+		//get date from parameters
+<span class="fc" id="L336">		TimeZone tz = context.getViewingTimeZone();</span>
+<span class="pc bpc" id="L337" title="1 of 2 branches missed.">		Calendar aCal = (tz != null) ? Calendar.getInstance(tz) : Calendar.getInstance();</span>
+<span class="fc" id="L338">		aCal.set(this.selYear, this.selMonth, this.selDay, 0, 0, 0);</span>
+<span class="fc" id="L339">		aCal.set(Calendar.MILLISECOND, 0);</span>
+
+<span class="fc" id="L341">		m_datePicker.setTimeZone(tz);</span>
+<span class="fc" id="L342">		m_datePicker.setOnChangeJS(&quot;submitRefresh()&quot;);</span>
+<span class="fc" id="L343">		m_datePicker.setDate(aCal.getTime());</span>
+<span class="fc" id="L344">		m_datePicker.setIsDayNavEnabled(true);</span>
+
+		//get employee name
+<span class="fc" id="L347">		Employee employee = null;</span>
+<span class="fc" id="L348">		String nameStr = &quot;&quot;;</span>
+		try {
+<span class="fc bfc" id="L350" title="All 2 branches covered.">			if (this.getEmpId() != null){</span>
+<span class="fc" id="L351">				employee = EmployeeModelHandler.getEmployeeByID(context, new ID(this.getEmpId()));</span>
+			}
+<span class="nc" id="L353">		} catch (BbmFinderException ex){</span>
+<span class="nc" id="L354">			cat.setResourceBundle(m_localizer.getBundle(AmWebLogBundleKey.BUNDLE_NAME));</span>
+<span class="nc" id="L355">			cat.l7dError(AmWebLogBundleKey.MSG_ERROR_EMPNOTFOUND, ex);</span>
+<span class="fc" id="L356">		}</span>
+<span class="fc bfc" id="L357" title="All 2 branches covered.">		if (employee != null){</span>
+<span class="fc" id="L358">			nameStr = m_localizer.formatName(employee.getPerson());</span>
+		}
+
+<span class="fc" id="L361">		m_contentTitlePC.setProperties(i18n(m_bundle, AmWebBundleKey.AM_TIME_DAYDETAILS), nameStr);</span>
+<span class="fc" id="L362">		m_contentTitlePC.setActiveComponent(HtmlUtil.TBL_OPEN_TAG + &quot;&lt;tr&gt;&lt;td nowrap&gt;&quot;</span>
+								+ &quot;&lt;SPAN class=\&quot;headerText2\&quot;&gt;&quot;
+<span class="fc" id="L364">								+ i18n(m_bundle, AmWebBundleKey.SELECT_DATE)</span>
+								+ &quot;: &lt;/SPAN&gt;&quot;
+								+ &quot;&lt;/td&gt;&lt;td nowrap&gt;&quot;
+<span class="fc" id="L367">								+ m_datePicker.getHtmlDisplay()</span>
+								+ &quot;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;&quot;);
+<span class="fc" id="L369">	}</span>
+
+	/**
+	 * processTimeRecordForEmployee
+	 * @param context
+	 * this method also checks for the required privileges to view,
+	 * edit or apprrove time records for an employee and sets the
+	 * required flag which is used to disable the buttons
+	 */
+	public void processTimeRecordForEmployee(RequestContext context)
+	throws Exception{
+
+<span class="fc" id="L381">		Calendar aCalendar = Calendar.getInstance(context.getViewingTimeZone());</span>
+<span class="fc" id="L382">		aCalendar.set(this.getSelYear(), this.getSelMonth(), this.getSelDay(), 0, 0, 0);</span>
+<span class="fc" id="L383">		aCalendar.set(Calendar.MILLISECOND, 0);</span>
+<span class="fc" id="L384">		Pair aColl = null;</span>
+<span class="fc bfc" id="L385" title="All 2 branches covered.">		if (this.getEmpId() != null){</span>
+<span class="fc" id="L386">			setAllRequiredPrivileges(context);//set privileges before getting data</span>
+
+<span class="pc bpc" id="L388" title="1 of 2 branches missed.">			if (this.viewTRForEmployee == AccessRightHelper.EMP_IS_AUTHORIZED){//check for privilege to view emp time records</span>
+				//get collection depending on view
+				try {
+<span class="pc bpc" id="L391" title="1 of 2 branches missed.">					if (this.aggregated){//aggregated view</span>
+<span class="nc" id="L392">						aColl = TimeRecordModelHandler</span>
+<span class="nc" id="L393">								.getAggreagatedTimeRecordForEmployeePerDay(this.getEmpId(), this.getSelYear(), this.getSelMonth(), this.getSelDay());</span>
+					} else {
+<span class="fc" id="L395">						aColl = TimeRecordModelHandler</span>
+<span class="fc" id="L396">							.getTimeRecordForEmployeePerDay(this.getEmpId(), this.getSelYear(), this.getSelMonth(), this.getSelDay());</span>
+					}
+<span class="nc" id="L398">				} catch (BbmTimeRecordException ex){</span>
+<span class="nc bnc" id="L399" title="All 2 branches missed.">                	 if (ex.getErrCode() == BbmTimeRecordException.TR_NO_ORG){</span>
+                        //&quot;The employee is not associated to any organization&quot;
+<span class="nc" id="L401">                        addPageMessage(Message.INFO_TYPE, i18n(m_bundle, AmWebBundleKey.ADHERENCE_EMP_NO_ORG),</span>
+                            AmWebBundleKey.BUNDLE_NAME);
+<span class="nc" id="L403">                        this.editTRPrivilege = false;</span>
+<span class="nc" id="L404">                        this.editTIPrivilege = false;</span>
+                    }
+<span class="nc" id="L406">				} catch (BbmFinderException ex) {</span>
+<span class="nc" id="L407">					cat.setResourceBundle(m_localizer.getBundle(AmWebLogBundleKey.BUNDLE_NAME));</span>
+<span class="nc" id="L408">					cat.l7dError(AmWebLogBundleKey.MSG_ERROR_FINDINGTR, ex);</span>
+
+<span class="nc" id="L410">					String msg = &quot;&quot;;</span>
+<span class="nc bnc" id="L411" title="All 2 branches missed.">					if (ex instanceof BbmTimePeriodOverlapException){//special handling</span>
+<span class="nc" id="L412">						msg = i18n(m_bundle, AmWebBundleKey.MSG_INFO_ORGOVERLAP);</span>
+<span class="nc bnc" id="L413" title="All 4 branches missed.">					} else if (ex.getCoreException() != null &amp;&amp; ex.getCoreException() instanceof BbmTimeRecordException) {</span>
+<span class="nc" id="L414">						BbmTimeRecordException tre = (BbmTimeRecordException)ex.getCoreException();</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">						switch (tre.getErrCode()) {</span>
+							case BbmTimeRecordException.TR_NO_ORG:
+<span class="nc" id="L417">								msg = i18n(m_bundle, AmWebBundleKey.NO_ORG_FOUND);</span>
+<span class="nc" id="L418">								break;</span>
+
+							default:
+<span class="nc" id="L421">								msg = i18n(m_bundle, AmWebBundleKey.MSG_NO_RECORDS);</span>
+								break;
+						}
+<span class="nc" id="L424">					} else {</span>
+<span class="nc" id="L425">						msg = ex.getLocalizedMessage();</span>
+					}
+<span class="nc" id="L427">					this.editTRPrivilege = false;</span>
+<span class="nc" id="L428">					this.approveTRPrivilege = false;</span>
+<span class="nc" id="L429">					addPageMessage(Message.ERROR_TYPE, msg);</span>
+<span class="pc" id="L430">				}</span>
+			} else {
+<span class="nc bnc" id="L432" title="All 2 branches missed.">				if (this.viewTRForEmployee == AccessRightHelper.EMP_ORG_NOT_FOUND){</span>
+					//&quot;The employee is not associated to any organization&quot;
+<span class="nc" id="L434">					addPageMessage(Message.INFO_TYPE, i18n(m_bundle, AmWebBundleKey.ADHERENCE_EMP_NO_ORG),</span>
+						AmWebBundleKey.BUNDLE_NAME);
+				} else {
+					//&quot;You do not have privileges to view time records for this employee.&quot;
+<span class="nc" id="L438">					addPageMessage(Message.INFO_TYPE, i18n(m_bundle, AmWebBundleKey.MSG_ERROR_NOPRIVTOVIEWEMP),</span>
+						AmWebBundleKey.BUNDLE_NAME);
+				}
+			}
+
+		}//empid not null
+
+<span class="pc bpc" id="L445" title="1 of 4 branches missed.">		if (aColl!=null &amp;&amp; aColl.getSecond()!=null){</span>
+<span class="fc" id="L446">			this.timeRecordsForEmployee = (Collection)aColl.getSecond();</span>
+			//get from pair
+<span class="fc" id="L448">			isDayLocked = ((Boolean)aColl.getFirst()).booleanValue();</span>
+		}
+<span class="fc" id="L450">	}</span>
+
+	/**
+	 * setTimeRecordsForEmployee
+	 */
+	public void setTimeRecordsForEmployee(Collection timeRecordsForEmployee){
+<span class="nc" id="L456">		this.timeRecordsForEmployee = timeRecordsForEmployee;</span>
+<span class="nc" id="L457">	}</span>
+
+	/**
+	 * getTimeRecordsForEmployee
+	 */
+	public Collection getTimeRecordsForEmployee(){
+<span class="fc" id="L463">		return this.timeRecordsForEmployee;</span>
+	}
+
+	/**
+	 * set empId
+	 */
+	public void setEmpId(ID empId){
+<span class="fc" id="L470">		this.empId = empId;</span>
+<span class="fc" id="L471">	}</span>
+
+	/**
+	 * get empId
+	 */
+	public ID getEmpId(){
+<span class="fc" id="L477">		return this.empId;</span>
+	}
+
+	/**
+	 * set supervisorId
+	 */
+	public void setSupervisorId(ID supervisorId){
+<span class="fc" id="L484">		this.supervisorId = supervisorId;</span>
+<span class="fc" id="L485">	}</span>
+
+	/**
+	 * get supervisorId
+	 */
+	public ID getSupervisorId(){
+<span class="nc" id="L491">		return this.supervisorId;</span>
+	}
+
+	/**
+	 * set orgId
+	 */
+	public void setOrgId(ID orgId){
+<span class="nc" id="L498">		this.orgId = orgId;</span>
+<span class="nc" id="L499">	}</span>
+
+	/**
+	 * get orgId
+	 */
+	public ID getOrgId(){
+<span class="nc" id="L505">		return this.orgId;</span>
+	}
+
+	/**
+	 * set recordId
+	 */
+	public void setRecordId(int recordId){
+<span class="fc" id="L512">		this.recordId = recordId;</span>
+<span class="fc" id="L513">	}</span>
+
+	/**
+	 * get recordId
+	 */
+	public int getRecordId(){
+<span class="fc" id="L519">		return this.recordId;</span>
+	}
+
+	/**
+	 * set timeEntryID
+	 */
+	public void setTimeEntryID(ID timeEntryID){
+<span class="nc" id="L526">		this.timeEntryID = timeEntryID;</span>
+<span class="nc" id="L527">	}</span>
+
+	/**
+	 * get timeEntryID
+	 */
+	public ID getTimeEntryID(){
+<span class="fc" id="L533">		return this.timeEntryID;</span>
+	}
+
+	/**
+	* Set version
+	*/
+	public void setVersion(long version){
+<span class="nc" id="L540">		this.version = version;</span>
+<span class="nc" id="L541">	}</span>
+
+	/**
+	* Get version
+	*/
+	public long getVersion(){
+<span class="nc" id="L547">		return this.version;</span>
+	}
+
+	/**
+	 * set timeRecord
+	 */
+	public void setTimeRecord(TimeRecord timeRecord){
+<span class="nc" id="L554">		this.timeRecord = timeRecord;</span>
+<span class="nc" id="L555">	}</span>
+
+	/**
+	 * get timeRecord
+	 */
+	public TimeRecord getTimeRecord(){
+<span class="nc" id="L561">		return this.timeRecord;</span>
+	}
+
+	/**
+	 * set approved
+	 */
+	public void setApproved(boolean approved){
+<span class="nc" id="L568">		this.approved = approved;</span>
+<span class="nc" id="L569">	}</span>
+
+	/**
+	 * get is_approved
+	 */
+	public boolean getApproved(){
+<span class="nc" id="L575">		return this.approved;</span>
+	}
+
+	/**
+	 * set selYear
+	 */
+	public void setSelYear(int selYear){
+<span class="fc" id="L582">		this.selYear = selYear;</span>
+<span class="fc" id="L583">	}</span>
+
+	/**
+	 * get selYear
+	 */
+	public int getSelYear(){
+<span class="fc" id="L589">		return this.selYear;</span>
+	}
+
+	/**
+	 * set selMonth
+	 */
+	public void setSelMonth(int selMonth){
+<span class="fc" id="L596">		this.selMonth = selMonth;</span>
+<span class="fc" id="L597">	}</span>
+
+	/**
+	 * get selMonth
+	 */
+	public int getSelMonth(){
+<span class="fc" id="L603">		return this.selMonth;</span>
+	}
+
+	/**
+	 * set selDay
+	 */
+	public void setSelDay(int selDay){
+<span class="fc" id="L610">		this.selDay = selDay;</span>
+<span class="fc" id="L611">	}</span>
+
+	/**
+	 * get selDay
+	 */
+	public int getSelDay(){
+<span class="fc" id="L617">		return this.selDay;</span>
+	}
+
+	/**
+	 * set longDate
+	 */
+	public void setLongDate(long date){
+<span class="nc" id="L624">		this.longDate = date;</span>
+
+<span class="nc" id="L626">		Date aDate = new Date(longDate);</span>
+<span class="nc" id="L627">		Calendar aCalendar = Calendar.getInstance();</span>
+<span class="nc" id="L628">		aCalendar.setTime(aDate);</span>
+<span class="nc" id="L629">		aCalendar.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L630">		this.selYear = aCalendar.get(Calendar.YEAR);</span>
+<span class="nc" id="L631">		this.selMonth = aCalendar.get(Calendar.MONTH);</span>
+<span class="nc" id="L632">		this.selDay = aCalendar.get(Calendar.DAY_OF_MONTH);</span>
+<span class="nc" id="L633">	}</span>
+
+	/**
+	 * get longDate
+	 */
+	 public long getLongDate(){
+<span class="nc" id="L639">		return this.longDate;</span>
+	 }
+
+	/**
+	* Set boundaryTimeSpan
+	*/
+	public void setBoundaryTimeSpan(String boundaryTimeSpan){
+<span class="fc" id="L646">		this.boundaryTimeSpan = boundaryTimeSpan;</span>
+<span class="fc" id="L647">	}</span>
+
+	/**
+	* Get boundaryTimeSpan
+	*/
+	public String getBoundaryTimeSpan(){
+<span class="nc" id="L653">		return this.boundaryTimeSpan;</span>
+	}
+
+
+	/**
+	 * Set Selected IDs
+	 */
+	public void setSelectedID(String ids) {
+<span class="fc" id="L661">		super.setSelectedID(ids);</span>
+<span class="fc" id="L662">		setCurEmployee();</span>
+<span class="fc" id="L663">	}</span>
+
+	/**
+	 * Set Edit Index.
+	 */
+	public void setEditIndex(int index) {
+<span class="fc" id="L669">		super.setEditIndex(index);</span>
+<span class="fc" id="L670">		setCurEmployee();</span>
+<span class="fc" id="L671">	}</span>
+	
+	/**
+	 * setCurEmployee
+	 * This method sets the current employee based on pagination
+	 */
+	public void setCurEmployee(){
+<span class="pc bpc" id="L678" title="1 of 2 branches missed.">		if ( getSelectedIDSize() &gt; 0 ) {</span>
+<span class="fc" id="L679">			setEmpId(getSelectedIDs()[getEditIndex()]);</span>
+		}
+<span class="fc" id="L681">	}</span>
+
+	/**
+	 * set position
+	 */
+	public void setPosition(int position){
+<span class="nc" id="L687">		this.position = position;</span>
+<span class="nc" id="L688">	}</span>
+
+	/**
+	 * get position
+	 */
+	public int getPosition(){
+<span class="fc" id="L694">		return this.position;</span>
+	}
+
+	/**
+	 * set aggregated
+	 */
+	public void setAggregated(boolean aggregated){
+<span class="fc" id="L701">		this.aggregated = aggregated;</span>
+<span class="fc" id="L702">	}</span>
+
+	/**
+	 * get aggregated
+	 */
+	public boolean getAggregated(){
+<span class="fc" id="L708">		return this.aggregated;</span>
+	}
+
+	/**
+	 * set direction
+	 */
+	public void setDirection(boolean direction){
+<span class="nc" id="L715">		this.direction = direction;</span>
+<span class="nc" id="L716">	}</span>
+
+	/**
+	 * get direction
+	 */
+	public boolean getDirection(){
+<span class="nc" id="L722">		return this.direction;</span>
+	}
+
+	private String formatDate(Date date, String tz) {
+<span class="fc" id="L726">		return m_localizer.formatDate(date,</span>
+<span class="fc" id="L727">				TimeZone.getTimeZone(tz),</span>
+				RegionalFormatBundleKey.DATE_FORMAT,
+				RegionalFormatBundleKey.TIME_FORMAT);
+	}
+
+	/**
+	 * Generate the display components
+	 */
+	public ArrayList getRowData(RequestContext context) throws Exception{
+<span class="fc" id="L736">		ArrayList data = new ArrayList();</span>
+
+<span class="fc" id="L738">		ArrayList listModel = null;</span>
+		//procee time records here
+<span class="fc" id="L740">		Collection timeRecords = this.getTimeRecordsForEmployee();</span>
+<span class="fc" id="L741">		int recordNum =0;</span>
+
+<span class="fc" id="L743">		this.boundaryTimeSpan = &quot;&quot;;</span>
+<span class="fc" id="L744">		boolean setDSTFlag = false;</span>
+<span class="fc" id="L745">		boolean setIndex = false;</span>
+<span class="fc" id="L746">		boolean isAutoClosed = false;</span>
+
+<span class="fc" id="L748">		String errorFontStartTag = &quot;&lt;font color=\&quot;#CB1D1D\&quot;&gt;&quot;;</span>
+<span class="fc" id="L749">		String fontEndTag = &quot;&lt;/font&gt;&quot;;</span>
+<span class="fc" id="L750">		boolean notShowTimeInterval = false;</span>
+<span class="fc" id="L751">		boolean notShowTimeRecord = false;</span>
+
+		//show rest of page only if found any time records
+<span class="pc bpc" id="L754" title="1 of 2 branches missed.">		if (timeRecords!=null){</span>
+<span class="fc" id="L755">			Iterator it = timeRecords.iterator();</span>
+
+<span class="fc bfc" id="L757" title="All 2 branches covered.">			while (it.hasNext()) {</span>
+<span class="fc" id="L758">				listModel = new ArrayList();</span>
+<span class="fc" id="L759">				recordNum++;</span>
+<span class="fc" id="L760">				isAutoClosed = false;</span>
+<span class="fc" id="L761">				TimeRecord aRecord = (TimeRecord) it.next();</span>
+<span class="pc bpc" id="L762" title="3 of 4 branches missed.">				notShowTimeInterval = (aRecord.getType() == TimeRecord.TIMEINTERVAL &amp;&amp; !this.viewTIPrivilege);</span>
+<span class="pc bpc" id="L763" title="3 of 6 branches missed.">				notShowTimeRecord = ((aRecord.getType() == TimeRecord.AGG_TIMEENTRY || aRecord.getType() == TimeRecord.TIMEENTRY)</span>
+						&amp;&amp; !(this.viewTRForEmployee == AccessRightHelper.EMP_IS_AUTHORIZED));
+<span class="pc bpc" id="L765" title="2 of 4 branches missed.">				if (!notShowTimeInterval &amp;&amp; !notShowTimeRecord){</span>
+					//set selected index
+<span class="pc bpc" id="L767" title="1 of 2 branches missed.">					if (aRecord.getID().equals(new ID(this.getRecordId()))){</span>
+<span class="nc" id="L768">						this.selectedIndex.add(String.valueOf(recordNum-1));</span>
+					}
+
+					//add page message if the day for the employee organization has daylight saving conversion
+<span class="pc bpc" id="L772" title="1 of 2 branches missed.">					if (!setDSTFlag){</span>
+<span class="pc bpc" id="L773" title="1 of 2 branches missed.">						if (TimeZoneUtil.hasDSTConversion(this.selYear, this.selMonth, this.selDay, TimeZone.getTimeZone(aRecord.getTimeZone()))){</span>
+<span class="nc" id="L774">							this.addPageMessage(Message.WARNING_TYPE, AmWebBundleKey.MSG_WARNING_DST,</span>
+									AmWebBundleKey.BUNDLE_NAME);
+						}
+					}
+
+<span class="pc bpc" id="L779" title="1 of 2 branches missed.">					if (recordNum == 1){</span>
+<span class="fc" id="L780">						Calendar aSCal = Calendar.getInstance(TimeZone.getTimeZone(aRecord.getTimeZone()));</span>
+<span class="fc" id="L781">						aSCal.set(this.selYear, this.selMonth, this.selDay);</span>
+<span class="fc" id="L782">						aSCal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="fc" id="L783">						aSCal.set(Calendar.MINUTE, 0);</span>
+<span class="fc" id="L784">						aSCal.set(Calendar.SECOND, 0);</span>
+<span class="fc" id="L785">						aSCal.set(Calendar.MILLISECOND, 0);</span>
+<span class="fc" id="L786">						aSCal.add(Calendar.MILLISECOND, aRecord.getDayBoundaryOffset()*60000);</span>
+
+<span class="fc" id="L788">						this.boundaryTimeSpan = &quot;&amp;nbsp;(&quot; + formatDate(aSCal.getTime(),	aRecord.getTimeZone());</span>
+					}
+<span class="pc bpc" id="L790" title="1 of 2 branches missed.">					if (recordNum == timeRecords.size()){</span>
+<span class="fc" id="L791">						Calendar aECal = Calendar.getInstance(TimeZone.getTimeZone(aRecord.getTimeZone()));</span>
+<span class="fc" id="L792">						aECal.set(this.selYear, this.selMonth, this.selDay);</span>
+<span class="fc" id="L793">						aECal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="fc" id="L794">						aECal.set(Calendar.MINUTE, 0);</span>
+<span class="fc" id="L795">						aECal.set(Calendar.SECOND, 0);</span>
+<span class="fc" id="L796">						aECal.set(Calendar.MILLISECOND, 0);</span>
+<span class="fc" id="L797">						aECal.add(Calendar.DATE, 1);</span>
+<span class="fc" id="L798">						aECal.add(Calendar.MILLISECOND, aRecord.getDayBoundaryOffset()*60000);</span>
+<span class="fc" id="L799">						this.boundaryTimeSpan += &quot; - &quot; + formatDate(aECal.getTime(),</span>
+<span class="fc" id="L800">								aRecord.getTimeZone()) + &quot;)&quot;;</span>
+					}
+
+					//aRecord.validate();
+<span class="fc" id="L804">					ArrayList anEntryList = (ArrayList)aRecord.getChildren();</span>
+
+<span class="pc bpc" id="L806" title="1 of 2 branches missed.">					if (timeRecords.size() &gt; 1) aPC.resetForReUse();</span>
+<span class="fc" id="L807">					aPC.setName(&quot;T&quot; + recordNum);// Set component name</span>
+
+<span class="fc" id="L809">					setTableHeader(aPC, aRecord.getType());</span>
+<span class="fc" id="L810">					setTableProperties(aPC);</span>
+
+					//need to set boolean here so that button attribures can be rightly set
+<span class="fc" id="L813">					boolean hasEndShift = getHasEndShift(aRecord);</span>
+
+<span class="pc bpc" id="L815" title="3 of 6 branches missed.">					String isEnabled = !aRecord.isLocked() &amp;&amp; !isDayLocked &amp;&amp; this.editTRPrivilege?&quot;true&quot;:&quot;false&quot;;//enabled for edit</span>
+<span class="fc bfc" id="L816" title="All 2 branches covered.">					for (int i=0; i&lt;anEntryList.size(); i++){</span>
+<span class="pc bpc" id="L817" title="2 of 3 branches missed.">						switch (aRecord.getType())</span>
+						{
+							case TimeRecord.AGG_TIMEENTRY:
+							case TimeRecord.TIMEENTRY:
+<span class="fc" id="L821">								TimeRecordEntry anEntry = (TimeRecordEntry) anEntryList.get(i);</span>
+
+								//reset the index since it could have been set for the entry
+<span class="pc bpc" id="L824" title="1 of 2 branches missed.">								if (!setIndex){</span>
+<span class="fc" id="L825">									this.detailSelectedIndex = -1;</span>
+								}
+								//set selected index
+<span class="pc bpc" id="L828" title="1 of 4 branches missed.">								if (i==0 &amp;&amp; this.getPosition()==0){//check for insert at first position</span>
+<span class="nc" id="L829">									this.detailSelectedIndex = 0;</span>
+<span class="nc" id="L830">									this.mediatorNum = recordNum;</span>
+<span class="nc" id="L831">									setIndex = true;</span>
+<span class="pc bpc" id="L832" title="2 of 4 branches missed.">								} else if (!setIndex &amp;&amp; anEntry.getID().equals(this.getTimeEntryID())){</span>
+<span class="nc" id="L833">									this.detailSelectedIndex = i+1;</span>
+<span class="nc" id="L834">									this.mediatorNum = recordNum;</span>
+<span class="nc" id="L835">									setIndex = true;</span>
+								}
+
+								//set PC selected index
+<span class="pc bpc" id="L839" title="1 of 2 branches missed.">								if (this.detailSelectedIndex != -1){</span>
+<span class="nc" id="L840">									aPC.getMultiColList().addSelectedRowID(String.valueOf(this.detailSelectedIndex));</span>
+								}
+
+<span class="fc" id="L843">								boolean isFirstEntry = false;</span>
+<span class="fc" id="L844">								boolean isLastEntry = false;</span>
+<span class="fc bfc" id="L845" title="All 2 branches covered.">								if (i ==0){</span>
+<span class="fc" id="L846">									isFirstEntry = true;</span>
+								}
+
+<span class="pc bpc" id="L849" title="1 of 4 branches missed.">								if ((i == (anEntryList.size()-2) &amp;&amp; hasEndShift) ||</span>
+<span class="pc bpc" id="L850" title="1 of 4 branches missed.">										(i == (anEntryList.size()-1) &amp;&amp; !hasEndShift)){</span>
+<span class="fc" id="L851">									isLastEntry = true;</span>
+								}
+
+								//Parameters are: recordID, entryID, selectedID, curIndex, timeZone, orgID, position, curDate,
+								//isFirstEntry, isLastEntry, version
+<span class="fc" id="L856">								String entryValues = &quot;&quot;;</span>
+
+								// Create the row data
+<span class="fc" id="L859">								ArrayList row_data = null;</span>
+
+<span class="fc bfc" id="L861" title="All 2 branches covered.">								if (i == 0){//add start shift row</span>
+<span class="fc" id="L862">									entryValues = anEntry.getParentID() + &quot;||&quot; + anEntry.getID() + &quot;||&quot;</span>
+<span class="fc" id="L863">										+ this.getSelectedID() + &quot;||&quot; + this.getEditIndex() + &quot;||&quot; + aRecord.getTimeZone()</span>
+<span class="fc" id="L864">										+ &quot;||&quot; + aRecord.getOrgID() + &quot;||&quot; + 0 + &quot;||&quot; + anEntry.getStartTime().getTime()</span>
+<span class="fc" id="L865">										+ &quot;||&quot; + isFirstEntry + &quot;||&quot; + isLastEntry + &quot;||&quot; + aRecord.getVersion();</span>
+<span class="fc" id="L866">									row_data = new ArrayList();</span>
+<span class="fc" id="L867">									row_data.add(formatDate(anEntry.getStartTime(),aRecord.getTimeZone()));</span>
+<span class="fc" id="L868">									row_data.add(i18n(m_bundle, AmWebBundleKey.START_SHIFT));</span>
+<span class="pc bpc" id="L869" title="1 of 2 branches missed.">									if (!this.getAggregated()){</span>
+<span class="fc" id="L870">										row_data.add(&quot;&amp;nbsp;&quot;);</span>
+<span class="fc" id="L871">										row_data.add(&quot;&amp;nbsp;&quot;);</span>
+									}
+<span class="fc" id="L873">									row_data.add(&quot;&amp;nbsp;&quot;);</span>
+<span class="fc" id="L874">									row_data.add(&quot;&amp;nbsp;&quot;);</span>
+<span class="fc" id="L875">									row_data.add(&quot;&amp;nbsp;&quot;);</span>
+
+									// Set if the row should be editable or not.
+<span class="fc" id="L878">									HashMap rowAttributes = new HashMap(1);</span>
+									//put 3 parameters, ; delimited: isEditable, isStartEntry, isLastEntry
+<span class="fc" id="L880">									rowAttributes.put(&quot;ENTRY&quot;, String.valueOf(isEnabled) + &quot;;&quot; + &quot;true&quot; + &quot;;&quot; + &quot;false&quot;);</span>
+									//if (hasEndShift){
+<span class="fc" id="L882">										rowAttributes.put(&quot;LENGTH&quot;, String.valueOf(aRecord.getChildren().size()));</span>
+									//}
+									// Add row data to list model
+<span class="fc" id="L885">									listModel.add(new DefaultMultiColumnNodeData(entryValues, row_data, rowAttributes));</span>
+								}
+<span class="fc" id="L887">								entryValues = anEntry.getParentID() + &quot;||&quot; + anEntry.getID() + &quot;||&quot;</span>
+<span class="fc" id="L888">										+ this.getSelectedID() + &quot;||&quot; + this.getEditIndex() + &quot;||&quot; + aRecord.getTimeZone()</span>
+<span class="fc" id="L889">										+ &quot;||&quot; + aRecord.getOrgID() + &quot;||&quot; + (i+1) + &quot;||&quot; + anEntry.getStartTime().getTime()</span>
+<span class="fc" id="L890">										+ &quot;||&quot; + isFirstEntry + &quot;||&quot; + isLastEntry + &quot;||&quot; + aRecord.getVersion();</span>
+<span class="fc bfc" id="L891" title="All 2 branches covered.">								if (!anEntry.getActivityID().equals(Activity.ACTIVITY_NONE)) {</span>
+<span class="fc" id="L892">									row_data = new ArrayList();</span>
+<span class="fc" id="L893">									row_data.add(formatDate(anEntry.getStartTime(), aRecord.getTimeZone()));</span>
+<span class="fc" id="L894">									row_data.add(anEntry.getActivityCategoryName());</span>
+<span class="pc bpc" id="L895" title="1 of 2 branches missed.">									if (!this.getAggregated())</span>
+<span class="fc" id="L896">									 row_data.add(anEntry.getActivityName());</span>
+<span class="fc" id="L897">									row_data.add(m_localizer.formatDurationInMins(anEntry.getDuration()));</span>
+<span class="fc" id="L898">									row_data.add(m_localizer.formatYesNo(anEntry.getPaid()));</span>
+<span class="fc" id="L899">									row_data.add(getCreatorStr(aRecord.getType(), anEntry.getTimeSourceCode()));</span>
+<span class="pc bpc" id="L900" title="1 of 2 branches missed.">									if (!this.getAggregated())</span>
+<span class="pc bpc" id="L901" title="1 of 2 branches missed.">										row_data.add(anEntry.getDescription()!=null</span>
+<span class="pc bpc" id="L902" title="1 of 2 branches missed.">											&amp;&amp; !anEntry.getDescription().equals(&quot;&quot;)?HtmlEncoder.encode(anEntry.getDescription()):&quot;&amp;nbsp;&quot;);</span>
+
+									// Set if the row should be editable or not.
+<span class="fc" id="L905">									HashMap rowAttributes = new HashMap(1);</span>
+									//put 3 parameters, || delimited: isEditable, isStartEntry, isLastEntry
+<span class="fc" id="L907">									rowAttributes.put(&quot;ENTRY&quot;, String.valueOf(isEnabled) + &quot;;&quot; + &quot;false&quot; + &quot;;&quot; + &quot;false&quot;);</span>
+									//if (hasEndShift){
+<span class="fc" id="L909">										rowAttributes.put(&quot;LENGTH&quot;, String.valueOf(aRecord.getChildren().size()));</span>
+									//}
+									//add parameter for hasEndShift
+<span class="fc" id="L912">									rowAttributes.put(&quot;HAS_END_SHIFT&quot;, String.valueOf(hasEndShift));</span>
+									
+									
+									//First attempt at zebra striping. The problem with this is that row selections no longer appear.
+									/*
+									ArrayList col_styles = new ArrayList(row_data.size());
+									for (int colNum=0; colNum&lt;row_data.size(); colNum++)
+									{
+										if (i%2 == 0)
+											col_styles.add(&quot;background-color:#ffffff &quot;);
+										else
+											col_styles.add(&quot;background-color:#f8f8f8 &quot;);
+									}
+									*/
+
+									
+									// Add row data to list model
+<span class="fc" id="L929">									listModel.add(new DefaultMultiColumnNodeData(entryValues, row_data, rowAttributes)); //col_styles</span>
+<span class="fc" id="L930">								} else {//end shift</span>
+
+									//set flag for auto closed
+<span class="pc bpc" id="L933" title="1 of 2 branches missed.">									if (anEntry.getTimeSourceCode() == TimeEntrySourceCode.AUTO_CLOSE)</span>
+<span class="nc" id="L934">										isAutoClosed = true;</span>
+<span class="fc" id="L935">									row_data = new ArrayList();</span>
+<span class="pc bpc" id="L936" title="1 of 2 branches missed.">									row_data.add((isAutoClosed?errorFontStartTag:&quot;&quot;)</span>
+<span class="pc bpc" id="L937" title="1 of 2 branches missed.">										+ formatDate(anEntry.getStartTime(), aRecord.getTimeZone())</span>
+										+ (isAutoClosed?fontEndTag:&quot;&quot;));
+<span class="pc bpc" id="L939" title="1 of 2 branches missed.">									row_data.add((isAutoClosed?errorFontStartTag:&quot;&quot;)</span>
+<span class="pc bpc" id="L940" title="1 of 2 branches missed.">										+ i18n(m_bundle, AmWebBundleKey.END_SHIFT)</span>
+										+ (isAutoClosed?fontEndTag:&quot;&quot;));
+<span class="pc bpc" id="L942" title="1 of 2 branches missed.">									if (!this.getAggregated())</span>
+<span class="fc" id="L943">										row_data.add(&quot;&amp;nbsp;&quot;);</span>
+<span class="fc" id="L944">									row_data.add(&quot;&amp;nbsp;&quot;);</span>
+<span class="fc" id="L945">									row_data.add(&quot;&amp;nbsp;&quot;);</span>
+<span class="pc bpc" id="L946" title="1 of 2 branches missed.">									row_data.add((isAutoClosed?errorFontStartTag:&quot;&quot;)</span>
+<span class="pc bpc" id="L947" title="1 of 2 branches missed.">										+ getCreatorStr(aRecord.getType(), anEntry.getTimeSourceCode())</span>
+										+ (isAutoClosed?fontEndTag:&quot;&quot;));
+<span class="pc bpc" id="L949" title="1 of 2 branches missed.">									if (!this.getAggregated()){</span>
+<span class="pc bpc" id="L950" title="2 of 6 branches missed.">										row_data.add(anEntry.getDescription()!=null &amp;&amp; !anEntry.getDescription().equals(&quot;&quot;)?</span>
+												((isAutoClosed?errorFontStartTag:&quot;&quot;)
+<span class="pc bpc" id="L952" title="1 of 2 branches missed.">												+ HtmlEncoder.encode(anEntry.getDescription())</span>
+												+ (isAutoClosed?fontEndTag:&quot;&quot;)):&quot;&quot;);
+									}
+
+									// Set if the row should be editable or not.
+<span class="fc" id="L957">									HashMap rowAttributes = new HashMap(1);</span>
+									//put 3 parameters, || delimited: isEditable, isStartEntry, isLastEntry
+<span class="fc" id="L959">									rowAttributes.put(&quot;ENTRY&quot;, String.valueOf(isEnabled) + &quot;;&quot; + &quot;false&quot; + &quot;;&quot; + &quot;true&quot;);</span>
+<span class="fc" id="L960">									rowAttributes.put(&quot;LENGTH&quot;, String.valueOf(aRecord.getChildren().size()));</span>
+									
+									// Add row data to list model
+<span class="fc" id="L963">									listModel.add(new DefaultMultiColumnNodeData(entryValues, row_data, rowAttributes));</span>
+								}
+<span class="fc" id="L965">								break;</span>
+							case TimeRecord.TIMEINTERVAL:
+<span class="nc bnc" id="L967" title="All 2 branches missed.">								if (!notShowTimeInterval)</span>
+								{
+<span class="nc" id="L969">									TimeInterval anInterval = (TimeInterval) anEntryList.get(i);</span>
+
+									//reset the index since it could have been set for the entry
+<span class="nc bnc" id="L972" title="All 2 branches missed.">									if (!setIndex){</span>
+<span class="nc" id="L973">										this.detailSelectedIndex = -1;</span>
+									}
+
+									//set selected index
+<span class="nc bnc" id="L977" title="All 2 branches missed.">									if (anInterval.getID().equals(this.getTimeEntryID())){</span>
+<span class="nc" id="L978">										this.detailSelectedIndex = i;</span>
+<span class="nc" id="L979">										this.mediatorNum = recordNum;</span>
+<span class="nc" id="L980">                                        setIndex = true;</span>
+									}
+									//set PC selected index
+<span class="nc bnc" id="L983" title="All 2 branches missed.">									if (this.detailSelectedIndex != -1){</span>
+<span class="nc" id="L984">										aPC.getMultiColList().addSelectedRowID(String.valueOf(this.detailSelectedIndex));</span>
+									}
+<span class="nc" id="L986">									row_data = new ArrayList();</span>
+<span class="nc" id="L987">									row_data.add(formatDate(anInterval.getStartTime(), aRecord.getTimeZone()));</span>
+<span class="nc" id="L988">									row_data.add(formatDate(anInterval.getEndTime(), aRecord.getTimeZone()));</span>
+<span class="nc" id="L989">									row_data.add(anInterval.getActivityCategoryName());</span>
+<span class="nc" id="L990">									row_data.add(anInterval.getActivityName());</span>
+<span class="nc" id="L991">									row_data.add(m_localizer.formatDurationInMins(anInterval.getDuration()));</span>
+<span class="nc" id="L992">									row_data.add(m_localizer.formatYesNo(anInterval.getPaid()));</span>
+<span class="nc" id="L993">									row_data.add(getCreatorStr(aRecord.getType(), anInterval.getTimeSourceCode()));</span>
+<span class="nc bnc" id="L994" title="All 2 branches missed.">									row_data.add(anInterval.getDescription()!=null</span>
+<span class="nc bnc" id="L995" title="All 2 branches missed.">										&amp;&amp; !anInterval.getDescription().equals(&quot;&quot;)?HtmlEncoder.encode(anInterval.getDescription()):&quot;&amp;nbsp;&quot;);</span>
+
+									// Set if the row should be editable or not.
+<span class="nc" id="L998">									HashMap rowAttributes = new HashMap(1);</span>
+<span class="nc" id="L999">									rowAttributes.put(&quot;IS_EDITABLE&quot;, isEnabled);</span>
+<span class="nc" id="L1000">									rowAttributes.put(&quot;ENTRY&quot;, &quot;;&quot;);</span>
+<span class="nc" id="L1001">									rowAttributes.put(&quot;LENGTH&quot;, String.valueOf(aRecord.getChildren().size()));</span>
+									// Add row data to list model
+<span class="nc" id="L1003">									listModel.add(new DefaultMultiColumnNodeData(aRecord.getID().toString(), row_data, rowAttributes));</span>
+								}
+							break;
+						}
+					}
+
+<span class="fc" id="L1009">					setComponentToolbars(aPC, context, aRecord, hasEndShift);//set toolbars</span>
+
+					//set setRemarkEmployeeStr string for component
+					//if (aRecord.getRemarkEmployeeName()!=null &amp;&amp; aRecord.getRemarkDate()!=null)
+<span class="fc" id="L1013">						aPC.setRemarkEmployeeStr(getRemarkAndApproverEmployeeStr(aRecord));</span>
+
+					//set comments string for component
+<span class="fc bfc" id="L1016" title="All 2 branches covered.">					aPC.setComments(getCommentStr(aRecord.getDescription()!=null?HtmlEncoder.encode(aRecord.getDescription()):&quot;&amp;nbsp;&quot;));</span>
+
+<span class="fc" id="L1018">					aPC.getMultiColList().setListModel(listModel);//add list</span>
+
+<span class="fc" id="L1020">					StringBuffer recordNumImg = new StringBuffer();</span>
+					//get time record num image
+<span class="fc" id="L1022">					recordNumImg.append(&quot;&lt;table border=\&quot;0\&quot;&gt;&lt;tr&gt;&quot;</span>
+						+ &quot;&lt;td class=\&quot;bgImage\&quot; background=\&quot;&quot;
+<span class="pc bpc" id="L1024" title="1 of 2 branches missed.">						+ context.getStaticFileUrl(&quot;/am/images/icons/blankBG.gif&quot;)</span>
+						+ &quot;\&quot; width=\&quot;14\&quot; height=\&quot;14\&quot;&gt;&quot;
+						+ (recordNum&lt;10?&quot;&amp;nbsp;&quot;:&quot;&quot;)
+<span class="fc" id="L1027">						+ m_localizer.formatNumber(recordNum)</span>
+						+ &quot;&lt;/td&gt;&quot;);
+					//append locked icon if required
+<span class="pc bpc" id="L1030" title="2 of 4 branches missed.">					if (aRecord.isLocked() || isDayLocked){</span>
+<span class="nc" id="L1031">						recordNumImg.append(&quot;&lt;td class=\&quot;bgImage\&quot; background=\&quot;&quot;</span>
+<span class="nc" id="L1032">						+ context.getStaticFileUrl(&quot;/am/images/lockTR.gif&quot;)</span>
+						+ &quot;\&quot; width=\&quot;14\&quot; height=\&quot;14\&quot;&gt;&quot;
+<span class="nc" id="L1034">						+ HtmlUtil.imageTag(ImageFileID.BLACK_CHECK, &quot;12&quot;, &quot;14&quot;, i18n(m_bundle, AmWebBundleKey.LOCKED))</span>
+						+ &quot;&lt;/td&gt;&quot;);
+					}
+
+<span class="fc" id="L1038">					recordNumImg.append(&quot;&lt;/tr&gt;&lt;/table&gt;&quot;);</span>
+
+<span class="pc bpc" id="L1040" title="1 of 2 branches missed.">					String autoClosedStr = isAutoClosed?i18n(m_bundle, AmWebBundleKey.SYSTEM_AUTOCLOSE):&quot;&quot;;</span>
+					//now get the mail list element
+<span class="fc" id="L1042">					ArrayList columns = new ArrayList(4);</span>
+<span class="fc" id="L1043">					columns.add(recordNumImg.toString());</span>
+<span class="fc" id="L1044">					columns.add(</span>
+<span class="pc bpc" id="L1045" title="3 of 4 branches missed.">						(aRecord.getType() == TimeRecord.TIMEENTRY || aRecord.getType() == TimeRecord.AGG_TIMEENTRY?</span>
+<span class="pc" id="L1046">							i18n(m_bundle, AmWebBundleKey.AM_MYTIME_TIMERECORD):</span>
+<span class="pc" id="L1047">							i18n(m_bundle, AmWebBundleKey.PAID_INTERVAL))</span>
+						+ &quot;&amp;nbsp;&quot;
+						+ recordNum + &quot;&amp;nbsp;&quot; + &quot;(&quot;+ 
+<span class="fc" id="L1050">						TimeZoneHelper.getDisplayTimeZone(aRecord.getTimeZone(), m_localizer)+&quot;)&quot;</span>
+<span class="pc bpc" id="L1051" title="1 of 2 branches missed.">						+ &quot;&amp;nbsp;&quot; + ((aRecord.getOverlap()?errorFontStartTag + &quot;[&quot; +</span>
+<span class="pc bpc" id="L1052" title="1 of 2 branches missed.">						i18n(m_bundle, AmWebBundleKey.INVALID) +</span>
+						&quot;]&quot; + fontEndTag:&quot;&quot;) +
+						(isAutoClosed?errorFontStartTag + &quot; [&quot; + autoClosedStr + &quot;]&quot;:&quot;&quot;))
+						+ fontEndTag);
+
+					//add image for approve status
+
+<span class="pc bpc" id="L1059" title="1 of 2 branches missed.">					if (m_hasTRELicense){</span>
+						//get image
+<span class="fc bfc" id="L1061" title="All 2 branches covered.">						String approveImg = aRecord.getApprove()</span>
+<span class="fc" id="L1062">						 ?HtmlUtil.imageTag(ImageFileID.APPROVED, ImageFileID.APPROVED_WIDTH,</span>
+<span class="fc" id="L1063">							 ImageFileID.APPROVED_HEIGHT, i18n(m_bundle, AmWebBundleKey.APPROVED))</span>
+<span class="fc" id="L1064">						 :HtmlUtil.imageTag(ImageFileID.NOT_APPROVED, ImageFileID.NOT_APPROVED_WIDTH,</span>
+<span class="fc" id="L1065">							 ImageFileID.NOT_APPROVED_HEIGHT, i18n(m_bundle, AmWebBundleKey.NOT_APPROVED));</span>
+
+<span class="fc" id="L1067">						columns.add(approveImg);</span>
+					}
+<span class="fc" id="L1069">					columns.add(m_localizer.formatDurationInMins(aRecord.getDuration()));</span>
+
+<span class="fc" id="L1071">					DefaultMultiColumnNodeData userdata = new DefaultMultiColumnNodeData(</span>
+<span class="fc" id="L1072">							String.valueOf(aRecord.getID()), columns);</span>
+<span class="fc" id="L1073">					userdata.setAttachedObject(aPC.toString());</span>
+<span class="fc" id="L1074">					data.add(userdata);</span>
+				}
+<span class="fc" id="L1076">			}</span>
+		}
+
+<span class="fc" id="L1079">		return data;</span>
+	}
+
+	/**
+	 * getRemarkAndApproverEmployeeStr
+	 */
+	private String getRemarkAndApproverEmployeeStr(TimeRecord aRecord){
+<span class="fc" id="L1086">		StringBuffer htmlDisplay = new StringBuffer(250);</span>
+<span class="fc" id="L1087">		htmlDisplay.append(&quot;&lt;tr&gt;&lt;td id=\&quot;Modified\&quot; class=\&quot;sdr\&quot;&gt;&lt;span class=\&quot;boldTextSm\&quot;&gt;&quot;);</span>
+<span class="fc" id="L1088">		htmlDisplay.append(i18n(m_bundle, AmWebBundleKey.MODIFIED_BY));</span>
+<span class="fc" id="L1089">		htmlDisplay.append(&quot;&amp;nbsp;:&amp;nbsp;&amp;nbsp;&lt;/span&gt;&quot;);</span>
+
+<span class="fc bfc" id="L1091" title="All 2 branches covered.">		if (!StringUtil.isEmpty(aRecord.getRemarkEmployeeName())){</span>
+<span class="fc" id="L1092">			htmlDisplay.append(aRecord.getRemarkEmployeeName()</span>
+<span class="fc" id="L1093">				+ &quot;&amp;nbsp;(&quot; + formatDate(aRecord.getLastModifiedTime(), aRecord.getTimeZone()) + &quot;)&quot;);</span>
+		}
+
+<span class="pc bpc" id="L1096" title="2 of 6 branches missed.">		if (aRecord.getApprove() &amp;&amp; aRecord.getApproverName()!=null &amp;&amp; aRecord.getApproveTime()!=null){//approver</span>
+<span class="nc" id="L1097">			htmlDisplay.append(&quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;span class=\&quot;boldTextSm\&quot;&gt;&quot;);</span>
+<span class="nc" id="L1098">			htmlDisplay.append(i18n(m_bundle, AmWebBundleKey.APPROVED_BY));</span>
+<span class="nc bnc" id="L1099" title="All 2 branches missed.">			htmlDisplay.append(&quot;&amp;nbsp;:&amp;nbsp;&amp;nbsp;&lt;/span&gt;&quot; + (aRecord.getApproverName()!=null?aRecord.getApproverName():&quot;&quot;)</span>
+<span class="nc" id="L1100">			+ &quot;&amp;nbsp;(&quot; + formatDate(aRecord.getApproveTime(), aRecord.getTimeZone()) + &quot;)&quot;);</span>
+		}
+<span class="fc" id="L1102">		htmlDisplay.append(&quot;&lt;/td&gt;&lt;/tr&gt;\n&quot;);</span>
+<span class="fc" id="L1103">		return htmlDisplay.toString();</span>
+	}
+
+	/**
+	 * getCommentStr
+	 */
+	private String getCommentStr(String comments){
+<span class="fc" id="L1110">		StringBuffer htmlDisplay = new StringBuffer(250);</span>
+<span class="fc" id="L1111">		htmlDisplay.append(&quot;&lt;tr&gt;&lt;td id=\&quot;Comments\&quot; class=\&quot;sdr\&quot;&gt;&lt;span class=\&quot;boldTextSm\&quot;&gt;&quot;);</span>
+<span class="fc" id="L1112">		htmlDisplay.append(i18n(m_bundle, AmWebBundleKey.COMMENTS));</span>
+<span class="fc" id="L1113">		htmlDisplay.append(&quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;:&amp;nbsp;&amp;nbsp;&lt;/span&gt;&quot;);</span>
+<span class="fc" id="L1114">		htmlDisplay.append(comments);</span>
+<span class="fc" id="L1115">		htmlDisplay.append(&quot;&lt;/td&gt;&lt;/tr&gt;\n&quot;);</span>
+<span class="fc" id="L1116">		return htmlDisplay.toString();</span>
+	}
+
+	/**
+	 * setTableHearder()
+	 */
+	private void setTableHeader(TRDayDetailPC aPC, int recordType){
+<span class="fc" id="L1123">		aPC.getMultiColList().getHeader().setStyle(&quot;tableHeaderLightLeft&quot;);</span>
+<span class="pc bpc" id="L1124" title="3 of 4 branches missed.">		if (recordType == TimeRecord.TIMEENTRY || recordType == TimeRecord.AGG_TIMEENTRY){</span>
+<span class="fc" id="L1125">			aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;TIME&quot;,</span>
+<span class="fc" id="L1126">			i18n(m_bundle, AmWebBundleKey.TIME), &quot;tableHeaderLightLeft&quot;);</span>
+		} else {
+<span class="nc" id="L1128">			aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;STARTTIME&quot;,</span>
+<span class="nc" id="L1129">			i18n(m_bundle, AmWebBundleKey.ADHERENCE_SORT_STARTTIME), &quot;tableHeaderLightLeft&quot;);</span>
+<span class="nc" id="L1130">			aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;STARTTIME&quot;,</span>
+<span class="nc" id="L1131">			i18n(m_bundle, AmWebBundleKey.ADHERENCE_SORT_ENDTIME), &quot;tableHeaderLightLeft&quot;);</span>
+		}
+<span class="fc" id="L1133">		aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;ACTIVITY_CATEGORY&quot;,</span>
+<span class="fc" id="L1134">			i18n(m_bundle, AmWebBundleKey.ACTIVITY_TYPE), &quot;tableHeaderLightLeft&quot;);</span>
+
+<span class="pc bpc" id="L1136" title="3 of 4 branches missed.">		if (!this.getAggregated() || recordType == TimeRecord.TIMEINTERVAL){</span>
+<span class="fc" id="L1137">			aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;ACTIVITY&quot;,</span>
+<span class="fc" id="L1138">				i18n(m_bundle, AmWebBundleKey.ACTIVITY), &quot;tableHeaderLightLeft&quot;);</span>
+		}
+
+<span class="pc bpc" id="L1141" title="3 of 4 branches missed.">		if (recordType == TimeRecord.TIMEENTRY || recordType == TimeRecord.AGG_TIMEENTRY){</span>
+<span class="fc" id="L1142">			aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;DURATION&quot;,</span>
+<span class="fc" id="L1143">				i18n(m_bundle, AmWebBundleKey.DURATION), &quot;tableHeaderLightLeft&quot;);</span>
+		} else {
+<span class="nc" id="L1145">			aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;PAIDINTERVAL&quot;,</span>
+<span class="nc" id="L1146">				i18n(m_bundle, AmWebBundleKey.PAID_INTERVAL), &quot;tableHeaderLightLeft&quot;);</span>
+		}
+<span class="fc" id="L1148">		aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;PAYABLE&quot;,</span>
+<span class="fc" id="L1149">			i18n(m_bundle, AmWebBundleKey.PAYABLE), &quot;tableHeaderLightLeft&quot;);</span>
+<span class="fc" id="L1150">		aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;CREATOR&quot;,</span>
+<span class="fc" id="L1151">			i18n(m_bundle, AmWebBundleKey.CREATOR), &quot;tableHeaderLightLeft&quot;);</span>
+
+<span class="pc bpc" id="L1153" title="3 of 4 branches missed.">		if (!this.getAggregated() || recordType == TimeRecord.TIMEINTERVAL){</span>
+<span class="fc" id="L1154">			aPC.getMultiColList().getHeader().addColumnHeaderData(&quot;NOTES&quot;,</span>
+<span class="fc" id="L1155">				i18n(m_bundle, AmWebBundleKey.MY_NOTES), &quot;tableHeaderLightLeft&quot;);</span>
+		}
+<span class="fc" id="L1157">	}</span>
+
+	/**
+	 * setTableProperties()
+	 */
+	private void setTableProperties(TRDayDetailPC aPC){
+		// Set up basic table property
+<span class="pc bpc" id="L1164" title="1 of 2 branches missed.">		aPC.getMultiColList().setEnabled(!this.getAggregated());</span>
+<span class="fc" id="L1165">		aPC.getMultiColList().setMultiRowSelectable(false);</span>
+
+<span class="fc" id="L1167">		aPC.setNeedExpSummary(true);</span>
+<span class="fc" id="L1168">		aPC.getMultiColList().setTableRowClass(&quot;sdr&quot;);</span>
+<span class="fc" id="L1169">		aPC.getMultiColList().setCellClass(&quot;sdrItem&quot;);</span>
+<span class="fc" id="L1170">	}</span>
+
+	/**
+	 * getHasEndShift()
+	 */
+	private boolean getHasEndShift(TimeRecord aRecord){
+<span class="fc" id="L1176">		boolean hasEndShift = false;</span>
+<span class="fc" id="L1177">		ArrayList anEntryList = (ArrayList)aRecord.getChildren();</span>
+<span class="fc bfc" id="L1178" title="All 2 branches covered.">		for (int i=0; i&lt;anEntryList.size(); i++){</span>
+<span class="pc bpc" id="L1179" title="2 of 3 branches missed.">			switch (aRecord.getType())</span>
+			{
+				case TimeRecord.AGG_TIMEENTRY:
+				case TimeRecord.TIMEENTRY:
+<span class="fc" id="L1183">					TimeRecordEntry anEntry = (TimeRecordEntry) anEntryList.get(i);</span>
+<span class="fc bfc" id="L1184" title="All 2 branches covered.">					if (anEntry.getActivityID().equals(Activity.ACTIVITY_NONE)){</span>
+<span class="fc" id="L1185">						hasEndShift = true;</span>
+<span class="fc" id="L1186">						break;</span>
+					}
+					break;
+				case TimeRecord.TIMEINTERVAL:
+<span class="nc" id="L1190">					hasEndShift = true;</span>
+					break;
+			}
+		}
+<span class="fc" id="L1194">		return hasEndShift;</span>
+	}
+
+	/**
+	 * getCreatorStr()
+	 */
+	private String getCreatorStr(int recordType, int timeSourceCode){
+		//get text for creator
+<span class="fc" id="L1202">		String creator = null;</span>
+		
+<span class="pc bpc" id="L1204" title="1 of 2 branches missed.">		if (recordType == TimeRecord.TIMEINTERVAL){</span>
+<span class="nc bnc" id="L1205" title="All 2 branches missed.">			if (timeSourceCode == TimeInterval.SYSTEM){</span>
+<span class="nc" id="L1206">				creator = i18n(m_bundle, AmWebBundleKey.SYSTEM);</span>
+<span class="nc bnc" id="L1207" title="All 2 branches missed.">			} else if (timeSourceCode == TimeInterval.MANUAL){</span>
+<span class="nc" id="L1208">				creator = i18n(m_bundle, AmWebBundleKey.MANAGER);</span>
+<span class="nc bnc" id="L1209" title="All 2 branches missed.">			} else if (timeSourceCode == TimeInterval.SCHEDULE){</span>
+<span class="nc" id="L1210">				creator = i18n(m_bundle, AmWebBundleKey.SCHEDULE);</span>
+<span class="nc bnc" id="L1211" title="All 2 branches missed.">			} else if (timeSourceCode == TimeInterval.HOLIDAY){</span>
+<span class="nc" id="L1212">				creator = i18n(m_bundle, AmWebBundleKey.HOLIDAY);</span>
+			}
+		} else {
+<span class="pc bpc" id="L1215" title="1 of 2 branches missed.">			if (timeSourceCode == TimeEntrySourceCode.MULTI){</span>
+<span class="nc" id="L1216">				creator = i18n(m_bundle, AmWebBundleKey.MULTIPLE);</span>
+<span class="pc bpc" id="L1217" title="1 of 2 branches missed.">			} else if (timeSourceCode == TimeEntrySourceCode.RAWPUNCH){</span>
+<span class="nc" id="L1218">				creator = i18n(m_bundle, AmWebBundleKey.SYSTEM);</span>
+<span class="fc bfc" id="L1219" title="All 2 branches covered.">			} else if (timeSourceCode == TimeEntrySourceCode.MYTIME){</span>
+<span class="fc" id="L1220">				creator = i18n(m_bundle, AmWebBundleKey.MY_TIME);</span>
+<span class="pc bpc" id="L1221" title="1 of 2 branches missed.">			} else if (timeSourceCode == TimeEntrySourceCode.MANUAL){</span>
+<span class="fc" id="L1222">				creator = i18n(m_bundle, AmWebBundleKey.MANAGER);</span>
+<span class="nc bnc" id="L1223" title="All 2 branches missed.">			} else if (timeSourceCode == TimeEntrySourceCode.FROMSCHEDULE){</span>
+<span class="nc" id="L1224">				creator = i18n(m_bundle, AmWebBundleKey.SCHEDULE);</span>
+<span class="nc bnc" id="L1225" title="All 2 branches missed.">			} else if (timeSourceCode == TimeEntrySourceCode.AUTO_CLOSE){</span>
+<span class="nc" id="L1226">				creator = i18n(m_bundle, AmWebBundleKey.SYSTEM_AUTOCLOSE);</span>
+<span class="nc bnc" id="L1227" title="All 2 branches missed.">			} else if (timeSourceCode == TimeEntrySourceCode.AUTO_MERGE){</span>
+<span class="nc" id="L1228">				creator = i18n(m_bundle, AmWebBundleKey.SYSTEM_AUTOMERGE);</span>
+<span class="nc bnc" id="L1229" title="All 2 branches missed.">			} else if (timeSourceCode == TimeEntrySourceCode.HAAFEED){</span>
+<span class="nc" id="L1230">				creator = i18n(m_bundle, AmWebBundleKey.HAA_TIME_SOURCE);</span>
+			}
+		}
+<span class="pc bpc" id="L1233" title="1 of 2 branches missed.">		return creator==null?&quot;&quot;:creator;</span>
+	}
+
+	/**
+	 * setComponentToolbars()
+	 */
+	private void setComponentToolbars(TRDayDetailPC aPC,
+		RequestContext context, TimeRecord aRecord, boolean hasEndShift){
+<span class="fc" id="L1241">		ToolbarPC tb1 = new ToolbarPC(context);</span>
+
+<span class="fc" id="L1243">        boolean isEnabled = false;</span>
+
+<span class="pc bpc" id="L1245" title="2 of 4 branches missed.">        if (!aRecord.isLocked() &amp;&amp; !isDayLocked){</span>
+<span class="pc bpc" id="L1246" title="4 of 6 branches missed.">             if ((aRecord.getType() == TimeRecord.TIMEENTRY || aRecord.getType() == TimeRecord.AGG_TIMEENTRY) &amp;&amp; this.editTRPrivilege){</span>
+<span class="fc" id="L1247">                isEnabled = true;</span>
+<span class="pc bpc" id="L1248" title="3 of 4 branches missed.">            } if (aRecord.getType() == TimeRecord.TIMEINTERVAL &amp;&amp; this.editTIPrivilege){</span>
+<span class="nc" id="L1249">                isEnabled = true;</span>
+            }
+        }
+		//add end shift button if not found
+<span class="pc bpc" id="L1253" title="3 of 4 branches missed.">		if (!hasEndShift &amp;&amp; this.editTRPrivilege){</span>
+<span class="nc" id="L1254">			ToolbarTextButton aButton0 = new ToolbarTextButton(tb1,</span>
+<span class="nc" id="L1255">			&quot;POPUP_CREATE_ENDSHIFT&quot;, i18n(m_bundle, AmWebBundleKey.CREATE_END_SHIFT));</span>
+<span class="nc" id="L1256">			aButton0.getButtonTable().setAttribute(&quot;recordID&quot;, aRecord.getID().toString());</span>
+<span class="nc" id="L1257">			aButton0.getButtonTable().setAttribute(&quot;pageAction&quot;, EditTimeRecordModel.CREATE_END_SHIFT);</span>
+<span class="nc" id="L1258">			aButton0.getButtonTable().setAttribute(&quot;selectedID&quot;, this.getSelectedID());</span>
+<span class="nc" id="L1259">			aButton0.getButtonTable().setAttribute(&quot;curIndex&quot;, String.valueOf(this.getEditIndex()));</span>
+<span class="nc" id="L1260">			aButton0.getButtonTable().setAttribute(&quot;timeZone&quot;, aRecord.getTimeZone());</span>
+<span class="nc" id="L1261">			tb1.addToolbarElement(aButton0);</span>
+		}
+
+<span class="pc bpc" id="L1264" title="3 of 4 branches missed.">		if (aRecord.getType() == TimeRecord.TIMEENTRY  || aRecord.getType() == TimeRecord.AGG_TIMEENTRY){</span>
+<span class="fc" id="L1265">			ToolbarTextButton aButton1 = new ToolbarTextButton(tb1,</span>
+<span class="fc" id="L1266">				&quot;POPUP_INSERT_ENTRY&quot;, i18n(m_bundle, AmWebBundleKey.INSERT_TIME_ENTRY), false);</span>
+<span class="fc" id="L1267">			aButton1.getButtonTable().setAttribute(&quot;pageAction&quot;, EditTimeRecordModel.INSERTTE_ACTION);</span>
+<span class="fc" id="L1268">			tb1.addToolbarElement(aButton1);</span>
+
+<span class="fc" id="L1270">			ToolbarTextButton aButton2 = new ToolbarTextButton(tb1,</span>
+<span class="fc" id="L1271">				&quot;POPUP_DELETE_ENTRY&quot;, i18n(m_bundle, AmWebBundleKey.DELETE_TIME_ENTRY), false);</span>
+<span class="fc" id="L1272">			aButton2.getButtonTable().setAttribute(&quot;pageAction&quot;, EditTimeRecordModel.DELETETE_ACTION);</span>
+<span class="fc" id="L1273">			tb1.addToolbarElement(aButton2);</span>
+		}
+
+		//edit time entry / time interval
+<span class="pc bpc" id="L1277" title="3 of 4 branches missed.">		if (aRecord.getType() == TimeRecord.TIMEENTRY || aRecord.getType() == TimeRecord.AGG_TIMEENTRY){</span>
+<span class="fc" id="L1278">			ToolbarTextButton aButton3 = new ToolbarTextButton(tb1,</span>
+<span class="fc" id="L1279">				&quot;POPUP_EDIT_ENTRY&quot;, i18n(m_bundle, AmWebBundleKey.EDIT_TIME_ENTRY), false);</span>
+<span class="fc" id="L1280">			aButton3.getButtonTable().setAttribute(&quot;pageAction&quot;, EditTimeRecordModel.EDITTE_ACTION);</span>
+<span class="fc" id="L1281">			tb1.addToolbarElement(aButton3);</span>
+<span class="pc bnc" id="L1282" title="All 2 branches missed.">		} else if (aRecord.getType() == TimeRecord.TIMEINTERVAL){</span>
+<span class="nc" id="L1283">			ToolbarTextButton aButton3 = new ToolbarTextButton(tb1,</span>
+<span class="nc" id="L1284">				&quot;POPUP_EDIT_TIME_INTERVAL&quot;, i18n(m_bundle, AmWebBundleKey.EDIT_TIME_INTERVAL), isEnabled);</span>
+<span class="nc" id="L1285">			aButton3.getButtonTable().setAttribute(&quot;recordID&quot;, aRecord.getID().toString());</span>
+<span class="nc" id="L1286">			aButton3.getButtonTable().setAttribute(&quot;pageAction&quot;, DayDetailsTimeIntervalModel.EDIT_TIME_INTERVAL);</span>
+<span class="nc" id="L1287">			aButton3.getButtonTable().setAttribute(&quot;selectedID&quot;, this.getSelectedID());</span>
+<span class="nc" id="L1288">			aButton3.getButtonTable().setAttribute(&quot;curIndex&quot;, String.valueOf(this.getEditIndex()));</span>
+<span class="nc" id="L1289">			aButton3.getButtonTable().setAttribute(&quot;timeZone&quot;, aRecord.getTimeZone());</span>
+<span class="nc" id="L1290">			tb1.addToolbarElement(aButton3);</span>
+		}
+
+<span class="fc" id="L1293">		tb1.setAlignment(ToolbarPC.ALIGN_RIGHT);</span>
+
+<span class="fc" id="L1295">		ToolbarPC tb2 = new ToolbarPC(context);</span>
+
+		//approve record: do not show button if no privilege
+<span class="pc bpc" id="L1298" title="1 of 2 branches missed.">		if (this.approveTRPrivilege){</span>
+			//decide label based on current status
+<span class="fc bfc" id="L1300" title="All 2 branches covered.">			String label = !aRecord.getApprove()?</span>
+<span class="fc" id="L1301">				i18n(m_bundle, AmWebBundleKey.APPROVE_TR): i18n(m_bundle, AmWebBundleKey.UNAPPROVE_TR);</span>
+<span class="pc bpc" id="L1302" title="1 of 2 branches missed.">			ToolbarTextButton aButton5 = new ToolbarTextButton(m_toolbar,</span>
+<span class="pc bpc" id="L1303" title="1 of 2 branches missed.">				&quot;APPROVETR_ACTION&quot;, label, this.approveTRPrivilege &amp;&amp; getHasEndShift(aRecord)</span>
+<span class="pc bpc" id="L1304" title="3 of 6 branches missed.">					&amp;&amp; !aRecord.getOverlap() &amp;&amp; !aRecord.isLocked() &amp;&amp; !isDayLocked);</span>
+<span class="fc" id="L1305">			aButton5.getButtonTable().setAttribute(&quot;recordId&quot;, aRecord.getID().toString());</span>
+<span class="fc" id="L1306">			aButton5.getButtonTable().setAttribute(&quot;version&quot;, String.valueOf(aRecord.getVersion()));</span>
+<span class="fc bfc" id="L1307" title="All 2 branches covered.">			aButton5.getButtonTable().setAttribute(&quot;approved&quot;, String.valueOf(!aRecord.getApprove()));</span>
+<span class="fc" id="L1308">			tb2.addToolbarElement(aButton5);</span>
+		}
+
+        //delete record
+<span class="fc" id="L1312">		ToolbarTextButton aButton6 = new ToolbarTextButton(m_toolbar,</span>
+<span class="fc" id="L1313">			&quot;DELETETR_ACTION&quot;, i18n(m_bundle, AmWebBundleKey.DELETE_TIME_RECORD),</span>
+				isEnabled);
+<span class="fc" id="L1315">		aButton6.getButtonTable().setAttribute(&quot;recordID&quot;, aRecord.getID().toString());</span>
+<span class="fc" id="L1316">		tb2.addToolbarElement(aButton6);</span>
+
+		//edit remarks
+<span class="fc" id="L1319">		ToolbarTextButton aButton4 = new ToolbarTextButton(tb1, &quot;POPUP_EDIT_REMARK&quot;,</span>
+<span class="fc" id="L1320">			 i18n(m_bundle, AmWebBundleKey.EDIT_COMMENTS), isEnabled);</span>
+<span class="fc" id="L1321">		aButton4.getButtonTable().setAttribute(&quot;recordID&quot;, aRecord.getID().toString());</span>
+<span class="fc" id="L1322">		aButton4.getButtonTable().setAttribute(&quot;pageAction&quot;, EditTimeRecordModel.EDITREMARK_ACTION);</span>
+<span class="fc" id="L1323">		aButton4.getButtonTable().setAttribute(&quot;selectedID&quot;, this.getSelectedID());</span>
+<span class="fc" id="L1324">		aButton4.getButtonTable().setAttribute(&quot;curIndex&quot;, String.valueOf(getEditIndex()));</span>
+<span class="fc" id="L1325">		aButton4.getButtonTable().setAttribute(&quot;timeZone&quot;, aRecord.getTimeZone());</span>
+<span class="fc" id="L1326">		aButton4.getButtonTable().setAttribute(&quot;version&quot;, String.valueOf(aRecord.getVersion()));</span>
+<span class="fc" id="L1327">		aButton4.getButtonTable().setAttribute(&quot;orgId&quot;, aRecord.getOrgID().toString());</span>
+<span class="fc" id="L1328">		tb2.addToolbarElement(aButton4);</span>
+<span class="fc" id="L1329">		tb2.setAlignment(ToolbarPC.ALIGN_RIGHT);</span>
+
+<span class="fc" id="L1331">		aPC.setFirstTB(tb1);</span>
+<span class="fc" id="L1332">		aPC.setSecondTB(tb2);</span>
+<span class="fc" id="L1333">	}</span>
+
+	/**
+	 * set the display for the model
+	 */
+	public void setDisplay(RequestContext context) throws Exception{
+<span class="pc bpc" id="L1339" title="1 of 4 branches missed.">		if (isDayLocked &amp;&amp; this.timeRecordsForEmployee.size()&gt;0){</span>
+            //&quot;Time Record(s) for this day are locked.&quot;
+<span class="nc" id="L1341">            addPageMessage(Message.INFO_TYPE, i18n(m_bundle, AmWebBundleKey.LOCKED_TIME_RECORDS),</span>
+						AmWebBundleKey.BUNDLE_NAME);
+        }
+<span class="fc" id="L1344">		aList.setStyleClass(&quot;listRowMed&quot;);</span>
+<span class="fc" id="L1345">		aList.setStyleClass(&quot;listRowMed&quot;);</span>
+<span class="fc" id="L1346">		aList.setEnabled(false);//prevent selection for now</span>
+
+<span class="fc" id="L1348">		aList.setListModel(getRowData(context));</span>
+		/*
+		if (this.selectedIndex.size() &gt; 0){//set selected index
+			int [] index = new int[]{Integer.valueOf((String)this.selectedIndex.get(0)).intValue()};
+			aList.getMultiColList().setSelectedIndexes(index);
+		}
+		*/
+<span class="fc" id="L1355">	}</span>
+
+	/**
+	 * Return MultiColListPC for display
+	 */
+	public MultiColListPC getList(){
+<span class="fc" id="L1361">		return aList;</span>
+	}
+
+	/**
+	 * Set the list header
+	 */
+	public void setHeader(){
+<span class="fc bfc" id="L1368" title="All 2 branches covered.">		if (!StringUtil.isEmpty(this.boundaryTimeSpan)){//only if variable is not null</span>
+			//set header
+			//decide image based on view type
+<span class="fc" id="L1371">			String image=&quot;&quot;;</span>
+<span class="pc bpc" id="L1372" title="1 of 2 branches missed.">			if (!this.aggregated){</span>
+<span class="fc" id="L1373">				image = &quot;&lt;a class=\&quot;tableHeaderAnchor\&quot; href=\&quot;javascript:submitView();\&quot;&gt;&quot; +</span>
+<span class="fc" id="L1374">					&quot;&lt;img alt=\&quot;&quot; + i18n(m_bundle, AmWebBundleKey.TR_COLLAPSEDVIEW) + </span>
+					&quot;\&quot; src=\&quot;&quot; + ImageFileID.COLLAPSE +
+					&quot;\&quot; style=\&quot;cursor:pointer; cursor:hand; border: 0;\&quot; alt=\&quot;\&quot; /&gt;&lt;/a&gt;&quot;;
+			} else {
+<span class="nc" id="L1378">				image = &quot;&lt;a class=\&quot;tableHeaderAnchor\&quot; href=\&quot;javascript:submitView();\&quot;&gt;&quot; + </span>
+<span class="nc" id="L1379">					&quot;&lt;img alt=\&quot;&quot; + i18n(m_bundle, AmWebBundleKey.TR_EXPANDEDVIEW) + </span>
+					&quot;\&quot; src=\&quot;&quot; + ImageFileID.EXTEND +
+					&quot;\&quot; style=\&quot;cursor:pointer; cursor:hand; border: 0;\&quot; alt=\&quot;\&quot; /&gt;&lt;/a&gt;&quot;;
+			}
+<span class="fc" id="L1383">			aList.getHeader().addColumnHeaderData(&quot;IMAGE&quot;,</span>
+				image + &quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&quot;, &quot;tableHeaderLightLeft&quot;); 
+
+<span class="pc bpc" id="L1386" title="1 of 2 branches missed.">			String viewType = this.getAggregated()?i18n(m_bundle, AmWebBundleKey.ALL_TIME_RECORDS_COLLAPSEDVIEW):</span>
+<span class="fc" id="L1387">								i18n(m_bundle, AmWebBundleKey.ALL_TIME_RECORDS_EXTENDEDVIEW);</span>
+<span class="fc" id="L1388">			aList.getHeader().addColumnHeaderData(&quot;ALL TIME RECORDS&quot;,</span>
+				viewType + this.boundaryTimeSpan, &quot;tableHeaderLightLeft&quot;);
+<span class="pc bpc" id="L1390" title="1 of 2 branches missed.">			if (m_hasTRELicense)</span>
+<span class="fc" id="L1391">				aList.getHeader().addColumnHeaderData(&quot;APPROVED&quot;,</span>
+<span class="fc" id="L1392">					i18n(m_bundle, AmWebBundleKey.APPROVED), &quot;tableHeaderLightLeft&quot;);</span>
+<span class="fc" id="L1393">			aList.getHeader().addColumnHeaderData(&quot;TOTAL&quot;,</span>
+<span class="fc" id="L1394">				i18n(m_bundle, AmWebBundleKey.TOTAL), &quot;tableHeaderLightLeft&quot;);</span>
+		}
+<span class="fc" id="L1396">	}</span>
+
+	/**
+	 * Set the page toolbar
+	 */
+	public void setToolbar(RequestContext context){		// Pagination
+<span class="fc" id="L1402">		m_toolbar.setPagination(&quot;&quot;, getEditIndex(), getPageIDSize(), getSelectedIDSize());</span>
+
+		//add toolbar
+<span class="fc bfc" id="L1405" title="All 2 branches covered.">		boolean enabled = this.getEmpId() != null?true: false;</span>
+
+		//set boolean to true if found unapproved time record
+<span class="fc" id="L1408">		boolean approveDay = false;</span>
+<span class="pc bpc" id="L1409" title="1 of 2 branches missed.">		if (this.timeRecordsForEmployee!=null){</span>
+<span class="fc" id="L1410">			Iterator it = this.timeRecordsForEmployee.iterator();</span>
+
+<span class="fc bfc" id="L1412" title="All 2 branches covered.">			while (it.hasNext()) {</span>
+<span class="fc" id="L1413">				TimeRecord aRecord = (TimeRecord) it.next();</span>
+<span class="pc bpc" id="L1414" title="1 of 4 branches missed.">				if (!aRecord.getApprove() &amp;&amp; getHasEndShift(aRecord)){</span>
+<span class="fc" id="L1415">					approveDay = true;</span>
+<span class="fc" id="L1416">					break;</span>
+				}
+<span class="fc" id="L1418">			}</span>
+		}
+
+
+		//do not show approve day button if no privilege
+<span class="fc bfc" id="L1423" title="All 2 branches covered.">		if (this.approveTRPrivilege){</span>
+<span class="fc" id="L1424">			ToolbarTextButton aButton1 = new ToolbarTextButton(m_toolbar,</span>
+<span class="fc" id="L1425">				&quot;APPROVEDAY_ACTION&quot;, i18n(m_bundle, AmWebBundleKey.APPROVE_DAY));</span>
+<span class="pc bpc" id="L1426" title="1 of 2 branches missed.">			aButton1.setEnabled(this.getTimeRecordsForEmployee()!=null &amp;&amp;</span>
+<span class="pc bpc" id="L1427" title="2 of 8 branches missed.">				this.getTimeRecordsForEmployee().size()&gt;0 &amp;&amp; this.approveTRPrivilege &amp;&amp; approveDay &amp;&amp; !isDayLocked?true:false);</span>
+<span class="fc" id="L1428">			this.m_toolbar.addToolbarElement(aButton1);</span>
+		}
+
+		//do not show button if no edit privilege
+<span class="fc bfc" id="L1432" title="All 2 branches covered.">		if (this.editTIPrivilege){</span>
+<span class="fc" id="L1433">			ToolbarTextButton aButton6 = new ToolbarTextButton(m_toolbar,</span>
+<span class="fc" id="L1434">				&quot;POPUP_CREATE_TIME_INTERVAL&quot;, i18n(m_bundle, AmWebBundleKey.CREATE_TIME_INTERVAL));</span>
+<span class="pc bpc" id="L1435" title="1 of 2 branches missed.">			aButton6.setEnabled(!isDayLocked);</span>
+<span class="fc" id="L1436">			aButton6.getButtonTable().setAttribute(&quot;pageAction&quot;, &quot;CREATE_TIME_INTERVAL&quot;);</span>
+<span class="fc" id="L1437">			aButton6.getButtonTable().setAttribute(&quot;selectedID&quot;, this.getSelectedID());</span>
+<span class="fc" id="L1438">			aButton6.getButtonTable().setAttribute(&quot;curIndex&quot;, String.valueOf(this.getEditIndex()));</span>
+<span class="fc" id="L1439">			aButton6.getButtonTable().setAttribute(&quot;startYear&quot;, String.valueOf(this.getSelYear()));</span>
+<span class="fc" id="L1440">			aButton6.getButtonTable().setAttribute(&quot;startMonth&quot;, String.valueOf(this.getSelMonth()));</span>
+<span class="fc" id="L1441">			aButton6.getButtonTable().setAttribute(&quot;startDay&quot;, String.valueOf(this.getSelDay()));</span>
+			//aButton6.getButtonTable().setAttribute(&quot;timeZone&quot;, context.getViewingTimeZone().getID());
+<span class="fc" id="L1443">			m_toolbar.addToolbarElement(aButton6);</span>
+		}
+
+<span class="fc" id="L1446">		ToolbarTextButton aButton3 = new ToolbarTextButton(m_toolbar,</span>
+<span class="fc" id="L1447">			&quot;POPUP_CREATE_RECORD&quot;, i18n(m_bundle, AmWebBundleKey.CREATE_NEW_RECORD));</span>
+<span class="pc bpc" id="L1448" title="1 of 4 branches missed.">		aButton3.setEnabled(getEditState(context) &amp;&amp; !isDayLocked);</span>
+<span class="fc" id="L1449">		aButton3.getButtonTable().setAttribute(&quot;pageAction&quot;, &quot;ADDTR_ACTION&quot;);</span>
+<span class="fc" id="L1450">		aButton3.getButtonTable().setAttribute(&quot;selectedID&quot;, this.getSelectedID());</span>
+<span class="fc" id="L1451">		aButton3.getButtonTable().setAttribute(&quot;curIndex&quot;, String.valueOf(this.getEditIndex()));</span>
+<span class="fc" id="L1452">		aButton3.getButtonTable().setAttribute(&quot;startYear&quot;, String.valueOf(this.getSelYear()));</span>
+<span class="fc" id="L1453">		aButton3.getButtonTable().setAttribute(&quot;startMonth&quot;, String.valueOf(this.getSelMonth()));</span>
+<span class="fc" id="L1454">		aButton3.getButtonTable().setAttribute(&quot;startDay&quot;, String.valueOf(this.getSelDay()));</span>
+
+<span class="fc" id="L1456">		m_toolbar.addToolbarElement(aButton3);</span>
+
+<span class="fc" id="L1458">		ToolbarTextButton aButton5 = new ToolbarTextButton(m_toolbar,</span>
+<span class="fc" id="L1459">			&quot;VIEW_ADHERENCE&quot;, i18n(m_bundle, AmWebBundleKey.VIEW_ADHERENCE), this.viewAdherencePrivilege);</span>
+
+<span class="fc" id="L1461">		m_toolbar.addToolbarElement(aButton5);</span>
+
+<span class="fc" id="L1463">		m_toolbar.setAlignment(ToolbarPC.ALIGN_RIGHT);</span>
+<span class="fc" id="L1464">	}</span>
+
+	/**
+	 * Return the JavaScript init code required by Page model.
+	 *
+	 * Default behavior is to retrieve sub-component JavaScript Init code
+	 */
+	public String getJavaScriptInitCode() {
+<span class="fc" id="L1472">		StringBuffer jsInitCode = new StringBuffer(512);</span>
+
+		// Add sub-component JavaScript code first
+<span class="fc" id="L1475">		jsInitCode.append(super.getJavaScriptInitCode()).append(&quot;\n&quot;);</span>
+<span class="pc bpc" id="L1476" title="1 of 2 branches missed.">		if (!this.getAggregated()){</span>
+<span class="pc bpc" id="L1477" title="1 of 2 branches missed.">			jsInitCode.append</span>
+<span class="fc" id="L1478">				((this.detailSelectedIndex != -1?&quot;T&quot;+this.mediatorNum+&quot;_t&quot;+&quot;.onSelect(\&quot;r&quot;+this.detailSelectedIndex+&quot;\&quot;);\n&quot;:&quot;&quot;));</span>
+		}
+<span class="fc" id="L1480">		return jsInitCode.toString();</span>
+	}
+
+
+	/**
+	 * Override extract Parameters to handle date input
+	 */
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="fc" id="L1488">		boolean success = super.extractParameters(request);</span>
+<span class="pc bpc" id="L1489" title="1 of 2 branches missed.">		if (m_datePicker == null) {</span>
+<span class="nc" id="L1490">			m_datePicker = new DatePickerPC(m_context, SELECTED_DATE_FN);</span>
+		}
+<span class="fc" id="L1492">		TimeZone tz = m_context.getViewingTimeZone();</span>
+<span class="pc bpc" id="L1493" title="1 of 2 branches missed.">		if (tz != null) {</span>
+<span class="fc" id="L1494">			m_datePicker.setTimeZone(tz);</span>
+		}
+<span class="fc" id="L1496">		boolean success2 = m_datePicker.extractParameters(request);</span>
+<span class="fc" id="L1497">		Date date = m_datePicker.getDate();</span>
+<span class="fc" id="L1498">		initContextDateFieldNames(m_datePicker.getDateInputFieldName(), m_datePicker.getDateInputFieldName());</span>
+		// need to set these variables, which are used in the timerecords modules
+<span class="fc bfc" id="L1500" title="All 2 branches covered.">		if (date != null) {</span>
+<span class="fc" id="L1501">			Calendar cal = Calendar.getInstance(tz);</span>
+<span class="fc" id="L1502">			cal.setTime(date);</span>
+<span class="fc" id="L1503">			selYear = cal.get(Calendar.YEAR);</span>
+<span class="fc" id="L1504">			selMonth = cal.get(Calendar.MONTH);</span>
+<span class="fc" id="L1505">			selDay = cal.get(Calendar.DAY_OF_MONTH);</span>
+		}
+<span class="pc bpc" id="L1507" title="2 of 4 branches missed.">		return success &amp;&amp; success2;</span>
+	}
+
+	private void checkForTRELicense() throws Exception{
+<span class="fc" id="L1511">		m_hasTRELicense = CoreManagerFactory.getLicenseManager().isLicensed(LicenseKeys.APP_TIME_REC_EXPORT);</span>
+<span class="fc" id="L1512">	}</span>
+
+	/**
+	 * getEditState()
+	 */
+	private boolean getEditState(RequestContext context){
+<span class="fc bfc" id="L1518" title="All 2 branches covered.">		if (this.getEmpId() != null){</span>
+<span class="fc" id="L1519">			return this.editTRPrivilege;</span>
+		}
+<span class="fc" id="L1521">		return false;</span>
+	}
+
+	/**
+	 * Return URL for HTML Form Action
+	 */
+	public String getFormAction() {
+<span class="fc" id="L1528">		return &quot;viewtimerecord&quot;;</span>
+	}
+
+		/**
+	 * Return the Page Action
+	 */
+	public String getPageAction() {
+<span class="nc" id="L1535">		return &quot;&quot;;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CampaignSPQueueslListPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.campaign</a> &gt; <span class="el_source">CampaignSPQueueslListPM.java</span></div><h1>CampaignSPQueueslListPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.campaign;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.ResourceBundle;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.PaginationPair;
+import com.bluepumpkin.common.datatypes.ScopeID;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.SPQueue;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectIDListComparator;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.bbm.campaign.selection.CampaignSchedulingPeriodSelectionUtil;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.web.fs.widgets.JumpToPagePaginationPC;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.Scope;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.container.CollapsibleContainerPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarTextButton;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+
+public class CampaignSPQueueslListPM extends WorkpaneListWithSummaryPM {
+	private static final long serialVersionUID = 1L;
+
+	private ResourceBundle m_bundle;
+<span class="fc" id="L41">	private boolean isSkillBased = false;</span>
+<span class="fc" id="L42">	private List&lt;SPQueue&gt; spQueues = new ArrayList&lt;SPQueue&gt;();</span>
+	private SPQueue spQueueCombined; //the Combined queue (in a non-skilled SP only)
+<span class="fc" id="L44">	private String selectedSchedulingPeriodID = null;</span>
+<span class="fc" id="L45">	private SchedulingPeriod selectedSchedulingPeriod = null;</span>
+	private JumpToPagePaginationPC paginationPC;
+	private CombinedSPQueueListPC combinedQueueListPC;
+
+	public CampaignSPQueueslListPM(RequestContext context) {
+<span class="fc" id="L50">		super(context, PageModel.FRAMED_MODEL);</span>
+
+<span class="fc" id="L52">		m_bundle = m_localizer.getBundle(FsWebBundleKey.BUNDLE_NAME);</span>
+		
+<span class="fc" id="L54">		paginationPC = new JumpToPagePaginationPC(getToolbar(), getLocalizer());</span>
+<span class="fc" id="L55">		addChildComponent(paginationPC);</span>
+		
+<span class="fc" id="L57">		setDefaultPageIDSize(50);</span>
+
+<span class="fc" id="L59">		removeChildComponent(m_list);</span>
+<span class="fc" id="L60">		m_list = new CampaignSPQueuesListPC(m_context, spQueues, selectedSchedulingPeriod);</span>
+<span class="fc" id="L61">		m_list.setIsCancelSelectEventPropagation(false);</span>
+<span class="fc" id="L62">		setListComponent(m_list);</span>
+		//addChildComponent(m_list);
+
+		//This needs to be done here so that we can get the sort columns/order
+<span class="fc" id="L66">		m_list.extractParameters(context.getRequest());</span>
+
+<span class="fc" id="L68">		setIsPaginatingSelectedIDs(false);</span>
+<span class="fc" id="L69">		this.setIsMultiRowSelectable(true);</span>
+<span class="fc" id="L70">	}</span>
+
+	@Override
+	protected void loadData() throws Exception {
+<span class="fc" id="L74">		super.loadData();</span>
+
+<span class="pc bpc" id="L76" title="2 of 4 branches missed.">		if (getSelectedSchedulingPeriodID() != null &amp;&amp; getSelectedSchedulingPeriodID().length() &gt; 0) {</span>
+<span class="fc" id="L77">			selectedSchedulingPeriod = CampaignModelHandler.getSchedulingPeriodByID(</span>
+<span class="fc" id="L78">					m_context, new ID(getSelectedSchedulingPeriodID()));</span>
+		}
+
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">		if (selectedSchedulingPeriod != null) {</span>
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">			if (!m_context.getUser().isAuthorized(PrivilegeKeys.FS_VIEWCAMPAIGN_ID,</span>
+<span class="fc" id="L83">					new ScopeID(selectedSchedulingPeriod.getCampaignID(), Scope.CAMPAIGN_SCOPE))) {</span>
+<span class="nc" id="L84">				addPageMessage(Message.INFO_TYPE, FsWebBundleKey.FS_NOT_AUTHORIZED_TO_VIEW_SP_SCOPE, FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L85">				return;</span>
+			}
+
+<span class="fc" id="L88">			isSkillBased = selectedSchedulingPeriod.getSkillBased();</span>
+<span class="fc" id="L89">			loadQueues();</span>
+		}
+<span class="fc" id="L91">	}</span>
+	
+	public void setSelectedID(String ids) {
+<span class="fc" id="L94">		super.setSelectedID(ids);</span>
+<span class="fc" id="L95">		setSelectedSchedulingPeriodID(CampaignSchedulingPeriodSelectionUtil.extractIDs(</span>
+<span class="fc" id="L96">			getSelectedID(), CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX));</span>
+<span class="fc" id="L97">	}</span>
+	
+<span class="fc" id="L99">	public String getSelectedSchedulingPeriodID() { return selectedSchedulingPeriodID; }	</span>
+<span class="fc" id="L100">	public void setSelectedSchedulingPeriodID(String selectedSchedulingPeriodIDs) { selectedSchedulingPeriodID = selectedSchedulingPeriodIDs; }</span>
+
+	private void loadQueues() throws Exception {
+<span class="fc" id="L103">		CampaignManager campaignMgr = WfmManagerFactory.getCampaignManager(m_context.isInWhatIfMode());</span>
+<span class="fc" id="L104">		String pageAction = getPageAction();</span>
+<span class="pc bpc" id="L105" title="1 of 4 branches missed.">		if (isPaginationNavPressed() || PageAction.SAVE.equals(pageAction)) {</span>
+<span class="fc" id="L106">			spQueues = new ArrayList&lt;SPQueue&gt;(campaignMgr.getSPQueuesByIDs(getPageIDs()));</span>
+		} else {
+<span class="fc" id="L108">			PaginationPair&lt;SPQueue&gt; spQueueData = </span>
+<span class="fc" id="L109">					campaignMgr.getPaginatedSPQueuesForSchedulingPeriod(selectedSchedulingPeriod.getID(),</span>
+<span class="fc" id="L110">							m_list.getHeader().isAscending(), getPageIDSize(), getPagePaginationIndex(),</span>
+<span class="fc" id="L111">							m_list.getSortComparators(), null);</span>
+<span class="fc" id="L112">			spQueues = new ArrayList&lt;SPQueue&gt;(spQueueData.getValues());</span>
+<span class="fc" id="L113">			initPaginationIDs(spQueueData.getIDs());</span>
+		}
+		
+		//The paginated IDs are already sorted, so sort the list of this page of spqueues to match this sorted list of IDs
+<span class="fc" id="L117">		Collections.sort(spQueues, new ValueObjectIDListComparator(new ArrayList&lt;ID&gt;(getPageIDs())));</span>
+		
+<span class="fc bfc" id="L119" title="All 2 branches covered.">		if (!isSkillBased) {</span>
+<span class="fc" id="L120">			spQueueCombined = campaignMgr.getCombinedSPQueue(selectedSchedulingPeriod.getID(), Media.MEDIA_ID_PHONE);</span>
+		}
+<span class="fc" id="L122">	}</span>
+	
+	@Override
+	protected void initHeader() {
+<span class="nc" id="L126">	}</span>
+
+	@Override
+	protected void initSelectableItems() {
+<span class="nc bnc" id="L130" title="All 2 branches missed.">		if (selectedSchedulingPeriod == null) {</span>
+<span class="nc" id="L131">			return;</span>
+		}
+<span class="nc" id="L133">		resetListPC();</span>
+<span class="nc" id="L134">		m_list.extractParameters(m_context.getRequest()); </span>
+<span class="nc" id="L135">	}</span>
+
+	@Override
+	protected void initContentTitle() {
+<span class="fc" id="L139">		super.initContentTitle();</span>
+<span class="fc" id="L140">		m_contentTitlePC.setPageTitle(m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.CAMPAIGNS_QUEUE_TAB_TITLE)); </span>
+<span class="fc" id="L141">	}</span>
+
+	public static CampaignSPQueueslListPM getInstance(RequestContext context) {
+<span class="fc" id="L144">		return (CampaignSPQueueslListPM)PageModel.getInstance(context, CampaignSPQueueslListPM.class);</span>
+	}
+	
+	@Override
+	protected void initToolbar() {
+<span class="pc bpc" id="L149" title="1 of 2 branches missed.">		if (selectedSchedulingPeriod == null)</span>
+<span class="nc" id="L150">			return;</span>
+		try {
+<span class="fc" id="L152">			CampaignManager camManager = WfmManagerFactory.getCampaignManager(m_context.isInWhatIfMode());	</span>
+<span class="fc" id="L153">			ID campaignID = selectedSchedulingPeriod.getCampaignID();</span>
+<span class="fc" id="L154">			Campaign campaign = camManager.getCampaignByID(campaignID);</span>
+			
+			//Enable pagination
+<span class="fc" id="L157">			enableToolbarPagination(getPaginationControl());</span>
+			
+<span class="pc bpc" id="L159" title="1 of 2 branches missed.">			if(campaign.getIsDistributed())</span>
+<span class="nc" id="L160">				return;</span>
+			
+<span class="fc" id="L162">			boolean createEnabled = m_context.getUser().isAuthorized(PrivilegeKeys.FS_CREATECAMPAIGN);</span>
+<span class="fc" id="L163">			boolean configEnabled = m_context.getUser().isAuthorized(PrivilegeKeys.FS_CONFIGURECAMPAIGN);</span>
+<span class="pc bpc" id="L164" title="3 of 4 branches missed.">			boolean editEnabled = createEnabled || configEnabled;</span>
+			
+<span class="fc" id="L166">			ToolbarTextButton addButton = m_toolbar.createPopupWindowButton(CampaignSPQueueListPopupPM.POPUP_ID,</span>
+<span class="fc" id="L167">					i18n(m_bundle, FsWebBundleKey.CAMPAIGN_QUEUE_ADD), editEnabled);</span>
+	
+<span class="pc bpc" id="L169" title="1 of 2 branches missed.">			if (selectedSchedulingPeriod != null) {</span>
+<span class="fc" id="L170">				addButton.setAttribute(&quot;ownerID&quot;, selectedSchedulingPeriod.getID().toString());</span>
+			}
+<span class="fc" id="L172">			addButton.setAttribute(&quot;isByOrg&quot;, String.valueOf(true));</span>
+<span class="fc" id="L173">			addButton.setAttribute(&quot;isSelectionPopup&quot;, String.valueOf(true));</span>
+			
+<span class="fc" id="L175">			String strSelectedIDs = &quot;&quot;;</span>
+<span class="pc bpc" id="L176" title="1 of 4 branches missed.">			if (spQueues != null &amp;&amp; spQueues.size()&gt;0) {</span>
+<span class="fc" id="L177">				ArrayList&lt;ID&gt; idList = new ArrayList&lt;ID&gt; ();</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">				for (SPQueue spQueue: spQueues){</span>
+<span class="fc" id="L179">					idList.add(spQueue.getQueueID());</span>
+<span class="fc" id="L180">				}		</span>
+	
+<span class="fc" id="L182">				strSelectedIDs = StringUtil.createDelimitedString(</span>
+						idList, StringUtil.DELIM);
+			}
+			
+<span class="fc" id="L186">			addButton.setAttribute(&quot;selectedIDs&quot;, strSelectedIDs);</span>
+<span class="fc" id="L187">			addButton.setAttribute(&quot;onClick&quot;,</span>
+<span class="fc" id="L188">					m_toolbar.getName() + &quot;.onSelect('&quot; + CampaignSPQueueListPopupPM.POPUP_ID + &quot;', this);&quot;); </span>
+	
+<span class="fc" id="L190">			m_toolbar.addToolbarElement(addButton); </span>
+			
+<span class="fc" id="L192">			addPopupArgs(CampaignSPQueueListPopupPM.POPUP_ID, CampaignSPQueueListPopupPM.FORM_ACTION, &quot;&quot;,</span>
+					CampaignSPQueueListPopupPM.POPUP_ARGS, &quot;600,500,ctr,ctr&quot;, true, 1); 
+
+<span class="fc" id="L195">			m_toolbar.addDeleteTextButton(PageAction.DELETE, i18n(m_bundle, FsWebBundleKey.CAMPAIGN_QUEUE_REMOVE), false);</span>
+			
+<span class="fc" id="L197">			String saveDisplay = i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_SAVE);</span>
+<span class="fc" id="L198">			String resetDisplay = i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_RESET);</span>
+	
+<span class="fc" id="L200">			m_toolbar.addValidateSubmitTextButton(PageAction.SAVE, saveDisplay, editEnabled); </span>
+<span class="fc" id="L201">			m_toolbar.addResetTextButton(PageAction.RESET, resetDisplay, editEnabled);</span>
+		}
+<span class="nc" id="L203">		catch(Exception ex) {</span>
+<span class="nc" id="L204">			handleUnableToLoadDataError(log, ex);</span>
+<span class="fc" id="L205">		}</span>
+<span class="fc" id="L206">	}</span>
+
+	/**
+	 * Retrieve request parameters from request object to the page model object.
+	 */
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="fc" id="L212">		return super.extractParameters(request);</span>
+	}
+	
+	protected void initScreenContent() {
+<span class="pc bpc" id="L216" title="1 of 2 branches missed.">		if (selectedSchedulingPeriod == null) {</span>
+<span class="nc" id="L217">			addPageMessage(Message.INSTRUCTION_TYPE, m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+					FsWebBundleKey.PLEASE_SELECT_A_SP));
+<span class="nc" id="L219">			return;</span>
+		}
+<span class="fc" id="L221">		paginationPC = new JumpToPagePaginationPC(getToolbar(), getLocalizer());</span>
+<span class="fc" id="L222">		addChildComponent(paginationPC);</span>
+<span class="fc" id="L223">		resetListPC();</span>
+<span class="fc" id="L224">	}</span>
+	
+	/**
+	 * Re-factored this method because the list was being reset several places and properties
+	 * weren't always set the same.
+	 */
+	 void resetListPC() {
+<span class="pc bpc" id="L231" title="1 of 2 branches missed.">		if (selectedSchedulingPeriod != null) {</span>
+<span class="fc" id="L232">			removeChildComponent(m_list);</span>
+<span class="fc" id="L233">			m_list = new CampaignSPQueuesListPC(m_context, spQueues, selectedSchedulingPeriod);</span>
+<span class="fc" id="L234">			m_list.setIsCancelSelectEventPropagation(false);</span>
+	
+<span class="pc bpc" id="L236" title="1 of 2 branches missed.">			if (PageAction.TABLE_SORT.equals(getPageAction()) ||</span>
+<span class="fc bfc" id="L237" title="All 2 branches covered.">					PageAction.SAVE.equals(getPageAction()) ||</span>
+<span class="pc bpc" id="L238" title="1 of 2 branches missed.">					isPaginationNavPressed()) {</span>
+<span class="fc" id="L239">				m_list.extractParameters(m_context.getRequest());</span>
+			}
+<span class="fc" id="L241">			addChildComponent(m_list);</span>
+			
+			//Unskilled SPs will have their combined queue rendered in its own container at the top of the page, with the
+			//linked queues rendered in a separate container below that.
+<span class="fc bfc" id="L245" title="All 2 branches covered.">			if (!isSkillBased) {</span>
+<span class="fc" id="L246">				combinedQueueListPC = new CombinedSPQueueListPC(m_context, &quot;combinedSPQueueListPC&quot;, spQueueCombined, selectedSchedulingPeriod);</span>
+<span class="fc" id="L247">				combinedQueueListPC.setStyle(&quot;border-bottom-color: #7085a8; border-bottom-width:1px;&quot;);</span>
+<span class="fc" id="L248">				CollapsibleContainerPC combinedSpQueueContainer = new CollapsibleContainerPC(m_context);</span>
+<span class="fc" id="L249">				combinedSpQueueContainer.setToggleable(false);</span>
+<span class="fc" id="L250">				combinedSpQueueContainer.setName(&quot;combinedSpQueueContainer&quot;);</span>
+<span class="fc" id="L251">				combinedSpQueueContainer.setTitle(getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+						FsWebBundleKey.FS_COMBINED_QUEUE));
+<span class="fc" id="L253">				combinedSpQueueContainer.setIsBorderEnabled(false);</span>
+<span class="fc" id="L254">				combinedQueueListPC.getWrapper().setAttribute(&quot;style&quot;, &quot;width:100%; margin-bottom: 10px; border-bottom-color: #7085a8; border-bottom-width:1px;&quot;);</span>
+<span class="fc" id="L255">				combinedQueueListPC.setIsInnerTable(true);</span>
+<span class="fc" id="L256">				combinedQueueListPC.setIsBorderEnabled(false);</span>
+<span class="fc" id="L257">				combinedQueueListPC.setIsCancelSelectEventPropagation(false);</span>
+<span class="fc" id="L258">				combinedSpQueueContainer.addComponent(combinedQueueListPC);</span>
+<span class="fc" id="L259">				setSummaryComponent(combinedSpQueueContainer);</span>
+	
+<span class="fc" id="L261">				CollapsibleContainerPC linkedSpQueueContainer = new CollapsibleContainerPC(m_context);</span>
+<span class="fc" id="L262">				linkedSpQueueContainer.setToggleable(false);</span>
+<span class="fc" id="L263">				linkedSpQueueContainer.setName(&quot;linkedSpQueueContainer&quot;);</span>
+<span class="fc" id="L264">				linkedSpQueueContainer.setTitle(getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+						FsWebBundleKey.FS_LINKED_QUEUES));
+<span class="fc" id="L266">				linkedSpQueueContainer.setIsBorderEnabled(false);</span>
+<span class="fc" id="L267">				m_list.setIsInnerTable(true);</span>
+<span class="fc" id="L268">				m_list.setIsBorderEnabled(false);</span>
+<span class="fc" id="L269">				m_list.setIsCancelSelectEventPropagation(false);</span>
+<span class="fc" id="L270">				linkedSpQueueContainer.addComponent(m_list);</span>
+<span class="fc" id="L271">				setListComponent(linkedSpQueueContainer);</span>
+<span class="fc" id="L272">			} else {</span>
+<span class="fc" id="L273">				removeChildComponent(m_list);</span>
+<span class="fc" id="L274">				setListComponent(m_list);</span>
+			}
+		}
+<span class="fc" id="L277">	}</span>
+	
+	public HashMap&lt;SPQueue, Collection&lt;ID&gt;&gt; getSkillForSPQueues() {
+<span class="pc bpc" id="L280" title="1 of 2 branches missed.">		if (m_list instanceof CampaignSPQueuesListPC)</span>
+<span class="fc" id="L281">			return ((CampaignSPQueuesListPC)m_list).getSkillForSPQueues();</span>
+		else
+<span class="nc" id="L283">			return null;</span>
+	}
+	
+	public JumpToPagePaginationPC getPaginationControl() {
+<span class="fc" id="L287">		return paginationPC;</span>
+	}
+
+	/**
+	 * Returns the combined queue for the unskilled SP (returns null if the selected
+	 * SP is skilled).
+	 */
+	public SPQueue getCombinedSPQueue() {
+<span class="fc" id="L295">		return spQueueCombined;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

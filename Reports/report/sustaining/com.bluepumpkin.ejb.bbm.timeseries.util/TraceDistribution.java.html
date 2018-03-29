@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TraceDistribution.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.timeseries.util</a> &gt; <span class="el_source">TraceDistribution.java</span></div><h1>TraceDistribution.java</h1><pre class="source lang-java linenums">/*
+ * � 2010 Verint Systems, Inc.
+ */
+package com.bluepumpkin.ejb.bbm.timeseries.util;
+
+import com.bluepumpkin.ejb.bbm.timeseries.model.DataValueConstraints;
+import com.bluepumpkin.ejb.bbm.timeseries.model.DataValueConstraints.BoundType;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+
+/**
+ * An abstraction for the weight distribution used to scale and distribute traces.  An
+ * instance of this immutable class is composed of a list of weights, some of which may
+ * be negative, and the average of all the valid weights.  A negative weight indicates
+ * the absence of valid weight data at a point.
+ * &lt;p&gt;
+ * The valid weights need not sum to 1 or to any other particular value.
+ * &lt;p&gt;
+ * Given a target value and this distribution, the target value can be
+ * multiplied by each of the weights in this distribution to obtain a new trace 
+ * whose values either sum or average to the target value, depending on how the weights
+ * were chosen.
+ * &lt;p&gt;
+ * Additional steps are required when the data values are bounded by an upper and/or nonzero
+ * lower limit.  Two different methods for scaling bounded data are provided.  The first simply
+ * truncates values that exceed the limit, setting them to equal the limit instead.  The
+ * drawback to this approach is that if any values are truncated,
+ * the resulting aggregate value will not match the input target value.  This approach
+ * is suitable for data that are not expected to reach the limit in normal use.
+ * &lt;p&gt;
+ * The other method guarantees that the resulting aggregate value is correct and that
+ * no constituent values exceed the limit.  It does this by transforming the value axis
+ * so that the values are being scaled linearly toward the limit, whether it is an upper
+ * or lower limit.
+ * &lt;p&gt;
+ * If L(u) is the upper limit, then this method works
+ * by creating a new series where each element is L(u) minus the source element, and
+ * applying the same transformation to the target aggregate value and using normal
+ * linear scaling to obtain a scaled version of the new series.  The final result is
+ * obtained by subtracting each value in the scaled new series from the original upper
+ * limit again.
+ * &lt;p&gt;
+ * Before using a trace distribution to allocate values, use the &lt;code&gt;isValid&lt;/code&gt; 
+ * method to check whether it is valid.
+ */
+public class TraceDistribution {
+	// The canonical invalid distribution.  This is the only permitted invalid instance.
+<span class="fc" id="L47">	public static final TraceDistribution INVALID_DISTRIBUTION = new TraceDistribution(0., null, null, false, null);</span>
+	// The constraints on the individual values in the trace. 
+	private final DataValueConstraints m_constraints;
+	// The current aggregate value of this distribution.  This is needed when both upper
+	// and lower bounds are specified in the constraints to determine which set of weights
+	// to use to get scaled values.
+	private final double m_originalValue;
+	private final double[] m_lowerBoundWeights;
+	private final double[] m_upperBoundWeights;
+	private final boolean m_isValid;
+
+	/**
+	 * Creates a new valid distribution for a trace.
+	 * 
+	 * @param aggregateValue The current aggregate value for the trace.
+	 * @param lowerBoundWeights Weights to be used when scaling with respect to the lower bound.  May be null
+	 * if there is no lower bound or it is not of type SCALE_ORIGIN.  Otherwise must be non-null.
+	 * @param upperBoundWeights Weights to be used when scaling with respect to the upper bound.  May be null
+	 * if there is no upper bound or it is not of type SCALE_ORIGIN.  Otherwise must be non-null.
+	 * @param constraints The constraints for the trace.
+	 */
+	public TraceDistribution(double aggregateValue, double[] lowerBoundWeights, double[] upperBoundWeights, DataValueConstraints constraints) {
+<span class="fc" id="L69">		this(aggregateValue, lowerBoundWeights, upperBoundWeights, true, constraints);</span>
+<span class="fc" id="L70">	}</span>
+
+	/**
+	 * This private constructor can be used to create a valid or invalid distribution.
+	 * @param lowerBoundWeights
+	 * @param isValid
+	 */
+<span class="fc" id="L77">	private TraceDistribution(double aggregateValue, double[] lowerBoundWeights, double[] upperBoundWeights, boolean isValid, DataValueConstraints constraints) {</span>
+<span class="fc" id="L78">		m_originalValue = aggregateValue;</span>
+<span class="fc" id="L79">		m_constraints = constraints;</span>
+<span class="fc bfc" id="L80" title="All 2 branches covered.">		if (isValid) {</span>
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">			if (m_constraints == null)</span>
+			{
+<span class="nc" id="L83">				throw new IllegalArgumentException(&quot;Tried to create a valid TraceDistribution without constraints.&quot;);</span>
+			}
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">			if (lowerBoundWeights == null) {</span>
+<span class="nc bnc" id="L86" title="All 4 branches missed.">				if (m_constraints.getLowerBound() != null &amp;&amp; m_constraints.getLowerBound().getType() == BoundType.SCALE_ORIGIN) {</span>
+<span class="nc" id="L87">					throw new IllegalArgumentException(&quot;Lower bound weights cannot be null when lower bound type is SCALE_ORIGIN.&quot;);</span>
+				}
+<span class="nc" id="L89">				m_lowerBoundWeights = null;</span>
+			} else {
+<span class="fc" id="L91">				m_lowerBoundWeights = new double[lowerBoundWeights.length];</span>
+<span class="fc" id="L92">				int index = 0;</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">				for (double value : lowerBoundWeights) {</span>
+<span class="fc" id="L94">					m_lowerBoundWeights[index] = value;</span>
+<span class="fc" id="L95">					index++;</span>
+				}
+			}
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">			if (upperBoundWeights == null) {</span>
+<span class="pc bpc" id="L99" title="3 of 4 branches missed.">				if (m_constraints.getUpperBound() != null &amp;&amp; m_constraints.getUpperBound().getType() == BoundType.SCALE_ORIGIN) {</span>
+<span class="nc" id="L100">					throw new IllegalArgumentException(&quot;Upper bound weights cannot be null when upper bound type is SCALE_ORIGIN.&quot;);</span>
+				}
+<span class="fc" id="L102">				m_upperBoundWeights = null;</span>
+			} else {
+<span class="nc" id="L104">				m_upperBoundWeights = new double[upperBoundWeights.length];</span>
+<span class="nc" id="L105">				int index = 0;</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">				for (double value : upperBoundWeights) {</span>
+<span class="nc" id="L107">					m_upperBoundWeights[index] = value;</span>
+<span class="nc" id="L108">					index++;</span>
+				}
+			}
+<span class="pc bpc" id="L111" title="3 of 4 branches missed.">			if ( m_lowerBoundWeights == null &amp;&amp; m_upperBoundWeights == null) {</span>
+<span class="nc" id="L112">				throw new IllegalArgumentException(&quot;Tried to create a valid TraceDistribution without weights.&quot;);</span>
+			}
+		} else {
+			// Invalid distribution doesn't need weights.
+<span class="fc" id="L116">			m_lowerBoundWeights = null;</span>
+<span class="fc" id="L117">			m_upperBoundWeights = null;</span>
+		}
+<span class="fc" id="L119">		m_isValid = isValid;</span>
+<span class="fc" id="L120">	}</span>
+
+	/**
+	 * Indicates whether this distribution is mathematically meaningful; returns false if
+	 * this distribution cannot be used to scale/allocate values.
+	 * 
+	 * @return
+	 */
+	public boolean isValid() {
+<span class="nc" id="L129">		return m_isValid;</span>
+	}
+
+	//TODO: There are other useful ways to apply a distribution to a target value; this 
+	// method uses the weights in the distribution to obtain a range of different integer
+	// values.  If floating point values were desired one would use a simpler scaling
+	// operation than this method's.  For flat scaling, one could use just the
+	// average weight to obtain a list of identical values.
+	/**
+	 * Returns an array of integers having the target aggregate value based on the specified
+	 * distribution.
+	 * 
+	 * @param distribution
+	 * @param targetValue
+	 * @return
+	 * @throws IllegalStateException if the specified distribution is invalid
+	 */
+	public int[] getScaledIntegerValues(int targetValue) {
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">		if ( ! m_isValid ) {</span>
+<span class="nc" id="L148">			throw new IllegalStateException(&quot;Cannot scale using an invalid distribution.&quot;);</span>
+		}
+		// If there is only a lower bound, we always use linear scaling from the lower bound.
+		// If there is only an upper bound, we always use linear scaling from the upper bound.
+		// If both bounds exist, we scale downwards using linear scaling from the lower bound
+		// and upwards using linear scaling from the upper bound.
+<span class="pc bpc" id="L154" title="1 of 2 branches missed.">		if (m_upperBoundWeights == null) {</span>
+<span class="fc" id="L155">			return scaleFromLowerBound(targetValue);</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">		} else if (m_lowerBoundWeights == null) {</span>
+<span class="nc" id="L157">			return scaleFromUpperBound(targetValue);</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">		} else if (targetValue &gt; m_originalValue) {</span>
+<span class="nc" id="L159">			return scaleFromUpperBound(targetValue);</span>
+		} else {
+<span class="nc" id="L161">			return scaleFromLowerBound(targetValue);</span>
+		}
+	}
+
+	/**
+	 * This handles scaling based on a lower bound, such as zero.  The bound must exist and be
+	 * of type &lt;code&gt;SCALE_ORIGIN&lt;/code&gt;.
+	 * 
+	 * @param targetValue
+	 * @return
+	 */
+	private int[] scaleFromLowerBound(int targetValue) {
+<span class="pc bpc" id="L173" title="1 of 2 branches missed.">		if (m_constraints.getLowerBound() == null) {</span>
+<span class="nc" id="L174">			throw new IllegalArgumentException(&quot;scaleFromLowerBound requires a non-null lower bound.&quot;);</span>
+		}
+<span class="pc bpc" id="L176" title="1 of 2 branches missed.">		if (m_constraints.getLowerBound().getType() != BoundType.SCALE_ORIGIN) {</span>
+<span class="nc" id="L177">			throw new IllegalArgumentException(&quot;scaleFromLowerBound requires the lower bound to be a SCALE_ORIGIN.&quot;);</span>
+		}
+<span class="pc bpc" id="L179" title="1 of 2 branches missed.">		if ( ! Trace.isValidValue(targetValue) ) {</span>
+<span class="nc" id="L180">			return createArrayOfConstant(m_lowerBoundWeights.length, targetValue);</span>
+		}
+<span class="pc bpc" id="L182" title="1 of 2 branches missed.">		if (targetValue &lt; m_constraints.getLowerBound().getValue()) {</span>
+<span class="nc" id="L183">			targetValue = (int)m_constraints.getLowerBound().getValue();</span>
+		}
+
+		// When we scale from a non-zero lower bound we have translated the origin to the lower
+		// bound.  We have to transform the upper bound accordingly when we pass it to doScale().
+<span class="fc" id="L188">		Integer maxValue = null;</span>
+<span class="pc bpc" id="L189" title="1 of 2 branches missed.">		if (m_constraints.getMaxValue() != null) {</span>
+<span class="nc" id="L190">			maxValue = TraceUtil.roundDouble(m_constraints.getMaxValue() - m_constraints.getMinValue());</span>
+		}
+
+<span class="fc" id="L193">		int[] scaledValues = doScale(m_lowerBoundWeights, TraceUtil.roundDouble(targetValue - m_constraints.getLowerBound().getValue()), maxValue);</span>
+
+		// If the lower bound was non-zero we now have to transform the scaled values back to the
+		// original coordinate system.
+<span class="pc bpc" id="L197" title="1 of 2 branches missed.">		if (m_constraints.getMinValue() != 0.) {</span>
+<span class="nc" id="L198">			int lowerBound = TraceUtil.roundDouble(m_constraints.getMinValue());</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">			for (int i = 0; i &lt; scaledValues.length; ++i) {</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">				if (scaledValues[i] &gt;= 0) {</span>
+<span class="nc" id="L201">					scaledValues[i] += lowerBound;</span>
+				}
+			}
+		}
+<span class="fc" id="L205">		return scaledValues;</span>
+	}
+
+	/**
+	 * This handles scaling based on an upper bound.  The bound must exist and be
+	 * of type &lt;code&gt;SCALE_ORIGIN&lt;/code&gt;.
+	 * 
+	 * @param targetValue
+	 * @return
+	 */
+	private int[] scaleFromUpperBound(int targetValue) {
+<span class="nc bnc" id="L216" title="All 2 branches missed.">		if (m_constraints.getUpperBound() == null) {</span>
+<span class="nc" id="L217">			throw new IllegalArgumentException(&quot;scaleFromUpperBound requires a non-null upper bound.&quot;);</span>
+		}
+<span class="nc bnc" id="L219" title="All 2 branches missed.">		if (m_constraints.getUpperBound().getType() != BoundType.SCALE_ORIGIN) {</span>
+<span class="nc" id="L220">			throw new IllegalArgumentException(&quot;scaleFromUpperBound requires the upper bound to be a SCALE_ORIGIN.&quot;);</span>
+		}		
+<span class="nc bnc" id="L222" title="All 2 branches missed.">		if ( ! Trace.isValidValue(targetValue) ) {</span>
+<span class="nc" id="L223">			return createArrayOfConstant(m_upperBoundWeights.length, targetValue);</span>
+		}
+<span class="nc bnc" id="L225" title="All 2 branches missed.">		if (targetValue &gt; m_constraints.getUpperBound().getValue()) {</span>
+<span class="nc" id="L226">			targetValue = (int)m_constraints.getUpperBound().getValue();</span>
+		}
+
+		// When we scale from an upper bound, we have flipped the y-axis and changed
+		// the origin to the upper bound.  We have to transform the lower bound
+		// into an upper bound and pass it to doScale().
+<span class="nc" id="L232">		Integer maxValue = null;</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">		if (m_constraints.getMinValue() != null) {</span>
+<span class="nc" id="L234">			maxValue = TraceUtil.roundDouble(m_constraints.getMaxValue() - m_constraints.getMinValue());</span>
+		}
+<span class="nc" id="L236">		int[] scaledValues = doScale(m_upperBoundWeights, TraceUtil.roundDouble(m_constraints.getUpperBound().getValue() - targetValue), maxValue);</span>
+
+		// We now have to transform the scaled values back to the original coordinate system.
+<span class="nc" id="L239">		int upperBound = TraceUtil.roundDouble(m_constraints.getMaxValue());</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">		for (int i = 0; i &lt; scaledValues.length; ++i) {</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">			if (scaledValues[i] &gt;= 0) {</span>
+<span class="nc" id="L242">				scaledValues[i] = upperBound - scaledValues[i];</span>
+			}
+		}
+<span class="nc" id="L245">		return scaledValues;</span>
+	}
+
+	private int[] createArrayOfConstant(int length, int value) {
+<span class="nc" id="L249">		int[] result = new int[length];</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">		for (int index = 0; index &lt; length; ++index) {</span>
+<span class="nc" id="L251">			result[index] = value;</span>
+		}
+<span class="nc" id="L253">		return result;</span>
+	}
+
+	/**
+	 * Returns an array resulting from multiplying an array of weights by a target value,
+	 * limiting the resulting values by an upper bound if specified.
+	 * 
+	 * @param weights
+	 * @param targetValue
+	 * @param maxValue
+	 * @return
+	 */
+	private int[] doScale(double[] weights, int targetValue, Integer maxValue) {
+<span class="fc" id="L266">		int[] result = new int[weights.length];</span>
+<span class="fc" id="L267">		double accumulator = 0.5;</span>
+<span class="fc bfc" id="L268" title="All 2 branches covered.">		for (int i = 0; i &lt; weights.length; i++) {</span>
+<span class="fc bfc" id="L269" title="All 2 branches covered.">			if (weights[i] &lt; 0) {</span>
+<span class="fc" id="L270">				result[i] = (int)weights[i];</span>
+<span class="fc" id="L271">				continue;</span>
+			}
+<span class="fc" id="L273">			accumulator += targetValue * weights[i];</span>
+<span class="fc" id="L274">			result[i] = (int)accumulator;</span>
+<span class="pc bpc" id="L275" title="3 of 4 branches missed.">			if (maxValue != null &amp;&amp; result[i] &gt; maxValue) {</span>
+<span class="nc" id="L276">				result[i] = maxValue;</span>
+			}
+<span class="fc" id="L278">			accumulator %= 1;</span>
+		}
+<span class="fc" id="L280">		return result;</span>
+	}
+
+	@Override
+	public String toString() {
+<span class="nc bnc" id="L285" title="All 2 branches missed.">		return &quot;SeriesDistribution[&quot; + (m_isValid ? &quot;VALID, &quot; : &quot;--INVALID--, &quot;) + &quot;lowerBoundWeights=&quot; + m_lowerBoundWeights + &quot;, upperBoundWeights=&quot; + m_upperBoundWeights + &quot;]&quot;;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

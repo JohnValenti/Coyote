@@ -1,0 +1,955 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CampaignSPSettingsRequestHandler.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.campaign</a> &gt; <span class="el_source">CampaignSPSettingsRequestHandler.java</span></div><h1>CampaignSPSettingsRequestHandler.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.campaign;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.ScopeID;
+import com.bluepumpkin.common.localization.LocaleContext;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.base.*;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.*;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.bbm.config.ejb.DBConfigManager;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodUtil;
+import com.bluepumpkin.ejb.bbm.l10n.BbmEjbBundleKey;
+import com.bluepumpkin.ejb.core.CoreManagerFactory;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.bbm.campaign.selection.CampaignSchedulingPeriodSelectionUtil;
+import com.bluepumpkin.web.bbm.campaign.sp.SchedulingPeriodUtil;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.core.cache.SelectionCacheUtil;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.witness.ejb.core.security.Scope;
+import com.witness.ejb.core.security.UserManager;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.base.SettingRH;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.pagemodel.SettingPM;
+import com.witness.web.uif.pagemodel.WorkpaneFieldNames;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.system.cache.UserCacheManager;
+import com.witness.web.uif.util.CacheUtil;
+import com.witness.web.uif.util.TimeZoneOverrideUtil;
+import weblogic.utils.StringUtils;
+
+import javax.naming.Context;
+import javax.naming.InitialContext;
+import javax.transaction.UserTransaction;
+import java.rmi.RemoteException;
+import java.util.*;
+
+import static com.witness.web.uif.util.TimeZoneOverrideUtil.TIME_ZONE_OVERRIDE_TOGGLE_ACTION;
+
+<span class="fc" id="L46">public class CampaignSPSettingsRequestHandler extends SettingRH {</span>
+	static final String CAMPAIGN_FORM_PAGE = &quot;campaignformPage&quot;;
+	static final String CAMPAIGN_CREATE_SP_PAGE = &quot;createSPPage&quot;;
+
+	@Override
+	protected SettingPM newSettingPM(RequestContext context) {
+<span class="fc" id="L52">		String selectId = context.getParameter(WorkpaneFieldNames.SELECTED_ID_FN);</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">		if (selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX)) {</span>
+<span class="fc" id="L54">			return new CampaignSPSettingsPageModel(context);</span>
+		} else {
+<span class="fc" id="L56">			return new CampaignSettingsPageModel(context);</span>
+		}
+	}
+
+	@Override
+	protected void processAdd(RequestContext context) {
+<span class="fc" id="L62">		CampaignCreateSPPM model = new CampaignCreateSPPM(context);</span>
+<span class="fc" id="L63">		model.setIsAddMode(true);</span>
+<span class="fc" id="L64">		prepareForNextPage(context, model, CAMPAIGN_CREATE_SP_PAGE);</span>
+<span class="fc" id="L65">	}</span>
+
+	@Override
+	protected void processDelete(RequestContext context) {
+<span class="fc" id="L69">		String selectId = context.getParameter(WorkpaneFieldNames.SELECTED_ID_FN);</span>
+<span class="pc bpc" id="L70" title="2 of 4 branches missed.">		if (selectId != null &amp;&amp; selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX)) {</span>
+<span class="nc" id="L71">			CampaignSettingsPageModel model = new CampaignSettingsPageModel(context);</span>
+			// Use Parent Org ID if it is not root as selected ID
+			try {
+<span class="nc" id="L74">				CampaignManager camManager = WfmManagerFactory.getCampaignManager(context.isInWhatIfMode());</span>
+<span class="nc" id="L75">				ID spID = StringUtil.parseIDStringToCollection(CampaignSchedulingPeriodSelectionUtil.extractIDs(selectId,</span>
+<span class="nc" id="L76">						CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX)).iterator().next();</span>
+<span class="nc" id="L77">				SchedulingPeriod sp = camManager.getSchedulingPeriodByID(spID);</span>
+<span class="nc" id="L78">				ID campID = sp.getCampaignID();</span>
+<span class="nc" id="L79">				Collection&lt;ID&gt; colIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L80">				colIDs.add(spID);</span>
+<span class="nc" id="L81">				camManager.deleteSchedulingPeriods(colIDs);</span>
+<span class="nc" id="L82">				String newIDStr = CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX + campID.toString();</span>
+<span class="nc" id="L83">				model.setSelectedID(newIDStr);</span>
+<span class="nc" id="L84">				CacheUtil.setCachedValue(context, CacheUtil.CACHE_MODE_PROFILE, &quot;SELECTED_CAMPAIGN_SP_ID&quot;, newIDStr);</span>
+<span class="nc" id="L85">				SelectionCacheUtil.setSchedulingPeriodID(context, null);</span>
+<span class="nc" id="L86">			} catch (Exception e) {</span>
+<span class="nc" id="L87">				model.addPageMessage(Message.ERROR_TYPE,</span>
+<span class="nc" id="L88">						context.getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_ERROR_DELETING_SP));</span>
+<span class="nc" id="L89">			}</span>
+<span class="nc" id="L90">			model.setRefreshSelection(true);</span>
+<span class="nc" id="L91">			prepareForNextPage(context, model, CAMPAIGN_FORM_PAGE);</span>
+<span class="pc bpc" id="L92" title="2 of 4 branches missed.">		} else if (selectId != null &amp;&amp; selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX)) {</span>
+<span class="fc" id="L93">			CampaignSettingsPageModel model = new CampaignSettingsPageModel(context);</span>
+			try {
+<span class="fc" id="L95">				CampaignManager camManager = WfmManagerFactory.getCampaignManager(context.isInWhatIfMode());</span>
+<span class="fc" id="L96">				ID campaignID =</span>
+						StringUtil
+<span class="fc" id="L98">								.parseIDStringToCollection(</span>
+<span class="fc" id="L99">										CampaignSchedulingPeriodSelectionUtil.extractIDs(selectId,</span>
+<span class="fc" id="L100">												CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX)).iterator().next();</span>
+<span class="fc" id="L101">				Collection&lt;ID&gt; colIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="fc" id="L102">				colIDs.add(campaignID);</span>
+<span class="fc" id="L103">				camManager.deleteCampaigns(colIDs);</span>
+<span class="nc" id="L104">			} catch (Exception e) {</span>
+<span class="nc" id="L105">				model.addPageMessage(Message.ERROR_TYPE,</span>
+<span class="nc" id="L106">						context.getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_ERROR_DELETING_CAMPAIGN));</span>
+<span class="fc" id="L107">			}</span>
+<span class="fc" id="L108">			model.setRefreshSelection(true);</span>
+			// Reset selection pane ID
+<span class="fc" id="L110">			model.resetSelectedID();</span>
+<span class="fc" id="L111">			prepareForNextPage(context, model, CAMPAIGN_FORM_PAGE);</span>
+		}
+<span class="fc" id="L113">	}</span>
+
+	protected void processSaveCampaign(RequestContext context) {
+<span class="fc" id="L116">		CampaignSettingsPageModel model = new CampaignSettingsPageModel(context);</span>
+<span class="fc" id="L117">		model.extractParameters(context.getRequest());</span>
+<span class="fc" id="L118">		String strIsCreate = context.getParameter(CampaignSettingsPageModel.CAMP_IS_CREATE);</span>
+<span class="fc" id="L119">		boolean isCreate = strIsCreate.equals(&quot;true&quot;);</span>
+<span class="pc bpc" id="L120" title="1 of 2 branches missed.">		if (isCreate) {</span>
+			try {
+<span class="fc" id="L122">				Campaign campaign = model.getCampaign();</span>
+				// if this is a subcampaign, its weekstart has been set to its parent's weekstart.
+<span class="fc bfc" id="L124" title="All 2 branches covered.">				if (campaign.getParentID() == null) {</span>
+<span class="fc" id="L125">					short weekStartDay = model.getWeekStartDay();</span>
+<span class="fc" id="L126">					int dayboundary = model.getDayBoundaryOffSet();</span>
+<span class="pc bpc" id="L127" title="1 of 2 branches missed.">					int weekStart = (weekStartDay &gt; 0 ? ((weekStartDay - 1) * 1440) : 0) + dayboundary;</span>
+<span class="fc" id="L128">					campaign.setWeekStart(weekStart);</span>
+				}
+
+<span class="fc" id="L131">				CampaignManager camManager = WfmManagerFactory.getCampaignManager(context.isInWhatIfMode());</span>
+<span class="fc" id="L132">				ID newID = camManager.createCampaign(campaign);</span>
+
+<span class="fc" id="L134">				ScopeID scopeID = new ScopeID(newID, Scope.CAMPAIGN_SCOPE);</span>
+<span class="fc" id="L135">				UserManager userManager = CoreManagerFactory.getUserManager(context.isInWhatIfMode());</span>
+<span class="fc" id="L136">				userManager.addUserScope(context.getUser().getID(), scopeID);</span>
+<span class="fc" id="L137">				userManager.updateUser(context.getUser());</span>
+<span class="fc" id="L138">				UserCacheManager.getInstance().refreshCachedUser(context);</span>
+
+<span class="fc" id="L140">				String newIDStr = CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX + newID.toString();</span>
+<span class="fc" id="L141">				model.setSelectedID(newIDStr);</span>
+<span class="fc" id="L142">				model.setIsAddMode(false);</span>
+<span class="fc" id="L143">				CacheUtil.setCachedValue(context, CacheUtil.CACHE_MODE_PROFILE, &quot;SELECTED_CAMPAIGN_SP_ID&quot;, newIDStr);</span>
+<span class="fc" id="L144">				SelectionCacheUtil.setCampaignID(context, new ID(newID));</span>
+<span class="fc" id="L145">				SelectionCacheUtil.setSchedulingPeriodID(context, null);</span>
+<span class="fc" id="L146">				model.addPageMessage(Message.INFO_TYPE, FsWebBundleKey.FS_SAVE_CAMPAIGN_SUCCESS, FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L147">			} catch (BbmCreateDuplicateKeyException duplicateKeyException) {</span>
+<span class="nc" id="L148">				model.addPageMessage(Message.ERROR_TYPE, FsWebBundleKey.FS_CREATE_CAMPAIGN_DUP_NAME,</span>
+						FsWebBundleKey.BUNDLE_NAME);
+<span class="nc" id="L150">			} catch (BbmCreateException createException) {</span>
+<span class="nc" id="L151">				model.addPageMessage(Message.ERROR_TYPE, createException.getLocalizedMessage());</span>
+<span class="nc" id="L152">			} catch (Exception e) {</span>
+<span class="nc" id="L153">				model.addPageMessage(Message.ERROR_TYPE, e.getLocalizedMessage());</span>
+<span class="pc" id="L154">			}</span>
+		} else {
+			try {
+<span class="nc" id="L157">				String campID = model.getSelectedID();</span>
+<span class="nc" id="L158">				ID campaignID =</span>
+<span class="nc" id="L159">						StringUtil.parseIDStringToCollection(</span>
+<span class="nc" id="L160">								CampaignSchedulingPeriodSelectionUtil.extractIDs(campID,</span>
+<span class="nc" id="L161">										CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX)).iterator().next();</span>
+
+<span class="nc" id="L163">				short weekStartDay = model.getWeekStartDay();</span>
+<span class="nc" id="L164">				int dayboundary = model.getDayBoundaryOffSet();</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">				int weekStart = (weekStartDay &gt; 0 ? ((weekStartDay - 1) * 1440) : 0) + dayboundary;</span>
+<span class="nc" id="L166">				int periodicityID = model.getPeriodicityID();</span>
+<span class="nc" id="L167">				short monthStartDay = model.getMonthStartDay();</span>
+
+<span class="nc" id="L169">				CampaignManager camManager = WfmManagerFactory.getCampaignManager(context.isInWhatIfMode());</span>
+<span class="nc" id="L170">				Campaign campToSave = camManager.getCampaignByID(campaignID);</span>
+<span class="nc" id="L171">				ArrayList&lt;Campaign&gt; campaigns = new ArrayList&lt;Campaign&gt;();</span>
+<span class="nc" id="L172">				Campaign campaign = model.getCampaign();</span>
+<span class="nc" id="L173">				campToSave.setName(campaign.getName());</span>
+<span class="nc" id="L174">				campToSave.setDescription(campaign.getDescription());</span>
+<span class="nc" id="L175">				campToSave.setTimeZone(campaign.getTimeZone());</span>
+<span class="nc" id="L176">				campToSave.setTimeZoneID(campaign.getTimeZoneID());</span>
+<span class="nc" id="L177">				campToSave.setWeekStart(weekStart);</span>
+<span class="nc" id="L178">				campToSave.setPeriodicityID(periodicityID);</span>
+<span class="nc" id="L179">				campToSave.setMonthStartDay(monthStartDay);</span>
+
+<span class="nc" id="L181">				campaigns.add(campToSave);</span>
+<span class="nc" id="L182">				camManager.updateCampaigns(campaigns);</span>
+<span class="nc" id="L183">				model.addPageMessage(Message.INFO_TYPE, FsWebBundleKey.FS_SAVE_CAMPAIGN_SUCCESS, FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L184">			} catch (Exception e) {</span>
+<span class="nc" id="L185">				model.handleUnableToLoadDataError(m_log, e);</span>
+<span class="nc" id="L186">			}</span>
+		}
+		// Need to refresh Selection Pane
+<span class="fc" id="L189">		model.setRefreshSelection(true);</span>
+<span class="fc" id="L190">		prepareForNextPage(context, model, CAMPAIGN_FORM_PAGE);</span>
+<span class="fc" id="L191">	}</span>
+
+	@Override
+	protected void processSave(RequestContext context) {
+<span class="fc" id="L195">		CampaignSPSettingsPageModel model = new CampaignSPSettingsPageModel(context);</span>
+<span class="fc" id="L196">		model.extractParameters(context.getRequest());</span>
+		try {
+<span class="fc" id="L198">			String strSPID = model.getSelectedID();</span>
+<span class="fc" id="L199">			ID spID =</span>
+					StringUtil
+<span class="fc" id="L201">							.parseIDStringToCollection(</span>
+<span class="fc" id="L202">									CampaignSchedulingPeriodSelectionUtil.extractIDs(strSPID,</span>
+<span class="fc" id="L203">											CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX)).iterator().next();</span>
+
+<span class="fc" id="L205">			CampaignManager camManager = WfmManagerFactory.getCampaignManager(context.isInWhatIfMode());</span>
+<span class="fc" id="L206">			SchedulingPeriod spToSave = camManager.getSchedulingPeriodByID(spID);</span>
+
+			// ESR4314016 - make sure orgs that were out of user scope are not removed from the SP.
+<span class="fc" id="L209">			Collection&lt;ID&gt; previousLinkedOrgIdsWithoutPriviledge = camManager.getLinkedOrgsforSP(spID);</span>
+<span class="fc" id="L210">			Collection&lt;ID&gt; previousLinkedOrgIdsWithPriviledge =</span>
+<span class="fc" id="L211">					OrganizationModelHandler.getAllOrgIDsInUserScopePlusAncestors(context, context.getUser(), false);</span>
+<span class="fc" id="L212">			previousLinkedOrgIdsWithoutPriviledge.removeAll(previousLinkedOrgIdsWithPriviledge);</span>
+
+<span class="fc" id="L214">			ID campaignID = spToSave.getCampaignID();</span>
+<span class="fc" id="L215">			Campaign selectedCampaign = camManager.getCampaignByID(campaignID);</span>
+
+<span class="fc" id="L217">			TimeZone campaignTimeZone = selectedCampaign.getTimeZone();</span>
+<span class="fc" id="L218">			TimeZone viewTimeZone = getViewingTimeZone(context, selectedCampaign);</span>
+
+<span class="fc" id="L220">			long dateLong = spToSave.getStartTime().getTime();</span>
+
+<span class="fc" id="L222">			int timezoneOffSet = (viewTimeZone.getOffset(dateLong) - campaignTimeZone.getOffset(dateLong)) / (60 * 1000);</span>
+<span class="fc" id="L223">			int weekStartDay = SchedulingPeriodUtil.getWeekStartDay(selectedCampaign.getWeekStart());</span>
+<span class="fc" id="L224">			int weekStart = selectedCampaign.getWeekStart() + timezoneOffSet;</span>
+<span class="pc bpc" id="L225" title="1 of 2 branches missed.">			int dayBoundary = (weekStart &lt; 0 ? weekStart + 1440 : weekStart) % 1440;</span>
+
+<span class="pc bpc" id="L227" title="1 of 2 branches missed.">			if (model.validateHOO(timezoneOffSet, dayBoundary)) {</span>
+<span class="fc" id="L228">				model.setIsAddMode(false);</span>
+<span class="fc" id="L229">				String timeRange = context.getParameter(&quot;timePeriodSelectorPC__dropdown__input&quot;);</span>
+<span class="fc" id="L230">				StringTokenizer st = new StringTokenizer(timeRange, &quot;-&quot;);</span>
+<span class="fc" id="L231">				String start = &quot;&quot;;</span>
+<span class="fc" id="L232">				String end = &quot;&quot;;</span>
+<span class="fc bfc" id="L233" title="All 2 branches covered.">				while (st.hasMoreTokens()) {</span>
+<span class="fc" id="L234">					start = st.nextToken();</span>
+<span class="fc" id="L235">					end = st.nextToken();</span>
+				}
+<span class="fc" id="L237">				long lstart = 0;</span>
+<span class="fc" id="L238">				long lend = 0;</span>
+<span class="fc" id="L239">				lstart = Long.parseLong(start);</span>
+<span class="fc" id="L240">				lend = Long.parseLong(end);</span>
+<span class="fc" id="L241">				Date startDate = new Date(lstart);</span>
+<span class="fc" id="L242">				LocalDate hooStartTimeLocal = new LocalDate(startDate, TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="fc" id="L243">				Date endDate = new Date(lend);</span>
+<span class="fc" id="L244">				long diffDays = (endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000);</span>
+<span class="fc bfc" id="L245" title="All 2 branches covered.">				boolean isMultiWeek = diffDays &gt; 8;</span>
+
+<span class="fc" id="L247">				CampaignHOO newHoo = model.getHoo();</span>
+<span class="fc" id="L248">				SchedulingPeriod sp = model.getSP();</span>
+<span class="fc" id="L249">				int weekIndex = 0;</span>
+<span class="fc bfc" id="L250" title="All 2 branches covered.">				if (!isMultiWeek) {</span>
+<span class="fc" id="L251">					weekIndex = SchedulingPeriodUtil.getWeekIndex(selectedCampaign, spToSave, hooStartTimeLocal);</span>
+				}
+
+<span class="fc" id="L254">				spToSave.setDescription(sp.getDescription());</span>
+<span class="fc" id="L255">				spToSave.setSkillBased(sp.getSkillBased());</span>
+<span class="fc" id="L256">				spToSave.setUsingAllEmployees(sp.isUsingAllEmployees());</span>
+
+<span class="fc" id="L258">				Collection&lt;ID&gt; allSPOrgs = model.getOrgIDs();</span>
+<span class="fc" id="L259">				allSPOrgs.addAll(previousLinkedOrgIdsWithoutPriviledge);</span>
+<span class="fc" id="L260">				spToSave.setOrgs(allSPOrgs);</span>
+
+<span class="fc" id="L262">				ArrayList&lt;SchedulingPeriod&gt; coll = new ArrayList&lt;SchedulingPeriod&gt;();</span>
+<span class="fc" id="L263">				coll.add(spToSave);</span>
+<span class="fc" id="L264">				camManager.updateSchedulingPeriods(coll);</span>
+<span class="fc" id="L265">				List&lt;CampaignHOO&gt; oldHoos = camManager.getCampaignHOOAssignmentsBySP(spToSave.getID());</span>
+
+<span class="fc" id="L267">				Map&lt;CampaignHOO, Pair&lt;Integer, Integer&gt;&gt; partialWeekHOOExclusions =</span>
+<span class="fc" id="L268">						SchedulingPeriodUtil.getPartialWeekHOOExclusions(selectedCampaign, spToSave, oldHoos,</span>
+								weekStartDay);
+
+<span class="fc bfc" id="L271" title="All 2 branches covered.">				for (int hooIndex = 0; hooIndex &lt; oldHoos.size(); hooIndex++) {</span>
+<span class="pc bpc" id="L272" title="1 of 4 branches missed.">					if (!isMultiWeek &amp;&amp; hooIndex != weekIndex) {</span>
+<span class="nc" id="L273">						continue;</span>
+					}
+<span class="fc" id="L275">					CampaignHOO oldhoo = oldHoos.get(hooIndex);</span>
+
+<span class="fc bfc" id="L277" title="All 2 branches covered.">					for (short i = 1; i &lt;= 7; i++) {</span>
+<span class="fc" id="L278">						short dayOffset = convertDayOfWeekToDayOffset(i, weekStartDay);</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">						if (newHoo.isActive(i)</span>
+<span class="pc bpc" id="L280" title="1 of 2 branches missed.">								&amp;&amp; SchedulingPeriodUtil.isValidHOOForDay(partialWeekHOOExclusions, oldhoo, dayOffset)) {</span>
+							// if Active and value is -1, it's multi-valued, and keep the old value
+<span class="pc bpc" id="L282" title="1 of 2 branches missed.">							if (newHoo.getDayOpen(i) != -1) {</span>
+<span class="fc" id="L283">								short adjustedStartTime =</span>
+<span class="fc" id="L284">										CampaignSPSettingsPageModel.getAdjustedStartTime(newHoo.getDayOpen(i),</span>
+												timezoneOffSet);
+<span class="fc" id="L286">								oldhoo.setDayOpen(i, adjustedStartTime);</span>
+							}
+
+<span class="pc bpc" id="L289" title="1 of 2 branches missed.">							if (newHoo.getDayClose(i) != -1) {</span>
+<span class="fc" id="L290">								short adjustedEndTime =</span>
+<span class="fc" id="L291">										CampaignSPSettingsPageModel.getAdjustedEndTime(newHoo.getDayClose(i),</span>
+												timezoneOffSet, dayBoundary);
+<span class="fc" id="L293">								oldhoo.setDayClose(i, adjustedEndTime);</span>
+<span class="fc" id="L294">							}</span>
+						} else {
+<span class="fc" id="L296">							oldhoo.setActive(i, false);</span>
+						}
+					}
+<span class="fc" id="L299">					camManager.updateCampaignHOOAssignment(oldhoo);</span>
+				}
+<span class="fc" id="L301">				model.addPageMessage(Message.INFO_TYPE, FsWebBundleKey.FS_SAVE_SUCCESS, FsWebBundleKey.BUNDLE_NAME);</span>
+			}
+<span class="nc" id="L303">		} catch (BbmUpdateException createException) {</span>
+<span class="nc" id="L304">			model.addPageMessage(Message.ERROR_TYPE, createException.getLocalizedMessage());</span>
+<span class="nc" id="L305">		} catch (Exception e) {</span>
+<span class="nc" id="L306">			model.handleUnableToLoadDataError(m_log, e);</span>
+<span class="pc" id="L307">		}</span>
+
+<span class="fc" id="L309">		prepareForNextPage(context, model, FORM_PAGE);</span>
+<span class="fc" id="L310">	}</span>
+	
+	/**
+	 * Inspects the override setting to determine which time zone should be used.
+	 * This is a convenience method that just uses the &lt;code&gt;isTimeZoneOverridden&lt;/code&gt;
+	 * method to switch between the RequestContext's viewing time zone and the default view time zone.
+	 * &lt;p&gt;
+	 * If the time zone is overridden, return the context's view time zone. If it is not
+	 * overridden, return the default view time zone. The default view time zone comes from
+	 * getDefaultViewTimeZone() for child campaigns, and from getTimeZone() for all other campaigns.
+	 * @param context
+	 * @param selectedCampaign
+	 * @return
+	 */
+	protected TimeZone getViewingTimeZone(RequestContext context, Campaign selectedCampaign) {
+<span class="pc bpc" id="L325" title="1 of 2 branches missed.">		if (!TimeZoneOverrideUtil.isTimeZoneOverridden(context)) {</span>
+<span class="fc" id="L326">			TimeZone viewTimeZone = selectedCampaign.getDefaultViewTimeZone();</span>
+<span class="pc bpc" id="L327" title="1 of 2 branches missed.">			if (viewTimeZone == null) {</span>
+<span class="nc" id="L328">				viewTimeZone = selectedCampaign.getTimeZone();</span>
+			}
+<span class="fc" id="L330">			return viewTimeZone;</span>
+		} else {
+<span class="nc" id="L332">			return context.getViewingTimeZone();</span>
+		}
+	}
+	
+	/**
+	 * Given a day of the week (1=Sunday..7=Saturday), its day offset for the SP week.
+	 * For example, if the week start day is Monday, then Monday has an offset of 1,
+	 * Tuesday has an offset of 2, and Sunday has an offset of 7.
+	 * @param dayOfWeek - The day of the week (1..7) whose day offset within the SP week you need.
+	 * @return The day offset (1..7).
+	 */
+	short convertDayOfWeekToDayOffset(short dayOfWeek, int weekStartDay) {
+<span class="fc" id="L344">		int dayOffset = dayOfWeek - weekStartDay + 1;</span>
+<span class="fc bfc" id="L345" title="All 2 branches covered.">		if (dayOfWeek &lt; weekStartDay) {</span>
+<span class="fc" id="L346">			dayOffset += 7;</span>
+		}
+<span class="fc" id="L348">		return (short)dayOffset; </span>
+	}
+
+	void processLoadSPID(RequestContext context) {
+<span class="fc" id="L352">		SettingPM model = newSettingPM(context);</span>
+<span class="fc" id="L353">		model.extractParameters(context.getRequest(), WorkpaneFieldNames.SELECTED_ID_FN);</span>
+<span class="fc" id="L354">		model.setIsAddMode(false);</span>
+<span class="fc" id="L355">		prepareForNextPage(context, model, FORM_PAGE);</span>
+<span class="fc" id="L356">	}</span>
+
+	void processLoadCampaignID(RequestContext context) {
+<span class="fc" id="L359">		SettingPM model = newSettingPM(context);</span>
+<span class="fc" id="L360">		model.extractParameters(context.getRequest(), WorkpaneFieldNames.SELECTED_ID_FN);</span>
+<span class="fc" id="L361">		model.setIsAddMode(false);</span>
+<span class="fc" id="L362">		prepareForNextPage(context, model, CAMPAIGN_FORM_PAGE);</span>
+<span class="fc" id="L363">	}</span>
+
+	void processAddCampaign(RequestContext context) {
+<span class="fc" id="L366">		CampaignSettingsPageModel model = new CampaignSettingsPageModel(context);</span>
+<span class="fc" id="L367">		model.setIsSub(false);</span>
+<span class="fc" id="L368">		model.setIsAddMode(true);</span>
+<span class="fc" id="L369">		prepareForNextPage(context, model, CAMPAIGN_FORM_PAGE);</span>
+<span class="fc" id="L370">	}</span>
+
+	void processAddSubCampaign(RequestContext context) {
+<span class="fc" id="L373">		CampaignSettingsPageModel model = new CampaignSettingsPageModel(context);</span>
+<span class="fc" id="L374">		model.setIsAddMode(true);</span>
+<span class="fc" id="L375">		model.setIsSub(true);</span>
+<span class="fc" id="L376">		prepareForNextPage(context, model, CAMPAIGN_FORM_PAGE);</span>
+<span class="fc" id="L377">	}</span>
+
+	private void processAddSP(RequestContext context) {
+<span class="fc" id="L380">		CampaignCreateSPPM model = new CampaignCreateSPPM(context);</span>
+<span class="fc" id="L381">		model.extractParameters(context.getRequest());</span>
+<span class="fc" id="L382">		boolean bCopyEmployeeData = model.getIsCopyEmployeeData();</span>
+<span class="fc" id="L383">		boolean bCopyProjectData = model.getIsCopyProjectData();</span>
+<span class="fc" id="L384">		boolean isMonthly = model.isMonthlyCampaign();</span>
+
+<span class="fc" id="L386">		CampaignSPSettingsPageModel spModel = new CampaignSPSettingsPageModel(context);</span>
+<span class="fc" id="L387">		SchedulingPeriod sp = model.getSchedulingPeriod();</span>
+<span class="fc" id="L388">		int selection = model.getSelection();</span>
+		try {
+<span class="fc" id="L390">			CampaignManager camManager = WfmManagerFactory.getCampaignManager(context.isInWhatIfMode());</span>
+<span class="fc" id="L391">			DBConfigManager configManager = BbmManagerFactory.getDBConfigManager(context.isInWhatIfMode());</span>
+<span class="fc" id="L392">			String selectId = context.getParameter(WorkpaneFieldNames.SELECTED_ID_FN);</span>
+
+<span class="fc" id="L394">			ID campaignID = null;</span>
+<span class="fc" id="L395">			ID newID = null;</span>
+<span class="pc bpc" id="L396" title="1 of 2 branches missed.">			if (selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX)) {</span>
+<span class="nc" id="L397">				ID spID =</span>
+						StringUtil
+<span class="nc" id="L399">								.parseIDStringToCollection(</span>
+<span class="nc" id="L400">										CampaignSchedulingPeriodSelectionUtil.extractIDs(selectId,</span>
+<span class="nc" id="L401">												CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX)).iterator().next();</span>
+<span class="nc" id="L402">				SchedulingPeriod curSP = camManager.getSchedulingPeriodByID(spID);</span>
+<span class="nc" id="L403">				campaignID = curSP.getCampaignID();</span>
+<span class="pc bpc" id="L404" title="1 of 2 branches missed.">			} else if (selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX)) {</span>
+<span class="fc" id="L405">				campaignID =</span>
+						StringUtil
+<span class="fc" id="L407">								.parseIDStringToCollection(</span>
+<span class="fc" id="L408">										CampaignSchedulingPeriodSelectionUtil.extractIDs(selectId,</span>
+<span class="fc" id="L409">												CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX)).iterator().next();</span>
+			}
+<span class="fc" id="L411">			sp.setCampaignID(campaignID);</span>
+<span class="pc bpc" id="L412" title="1 of 2 branches missed.">			if (sp.getMaxPhantoms() == 0) {</span>
+				// Default value.
+<span class="fc" id="L414">				sp.setMaxPhantoms(9999);</span>
+			}
+
+<span class="fc" id="L417">			LocalDate start = sp.getStartTimeLocal();</span>
+<span class="fc" id="L418">			LocalDate end = sp.getEndTimeLocal();</span>
+<span class="fc" id="L419">			long numberofWeeks =</span>
+<span class="fc" id="L420">					(end.getTime().getTime() - start.getTime().getTime() + 24 * 60 * 60 * 1000) / (7 * 24 * 60 * 60 * 1000);</span>
+<span class="pc bpc" id="L421" title="1 of 2 branches missed.">			if (isMonthly) {</span>
+<span class="nc" id="L422">				List&lt;Pair&lt;LocalDate, LocalDate&gt;&gt; localDates =</span>
+<span class="nc" id="L423">						SchedulingPeriodUtil.getWeeksForMonthlySP(start, model.getWeekStartDay());</span>
+<span class="nc" id="L424">				numberofWeeks = localDates.size();</span>
+			}
+
+<span class="fc bfc" id="L427" title="All 2 branches covered.">			if (selection == 0) {</span>
+<span class="fc" id="L428">				newID = doCreateAsEmpty(model, isMonthly, sp, camManager, campaignID, start, numberofWeeks);</span>
+<span class="fc bfc" id="L429" title="All 2 branches covered.">			} else if (selection == 1) {</span>
+<span class="fc" id="L430">				newID = doCopyDataFromPreviousWeeks(context, model, bCopyEmployeeData, spModel, sp, campaignID,</span>
+						numberofWeeks);
+<span class="pc bpc" id="L432" title="1 of 2 branches missed.">			} else if (selection == 2) {</span>
+<span class="fc" id="L433">				newID = doCopyDataFromSelectPeriod(context, model, bCopyEmployeeData, spModel, sp, camManager, configManager);</span>
+<span class="nc bnc" id="L434" title="All 2 branches missed.">			} else if (selection == 3) {</span>
+<span class="nc" id="L435">				CloneSPOptions copyFlags = new CloneSPOptions(bCopyEmployeeData, bCopyProjectData);</span>
+<span class="nc" id="L436">				newID = doCustomizeWeekSelection(context, model, copyFlags, spModel, sp, camManager, configManager,</span>
+								campaignID, numberofWeeks);
+			}
+
+<span class="pc bpc" id="L440" title="1 of 2 branches missed.">			if (newID == null) {</span>
+				// an error must have occurred
+<span class="nc" id="L442">				return;</span>
+			} else {
+<span class="fc" id="L444">				String newIDStr = CampaignSchedulingPeriodSelectionUtil.buildCompositeIDString(newID, campaignID);</span>
+<span class="fc" id="L445">				spModel.setSelectedID(newIDStr);</span>
+<span class="fc" id="L446">				spModel.setIsAddMode(false);</span>
+
+				// TODO: we probably don't need to set the auto cached ID here since it should be taken care
+				// of automatically via the selection pane, but I didn't want to risk removing it since it is late
+				// in the dev cycle
+<span class="fc" id="L451">				CampaignSchedulingPeriodSelectionUtil.setSelectedAutoCachedCampaignSPID(context, campaignID, newID);</span>
+
+				// Cache the Campaign and SP IDs so that other screens (profiles, employee assignment of work rules / skills)
+				// will have this selection stick.
+<span class="fc" id="L455">				SelectionCacheUtil.setCampaignID(context, campaignID);</span>
+<span class="fc" id="L456">				SelectionCacheUtil.setSchedulingPeriodID(context, newID);</span>
+			}
+<span class="nc" id="L458">		} catch (Exception e) {</span>
+<span class="nc" id="L459">			spModel.handleUnableToLoadDataError(m_log, e);</span>
+<span class="fc" id="L460">		}</span>
+<span class="fc" id="L461">		spModel.setRefreshSelection(true);</span>
+<span class="fc" id="L462">		prepareForNextPage(context, spModel, FORM_PAGE);</span>
+<span class="fc" id="L463">	}</span>
+
+	/**
+	 * @param context
+	 * @param model
+	 * @param bCopyEmployeeData
+	 * @param spModel
+	 * @param sp - Sp object representing the new SP to be cloned.  Some fields are not yet set, such as ID.
+	 * @param numberofWeeks - The size of the new SP in weeks
+	 * @throws BbmObjectNotFoundException
+	 * @throws RemoteException
+	 * @throws BbmFinderException
+	 * @throws Exception
+	 */
+	private ID doCopyDataFromPreviousWeeks(RequestContext context, CampaignCreateSPPM model, boolean bCopyEmployeeData,
+			CampaignSPSettingsPageModel spModel, SchedulingPeriod sp, ID campaignID, long numberofWeeks) throws Exception {
+
+<span class="fc" id="L480">		CampaignManager camManager = WfmManagerFactory.getCampaignManager(context.isInWhatIfMode());</span>
+<span class="fc" id="L481">		DBConfigManager configManager = BbmManagerFactory.getDBConfigManager(context.isInWhatIfMode());</span>
+
+<span class="fc" id="L483">		ID newID = null;</span>
+
+<span class="fc" id="L485">		LocalDate spStartLocal = new LocalDate(sp.getStartTimeLocal());</span>
+<span class="fc" id="L486">		LocalDate spEndLocal = new LocalDate(sp.getEndTimeLocal());</span>
+
+<span class="fc" id="L488">		spStartLocal.add(Calendar.DAY_OF_YEAR, -(int) numberofWeeks * 7);</span>
+<span class="fc" id="L489">		spEndLocal.add(Calendar.DAY_OF_YEAR, -(int) numberofWeeks * 7);</span>
+
+<span class="fc" id="L491">		Campaign campaign = camManager.getCampaignByID(campaignID);</span>
+
+<span class="fc" id="L493">		Date spStart = TimePeriodUtil.convertToGMTFromLocalDateTimeInTimeZone(spStartLocal, campaign.getTimeZone());</span>
+<span class="fc" id="L494">		Date spEnd = TimePeriodUtil.convertToGMTFromLocalDateTimeInTimeZone(spEndLocal, campaign.getTimeZone());</span>
+
+<span class="fc" id="L496">		Collection&lt;CampaignHOO&gt; hoos = camManager.getCampaignHOOAssignments(campaignID, spStart, spEnd, false);</span>
+
+		try {
+<span class="fc" id="L499">			newID = cloneSP(camManager, configManager, sp, hoos, new CloneSPOptions(bCopyEmployeeData),</span>
+<span class="fc" id="L500">					false, context.getLocaleContext(), spModel);</span>
+<span class="nc" id="L501">		} catch (BbmCloningConflictException e) {</span>
+<span class="nc" id="L502">			Collection&lt;BbmCloningConflict&gt; conflicts = e.getConflicts();</span>
+<span class="nc" id="L503">			String str = &quot;&quot;;</span>
+<span class="nc" id="L504">			BbmCloningConflict conflicttest = conflicts.iterator().next();</span>
+<span class="nc bnc" id="L505" title="All 2 branches missed.">			if (conflicttest.getConflictType() != BbmCloningConflict.CONFLICT_SHIFT_ASSIGNMENTS_EXIST) {</span>
+<span class="nc bnc" id="L506" title="All 2 branches missed.">				for (BbmCloningConflict conflict : conflicts) {</span>
+<span class="nc bnc" id="L507" title="All 2 branches missed.">					if (conflict.getConflictType() != BbmCloningConflict.CONFLICT_SHIFT_ASSIGNMENTS_EXIST) {</span>
+						// GMT clients may have custom strings in BPCONFIG. We have to verticalize them here, now.
+<span class="nc" id="L509">						String stringMessage = getConflictMessage(conflict, context);</span>
+<span class="nc bnc" id="L510" title="All 2 branches missed.">						if (stringMessage != null) {</span>
+<span class="nc" id="L511">							str += stringMessage + &quot;\n&quot;;</span>
+						}
+					}
+<span class="nc" id="L514">				}</span>
+<span class="nc" id="L515">				model.addPageMessage(Message.ERROR_TYPE, str);</span>
+<span class="nc" id="L516">				prepareForNextPage(context, model, CAMPAIGN_CREATE_SP_PAGE);</span>
+<span class="nc" id="L517">				return null;</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">			} else if (conflicttest.getConflictType() == BbmCloningConflict.CONFLICT_SHIFT_ASSIGNMENTS_EXIST) {</span>
+<span class="nc" id="L519">				newID =</span>
+<span class="nc" id="L520">						cloneSP(camManager, configManager, sp, hoos, new CloneSPOptions(bCopyEmployeeData),</span>
+<span class="nc" id="L521">								true, context.getLocaleContext(), spModel);</span>
+
+<span class="nc" id="L523">				model.addPageMessage(Message.ERROR_TYPE, str);</span>
+<span class="nc" id="L524">				prepareForNextPage(context, model, CAMPAIGN_CREATE_SP_PAGE);</span>
+			}
+<span class="nc" id="L526">		} catch (Exception e) {</span>
+<span class="nc" id="L527">			model.handleUnableToLoadDataError(m_log, e);</span>
+<span class="nc" id="L528">			prepareForNextPage(context, model, CAMPAIGN_CREATE_SP_PAGE);</span>
+<span class="nc" id="L529">			return null;</span>
+<span class="pc" id="L530">		}</span>
+<span class="fc" id="L531">		return newID;</span>
+	}
+
+	/**
+	 * @param context
+	 * @param model
+	 * @param bCopyEmployeeData
+	 * @param spModel
+	 * @param sp
+	 * @param camManager
+	 * @param configManager
+	 * @param newID
+	 * @return
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 * @throws Exception
+	 */
+	private ID doCopyDataFromSelectPeriod(RequestContext context, CampaignCreateSPPM model, boolean bCopyEmployeeData,
+			CampaignSPSettingsPageModel spModel, SchedulingPeriod sp, CampaignManager camManager,
+			DBConfigManager configManager) throws Exception {
+<span class="fc" id="L551">		ID newID = null;</span>
+
+<span class="fc" id="L553">		String strId = context.getParameter(CampaignCreateSPPM.CAMP_SP_CREATE_PREV_SECECT);</span>
+<span class="fc" id="L554">		ID sourceSpId = ID.fromInt(Integer.parseInt(strId));</span>
+<span class="fc" id="L555">		Collection&lt;CampaignHOO&gt; hoos = camManager.getCampaignHOOAssignmentsBySP(sourceSpId);</span>
+
+		try {
+<span class="fc" id="L558">			newID = cloneSP(camManager, configManager, sp, hoos, new CloneSPOptions(bCopyEmployeeData), </span>
+<span class="fc" id="L559">					false, context.getLocaleContext(), spModel);</span>
+<span class="nc" id="L560">		} catch (BbmCloningConflictException e) {</span>
+<span class="nc" id="L561">			Collection&lt;BbmCloningConflict&gt; conflicts = e.getConflicts();</span>
+<span class="nc" id="L562">			String str = &quot;&quot;;</span>
+<span class="nc" id="L563">			BbmCloningConflict conflicttest = conflicts.iterator().next();</span>
+<span class="nc bnc" id="L564" title="All 2 branches missed.">			if (conflicttest.getConflictType() != BbmCloningConflict.CONFLICT_SHIFT_ASSIGNMENTS_EXIST) {</span>
+<span class="nc bnc" id="L565" title="All 2 branches missed.">				for (BbmCloningConflict conflict : conflicts) {</span>
+<span class="nc bnc" id="L566" title="All 2 branches missed.">					if (conflict.getConflictType() != BbmCloningConflict.CONFLICT_SHIFT_ASSIGNMENTS_EXIST) {</span>
+						// GMT clients may have custom strings in BPCONFIG. We have to verticalize them here, now.
+<span class="nc" id="L568">						String stringMessage = getConflictMessage(conflict, context);</span>
+<span class="nc bnc" id="L569" title="All 2 branches missed.">						if (stringMessage != null) {</span>
+<span class="nc" id="L570">							str += stringMessage + &quot;\n&quot;;</span>
+						}
+					}
+<span class="nc" id="L573">				}</span>
+<span class="nc" id="L574">				model.addPageMessage(Message.ERROR_TYPE, str);</span>
+<span class="nc" id="L575">				prepareForNextPage(context, model, CAMPAIGN_CREATE_SP_PAGE);</span>
+
+<span class="nc" id="L577">				return null;</span>
+<span class="nc bnc" id="L578" title="All 2 branches missed.">			} else if (conflicttest.getConflictType() == BbmCloningConflict.CONFLICT_SHIFT_ASSIGNMENTS_EXIST) {</span>
+<span class="nc" id="L579">				newID = cloneSP(camManager, configManager, sp, hoos, new CloneSPOptions(bCopyEmployeeData),</span>
+<span class="nc" id="L580">						true, context.getLocaleContext(), spModel);</span>
+			}
+
+<span class="nc" id="L583">		} catch (Exception e) {</span>
+<span class="nc" id="L584">			model.handleUnableToLoadDataError(m_log, e);</span>
+<span class="nc" id="L585">			prepareForNextPage(context, model, CAMPAIGN_CREATE_SP_PAGE);</span>
+<span class="nc" id="L586">			return null;</span>
+<span class="pc" id="L587">		}</span>
+<span class="fc" id="L588">		return newID;</span>
+	}
+
+	/**
+	 * @param context
+	 * @param model
+	 * @param copyFlags - Pair of Booleans for: (bCopyEmployeeData, bCopyProjectData)
+	 * @param spModel
+	 * @param sp
+	 * @param camManager
+	 * @param configManager
+	 * @param campaignID
+	 * @param newID
+	 * @param numberofWeeks
+	 * @return
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 * @throws BbmException
+	 * @throws Exception
+	 */
+	protected ID doCustomizeWeekSelection(RequestContext context, CampaignCreateSPPM model, CloneSPOptions copyFlags,
+			CampaignSPSettingsPageModel spModel, SchedulingPeriod sp, CampaignManager camManager,
+			DBConfigManager configManager, ID campaignID, long numberofWeeks) throws BbmFinderException, RemoteException,
+			BbmException, Exception {
+<span class="nc" id="L612">		ID newID = null;</span>
+<span class="nc" id="L613">		String strIDs = context.getParameter(CampaignCreateSPPM.SELECTED_HOO_ID);</span>
+<span class="nc" id="L614">		ArrayList&lt;CampaignHOO&gt; hoos = new ArrayList&lt;CampaignHOO&gt;();</span>
+<span class="nc bnc" id="L615" title="All 2 branches missed.">		if (!strIDs.equals(&quot;&quot;)) {</span>
+			// Customize Week Dialog was launched. strIDs contains the selected HOO Id's from the form variable.
+<span class="nc" id="L617">			ArrayList&lt;ID&gt; ids = (ArrayList&lt;ID&gt;) StringUtil.parseIDStringToCollection(strIDs);</span>
+<span class="nc bnc" id="L618" title="All 2 branches missed.">			for (int i = 0; i &lt; ids.size(); i++) {</span>
+<span class="nc" id="L619">				CampaignHOO hoo = camManager.getCampaignHOOAssignmentByID(ids.get(i));</span>
+<span class="nc" id="L620">				hoos.add(hoo);</span>
+			}
+<span class="nc" id="L622">		} else {</span>
+			// Customize Week Dialog was not launched. Get the default week (the last one).
+<span class="nc" id="L624">			ArrayList&lt;CampaignHOO&gt; totalHoos = getAllCampaignHOOAssignments(context, sp, campaignID);</span>
+<span class="nc" id="L625">			CampaignHOO theLastHOO = totalHoos.get(totalHoos.size() - 1);</span>
+<span class="nc bnc" id="L626" title="All 2 branches missed.">			for (int i = 0; i &lt; numberofWeeks; i++) {</span>
+<span class="nc" id="L627">				hoos.add(theLastHOO);</span>
+			}
+		}
+
+		try {
+<span class="nc" id="L632">			newID = cloneSP(camManager, configManager, sp, hoos, copyFlags, false, context.getLocaleContext(), spModel);</span>
+<span class="nc" id="L633">		} catch (BbmCloningConflictException e) {</span>
+<span class="nc" id="L634">			Collection&lt;BbmCloningConflict&gt; conflicts = e.getConflicts();</span>
+<span class="nc" id="L635">			String str = &quot;&quot;;</span>
+<span class="nc" id="L636">			BbmCloningConflict conflicttest = conflicts.iterator().next();</span>
+<span class="nc bnc" id="L637" title="All 2 branches missed.">			if (conflicttest.getConflictType() != BbmCloningConflict.CONFLICT_SHIFT_ASSIGNMENTS_EXIST) {</span>
+<span class="nc bnc" id="L638" title="All 2 branches missed.">				for (BbmCloningConflict conflict : conflicts) {</span>
+<span class="nc bnc" id="L639" title="All 2 branches missed.">					if (conflict.getConflictType() != BbmCloningConflict.CONFLICT_SHIFT_ASSIGNMENTS_EXIST) {</span>
+						// GMT clients may have custom strings in BPCONFIG. We have to verticalize them here, now.
+<span class="nc" id="L641">						String stringMessage = getConflictMessage(conflict, context);</span>
+<span class="nc bnc" id="L642" title="All 2 branches missed.">						if (stringMessage != null) {</span>
+<span class="nc" id="L643">							str += stringMessage + &quot;\n&quot;;</span>
+						}
+					}
+<span class="nc" id="L646">				}</span>
+<span class="nc" id="L647">				model.addPageMessage(Message.ERROR_TYPE, str);</span>
+<span class="nc" id="L648">				prepareForNextPage(context, model, CAMPAIGN_CREATE_SP_PAGE);</span>
+<span class="nc" id="L649">				return null;</span>
+<span class="nc bnc" id="L650" title="All 2 branches missed.">			} else if (conflicttest.getConflictType() == BbmCloningConflict.CONFLICT_SHIFT_ASSIGNMENTS_EXIST) {</span>
+<span class="nc" id="L651">				newID = cloneSP(camManager, configManager, sp, hoos, copyFlags, true, context.getLocaleContext(), spModel);</span>
+			}
+<span class="nc" id="L653">		} catch (Exception e) {</span>
+<span class="nc" id="L654">			model.handleUnableToLoadDataError(m_log, e);</span>
+<span class="nc" id="L655">			prepareForNextPage(context, model, CAMPAIGN_CREATE_SP_PAGE);</span>
+<span class="nc" id="L656">			return null;</span>
+<span class="nc" id="L657">		}</span>
+<span class="nc" id="L658">		return newID;</span>
+	}
+
+	/**
+	 * @param context
+	 * @param sp
+	 * @param campaignID
+	 * @return
+	 * @throws RemoteException
+	 * @throws BbmException
+	 */
+	protected ArrayList&lt;CampaignHOO&gt; getAllCampaignHOOAssignments(RequestContext context, SchedulingPeriod sp, ID campaignID)
+			throws RemoteException, BbmException {
+<span class="nc" id="L671">		java.util.Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L672">		cal.setTime(sp.getStartTimeLocal().getTime());</span>
+<span class="nc" id="L673">		cal.add(java.util.Calendar.YEAR, -10);</span>
+<span class="nc" id="L674">		Date startDate = cal.getTime();</span>
+<span class="nc" id="L675">		cal.add(java.util.Calendar.YEAR, 20);</span>
+<span class="nc" id="L676">		Date endDate = cal.getTime();</span>
+		// end of workaround
+
+<span class="nc" id="L679">		ArrayList&lt;CampaignHOO&gt; totalHoos =</span>
+<span class="nc" id="L680">				new ArrayList&lt;CampaignHOO&gt;(CampaignModelHandler.getCampaignHOOAssignments(context, campaignID, startDate,</span>
+						endDate));
+<span class="nc" id="L682">		return totalHoos;</span>
+	}
+
+	/**
+	 * Create an SP with all CampaignHOO entries for all week(s), with all of the days in all of the week(s) set to inactive
+	 * HOO.
+	 * @param model
+	 * @param isMonthly
+	 * @param sp
+	 * @param camManager
+	 * @param campaignID
+	 * @param start
+	 * @param numberofWeeks
+	 * @return
+	 * @throws BbmCreateException
+	 * @throws RemoteException
+	 */
+	protected ID doCreateAsEmpty(CampaignCreateSPPM model, boolean isMonthly, SchedulingPeriod sp,
+			CampaignManager camManager, ID campaignID, LocalDate start, long numberofWeeks) throws BbmCreateException,
+			RemoteException {
+<span class="fc" id="L702">		ID newID = null;</span>
+		;
+<span class="fc" id="L704">		newID = camManager.createSchedulingPeriod(sp);</span>
+<span class="pc bpc" id="L705" title="1 of 2 branches missed.">		if (!isMonthly) {</span>
+<span class="fc" id="L706">			createCampaignHOOAssignmentsForWeeklySP(camManager, campaignID, newID, start, numberofWeeks);</span>
+		} else {
+<span class="nc" id="L708">			createCampaignHOOAssignmentsForMonthlySP(camManager, campaignID, newID, start, model);</span>
+		}
+<span class="fc" id="L710">		return newID;</span>
+	}
+
+	/**
+	 * For a Weekly SP (single or multi week), create and save all CampaignHOO entries for all week(s), with all of the days
+	 * in all of the week(s) set to inactive HOO.
+	 * @param camManager - instance of the EJB
+	 * @param campaignID - the campaign ID
+	 * @param spID - the SPID
+	 * @param spStartDate - the start of the SP
+	 * @param numberofWeeks - the number of weeks in the SP
+	 * @throws BbmCreateException
+	 * @throws RemoteException
+	 */
+	protected void createCampaignHOOAssignmentsForWeeklySP(CampaignManager camManager, ID campaignID, ID spID,
+			LocalDate spStartDate, long numberofWeeks) throws BbmCreateException, RemoteException {
+<span class="fc" id="L726">		LocalDate start = new LocalDate(spStartDate);</span>
+<span class="fc bfc" id="L727" title="All 2 branches covered.">		for (int i = 0; i &lt; numberofWeeks; i++) {</span>
+<span class="fc" id="L728">			LocalDate spEnd = null;</span>
+<span class="fc bfc" id="L729" title="All 2 branches covered.">			if (i != 0) {</span>
+<span class="fc" id="L730">				start.add(Calendar.DAY_OF_YEAR, 7);</span>
+			}
+<span class="fc" id="L732">			spEnd = new LocalDate(start);</span>
+<span class="fc" id="L733">			spEnd.add(Calendar.DAY_OF_YEAR, 7);</span>
+<span class="fc" id="L734">			createCampaignHOOAssignment(camManager, campaignID, spID, start, spEnd);</span>
+		}
+<span class="fc" id="L736">	}</span>
+
+	/**
+	 * For a Monthly SP, create and save all CampaignHOO entries for all weeks int he month, with all of the days in all of
+	 * the weeks set to inactive HOO.
+	 * @param camManager - instance of the EJB
+	 * @param campaignID - the campaign ID
+	 * @param spID - the SPID
+	 * @param start - the start of the SP
+	 * @param numberofWeeks - the number of weeks in the SP
+	 * @throws BbmCreateException
+	 * @throws RemoteException
+	 */
+	protected void createCampaignHOOAssignmentsForMonthlySP(CampaignManager camManager, ID campaignID, ID spID,
+			LocalDate spStartDate, CampaignCreateSPPM model) throws BbmCreateException, RemoteException {
+
+<span class="nc" id="L752">		List&lt;Pair&lt;LocalDate, LocalDate&gt;&gt; localDates =</span>
+<span class="nc" id="L753">				SchedulingPeriodUtil.getWeeksForMonthlySP(spStartDate, model.getWeekStartDay());</span>
+
+<span class="nc bnc" id="L755" title="All 2 branches missed.">		for (Pair&lt;LocalDate, LocalDate&gt; datePair : localDates) {</span>
+<span class="nc" id="L756">			LocalDate start = datePair.getFirst();</span>
+<span class="nc" id="L757">			LocalDate end = datePair.getSecond();</span>
+			// end must include the next day
+<span class="nc" id="L759">			end.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L760">			createCampaignHOOAssignment(camManager, campaignID, spID, start, end);</span>
+<span class="nc" id="L761">		}</span>
+<span class="nc" id="L762">	}</span>
+
+	/**
+	 * Create and save a CampaignHOO entry with all of the days in the week set to inactive HOO.
+	 * @param camManager - instance of the EJB
+	 * @param campaignID - the campaign ID
+	 * @param spID - the SPID
+	 * @param start - the CampaignHOO's StartTimeLocal
+	 * @param end - the CampaignHOO's EndTimeLocal
+	 * @throws BbmCreateException
+	 * @throws RemoteException
+	 */
+	protected void createCampaignHOOAssignment(CampaignManager camManager, ID campaignID, ID spID, LocalDate start,
+			LocalDate end) throws BbmCreateException, RemoteException {
+<span class="fc" id="L776">		CampaignHOO cpnHOO = new CampaignHOO();</span>
+<span class="fc" id="L777">		cpnHOO.setCampaignID(campaignID);</span>
+<span class="fc" id="L778">		cpnHOO.setSPID(spID);</span>
+<span class="fc" id="L779">		cpnHOO.setActive((short) 1, false);</span>
+<span class="fc" id="L780">		cpnHOO.setActive((short) 2, false);</span>
+<span class="fc" id="L781">		cpnHOO.setActive((short) 3, false);</span>
+<span class="fc" id="L782">		cpnHOO.setActive((short) 4, false);</span>
+<span class="fc" id="L783">		cpnHOO.setActive((short) 5, false);</span>
+<span class="fc" id="L784">		cpnHOO.setActive((short) 6, false);</span>
+<span class="fc" id="L785">		cpnHOO.setActive((short) 7, false);</span>
+<span class="fc" id="L786">		cpnHOO.setStartTimeLocal(start);</span>
+<span class="fc" id="L787">		cpnHOO.setEndTimeLocal(end);</span>
+<span class="fc" id="L788">		camManager.createCampaignHOOAssignment(cpnHOO);</span>
+<span class="fc" id="L789">	}</span>
+
+	// / Test for verticalized strings
+	// / If not found, return the standard message from the conflict
+	// / This is needed for GMT clients who may have custom strings in BPCONFIG
+	protected String getConflictMessage(BbmCloningConflict conflict, RequestContext context) {
+<span class="nc" id="L795">		String stringVerticalized = null;</span>
+
+<span class="nc bnc" id="L797" title="All 2 branches missed.">		if (conflict.getConflictType() == BbmCloningConflict.CONFLICT_QUEUES_IN_OTHER_CAMPAIGN) {</span>
+<span class="nc" id="L798">			Object params = StringUtils.join(conflict.getNames().toArray(new String[conflict.getNames().size()]), &quot;, &quot;);</span>
+<span class="nc" id="L799">			ResourceBundle bundle = ResourceBundle.getBundle(BbmEjbBundleKey.BUNDLE);</span>
+<span class="nc" id="L800">			stringVerticalized =</span>
+<span class="nc" id="L801">					context.getSystemManagerFactory()</span>
+<span class="nc" id="L802">							.getVerticalizationManager()</span>
+<span class="nc" id="L803">							.getFormattedVerticalizedString(context.getLocalizer(), bundle,</span>
+									BbmEjbBundleKey.CLONE_CONFLICT_QUEUES_IN_OTHER_CAMPAIGN, params);
+<span class="nc bnc" id="L805" title="All 2 branches missed.">		} else if (conflict.getConflictType() == BbmCloningConflict.CONFLICT_MULTIWEEK_QUEUES_DONT_MATCH) {</span>
+<span class="nc" id="L806">			ResourceBundle bundle = ResourceBundle.getBundle(BbmEjbBundleKey.BUNDLE);</span>
+<span class="nc" id="L807">			stringVerticalized =</span>
+<span class="nc" id="L808">					context.getSystemManagerFactory()</span>
+<span class="nc" id="L809">							.getVerticalizationManager()</span>
+<span class="nc" id="L810">							.getVerticalizedString(context.getLocalizer(), bundle,</span>
+									BbmEjbBundleKey.CLONE_CONFLICT_QUEUES_DONT_MATCH);
+<span class="nc bnc" id="L812" title="All 2 branches missed.">		} else if (conflict.getConflictType() == BbmCloningConflict.CONFLICT_MULTIWEEK_SKILLBASED_DOESNT_MATCH) {</span>
+<span class="nc" id="L813">			ResourceBundle bundle = ResourceBundle.getBundle(BbmEjbBundleKey.BUNDLE);</span>
+<span class="nc" id="L814">			stringVerticalized =</span>
+<span class="nc" id="L815">					context.getSystemManagerFactory()</span>
+<span class="nc" id="L816">							.getVerticalizationManager()</span>
+<span class="nc" id="L817">							.getVerticalizedString(context.getLocalizer(), bundle,</span>
+									BbmEjbBundleKey.CLONE_CONFLICT_SKILLBASED_DOESNT_MATCH);
+		}
+
+<span class="nc bnc" id="L821" title="All 2 branches missed.">		if (stringVerticalized != null) {</span>
+<span class="nc" id="L822">			return stringVerticalized;</span>
+		} else {
+<span class="nc" id="L824">			return conflict.getMessage();</span>
+		}
+	}
+
+	protected void precessRefreshCreateSP(RequestContext context) {
+<span class="fc" id="L829">		CampaignCreateSPPM model = new CampaignCreateSPPM(context);</span>
+<span class="fc" id="L830">		model.extractParameters(context.getRequest());</span>
+
+<span class="fc" id="L832">		prepareForNextPage(context, model, CAMPAIGN_CREATE_SP_PAGE);</span>
+<span class="fc" id="L833">	}</span>
+
+	protected void processRefreshHOO(RequestContext context) {
+<span class="nc" id="L836">		CampaignSPSettingsPageModel model = new CampaignSPSettingsPageModel(context);</span>
+<span class="nc" id="L837">		model.extractParameters(context.getRequest());</span>
+
+<span class="nc" id="L839">		prepareForNextPage(context, model, FORM_PAGE);</span>
+
+<span class="nc" id="L841">	}</span>
+
+	public void processRequest(RequestContext context) throws Exception {
+		// Process requested action
+<span class="fc bfc" id="L845" title="All 2 branches covered.">		if (isAction(context, PageAction.FORCE_REFRESH)) {</span>
+<span class="fc" id="L846">			precessRefreshCreateSP(context);</span>
+<span class="fc bfc" id="L847" title="All 2 branches covered.">		} else if (isAction(context, PageAction.NEW_ID)) {</span>
+<span class="fc" id="L848">			String selectId = context.getParameter(WorkpaneFieldNames.SELECTED_ID_FN);</span>
+<span class="fc bfc" id="L849" title="All 2 branches covered.">			if (selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX)) {</span>
+<span class="fc" id="L850">				processLoadSPID(context);</span>
+			} else {
+<span class="fc" id="L852">				processLoadCampaignID(context);</span>
+			}
+<span class="pc bpc" id="L854" title="1 of 2 branches missed.">		} else if (isAction(context, PageAction.SP_REFRESH_HOO_WITH_ORG)) {</span>
+<span class="nc" id="L855">			processRefreshHOO(context);</span>
+<span class="fc bfc" id="L856" title="All 2 branches covered.">		} else if (isAction(context, PageAction.SP_CREATE_SUB_CAMPAIGN)) {</span>
+<span class="fc" id="L857">			processAddSubCampaign(context);</span>
+<span class="fc bfc" id="L858" title="All 2 branches covered.">		} else if (isAction(context, PageAction.NEW)) {</span>
+<span class="fc" id="L859">			processAddCampaign(context);</span>
+<span class="fc bfc" id="L860" title="All 2 branches covered.">		} else if (isAction(context, PageAction.SP_CREATE)) {</span>
+<span class="fc" id="L861">			processAddSP(context);</span>
+<span class="fc bfc" id="L862" title="All 2 branches covered.">		} else if (isAction(context, PageAction.ADD)) {</span>
+<span class="fc" id="L863">			processAdd(context);</span>
+<span class="fc bfc" id="L864" title="All 2 branches covered.">		} else if (isAction(context, PageAction.CAMPAIGN_SAVE)) {</span>
+<span class="fc" id="L865">			processSaveCampaign(context);</span>
+<span class="fc bfc" id="L866" title="All 2 branches covered.">		} else if (isAction(context, PageAction.SAVE)) {</span>
+<span class="fc" id="L867">			processSave(context);</span>
+<span class="pc bpc" id="L868" title="1 of 2 branches missed.">		} else if (isAction(context, TIME_ZONE_OVERRIDE_TOGGLE_ACTION)) {</span>
+<span class="nc" id="L869">			TimeZoneOverrideUtil.toggleTimeZoneOverride(context);</span>
+<span class="nc" id="L870">			prepareForNextPage(context, null, FORM_PAGE);</span>
+<span class="fc bfc" id="L871" title="All 2 branches covered.">		} else if (isAction(context, PageAction.DELETE)) {</span>
+<span class="fc" id="L872">			processDelete(context);</span>
+<span class="pc bpc" id="L873" title="1 of 2 branches missed.">		} else if (isAction(context, PageAction.CANCEL)) {</span>
+<span class="nc bnc" id="L874" title="All 2 branches missed.">			if (isWorkpaneMode(context)) {</span>
+<span class="nc" id="L875">				SettingPM model = newSettingPM(context);</span>
+<span class="nc" id="L876">				model.extractParameters(context.getRequest(), WorkpaneFieldNames.SELECTED_ID_FN);</span>
+<span class="nc" id="L877">				model.setIsAddMode(false);</span>
+
+<span class="nc" id="L879">				String selectId = context.getParameter(WorkpaneFieldNames.SELECTED_ID_FN);</span>
+<span class="nc bnc" id="L880" title="All 4 branches missed.">				if (selectId != null &amp;&amp; selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX)) {</span>
+<span class="nc" id="L881">					prepareForNextPage(context, model, FORM_PAGE);</span>
+				} else {
+<span class="nc" id="L883">					prepareForNextPage(context, model, CAMPAIGN_FORM_PAGE);</span>
+				}
+<span class="nc" id="L885">			} else {</span>
+<span class="nc" id="L886">				prepareForNextPage(context, null, SUMMARY_PAGE);</span>
+			}
+<span class="pc bpc" id="L888" title="1 of 2 branches missed.">		} else if (isAction(context, PageAction.EDIT)) {</span>
+<span class="nc" id="L889">			prepareForNextPage(context, null, FORM_PAGE);</span>
+		} else {
+<span class="fc" id="L891">			String selectId = context.getUserProperty(&quot;SELECTED_CAMPAIGN_SP_ID&quot;);</span>
+<span class="fc bfc" id="L892" title="All 4 branches covered.">			if (selectId != null &amp;&amp; selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX)) {</span>
+<span class="fc" id="L893">				prepareForNextPage(context, null, FORM_PAGE);</span>
+<span class="pc bpc" id="L894" title="1 of 4 branches missed.">			} else if (selectId != null &amp;&amp; selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX)) {</span>
+<span class="fc" id="L895">				prepareForNextPage(context, null, CAMPAIGN_FORM_PAGE);</span>
+			} else {
+<span class="pc bpc" id="L897" title="1 of 2 branches missed.">				if (context.getPathInfo().equals(CAMPAIGN_FORM_PAGE)) {</span>
+<span class="nc" id="L898">					prepareForNextPage(context, null, CAMPAIGN_FORM_PAGE);</span>
+				} else {
+<span class="fc" id="L900">					prepareForNextPage(context, null, DEFAULT_PAGE);</span>
+				}
+			}
+		}
+<span class="fc" id="L904">	}</span>
+
+	/**
+	 * The main starting point to handle cloning (copying) an existing SP's data into the new SP. Handles
+	 * timeouts if the cloning takes too long. Relies on CampaignManager.cloneBaseDataForSchedulingPeriod() to do actual cloning.
+	 * @param camManager - CampaignManager object which will do the actual cloning.
+	 * @param configManager - Needed to get BPCONFIG setting for CLONE_SP_TRANSACTION_TIMEOUT
+	 * @param sp - the new SP (the target of the cloning).
+	 * @param hoos - Hours Of Operation data.
+	 * @param copyFlags - A set of boolean values that indicate which features need to be copied/cloned.
+	 * @param bIgnoreWarnings - whether to ignore warnings when cloning
+	 * @param localeCtx - LocaleContext object.
+	 * @param model - the page model which is only used for displaying warning messages to.
+	 * @return - The new SP's ID.
+	 * @throws Exception
+	 */
+	private ID cloneSP(CampaignManager camManager, DBConfigManager configManager, SchedulingPeriod sp,
+			Collection&lt;CampaignHOO&gt; hoos, CloneSPOptions copyFlags, boolean bIgnoreWarnings, LocaleContext localeCtx,
+			CampaignSPSettingsPageModel model) throws Exception {
+<span class="fc" id="L923">		Context c = new InitialContext();</span>
+<span class="fc" id="L924">		UserTransaction ut = (UserTransaction) c.lookup(&quot;java:comp/UserTransaction&quot;);</span>
+		// Default timeout of 1200 seconds (20 minutes)
+<span class="fc" id="L926">		int clonetimeout = 1200;</span>
+		try {
+<span class="fc" id="L928">			int nUserTransactionTimeOut = configManager.getIntValue(ConfigKey.CLONE_SP_TRANSACTION_TIMEOUT);</span>
+			// not sure what is up limit, set 6000 here.
+<span class="pc bpc" id="L930" title="3 of 4 branches missed.">			if (nUserTransactionTimeOut &gt;= 120 &amp;&amp; nUserTransactionTimeOut &lt;= 6000) {</span>
+<span class="nc" id="L931">				clonetimeout = nUserTransactionTimeOut;</span>
+			}
+<span class="nc" id="L933">		} catch (Exception e) {</span>
+<span class="nc" id="L934">			m_log.debug(&quot;Error when retrieving transaction timeout for Clone SP operation&quot;, e);</span>
+<span class="fc" id="L935">		}</span>
+<span class="fc" id="L936">		ut.setTransactionTimeout(clonetimeout);</span>
+<span class="fc" id="L937">		ut.begin();</span>
+		ID newID;
+		try {
+<span class="fc" id="L940">			newID = camManager.cloneSchedulingPeriod(sp, hoos, copyFlags, bIgnoreWarnings, localeCtx);</span>
+<span class="fc" id="L941">			ut.commit();</span>
+<span class="nc" id="L942">		} catch (Exception ex) {</span>
+<span class="nc" id="L943">			ut.rollback();</span>
+<span class="nc" id="L944">			throw ex;</span>
+<span class="fc" id="L945">		}</span>
+		try {
+<span class="fc" id="L947">			camManager.cloneLSGTemplateForNewSP(newID, hoos);</span>
+<span class="nc" id="L948">		} catch (Exception e) {</span>
+<span class="nc" id="L949">			model.addPageMessage(Message.WARNING_TYPE,</span>
+<span class="nc" id="L950">					model.getLocalizer().i18n(model.getResourceBundle(), FsWebBundleKey.LSG_CLONE_FAILED));</span>
+<span class="fc" id="L951">		}</span>
+<span class="fc" id="L952">		return newID;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

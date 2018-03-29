@@ -1,0 +1,426 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CampaignSPPeopleSelectionPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.people.selection</a> &gt; <span class="el_source">CampaignSPPeopleSelectionPM.java</span></div><h1>CampaignSPPeopleSelectionPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.people.selection;
+
+import java.rmi.RemoteException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.ResourceBundle;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.core.CoreEJBCreateException;
+import com.bluepumpkin.ejb.core.CoreManagerFactory;
+import com.bluepumpkin.web.bbm.employee.EmployeeModelHandler;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.people.selection.PeopleSelection;
+import com.bluepumpkin.web.bbm.people.selection.PeopleSingleColListPC;
+import com.bluepumpkin.web.core.cache.SelectionCacheUtil;
+import com.bluepumpkin.web.fs.keys.FsJavaScriptFileID;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.web.fs.workrules.assignment.CampaignSPPeopleFilterBoxPC;
+import com.verint.web.fs.workrules.assignment.WorkRulesEmployeeAssignmentUtil;
+import com.witness.ejb.core.licensing.LicenseKeys;
+import com.witness.web.uif.jsp.HtmlImage;
+import com.witness.web.uif.keys.ImageFileID;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.keys.PageKeys;
+import com.witness.web.uif.pagecomponent.selection.SelectablePC;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.pagemodel.SelectionpanePageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.CacheUtil;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.js.JSUtil;
+import com.witness.web.uif.util.reflection.ParameterUtil;
+
+public class CampaignSPPeopleSelectionPM extends SelectionpanePageModel implements PeopleSelection {
+	private static final long serialVersionUID = 1L;
+
+	private CampaignSPPeopleFilterBoxPC cspFilterBoxPC;
+	protected PeopleSingleColListPC m_listPC;
+	protected ResourceBundle m_bundle;
+<span class="fc" id="L47">	protected boolean isDynRendering = true;</span>
+<span class="fc" id="L48">	private boolean m_showWhoIsIn = true;</span>
+<span class="fc" id="L49">	private boolean campaignSPFilterChanged = false;</span>
+<span class="fc" id="L50">	private boolean hidePhantomsToggled = false;</span>
+<span class="fc" id="L51">	protected boolean m_showPhantomToggle = true;</span>
+<span class="fc" id="L52">	protected boolean m_hasNoCampaignMode = true;</span>
+	private static final String m_smartRefreshURL = &quot;campaign_sp_people_selection_pane&quot;;
+	private static final String m_screenURL = &quot;campaign_sp_people_selection&quot;;
+	public final static String SHOW_PHANTOMS = &quot;showPhantoms&quot;;
+	public final static String HIDE_PHANTOMS = &quot;hidePhantoms&quot;;
+	public static final String DISP_MODE = &quot;displayMode&quot;;
+
+<span class="fc" id="L59">	private boolean hidePoolersToggled = false;</span>
+<span class="fc" id="L60">	protected boolean m_showPoolerToggle = true;</span>
+	public final static String SHOW_POOLERS = &quot;showPoolers&quot;;
+	public final static String HIDE_POOLERS = &quot;hidePoolers&quot;;
+	public static final String POOLER_DISP_MODE = &quot;poolerDisplayMode&quot;;
+
+	/**
+	 * Constructor
+	 */
+	public CampaignSPPeopleSelectionPM(RequestContext context) {
+<span class="fc" id="L69">		super(context);</span>
+<span class="fc" id="L70">		m_bundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+
+		// This needs to be set because the extra row in the filter box throws
+		// off the hard-coded height setting :/
+<span class="fc" id="L74">		setCustomAdjustHeight(24);</span>
+
+<span class="fc" id="L76">		setJSMediator(FsJavaScriptFileID.MEDIATOR_CAMPAIGN_SP_PEOPLE_SELECTION);</span>
+
+		// Initialize Selection Pane
+<span class="fc" id="L79">		m_listPC = new PeopleSingleColListPC(context, this);</span>
+<span class="fc" id="L80">		m_listPC.setIsDynRendering(true);</span>
+<span class="fc" id="L81">		m_listPC.setIsFlatDisplay(true);</span>
+<span class="fc" id="L82">		addChildComponent(m_listPC);</span>
+
+		// Initialize Filter Box
+<span class="fc" id="L85">		cspFilterBoxPC = new CampaignSPPeopleFilterBoxPC(getRequestContext(), &quot;campaignSPPeopleFilterBox&quot;);</span>
+
+<span class="fc" id="L87">		cspFilterBoxPC.getPeopleFilterBoxPC().setSmartRefreshURL(m_smartRefreshURL);</span>
+
+<span class="fc" id="L89">		addChildComponent(cspFilterBoxPC);</span>
+<span class="fc" id="L90">		m_filterBoxPC = cspFilterBoxPC;</span>
+<span class="fc" id="L91">		m_filterBoxPC.setUseWrapper(true);</span>
+
+		// We need to indicate that the list boxes have been changed before the
+		// submit happens, this way
+		// extract params knows that a list value has changed and the workpane
+		// can then be refreshed
+		// once the selection pane reloads
+<span class="fc" id="L98">		String tempJS = cspFilterBoxPC.getListbox().getOnChange();</span>
+<span class="fc" id="L99">		cspFilterBoxPC.getListbox().setOnChange(null, null);</span>
+<span class="fc" id="L100">		cspFilterBoxPC.getListbox().setOnChange(&quot;top.selectionMediator.campaignSPListBoxChanged();&quot; + tempJS);</span>
+<span class="fc" id="L101">		tempJS = cspFilterBoxPC.getSPListBox().getOnChange();</span>
+<span class="fc" id="L102">		cspFilterBoxPC.getSPListBox().setOnChange(null, null);</span>
+<span class="fc" id="L103">		cspFilterBoxPC.getSPListBox().setOnChange(&quot;top.selectionMediator.campaignSPListBoxChanged();&quot; + tempJS);</span>
+
+<span class="fc" id="L105">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="fc" id="L106">	}</span>
+
+	/**
+	 * Return an instance of the model that is ready for rendering
+	 */
+	public static PageModel getInstance(RequestContext context) {
+<span class="fc" id="L112">		return getInstance(context, CampaignSPPeopleSelectionPM.class);</span>
+	}
+
+	/**
+	 * Initialize Model with Data
+	 */
+	@Override
+	protected void initializeModel() {
+<span class="fc bfc" id="L120" title="All 2 branches covered.">		if (m_isInitialized) {</span>
+<span class="fc" id="L121">			return;</span>
+		} else {
+<span class="fc" id="L123">			m_isInitialized = true;</span>
+		}
+
+		try {
+			// If the previously selected employees are no longer valid (because
+			// the campaign/sp
+			// changed and the employees are not part of the new selection),
+			// clear the selected IDs
+<span class="pc bpc" id="L131" title="1 of 2 branches missed.">			if (!hidePhantomsToggled</span>
+<span class="fc bfc" id="L132" title="All 2 branches covered.">					&amp;&amp; WorkRulesEmployeeAssignmentUtil.checkIfEmployeeSelectionIsValid(getSelectedID(), getRequestContext()) == false) {</span>
+<span class="fc" id="L133">				setSelectedID(null);</span>
+<span class="fc" id="L134">				clearCachedSelectedID();</span>
+			}
+
+<span class="pc bpc" id="L137" title="1 of 2 branches missed.">			if (hasContextID()) {</span>
+				// Need to reset Selected Filter Name to Default ALL if there is
+				// contextID
+<span class="nc" id="L140">				cspFilterBoxPC.setSelectedFilterName(PageKeys.DEFAULT_ALL);</span>
+			}
+
+<span class="pc bpc" id="L143" title="1 of 2 branches missed.">			if (!hasPoolingLicense()) {</span>
+<span class="nc" id="L144">				m_showPoolerToggle = false;</span>
+			}
+
+<span class="pc bpc" id="L147" title="1 of 4 branches missed.">			CacheUtil.setUseShowPhantoms(m_context, m_showPhantomToggle &amp;&amp; !SelectionCacheUtil.isNoCampaignMode(m_context));</span>
+
+<span class="fc bfc" id="L149" title="All 2 branches covered.">			if (!m_showPoolerToggle) {</span>
+<span class="fc" id="L150">				CacheUtil.setUseShowPoolers(m_context, false);</span>
+			} else {
+				// If the setting is to show the pooler toggle, only do so if
+				// you are in campaign mode.
+<span class="pc bpc" id="L154" title="1 of 2 branches missed.">				if (SelectionCacheUtil.isNoCampaignMode(m_context)) {</span>
+<span class="nc" id="L155">					CacheUtil.setUseShowPoolers(m_context, false);</span>
+				} else {
+<span class="fc" id="L157">					CacheUtil.setUseShowPoolers(m_context, true);</span>
+				}
+			}
+
+<span class="fc" id="L161">			Collection filterNames = EmployeeModelHandler.getFilterNames(m_context);</span>
+
+<span class="fc" id="L163">			m_showWhoIsIn = EmployeeModelHandler.isWhoIsInShown(m_context);</span>
+
+<span class="fc" id="L165">			cspFilterBoxPC.setHasNoCampaignMode(m_hasNoCampaignMode);</span>
+<span class="fc" id="L166">			cspFilterBoxPC.initFilter();</span>
+
+			// Here check if the filter is context filter. If yes, set the
+			// context start and end dates.
+<span class="fc" id="L170">			m_listPC.setPreFilter(getPreFilter());</span>
+<span class="fc" id="L171">			m_listPC.setShowPhantoms(getShowPhantoms());</span>
+
+<span class="fc bfc" id="L173" title="All 2 branches covered.">			if (!m_showPoolerToggle) {</span>
+<span class="fc" id="L174">				m_listPC.setShowPoolers(true);</span>
+			} else {
+<span class="fc" id="L176">				m_listPC.setShowPoolers(getShowPoolers());</span>
+			}
+<span class="fc" id="L178">			m_listPC.setFilterParams(cspFilterBoxPC.getFilterParams());</span>
+<span class="fc" id="L179">			m_listPC.setFilterNames(filterNames);</span>
+<span class="fc" id="L180">			m_listPC.setShowWhoIsIn(m_showWhoIsIn);</span>
+<span class="fc" id="L181">			m_listPC.init();</span>
+<span class="nc" id="L182">		} catch (Exception ex) {</span>
+<span class="nc" id="L183">			handleUnableToLoadDataError(log, ex);</span>
+		} finally {
+			// Initialize Filter Box
+<span class="pc" id="L186">			initHeader();</span>
+<span class="pc" id="L187">			initToolbar();</span>
+<span class="pc" id="L188">		}</span>
+<span class="fc" id="L189">	}</span>
+
+	private boolean hasPoolingLicense() {
+		try {
+<span class="fc" id="L193">			return CoreManagerFactory.getLicenseManager().isLicensed(LicenseKeys.APP_CAMP_POOLING);</span>
+<span class="nc" id="L194">		} catch (CoreEJBCreateException e) {</span>
+<span class="nc" id="L195">		} catch (RemoteException e) {</span>
+<span class="nc" id="L196">		}</span>
+<span class="nc" id="L197">		return false;</span>
+	}
+
+	private void initHeader() {
+<span class="fc" id="L201">		setHeaderTitle(i18n(m_bundle, BbmWebBundleKey.PEOPLE_LIST_HEADER));</span>
+<span class="pc bpc" id="L202" title="1 of 2 branches missed.">		if (m_showWhoIsIn) {</span>
+<span class="nc" id="L203">			HtmlImage img = new HtmlImage(ImageFileID.REFRESH_WITH_BORDER, ImageFileID.REFRESH_WITH_BORDER_WIDTH,</span>
+					ImageFileID.REFRESH_WITH_BORDER_HEIGHT);
+<span class="nc" id="L205">			img.setStyle(&quot;cursor:pointer; cursor:hand;&quot;);</span>
+<span class="nc" id="L206">			img.setAlt(i18n(m_bundle, BbmWebBundleKey.PEOPLE_SELECTION_HELP_TEXT));</span>
+<span class="nc" id="L207">			img.setOnClick(&quot;pageMediator.refreshWhosIn();&quot;);</span>
+<span class="nc" id="L208">			setImgHeader(img);</span>
+		}
+
+		// If we are showing the phantom toggle button, add it to the header of
+		// the people list.
+<span class="fc" id="L213">		String custom = &quot;&quot;;</span>
+<span class="pc bpc" id="L214" title="1 of 4 branches missed.">		if (m_showPhantomToggle &amp;&amp; SelectionCacheUtil.getCampaignID(m_context) != null</span>
+<span class="pc bpc" id="L215" title="1 of 2 branches missed.">				&amp;&amp; !SelectionCacheUtil.isNoCampaignMode(m_context)) {</span>
+<span class="fc bfc" id="L216" title="All 2 branches covered.">			if (CacheUtil.getShowPhantoms(m_context)) {</span>
+<span class="fc" id="L217">				HtmlImage showPhantomToggle = new HtmlImage(ImageFileID.HIDE_PHANTOMS_BUTTON, i18n(m_bundle,</span>
+						BbmWebBundleKey.HIDE_PHANTOMS_TOGGLE_TOOLTIP));
+<span class="fc" id="L219">				showPhantomToggle.setOnClick(&quot;pageMediator.setInputValue('&quot; + DISP_MODE + &quot;', '&quot; + HIDE_PHANTOMS + &quot;'); &quot;</span>
+						+ &quot;pageMediator.setFormAction('&quot; + m_screenURL + &quot;?&quot; + DISP_MODE + &quot;=&quot; + HIDE_PHANTOMS + &quot;');&quot;
+						+ &quot;pageMediator.handleRefresh();&quot;);
+<span class="fc" id="L222">				showPhantomToggle.setTitle(i18n(m_bundle, BbmWebBundleKey.HIDE_PHANTOMS_TOGGLE_TOOLTIP));</span>
+<span class="fc" id="L223">				custom = &quot;&lt;td width=\&quot;24\&quot; align=\&quot;center\&quot; class=\&quot;selectionHeaderCell\&quot;&gt;&lt;span class=\&quot;imageButtonContainer\&quot;&gt;&quot;</span>
+						+ showPhantomToggle + &quot;&lt;/span&gt;&lt;/td&gt;&quot;;
+<span class="fc" id="L225">			} else {</span>
+<span class="fc" id="L226">				HtmlImage showPhantomToggle = new HtmlImage(ImageFileID.SHOW_PHANTOMS_BUTTON, i18n(m_bundle,</span>
+						BbmWebBundleKey.SHOW_PHANTOMS_TOGGLE_TOOLTIP));
+<span class="fc" id="L228">				showPhantomToggle.setOnClick(&quot;pageMediator.setInputValue('&quot; + DISP_MODE + &quot;', '&quot; + SHOW_PHANTOMS + &quot;'); &quot;</span>
+						+ &quot;pageMediator.setFormAction('&quot; + m_screenURL + &quot;?&quot; + DISP_MODE + &quot;=&quot; + SHOW_PHANTOMS + &quot;');&quot;
+						+ &quot;pageMediator.handleRefresh();&quot;);
+<span class="fc" id="L231">				showPhantomToggle.setTitle(i18n(m_bundle, BbmWebBundleKey.SHOW_PHANTOMS_TOGGLE_TOOLTIP));</span>
+<span class="fc" id="L232">				custom = &quot;&lt;td width=\&quot;24\&quot; align=\&quot;center\&quot; class=\&quot;selectionHeaderCell\&quot;&gt;&lt;span class=\&quot;imageButtonContainer\&quot;&gt;&quot;</span>
+						+ showPhantomToggle + &quot;&lt;/span&gt;&lt;/td&gt;&quot;;
+			}
+		}
+
+		// If we are showing the pooler toggle button, add it to the header of
+		// the people list.
+<span class="pc bpc" id="L239" title="1 of 4 branches missed.">		if (m_showPoolerToggle &amp;&amp; SelectionCacheUtil.getCampaignID(m_context) != null</span>
+<span class="pc bpc" id="L240" title="1 of 2 branches missed.">				&amp;&amp; !SelectionCacheUtil.isNoCampaignMode(m_context)) {</span>
+<span class="pc bpc" id="L241" title="1 of 2 branches missed.">			if (CacheUtil.getShowPoolers(m_context)) {</span>
+<span class="nc" id="L242">				HtmlImage showPoolerToggle = new HtmlImage(ImageFileID.HIDE_POOLERS_BUTTON, i18n(m_bundle,</span>
+						BbmWebBundleKey.HIDE_POOLERS_TOGGLE_TOOLTIP));
+<span class="nc" id="L244">				showPoolerToggle.setOnClick(&quot;pageMediator.setInputValue('&quot; + POOLER_DISP_MODE + &quot;', '&quot; + HIDE_POOLERS</span>
+						+ &quot;'); &quot; + &quot;pageMediator.setFormAction('&quot; + m_screenURL + &quot;?&quot; + POOLER_DISP_MODE + &quot;=&quot;
+						+ HIDE_POOLERS + &quot;');&quot; + &quot;pageMediator.handleRefresh();&quot;);
+<span class="nc" id="L247">				showPoolerToggle.setTitle(i18n(m_bundle, BbmWebBundleKey.HIDE_POOLERS_TOGGLE_TOOLTIP));</span>
+<span class="nc" id="L248">				custom += &quot;&lt;td width=\&quot;24\&quot; align=\&quot;center\&quot; class=\&quot;selectionHeaderCell\&quot;&gt;&lt;span class=\&quot;imageButtonContainer\&quot;&gt;&quot;</span>
+						+ showPoolerToggle + &quot;&lt;/span&gt;&lt;/td&gt;&quot;;
+<span class="nc" id="L250">			} else {</span>
+<span class="fc" id="L251">				HtmlImage showPoolerToggle = new HtmlImage(ImageFileID.SHOW_POOLERS_BUTTON, i18n(m_bundle,</span>
+						BbmWebBundleKey.SHOW_POOLERS_TOGGLE_TOOLTIP));
+<span class="fc" id="L253">				showPoolerToggle.setOnClick(&quot;pageMediator.setInputValue('&quot; + POOLER_DISP_MODE + &quot;', '&quot; + SHOW_POOLERS</span>
+						+ &quot;'); &quot; + &quot;pageMediator.setFormAction('&quot; + m_screenURL + &quot;?&quot; + POOLER_DISP_MODE + &quot;=&quot;
+						+ SHOW_POOLERS + &quot;');&quot; + &quot;pageMediator.handleRefresh();&quot;);
+<span class="fc" id="L256">				showPoolerToggle.setTitle(i18n(m_bundle, BbmWebBundleKey.SHOW_POOLERS_TOGGLE_TOOLTIP));</span>
+<span class="fc" id="L257">				custom += &quot;&lt;td width=\&quot;24\&quot; align=\&quot;center\&quot; class=\&quot;selectionHeaderCell\&quot;&gt;&lt;span class=\&quot;imageButtonContainer\&quot;&gt;&quot;</span>
+						+ showPoolerToggle + &quot;&lt;/span&gt;&lt;/td&gt;&quot;;
+			}
+
+		}
+
+<span class="fc bfc" id="L263" title="All 2 branches covered.">		if (!custom.isEmpty()) {</span>
+<span class="fc" id="L264">			setHeaderCustomAddition(custom);</span>
+		}
+<span class="fc" id="L266">	}</span>
+
+	/**
+	 * Set selected Filter Name
+	 */
+	@Override
+	public void setFilterName(String filterName) {
+<span class="nc" id="L273">		cspFilterBoxPC.setSelectedFilterName(filterName);</span>
+<span class="nc" id="L274">	}</span>
+
+	/**
+	 * Return the Selectable Component
+	 */
+	@Override
+	public SelectablePC getSelectablePC() {
+<span class="fc" id="L281">		return m_listPC;</span>
+	}
+
+	/**
+	 * Set Selected ID(s)
+	 */
+	@Override
+	public void setSelectedID(String selectedIDs) {
+<span class="fc" id="L289">		m_selectedID = selectedIDs;</span>
+<span class="fc bfc" id="L290" title="All 2 branches covered.">		if (StringUtil.isEmpty(selectedIDs)) {</span>
+<span class="fc" id="L291">			m_listPC.setSelectedIDs(Collections.emptySet());</span>
+		} else {
+<span class="fc" id="L293">			Collection&lt;ID&gt; idList = StringUtil.parseIDStringToCollection(selectedIDs);</span>
+
+			// If we are hiding phantoms, we need to filter out all previously
+			// selected phantom IDs
+<span class="pc bpc" id="L297" title="1 of 2 branches missed.">			if (hidePhantomsToggled) {</span>
+				try {
+<span class="nc" id="L299">					ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager(getRequestContext()</span>
+<span class="nc" id="L300">							.isInWhatIfMode());</span>
+<span class="nc" id="L301">					idList = sam.filterPhantomIDsFromWorkResourceIDList(idList);</span>
+<span class="nc" id="L302">				} catch (Exception ex) {</span>
+<span class="nc" id="L303">					handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L304">				}</span>
+			}
+<span class="pc bpc" id="L306" title="1 of 2 branches missed.">			if (hidePoolersToggled) {</span>
+				try {
+<span class="nc" id="L308">					ID spid = SelectionCacheUtil.getSchedulingPeriodID(getRequestContext());</span>
+<span class="nc" id="L309">					CampaignManager cam = WfmManagerFactory.getCampaignManager(getRequestContext().isInWhatIfMode());</span>
+<span class="nc" id="L310">					SchedulingPeriod sp = cam.getSchedulingPeriodByID(spid);</span>
+<span class="nc" id="L311">					Collection&lt;ID&gt; idPoolers = cam.getSPPoolerAssignments(spid, sp.getStartTime(), sp.getEndTime());</span>
+<span class="nc" id="L312">					idList.removeAll(idPoolers);</span>
+<span class="nc" id="L313">				} catch (Exception ex) {</span>
+<span class="nc" id="L314">					handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L315">				}</span>
+			}
+<span class="fc" id="L317">			m_selectedID = StringUtil.createDelimitedString(idList, StringUtil.DELIM);</span>
+
+<span class="fc" id="L319">			HashSet&lt;ID&gt; idSet = new HashSet&lt;ID&gt;(idList);</span>
+<span class="fc" id="L320">			m_listPC.setSelectedIDs(idSet);</span>
+		}
+<span class="fc bfc" id="L322" title="All 2 branches covered.">		String selIDStr = StringUtil.isEmpty(selectedIDs) ? &quot;&quot; : m_selectedID;</span>
+<span class="fc" id="L323">		CacheUtil.setCachedValue(m_context, CacheUtil.CACHE_MODE_SESSION, &quot;PEOPLE_SELECTION_ID_KEY&quot;, selIDStr);</span>
+<span class="fc" id="L324">	}</span>
+
+	/**
+	 * Return Show Phantoms as boolean
+	 */
+	public boolean getShowPhantoms() {
+<span class="fc" id="L330">		return CacheUtil.getShowPhantoms(m_context);</span>
+	}
+
+	public boolean getShowPoolers() {
+<span class="fc" id="L334">		return CacheUtil.getShowPoolers(m_context);</span>
+	}
+
+	/**
+	 * Set Show Phantoms as boolean
+	 */
+	public void setShowPhantoms(boolean showPhantoms) {
+<span class="nc" id="L341">		CacheUtil.setShowPhantoms(m_context, showPhantoms);</span>
+<span class="nc" id="L342">	}</span>
+
+	public void setShowPoolers(boolean showPoolers) {
+<span class="nc" id="L345">		CacheUtil.setShowPoolers(m_context, showPoolers);</span>
+<span class="nc" id="L346">	}</span>
+
+	@Override
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="fc" id="L350">		String dispMode = ParameterUtil.getParameter(request, DISP_MODE);</span>
+<span class="fc bfc" id="L351" title="All 2 branches covered.">		if (m_showPhantomToggle) {</span>
+<span class="fc bfc" id="L352" title="All 2 branches covered.">			if (SHOW_PHANTOMS.equals(dispMode)) {</span>
+<span class="fc" id="L353">				CacheUtil.setShowPhantoms(m_context, true);</span>
+<span class="pc bpc" id="L354" title="1 of 2 branches missed.">			} else if (HIDE_PHANTOMS.equals(dispMode)) {</span>
+<span class="nc" id="L355">				CacheUtil.setShowPhantoms(m_context, false);</span>
+<span class="nc" id="L356">				hidePhantomsToggled = true;</span>
+			}
+		}
+<span class="fc" id="L359">		String poolerDispMode = ParameterUtil.getParameter(request, POOLER_DISP_MODE);</span>
+<span class="fc bfc" id="L360" title="All 2 branches covered.">		if (m_showPoolerToggle) {</span>
+<span class="pc bpc" id="L361" title="1 of 2 branches missed.">			if (SHOW_POOLERS.equals(poolerDispMode)) {</span>
+<span class="nc" id="L362">				CacheUtil.setShowPoolers(m_context, true);</span>
+<span class="pc bpc" id="L363" title="1 of 2 branches missed.">			} else if (HIDE_POOLERS.equals(poolerDispMode)) {</span>
+<span class="nc" id="L364">				CacheUtil.setShowPoolers(m_context, false);</span>
+<span class="nc" id="L365">				hidePoolersToggled = true;</span>
+			}
+		}
+<span class="fc" id="L368">		return super.extractParameters(request);</span>
+	}
+
+	/**
+	 * Return URL for HTML Form Action
+	 */
+	@Override
+	public String getFormAction() {
+<span class="fc" id="L376">		return m_screenURL;</span>
+	}
+
+	@Override
+	public String getJavaScriptInitCode() {
+<span class="fc" id="L381">		StringBuffer js = new StringBuffer();</span>
+<span class="fc" id="L382">		js.append(super.getJavaScriptInitCode());</span>
+<span class="fc" id="L383">		js.append(JSUtil.SELECTION_MEDIATOR_REF + (&quot;.setIsDynRendering(&quot; + isDynRendering + &quot;);\n&quot;));</span>
+<span class="fc bfc" id="L384" title="All 2 branches covered.">		if (campaignSPFilterChanged) {</span>
+<span class="fc" id="L385">			js.append(JSUtil.SELECTION_MEDIATOR_REF + &quot;.checkRefresh();\n&quot;);</span>
+<span class="fc" id="L386">			campaignSPFilterChanged = false;</span>
+		}
+<span class="pc bpc" id="L388" title="1 of 2 branches missed.">		if (hidePhantomsToggled) {</span>
+<span class="nc" id="L389">			js.append(JSUtil.SELECTION_MEDIATOR_REF + &quot;.hidePhantomsToggled();\n&quot;);</span>
+		}
+
+<span class="pc bpc" id="L392" title="1 of 2 branches missed.">		if (hidePoolersToggled) {</span>
+<span class="nc" id="L393">			js.append(JSUtil.SELECTION_MEDIATOR_REF + &quot;.hidePoolersToggled();\n&quot;);</span>
+		}
+<span class="fc" id="L395">		return js.toString();</span>
+	}
+
+	/**
+	 * Return Required HTML
+	 */
+	@Override
+	public String getRequiredHTML() {
+<span class="fc" id="L403">		StringBuffer html = new StringBuffer();</span>
+<span class="fc" id="L404">		html.append(super.getRequiredHTML());</span>
+<span class="fc" id="L405">		html.append(HtmlUtil.makeHiddenInput(&quot;campaignSPFilterChanged&quot;, &quot;false&quot;));</span>
+		// If hide phantoms was toggled, we will be setting the list of employee
+		// IDs (with phantoms filtered out)
+		// onto a hidden field on the page. These employeeIDs will then be set
+		// as selected via JavaScript, which
+		// will force the workpane to sync and will remove the selected phantom
+		// IDs from the workpane.
+<span class="pc bpc" id="L412" title="2 of 4 branches missed.">		if (hidePhantomsToggled || hidePoolersToggled) {</span>
+<span class="nc" id="L413">			html.append(HtmlUtil.makeHiddenInput(&quot;filteredEmployeeIDs&quot;, m_selectedID));</span>
+		}
+<span class="fc" id="L415">		return html.toString();</span>
+	}
+
+	/**
+	 * 
+	 * @param campaignSPFilterChanged
+	 */
+	public void setCampaignSPFilterChanged(String campaignSPFilterChanged) {
+<span class="fc" id="L423">		this.campaignSPFilterChanged = Boolean.parseBoolean(campaignSPFilterChanged);</span>
+<span class="fc" id="L424">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

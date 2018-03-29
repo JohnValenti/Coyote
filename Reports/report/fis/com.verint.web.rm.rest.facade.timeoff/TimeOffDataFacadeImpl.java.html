@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeOffDataFacadeImpl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.rm.rest.facade.timeoff</a> &gt; <span class="el_source">TimeOffDataFacadeImpl.java</span></div><h1>TimeOffDataFacadeImpl.java</h1><pre class="source lang-java linenums">package com.verint.web.rm.rest.facade.timeoff;
+
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
+import javax.ws.rs.core.Response;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityProperties;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.rm.requests.timeoff.ejb.TORequestManager;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPool;
+import com.bluepumpkin.ejb.rm.util.TORequestUtil;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.requests.timeoff.TimeOffRequestsMH;
+import com.bluepumpkin.web.rm.setup.validation.ValidationModelHandler;
+import com.verint.web.rest.exception.checked.BusinessWFOException;
+import com.verint.web.rest.exception.checked.SystemWFOException;
+import com.verint.web.rest.exception.checked.WFOException;
+import com.verint.web.rm.rest.entity.timeoff.TimeOffDataEntity;
+import com.verint.web.rm.rest.util.RmUtils;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.model.User;
+import com.witness.web.uif.system.RequestContext;
+
+public class TimeOffDataFacadeImpl implements ITimeOffDataFacade {
+<span class="fc" id="L34">	private static final Category logger = Log.initCategory(TimeOffDataFacadeImpl.class.getName());</span>
+	private User m_user;
+
+<span class="fc" id="L37">	private static TORequestManager toMgr = null;</span>
+
+<span class="fc" id="L39">	public TimeOffDataFacadeImpl() { // NOSONAR</span>
+<span class="fc" id="L40">	}</span>
+
+	@Override
+	public TimeOffDataEntity getTimeOffDataById(RequestContext context, ID empId, User user) throws WFOException {
+		try {
+<span class="nc bnc" id="L45" title="All 2 branches missed.">			if (user == null) {</span>
+<span class="nc" id="L46">				throw new BusinessWFOException(&quot;null user passed to getTimeOffDataByID&quot;, Response.Status.CONFLICT);</span>
+			}
+<span class="nc" id="L48">			m_user = user;</span>
+
+<span class="nc" id="L50">			ID orgID = OrganizationModelHandler.getEmployeeOrgID(context, empId);</span>
+<span class="nc bnc" id="L51" title="All 2 branches missed.">			if (toMgr == null) {</span>
+<span class="nc" id="L52">				toMgr = RmUtils.getTORequestManager();</span>
+			}
+<span class="nc" id="L54">			Collection&lt;Activity&gt; toTypes = toMgr.getTimeOffTypes(orgID);</span>
+<span class="nc" id="L55">			Set&lt;ID&gt; activityIDs = new HashSet&lt;ID&gt;();</span>
+<span class="nc bnc" id="L56" title="All 2 branches missed.">			for (Activity activity : toTypes) {</span>
+<span class="nc" id="L57">				activityIDs.add(activity.getID());</span>
+<span class="nc" id="L58">			}</span>
+<span class="nc" id="L59">			Collection&lt;ActivityProperties&gt; activityProperties = ValidationModelHandler.findPropertiesForActivities(context, activityIDs);</span>
+<span class="nc" id="L60">			Map&lt;ID, ActivityProperties&gt; apLookup = new HashMap&lt;ID, ActivityProperties&gt;();</span>
+<span class="nc bnc" id="L61" title="All 2 branches missed.">			for (ActivityProperties properties : activityProperties) {</span>
+<span class="nc" id="L62">				apLookup.put(properties.getActivityId(), properties);</span>
+<span class="nc" id="L63">			}</span>
+
+<span class="nc" id="L65">			int debitTypes = getDebitTypes();</span>
+<span class="nc" id="L66">			TOPool pool = TimeOffRequestsMH.getEmpPool(context, empId);</span>
+
+<span class="nc bnc" id="L68" title="All 6 branches missed.">			boolean canBeAddedToWL = isAuthToWaitlist() &amp;&amp; isWaitlistEnabledForPool(pool) &amp;&amp; TORequestUtil.isTOWaitlistFeatureEnabled();</span>
+
+<span class="nc" id="L70">			TimeOffDataEntity toData = new TimeOffDataEntity();</span>
+<span class="nc" id="L71">			toData.setEmployeeId(empId.toInt());</span>
+<span class="nc" id="L72">			toData.setRequestableActivities(toTypes, apLookup);</span>
+<span class="nc" id="L73">			toData.setDebitType(debitTypes);</span>
+<span class="nc" id="L74">			toData.setCanWishlist(canBeAddedToWL);</span>
+
+<span class="nc" id="L76">			return toData;</span>
+<span class="nc" id="L77">		} catch (BusinessWFOException ex) {</span>
+<span class="nc" id="L78">			logger.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L79">			throw ex;</span>
+<span class="nc" id="L80">		} catch (Exception ex) {</span>
+<span class="nc" id="L81">			logger.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L82">			throw new SystemWFOException(ex.getLocalizedMessage());</span>
+		}
+	}
+
+	private int getDebitTypes() {
+		// in DB: 0=use my timeoff; 1=schedule around; 2=both
+		// for rest service: 1=use my timeoff; 2=schedule around; 3=both
+<span class="nc" id="L89">		int reqTypeAllowedVal = 2; // in the db this means &quot;both&quot;</span>
+		try {
+<span class="nc" id="L91">			reqTypeAllowedVal = BbmManagerFactory.getDBConfigManager().getIntValue(ConfigKey.TIMEOFF_REQUEST_TYPES_ALLOWED);</span>
+<span class="nc" id="L92">		} catch (Exception e) {</span>
+<span class="nc" id="L93">		}</span>
+
+<span class="nc" id="L95">		return ++reqTypeAllowedVal;</span>
+	}
+
+	/**
+	 * Return true if User is authorized to waitlist a Request.
+	 */
+	private boolean isAuthToWaitlist()
+	{
+<span class="nc" id="L103">		return m_user.isAuthorized(PrivilegeKeys.TOM_ADDREQUESTTOWAITLIST_ID);</span>
+	}
+
+	private boolean isWaitlistEnabledForPool(TOPool pool)
+	{
+<span class="nc bnc" id="L108" title="All 4 branches missed.">		return pool != null &amp;&amp; pool.isWaitlistEnabled();</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

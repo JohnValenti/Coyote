@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeCollectorDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.am.timecollection.ejb</a> &gt; <span class="el_source">TimeCollectorDAO.java</span></div><h1>TimeCollectorDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.am.timecollection.ejb;
+
+import java.sql.Types;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoParam;
+import com.bluepumpkin.common.jdmo.JdmoQuery;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.common.util.NumberFactory;
+import com.bluepumpkin.ejb.am.timecollection.model.RawTimeEntry;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.bbm.config.ejb.DBConfigManager;
+import com.bluepumpkin.ejb.bbm.dao.DAOUtil;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeEntrySourceCode;
+
+/**
+ * Title:        Blue Pumpkin Software Activity Management
+ *
+ * Description: Time Collector Data Access Object
+ *
+ * Copyright:    Copyright (c) 2003
+ * Company:      Blue Pumpkin Software, Inc
+ * @author       Sheng Song
+ * @version 2.0
+ * @author       Richard Chandler
+ * @version 1.0
+ */
+public class TimeCollectorDAO {
+
+	/**
+	 * defines for determining if bpx is managing any datasources
+	 */
+	private final static int MINUTES = 60000;
+	private final static int HOURS = 60*MINUTES;
+	private final static int HALFMINUTE = (int)MINUTES/2;
+
+
+	/**
+	 * Default constructor
+	 */
+	public TimeCollectorDAO() {
+<span class="nc" id="L52">		super();</span>
+<span class="nc" id="L53">	}</span>
+
+	/**
+	 * &lt;B&gt;createRawTimeEntry&lt;/B&gt;
+	 * &lt;P&gt;
+	 *  inserts data into RawTimeEntry table
+	 *
+	 *  @param rawTimeEntry        raw time data to be inserted
+	 * &lt;P&gt;
+	 *  @return                    ID of new entry
+	 *
+	 */
+	public static ID createRawTimeEntry(RawTimeEntry rawTimeEntry) throws JdmoException {
+<span class="nc" id="L66">		Jdmo jdmo = new Jdmo();</span>
+		//----------------------------------------------
+		// insert into db
+		//----------------------------------------------
+		try {
+			//----------------------------------------------
+			// create hashmap for insert into db
+			//----------------------------------------------
+<span class="nc" id="L74">			HashMap insertHashMap = new HashMap(10);</span>
+<span class="nc" id="L75">			createInsertMapForRawTimeEntry(rawTimeEntry, insertHashMap);</span>
+<span class="nc" id="L76">			ID newId = jdmo.addBatchInsert(&quot;RAWTIMEENTRY&quot;, insertHashMap);</span>
+<span class="nc" id="L77">			rawTimeEntry.setId(newId);</span>
+<span class="nc" id="L78">			jdmo.executeBatch();</span>
+<span class="nc" id="L79">			return newId;</span>
+		} finally {
+<span class="nc" id="L81">			jdmo.cleanUp();</span>
+<span class="nc" id="L82">			jdmo = null;</span>
+		}
+	}
+
+	private static void createInsertMapForRawTimeEntry(RawTimeEntry rawTimeEntry, HashMap insertHashMap) {
+<span class="nc" id="L87">		insertHashMap.put(&quot;EMPLOYEEID&quot;, rawTimeEntry.getEmployeeID());</span>
+<span class="nc" id="L88">		insertHashMap.put(&quot;ACTIVITYID&quot;, rawTimeEntry.getActivityId());</span>
+<span class="nc" id="L89">		insertHashMap.put(&quot;TIMERECORDID&quot;, rawTimeEntry.getTimeRecordID());</span>
+<span class="nc" id="L90">		insertHashMap.put(&quot;DATASOURCEID&quot;, rawTimeEntry.getDataSourceId());</span>
+<span class="nc" id="L91">		insertHashMap.put(&quot;PUNCHTYPECODE&quot;, NumberFactory.newInteger(rawTimeEntry.getPunchTimeCode()));</span>
+<span class="nc" id="L92">		insertHashMap.put(&quot;PUNCHTIME&quot;, rawTimeEntry.getPunchDate());</span>
+<span class="nc" id="L93">		insertHashMap.put(&quot;PUNCHSTATUS&quot;, new Integer(rawTimeEntry.getPunchStatus()));</span>
+<span class="nc" id="L94">		insertHashMap.put(&quot;TIMESOURCECODE&quot;, new Integer(rawTimeEntry.getTimeSourceCode()));</span>
+
+		//-----------------------------------------------------
+		// if timestamp not set, get it from punchDate
+		//-----------------------------------------------------
+<span class="nc" id="L99">		long punchTimestamp = rawTimeEntry.getPunchTimestamp();</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">		if( punchTimestamp == 0 ) {</span>
+<span class="nc" id="L101">			punchTimestamp = rawTimeEntry.getPunchDate().getTime();</span>
+		}
+<span class="nc" id="L103">		insertHashMap.put(&quot;PUNCHTIMESTAMP&quot;, new Long(punchTimestamp));</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">		if (rawTimeEntry.getRemark() != null)</span>
+<span class="nc" id="L105">			insertHashMap.put(&quot;REMARK&quot;, rawTimeEntry.getRemark());</span>
+<span class="nc" id="L106">	}</span>
+	/**
+	 * &lt;B&gt;createRawTimeEntries&lt;/B&gt;
+	 * &lt;P&gt;
+	 *  inserts data into RawTimeEntry table
+	 *
+	 *  @param rawTimeEntries a Collection of RawTimeEntry objects
+	 * &lt;P&gt;
+	 *  @return                    Collection of ID's created
+	 *
+	 */
+	public static Collection createRawTimeEntries(Collection rawTimeEntries) throws JdmoException {
+<span class="nc" id="L118">		ArrayList newIds = new ArrayList(rawTimeEntries.size());</span>
+<span class="nc" id="L119">		Jdmo jdmo = new Jdmo();</span>
+
+		//----------------------------------------------
+		// insert into db
+		//----------------------------------------------
+		try {
+			//----------------------------------------------
+			// create hashmap for insert into db
+			//----------------------------------------------
+<span class="nc" id="L128">			HashMap insertHashMap = new HashMap(10);</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">			for( Iterator i = rawTimeEntries.iterator(); i.hasNext(); ) {</span>
+<span class="nc" id="L130">				insertHashMap.clear();</span>
+<span class="nc" id="L131">				RawTimeEntry rawTimeEntry = (RawTimeEntry)i.next();</span>
+<span class="nc" id="L132">				rawTimeEntry.setTimeSourceCode(TimeEntrySourceCode.RAWPUNCH);</span>
+<span class="nc" id="L133">				createInsertMapForRawTimeEntry(rawTimeEntry, insertHashMap );</span>
+<span class="nc" id="L134">				ID newId = jdmo.addBatchInsert(&quot;RAWTIMEENTRY&quot;, insertHashMap);</span>
+<span class="nc" id="L135">				rawTimeEntry.setId(newId);</span>
+<span class="nc" id="L136">				newIds.add(newId);</span>
+<span class="nc" id="L137">			}</span>
+<span class="nc" id="L138">			jdmo.executeBatch();</span>
+<span class="nc" id="L139">			return newIds;</span>
+		} finally {
+<span class="nc" id="L141">			jdmo.cleanUp();</span>
+<span class="nc" id="L142">			jdmo = null;</span>
+		}
+	}
+
+	/**
+	 * &lt;B&gt;deleteUnknownActivities&lt;/B&gt;
+	 * deletes activities from db
+	 * NOTE: activites must not have any conflicts,
+	 *       i.e. be a foreign key in other tables
+	 * &lt;P&gt;
+	 *  @param date reoresents the PunchTime to be deleted
+	 * &lt;P&gt;
+	 *
+	 */
+	public static void deleteUnknownActivities(Date date) throws JdmoException	{
+<span class="nc" id="L157">		Jdmo jdmo = new Jdmo();</span>
+		try {
+<span class="nc" id="L159">			String dateStr = JdmoUtil.formatDBString(date);</span>
+<span class="nc" id="L160">			StringBuffer rteQuery = new StringBuffer(&quot;select id from RAWTIMEENTRY where ACTIVITYID=&quot;);</span>
+<span class="nc" id="L161">			rteQuery.append(Activity.ACTIVITY_UNKNOWN).append(&quot; and PUNCHTIME='&quot;).append(dateStr).append(&quot;'&quot;);</span>
+<span class="nc" id="L162">			DAOUtil.deleteObjects(jdmo, &quot;RAWTIMEENTRY&quot;, rteQuery.toString());</span>
+		} finally {
+<span class="nc" id="L164">			jdmo.cleanUp();</span>
+<span class="nc" id="L165">			jdmo = null;</span>
+<span class="nc" id="L166">		}</span>
+<span class="nc" id="L167">	}</span>
+
+	/**
+	 * &lt;B&gt;deleteUnknownActivities&lt;/B&gt;
+	 * deletes activities from db
+	 * NOTE: activites must not have any conflicts,
+	 *       i.e. be a foreign key in other tables
+	 *
+	 */
+	public static void deleteUnknownActivities(Collection empIDCol, Date start, Date end) throws JdmoException	{
+<span class="nc" id="L177">		Jdmo jdmo = new Jdmo();</span>
+		try {
+<span class="nc" id="L179">			StringBuffer pStmt = new StringBuffer(&quot;delete RAWTIMEENTRY where ACTIVITYID=&quot;);</span>
+<span class="nc" id="L180">			pStmt.append(Activity.ACTIVITY_NONE).append(&quot; and EMPLOYEEID in &quot;).append(jdmo.createInClause(empIDCol));</span>
+<span class="nc" id="L181">			pStmt.append(&quot; and PUNCHTIMESTAMP&lt;=&quot;).append(end.getTime()).append(&quot; and PUNCHTIMESTAMP&gt;=&quot;).append(start.getTime());</span>
+<span class="nc" id="L182">			jdmo.executeCommand(pStmt.toString());</span>
+		} finally {
+<span class="nc" id="L184">			jdmo.cleanUp();</span>
+<span class="nc" id="L185">			jdmo = null;</span>
+<span class="nc" id="L186">		}</span>
+<span class="nc" id="L187">	}</span>
+
+	/**
+	 * &lt;B&gt;lastEntry&lt;/B&gt;
+	 *
+	 *  is there an entry for this timerecord this time
+	 *
+	 *  @param timeRecordId timerecord id to check
+	 *  @param startDate entry date to check
+	 * &lt;P&gt;
+	 *  @return boolean, false either not last entry or has end shift
+	 *
+	 */
+	public static boolean lastEntryAndEndShift(ID timeRecordId, Date startDate)	throws JdmoException {
+<span class="nc" id="L201">		Jdmo jdmo = new Jdmo();</span>
+<span class="nc" id="L202">		boolean ignoreFutureData = false;</span>
+		try {
+<span class="nc" id="L204">			DBConfigManager dbConfigManager = BbmManagerFactory.getDBConfigManager();</span>
+<span class="nc" id="L205">			dbConfigManager.getBooleanValue(ConfigKey.IGNORE_FUTURE_DATA);</span>
+		}
+<span class="nc" id="L207">		catch (Exception e) {</span>
+<span class="nc" id="L208">			e.printStackTrace();</span>
+<span class="nc" id="L209">		}</span>
+<span class="nc" id="L210">		StringBuffer query = new StringBuffer(&quot;select ID from TIMEENTRYEVENT where TIMERECORDID=?&quot;)</span>
+<span class="nc" id="L211">			.append(&quot; and (ACTIVITYID=-4001 or UPDATETIMESTAMP&gt;?)&quot;);</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">		if (ignoreFutureData) {</span>
+<span class="nc" id="L213">			query.append(&quot; and UPDATETIMESTAMP&lt;=?&quot;);</span>
+		}
+<span class="nc" id="L215">		JdmoQuery jQuery = jdmo.createQuery(query.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="nc" id="L216">		jQuery.setParID(1, timeRecordId);</span>
+<span class="nc" id="L217">		jQuery.setParLong(2, startDate.getTime());</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">		if (ignoreFutureData) {</span>
+<span class="nc" id="L219">			jQuery.setParLong(3, new Date().getTime());</span>
+		}
+		try {
+<span class="nc" id="L222">			JdmoRowset rs = jdmo.createRowset(jQuery, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">			if (rs.next()) {</span>
+<span class="nc" id="L224">				return false;</span>
+			}
+<span class="nc" id="L226">			return true;</span>
+		} finally {
+<span class="nc" id="L228">			jdmo.cleanUp();</span>
+<span class="nc" id="L229">			jdmo = null;</span>
+		}
+	}
+
+
+	/**
+	 * &lt;B&gt;updateRawTimeEntry&lt;/B&gt;
+	 *
+	 * updates single RawTimeEntry to db
+	 *
+	 *  @param rawTimeEntry       RawTimeEntry to update
+	 */
+	public static void updateRawTimeEntry(RawTimeEntry rawTimeEntry) throws JdmoException {
+<span class="nc" id="L242">		Jdmo jdmo = new Jdmo();</span>
+		//----------------------------------------------
+		//  iterate through collection and batch update
+		//----------------------------------------------
+		try {
+			//----------------------------------------------
+			//  iterate through collection and batch delete
+			//----------------------------------------------
+<span class="nc" id="L250">			String pStmt = &quot;update RAWTIMEENTRY set ACTIVITYID=?, PUNCHTYPECODE=?, TIMESOURCECODE=?, REMARK=?, PUNCHTIME=?, PUNCHTIMESTAMP=? where ID=?&quot;;</span>
+<span class="nc" id="L251">			Object[] params = new Object[7];</span>
+<span class="nc" id="L252">			params[0] = rawTimeEntry.getActivityID();</span>
+<span class="nc" id="L253">			params[1] = NumberFactory.newInteger(rawTimeEntry.getPunchTimeCode());</span>
+<span class="nc" id="L254">			params[2] = NumberFactory.newInteger(rawTimeEntry.getTimeSourceCode());</span>
+<span class="nc" id="L255">			params[3] = rawTimeEntry.getID();</span>
+<span class="nc bnc" id="L256" title="All 2 branches missed.">			if (rawTimeEntry.getRemark() != null)</span>
+<span class="nc" id="L257">				params[4] = rawTimeEntry.getRemark();</span>
+			else
+<span class="nc" id="L259">				params[4] = new JdmoParam(null, Types.VARCHAR);</span>
+<span class="nc" id="L260">			params[5] = rawTimeEntry.getStartTime();</span>
+<span class="nc" id="L261">			params[6] = new Long(rawTimeEntry.getPunchTimestamp());</span>
+<span class="nc" id="L262">			jdmo.executePCommand(pStmt, params);</span>
+		} finally {
+<span class="nc" id="L264">			jdmo.cleanUp();</span>
+<span class="nc" id="L265">			jdmo = null;</span>
+<span class="nc" id="L266">		}</span>
+
+<span class="nc" id="L268">	}</span>
+
+	/**
+	 * &lt;B&gt;updateRawTimeEntryForMerge&lt;/B&gt;
+	 *
+	 * updates single RawTimeEntry to db
+	 *=
+	 *  @param rawTimeEntryId       RawTimeEntry ID to update
+	 *
+	 */
+	public static void updateRawTimeEntryForMerge(ID rawTimeEntryId) throws JdmoException {
+<span class="nc" id="L279">		Jdmo jdmo = new Jdmo();</span>
+		//----------------------------------------------
+		//  iterate through collection and batch update
+		//----------------------------------------------
+		try {
+			//----------------------------------------------
+			//  iterate through collection and batch delete
+			//----------------------------------------------
+<span class="nc" id="L287">			String pStmt = &quot;update RAWTIMEENTRY set ACTIVITYID=?, PUNCHTYPECODE=?, TIMESOURCECODE=? where ID=?&quot;;</span>
+<span class="nc" id="L288">			Object[] params = new Object[5];</span>
+<span class="nc" id="L289">			params[0] = Activity.ACTIVITY_MERGE;</span>
+<span class="nc" id="L290">			params[1] = NumberFactory.newInteger(RawTimeEntry.START_ACTIVITY);</span>
+<span class="nc" id="L291">			params[2] = NumberFactory.newInteger(TimeEntrySourceCode.AUTO_MERGE);</span>
+<span class="nc" id="L292">			params[3] = rawTimeEntryId;</span>
+<span class="nc" id="L293">			jdmo.executePCommand(pStmt, params);</span>
+		} finally {
+<span class="nc" id="L295">			jdmo.cleanUp();</span>
+<span class="nc" id="L296">			jdmo = null;</span>
+<span class="nc" id="L297">		}</span>
+<span class="nc" id="L298">	}</span>
+
+	/**
+	 * &lt;B&gt;updateRawTimeEntryActivities&lt;/B&gt;
+	 *
+	 * updates rawTimeEntries activity id to db
+	 *
+	 *  @param rawTimeEntries       collection of rawTimeEntries to update
+	 *
+	 *  @return                     collection of ID's that couldn't be updated
+	 *
+	 */
+	public static Collection updateRawTimeEntryActivities(Collection rawTimeEntries)
+			throws JdmoException {
+<span class="nc" id="L312">		Collection updateErrors = new ArrayList();</span>
+<span class="nc" id="L313">		Jdmo jdmo = new Jdmo();</span>
+		//----------------------------------------------
+		//  iterate through collection and batch update
+		//----------------------------------------------
+		try {
+<span class="nc bnc" id="L318" title="All 2 branches missed.">			for (Iterator i = rawTimeEntries.iterator(); i.hasNext(); ) {</span>
+<span class="nc" id="L319">				RawTimeEntry rawTimeEntryToUpdate = (RawTimeEntry)i.next();</span>
+				//----------------------------------------------
+				//  iterate through collection and batch delete
+				//----------------------------------------------
+<span class="nc" id="L323">				String pStmt = &quot;update RAWTIMEENTRY set ACTIVITYID= ? where ID = ?&quot;;</span>
+
+				
+<span class="nc" id="L326">				Object[] params = new Object[] {rawTimeEntryToUpdate.getActivityID(), rawTimeEntryToUpdate.getID()};</span>
+
+
+				//----------------------------------------------
+				//  if update fails,
+				//    save and return id
+				//----------------------------------------------
+				try {
+<span class="nc" id="L334">					jdmo.executePCommand(pStmt, params);</span>
+<span class="nc" id="L335">				} catch( Exception e ) {</span>
+<span class="nc" id="L336">					updateErrors.add(rawTimeEntryToUpdate.getId());</span>
+//					m_cat.l7dError(AmEjbBundleKey.TIMECOLLECTOR_UPDATE_ERROR,e);
+<span class="nc" id="L338">				}</span>
+<span class="nc" id="L339">			}</span>
+<span class="nc" id="L340">			return updateErrors;</span>
+		} finally {
+<span class="nc" id="L342">			jdmo.cleanUp();</span>
+<span class="nc" id="L343">			jdmo = null;</span>
+		}
+	}
+
+	public static Date roundMinutes(Date dateToRound) {
+<span class="nc" id="L348">		long punchTimeInMillis = dateToRound.getTime()+HALFMINUTE;</span>
+<span class="nc" id="L349">		long punchTimeInMinutes =</span>
+				punchTimeInMillis - punchTimeInMillis%MINUTES;
+<span class="nc" id="L351">		return new Date(punchTimeInMinutes);</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ScheduleLockDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.schedulelock.ejb</a> &gt; <span class="el_source">ScheduleLockDAO.java</span></div><h1>ScheduleLockDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.schedulelock.ejb;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateDuplicateKeyException;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.dao.DAOBase;
+import com.bluepumpkin.ejb.bbm.schedulelock.model.ScheduleLock;
+import com.bluepumpkin.ejb.bbm.schedulelock.model.ScheduleLockFieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+public final class ScheduleLockDAO extends DAOBase&lt;ScheduleLock&gt; {
+
+<span class="fc" id="L33">	private static FieldInfo m_fieldInfo = new ScheduleLockFieldInfo();</span>
+<span class="fc" id="L34">	protected FieldInfo getFieldInfo() { return m_fieldInfo; }</span>
+
+	public ScheduleLockDAO() {
+<span class="fc" id="L37">		 super();</span>
+<span class="fc" id="L38">	}</span>
+
+	public ScheduleLockDAO(Jdmo dmo) {
+<span class="nc" id="L41">		 super(dmo);</span>
+<span class="nc" id="L42">	}</span>
+
+	protected ScheduleLock createValueObject()
+	{
+<span class="nc" id="L46">		return (new ScheduleLock());</span>
+	}
+
+	/**
+	 *  get campaign given its id
+	 */
+	private Campaign getCampaignByID(ID id) throws BbmFinderException
+	{
+		try {
+<span class="nc" id="L55">			CampaignManager mgr = WfmManagerFactory.getCampaignManager();</span>
+<span class="nc" id="L56">			return mgr.getCampaignByID(id);</span>
+		}
+<span class="nc" id="L58">		catch(Exception e) { throw new BbmFinderException(e); }</span>
+	}
+
+	private SchedulingPeriod getSchedulingPeriodByID(ID id) throws BbmFinderException
+	{
+		try {
+<span class="nc" id="L64">			CampaignManager mgr = WfmManagerFactory.getCampaignManager();</span>
+<span class="nc" id="L65">			return mgr.getSchedulingPeriodByID(id);</span>
+		}
+<span class="nc" id="L67">		catch(Exception e) {</span>
+<span class="nc" id="L68">			throw new BbmFinderException(e);</span>
+		}
+	}
+
+	// check schedule lock exist
+	private void checkSPLockExist(ID spID) throws BbmFinderException, MultiUserException
+	{
+<span class="nc" id="L75">		Collection&lt;ScheduleLock&gt; locks = super.getObjects(&quot;A.SCHEDULINGPERIODID = &quot; + spID);</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">		if (locks.size() &gt; 0) {</span>
+<span class="nc" id="L77">			ScheduleLock slock = locks.iterator().next();</span>
+<span class="nc" id="L78">			SchedulingPeriod sp = getSchedulingPeriodByID(slock.getSchedulingPeriodID());</span>
+<span class="nc" id="L79">			Campaign cp = getCampaignByID(sp.getCampaignID());</span>
+<span class="nc" id="L80">			throw new MultiUserException(slock.getUserName(),</span>
+<span class="nc" id="L81">					cp.getName(), sp.getStartTime(), sp.getEndTime(), cp.getTimeZone());</span>
+		}
+<span class="nc" id="L83">	}</span>
+
+	// raise exception for SPLock
+	private void raiseSPLockException(ScheduleLock slock) throws BbmFinderException, MultiUserException
+	{
+<span class="nc" id="L88">		SchedulingPeriod sp = getSchedulingPeriodByID(slock.getSchedulingPeriodID());</span>
+<span class="nc" id="L89">		Campaign cp = getCampaignByID(sp.getCampaignID());</span>
+<span class="nc" id="L90">		throw new MultiUserException(slock.getUserName(),</span>
+<span class="nc" id="L91">				cp.getName(), sp.getStartTime(), sp.getEndTime(), cp.getTimeZone());</span>
+	}
+
+	/**
+	 *  lock a scheduling period
+	 *  @param strUserName the user who locks the period
+	 *  @param idSchedulingPeriod the scheduling period id
+	 *
+	 *  @return the lock id if successful, raise an exception otherwise
+	 *
+	 */
+	 public ID lockSP(String strUserName, ID idSchedulingPeriod)
+			throws BbmCreateException, MultiUserException
+	 {
+		 // check if schedule lock exist
+		 try {
+			 try {
+				// raise excepiton if SP lock exist
+<span class="nc" id="L109">				checkSPLockExist(idSchedulingPeriod);</span>
+
+				// create the lock object
+<span class="nc" id="L112">				ScheduleLock slock = new ScheduleLock();</span>
+<span class="nc" id="L113">				slock.setUserName(strUserName);</span>
+<span class="nc" id="L114">				slock.setSchedulingPeriodID(idSchedulingPeriod);</span>
+<span class="nc" id="L115">				slock.setLastAccessTime(new Date());</span>
+
+<span class="nc" id="L117">				return createObject(slock);</span>
+			 }
+<span class="nc" id="L119">			 catch(BbmCreateDuplicateKeyException e) {</span>
+				// raise excepiton if SP lock exist
+<span class="nc" id="L121">				checkSPLockExist(idSchedulingPeriod);</span>
+<span class="nc" id="L122">				throw e;</span>
+			 }
+		 }
+<span class="nc" id="L125">		 catch(BbmFinderException e) {</span>
+<span class="nc" id="L126">			throw new BbmCreateException(e);</span>
+		 }
+	 }
+
+	/**
+	 *  unlock a scheduling period
+	 *  @param idLock the lock id
+	 *
+	 */
+	 public void unLockSP(ID idLock) throws BbmRemoveException
+	 {
+<span class="nc" id="L137">		 super.deleteObject(idLock);</span>
+<span class="nc" id="L138">	 }</span>
+
+	/**
+	 *  get all schedule locks
+	 *  @return a collection of schedule lock objects
+	 *
+	 */
+	 public Collection&lt;ScheduleLock&gt; getAllSPLocks() throws BbmFinderException
+	 {
+<span class="nc" id="L147">			return super.getObjects(&quot;&quot;);</span>
+	 }
+
+	/**
+	 *  update the lock access time
+	 *  @param idLock the lock id
+	 *
+	 */
+	 public void updateSPLastAccessTime(ID idLock)
+			throws BbmUpdateException, MultiUserException
+	 {
+			try {
+<span class="nc" id="L159">			 ScheduleLock slock = new ScheduleLock();	// I don't believe we use it</span>
+<span class="nc" id="L160">			 slock.setID(idLock);</span>
+<span class="nc" id="L161">			 slock.setLastAccessTime(new Date());</span>
+<span class="nc" id="L162">			 updateObject(slock);</span>
+<span class="nc" id="L163">			} catch(MultiUserException e) {</span>
+<span class="nc" id="L164">			 throw new MultiUserException(&quot;&quot;, &quot;&quot;, null, null, null); //</span>
+<span class="nc" id="L165">			}</span>
+<span class="nc" id="L166">	 }</span>
+
+	/**
+	 *  check whether able to modify an assignment to a campaign, currently used to
+	 *  check whether able to modify campaign workresource assignment
+	 *
+	 *  @param idCampaign: campaign id
+	 *  @param dtStart, dtEnd: the time period, dtStart should not be null
+	 *
+	 *  raise MultiUserException if cann't modify
+	 */
+	 public void checkCampaignAssignmentCanBeModified(ID idCampaign, Date dtStart, Date dtEnd)
+			throws BbmFinderException, MultiUserException
+	 {
+<span class="nc bnc" id="L180" title="All 2 branches missed.">		if (dtStart == null) throw new IllegalArgumentException(&quot;dtStart shouldn't be null&quot;);</span>
+
+<span class="nc" id="L182">		StringBuffer strWhere = new StringBuffer();</span>
+
+<span class="nc" id="L184">		strWhere.append(&quot;A.ID in (select distinct B.ID &quot;);</span>
+<span class="nc" id="L185">		strWhere.append(&quot;from SCHEDULELOCK B, SCHEDULINGPERIOD C, CAMPAIGN D &quot;);</span>
+<span class="nc" id="L186">		strWhere.append(&quot;where B.SCHEDULINGPERIODID = C.ID &quot;);</span>
+<span class="nc" id="L187">		strWhere.append(&quot;and C.CAMPAIGNID = D.ID&quot;);</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">		if (dtEnd != null) {</span>
+<span class="nc" id="L189">			 strWhere.append(&quot; and C.STARTTIME &lt; '&quot;);</span>
+<span class="nc" id="L190">			 strWhere.append(JdmoUtil.formatDBString(TimeZoneUtil.toTimestamp(dtEnd)));</span>
+<span class="nc" id="L191">			 strWhere.append('\'');</span>
+		}
+<span class="nc" id="L193">		strWhere.append(&quot; and C.ENDTIME &gt; '&quot;);</span>
+<span class="nc" id="L194">		strWhere.append(JdmoUtil.formatDBString(TimeZoneUtil.toTimestamp(dtStart)));</span>
+<span class="nc" id="L195">		strWhere.append(&quot;' and D.ID = &quot;).append(idCampaign).append(&quot;)&quot;);</span>
+
+<span class="nc" id="L197">		Collection&lt;ScheduleLock&gt; locks = getObjects(strWhere.toString());</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">		if (locks.size() &gt; 0){</span>
+<span class="nc" id="L199">			raiseSPLockException(locks.iterator().next());</span>
+		}
+<span class="nc" id="L201">	 }</span>
+
+	/**
+	 *  check whether able to modify employee schedule
+	 * Warning : don't believe it is ever called
+	 * @param sLock the schedule lock current user holds
+	 * @param idEmployeeID: employee id
+	 * @param dtStart, dtEnd: the time period, dtStart should not be null
+	 *
+	 * @throws MultiUserException if cann't modify
+	 */
+	 public void checkEmployeeScheduleByLinkedEmployeesCanBeModified(String scheduleLock, ID employeeID, Date startDate, Date endDate)
+			throws BbmFinderException, MultiUserException
+	 {
+<span class="nc" id="L215">		 checkEmployeeScheduleByLinkedEmployeesCanBeModified(scheduleLock, Arrays.asList(employeeID), startDate, endDate);</span>
+<span class="nc" id="L216">	 }</span>
+
+	/**
+	 * Check whether able to modify employee schedule, because assignment can now be either directly by employee or by linked organizations
+	 * eclingman wrote this new method
+	 * 
+	 * Note that this locking is coded as part of the business logic, rather than delegated to EJB transactions or database transactions 
+	 * 
+	 *
+	 *  @param userName the schedule lock current user holds
+	 *  @param employeeIDs a collection of employee ids
+	 *  @param  startDate, endDate: the time period, dtStart should not be null
+	 * 
+	 * @throws MultiUserException if modification is not allowed due to lock
+	 * note: only used internally
+	 * TODO rename checkEmployeeScheduleByLinkedEmployeesCanBeModified
+	 */			 
+	 protected void checkEmployeeScheduleByLinkedEmployeesCanBeModified(String userName, Collection&lt;ID&gt; employeeIDs, Date startDate, Date endDate)
+			throws BbmFinderException, MultiUserException
+	 {
+<span class="pc bpc" id="L236" title="2 of 4 branches missed.">		if (employeeIDs == null || employeeIDs.isEmpty()){</span>
+<span class="nc" id="L237">			return;</span>
+<span class="pc bpc" id="L238" title="1 of 2 branches missed.">		} else if (startDate == null){</span>
+<span class="nc" id="L239">			throw new IllegalArgumentException(&quot;startDate shouldn't be null&quot;);</span>
+		}
+
+<span class="fc" id="L242">		JdmoRowset r = null;</span>
+		try {		
+			// Build SQL Query
+<span class="fc" id="L245">			String query = &quot;SELECT sp.sid, s.username \n&quot;</span>
+				+ &quot; FROM bpsession s \n&quot;
+				+ &quot; INNER JOIN spworkresource map \n&quot;
+				+ &quot; 	ON map.spid = s.SPID \n&quot;
+				+ &quot; INNER JOIN sp sp \n&quot;
+				+ &quot; 	ON sp.id = map.spid \n&quot;	
+				+ &quot; WHERE \n&quot;
+				+ &quot; 	s.bplocked = 1 \n&quot; 
+				+ &quot; 	AND s.useraction = 'SCHEDULING' \n&quot; 
+<span class="fc" id="L254">				+ &quot; 	AND sp.todate &gt; '&quot; + JdmoUtil.formatDBString(TimeZoneUtil.toTimestamp(startDate)) + &quot;' \n&quot;</span>
+<span class="fc" id="L255">				+ &quot; 	AND map.workresourceid IN &quot; + m_dmo.createInClause(employeeIDs);</span>
+			
+<span class="pc bpc" id="L257" title="1 of 2 branches missed.">			if (endDate != null) {</span>
+<span class="fc" id="L258">				query += &quot; AND sp.fromdate &lt; '&quot; + JdmoUtil.formatDBString(TimeZoneUtil.toTimestamp(endDate)) + &quot;'&quot;;</span>
+			}
+<span class="fc bfc" id="L260" title="All 2 branches covered.">			if (userName != null) {</span>
+<span class="fc" id="L261">				query += &quot; AND s.username &lt;&gt; '&quot; + userName +  &quot;'&quot;;</span>
+			}
+
+			// Execute query
+<span class="fc" id="L265">			r = m_dmo.createRowset( query.toString() );</span>
+<span class="fc" id="L266">			ScheduleLock scheduleLock = null;</span>
+<span class="pc bpc" id="L267" title="1 of 2 branches missed.">			if (r.next()) {</span>
+<span class="nc" id="L268">				scheduleLock = new ScheduleLock();</span>
+<span class="nc" id="L269">				scheduleLock.setSchedulingPeriodID(r.getID(&quot;SID&quot;));</span>
+<span class="nc" id="L270">				scheduleLock.setUserName(r.getString(&quot;USERNAME&quot;));</span>
+			}
+<span class="pc bpc" id="L272" title="1 of 2 branches missed.">			if (scheduleLock != null){</span>
+<span class="nc" id="L273">				raiseSPLockException(scheduleLock);</span>
+			}
+		}
+<span class="nc" id="L276">		catch(JdmoException e) {</span>
+<span class="nc" id="L277">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L279">			try {</span>
+<span class="pc" id="L280">				r.close();</span>
+<span class="nc" id="L281">			} catch (JdmoException e) {</span>
+<span class="nc" id="L282">				m_dmo.cleanUp();</span>
+<span class="pc" id="L283">			}</span>
+<span class="nc" id="L284">		}</span>
+<span class="fc" id="L285">	}</span>
+	 
+	public void checkIfEmployeesFoundInSPByLinkedEmployees(ID spSID, Collection&lt;ID&gt; employeeIDs) throws BbmFinderException, MultiUserException
+	{
+<span class="pc bpc" id="L289" title="1 of 2 branches missed.">		if (spSID == null) {</span>
+<span class="nc" id="L290">			return;</span>
+		}
+		
+<span class="fc" id="L293">		JdmoRowset r = null;</span>
+<span class="fc" id="L294">		JdmoRowset r2 = null;</span>
+<span class="fc" id="L295">		JdmoRowset r3 = null;</span>
+		try
+		{
+			// Create a collection of all related SP IDs
+<span class="fc" id="L299">			Collection&lt;ID&gt; spIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="fc" id="L300">			spIDs.add(spSID);</span>
+<span class="fc" id="L301">			r = m_dmo.createRowset(&quot;SELECT SubSP.SID from SP SP,SP SubSP where SubSP.PARENTSPID = SP.ID AND SP.SID=&quot; + spSID.toString());</span>
+<span class="fc bfc" id="L302" title="All 2 branches covered.">			while (r.next())</span>
+			{
+<span class="fc" id="L304">				spIDs.add(r.getID(&quot;SID&quot;));</span>
+			}
+
+			// Run this query to see if there is a lock...
+<span class="fc" id="L308">			StringBuffer query2 = new StringBuffer(300);</span>
+<span class="fc" id="L309">			query2.append(&quot;SELECT WORKRESOURCE.ID, (select COUNT(SPWORKRESOURCE.ID) FROM SPWORKRESOURCE,SP WHERE SP.ID = SPWORKRESOURCE.SPID AND SP.SID IN&quot;);</span>
+<span class="fc" id="L310">			query2.append(m_dmo.createInClause(spIDs));</span>
+<span class="fc" id="L311">			query2.append(&quot; AND SPWORKRESOURCE.WORKRESOURCEID = WORKRESOURCE.ID) as nCount FROM WORKRESOURCE WHERE  WORKRESOURCE.ID IN &quot;);</span>
+<span class="fc" id="L312">			query2.append(m_dmo.createInClause(employeeIDs));</span>
+
+<span class="fc" id="L314">			r2 = m_dmo.createRowset(query2.toString());</span>
+<span class="fc bfc" id="L315" title="All 2 branches covered.">			while (r2.next())</span>
+			{
+<span class="pc bpc" id="L317" title="1 of 2 branches missed.">				if (r2.getInt(&quot;nCount&quot;) == 0)</span>
+				{
+					// There is a lock, but only throw a multi user exception if its a human not a phantom
+<span class="nc" id="L320">					String  query3 = &quot;SELECT FIRSTNAME, LASTNAME FROM PERSON, EMPLOYEEAM WHERE PERSON.ID = EMPLOYEEAM.PERSONID AND EMPLOYEEAM.ID= &quot; + r2.getID(&quot;ID&quot;);</span>
+<span class="nc" id="L321">					r3 = m_dmo.createRowset(query3);</span>
+<span class="nc bnc" id="L322" title="All 2 branches missed.">					if (r3.next())</span>
+					{
+<span class="nc" id="L324">						String objectName = r3.getString(&quot;FIRSTNAME&quot;) + &quot; &quot; + r3.getString(&quot;LASTNAME&quot;);</span>
+<span class="nc" id="L325">						MultiUserException e = new MultiUserException(&quot;&quot;, false);</span>
+<span class="nc" id="L326">						e.setObjectName(objectName);</span>
+<span class="nc" id="L327">						throw e;</span>
+					}
+<span class="nc" id="L329">				}</span>
+			}
+		}
+<span class="nc" id="L332">		catch (JdmoException e)	{</span>
+<span class="nc" id="L333">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L335">			try {</span>
+<span class="pc bpc" id="L336" title="3 of 4 branches missed.">				if(r!=null)r.close();</span>
+<span class="pc bpc" id="L337" title="3 of 4 branches missed.">				if(r2!=null)r2.close();</span>
+<span class="pc bpc" id="L338" title="3 of 4 branches missed.">				if(r3!=null)r3.close();</span>
+
+<span class="nc" id="L340">			} catch (JdmoException e) {</span>
+<span class="nc" id="L341">				m_dmo.cleanUp();</span>
+<span class="pc" id="L342">			}</span>
+<span class="nc" id="L343">		}</span>
+<span class="fc" id="L344">	}</span>
+	
+	public void checkIfEmployeesFoundInSPOrgs(ID spSID, Collection&lt;ID&gt; employeeIDs) throws BbmFinderException, MultiUserException
+	{
+<span class="pc bpc" id="L348" title="1 of 2 branches missed.">		if (spSID == null) {</span>
+<span class="nc" id="L349">			return;</span>
+		}
+		
+<span class="fc" id="L352">		JdmoRowset r = null;</span>
+<span class="fc" id="L353">		JdmoRowset r2 = null;</span>
+<span class="fc" id="L354">		JdmoRowset r3 = null;</span>
+		try
+		{
+			// Create a collection of all related SP IDs
+<span class="fc" id="L358">			Collection&lt;ID&gt; spIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="fc" id="L359">			spIDs.add(spSID);</span>
+<span class="fc" id="L360">			r = m_dmo.createRowset(&quot;SELECT SubSP.SID from SP SP,SP SubSP where SubSP.PARENTSPID = SP.ID AND SP.SID=&quot; + spSID.toString());</span>
+<span class="pc bpc" id="L361" title="1 of 2 branches missed.">			while (r.next())</span>
+			{
+<span class="nc" id="L363">				spIDs.add(r.getID(&quot;SID&quot;));</span>
+			}
+
+			// Run this query to see if there is a lock...
+<span class="fc" id="L367">			StringBuffer query = new StringBuffer(700);</span>
+<span class="fc" id="L368">			query.append(&quot;select WorkResourceOrganization.workresourceid as ID from WorkResourceOrganization, SPCallCenter, sp where sp.SID in &quot;);</span>
+<span class="fc" id="L369">			query.append(m_dmo.createInClause(spIDs));</span>
+<span class="fc" id="L370">			query.append(&quot; AND SPCallCenter.SPID = sp.ID AND WorkResourceOrganization.OrganizationID = spcallcenter.organizationID &quot;);</span>
+<span class="fc" id="L371">			query.append(&quot; AND ( (WorkResourceOrganization.STARTTIME &lt; sp.FROMDATE AND (WorkResourceOrganization.ENDTIME is NULL OR WorkResourceOrganization.ENDTIME &gt; sp.FROMDATE)) &quot;);</span>
+<span class="fc" id="L372">			query.append(&quot; OR (WorkResourceOrganization.STARTTIME&gt;=sp.FROMDATE AND WorkResourceOrganization.STARTTIME&lt;sp.TODATE)) &quot;);</span>
+<span class="fc" id="L373">			query.append(&quot; UNION &quot;);</span>
+<span class="fc" id="L374">			query.append(&quot; SELECT EMPLOYEEID as ID FROM EmployeePoolingRules,empPoolingRulesOrganizations, SP,SPCALLCENTER &quot;);</span>
+<span class="fc" id="L375">			query.append(&quot;WHERE SP.SID = &quot;).append(spSID.toString()).append(&quot; AND SPCALLCENTER.SPID = SP.ID &quot;);</span>
+<span class="fc" id="L376">			query.append(&quot; AND SPCALLCENTER.ORGANIZATIONID = empPoolingRulesOrganizations.ORGANIZATIONID &quot;);</span>
+<span class="fc" id="L377">			query.append(&quot; AND EmployeePoolingRules.ID = empPoolingRulesOrganizations.poolingruleID &quot;);</span>
+<span class="fc" id="L378">			query.append(&quot; AND ((EmployeePoolingRules.STARTTIME &lt;=  SP.FROMDATE AND (EmployeePoolingRules.ENDTIME &gt;  SP.FROMDATE OR EmployeePoolingRules.ENDTIME is NULL)) &quot;);</span>
+<span class="fc" id="L379">			query.append(&quot; OR (EmployeePoolingRules.STARTTIME&gt;=sp.FROMDATE AND EmployeePoolingRules.STARTTIME &lt;sp.TODATE)) &quot;);</span>
+//			query.append(&quot; UNION &quot;);
+//			query.append(&quot;SELECT SPWORKRESOURCE.WORKRESOURCEID FROM SPWORKRESOURCE,SP WHERE SP.ID = SPWORKRESOURCE.SPID AND SP.SID IN &quot;);
+//			query.append(m_dmo.createInClause(spIDs));
+
+<span class="fc" id="L384">			r2 = m_dmo.createRowset(query.toString());</span>
+<span class="fc" id="L385">			Collection&lt;ID&gt; empIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc bfc" id="L386" title="All 2 branches covered.">			while (r2.next())</span>
+			{
+<span class="fc" id="L388">				empIDs.add(r2.getID(1));</span>
+			}
+<span class="fc bfc" id="L390" title="All 2 branches covered.">			for (ID id: employeeIDs){</span>
+<span class="pc bpc" id="L391" title="1 of 2 branches missed.">				if (!empIDs.contains(id)) {</span>
+					// There is a lock, but only throw a multi user exception if its a human not a phantom
+<span class="nc" id="L393">					String  query2 = &quot;SELECT FIRSTNAME, LASTNAME FROM PERSON, EMPLOYEEAM WHERE PERSON.ID = EMPLOYEEAM.PERSONID AND EMPLOYEEAM.ID= &quot; + id;</span>
+<span class="nc" id="L394">					String objectName = null;</span>
+<span class="nc" id="L395">					r3 = m_dmo.createRowset(query2);</span>
+<span class="nc bnc" id="L396" title="All 2 branches missed.">					if (r3.next())</span>
+					{
+<span class="nc" id="L398">						objectName = r3.getString(&quot;FIRSTNAME&quot;) + &quot; &quot; + r3.getString(&quot;LASTNAME&quot;);</span>
+<span class="nc" id="L399">						MultiUserException e = new MultiUserException(&quot;&quot;, false);</span>
+<span class="nc" id="L400">						e.setObjectName(objectName);</span>
+<span class="nc" id="L401">						throw e;</span>
+					}
+				}
+<span class="fc" id="L404">			}</span>
+	/*		while (r2.next())
+			{
+				if (r2.getInt(&quot;nCount&quot;) == 0)
+				{
+					// There is a lock, throw a multi user exception
+					String  query2 = &quot;SELECT FIRSTNAME, LASTNAME FROM PERSON, EMPLOYEEAM WHERE PERSON.ID = EMPLOYEEAM.PERSONID AND EMPLOYEEAM.ID= &quot; + r2.getID(&quot;ID&quot;);
+					String objectName = null;
+					r3 = m_dmo.createRowset(query2);
+					if (r3.next())
+					{
+						objectName = r3.getString(&quot;FIRSTNAME&quot;) + &quot; &quot; + r3.getString(&quot;LASTNAME&quot;);
+					}
+					MultiUserException e = new MultiUserException(&quot;&quot;, false);
+					e.setObjectName(objectName);
+					throw e;
+
+				}
+			} */
+		}
+<span class="nc" id="L424">		catch (JdmoException e)	{</span>
+<span class="nc" id="L425">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L427">			try {</span>
+<span class="pc bpc" id="L428" title="3 of 4 branches missed.">				if(r!=null)r.close();</span>
+<span class="pc bpc" id="L429" title="3 of 4 branches missed.">				if(r2!=null)r2.close();</span>
+<span class="pc bpc" id="L430" title="3 of 4 branches missed.">				if(r3!=null)r3.close();</span>
+
+<span class="nc" id="L432">			} catch (JdmoException e) {</span>
+<span class="nc" id="L433">				m_dmo.cleanUp();</span>
+<span class="pc" id="L434">			}</span>
+<span class="nc" id="L435">		}</span>
+<span class="fc" id="L436">	}</span>
+
+	public static void main(String[] args) {
+		try
+		{
+<span class="nc" id="L441">			Jdmo jdmo = new Jdmo(&quot;sun.jdbc.odbc.JdbcOdbcDriver&quot;,</span>
+														&quot;jdbc:odbc:activity&quot;, &quot;sa&quot;, &quot;blue&quot;);
+<span class="nc" id="L443">			ScheduleLockDAO dao = new ScheduleLockDAO(jdmo);</span>
+		
+<span class="nc" id="L445">			List&lt;ID&gt; employeeIDs = Arrays.asList(new ID(1));</span>
+<span class="nc" id="L446">			Date startDate = new Date();</span>
+<span class="nc" id="L447">			Date endDate = startDate;</span>
+			
+<span class="nc" id="L449">			dao.checkEmployeeScheduleByLinkedEmployeesCanBeModified(null, employeeIDs, startDate, endDate);</span>
+<span class="nc" id="L450">		} catch (Exception e) {</span>
+<span class="nc" id="L451">			e.printStackTrace();</span>
+<span class="nc" id="L452">		}</span>
+<span class="nc" id="L453">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

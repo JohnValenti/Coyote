@@ -1,0 +1,1139 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeSeriesReportDumpManagerEJB.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.timeseries.ejb</a> &gt; <span class="el_source">TimeSeriesReportDumpManagerEJB.java</span></div><h1>TimeSeriesReportDumpManagerEJB.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.timeseries.ejb;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import javax.naming.Context;
+import javax.naming.InitialContext;
+import javax.transaction.UserTransaction;
+
+import com.bluepumpkin.common.config.ConfigManager;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoQuery;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.Log;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignHOO;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignHOOPeriod;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignQueue;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriod;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodUtil;
+import com.bluepumpkin.ejb.bbm.pulse.ejb.TrackingManager;
+import com.bluepumpkin.ejb.bbm.pulse.model.TraceChart;
+import com.bluepumpkin.ejb.bbm.pulse.model.TrackingView;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ForecastTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.PredictTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceChunk;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.util.TraceUtil;
+import com.bluepumpkin.ejb.bbm.workload.ejb.WorkloadManager;
+import com.bluepumpkin.ejb.bbm.workload.model.CombinedQueueStaffing;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.ejb.bbm.workload.model.Queue;
+import com.bluepumpkin.ejb.core.base.SessionEJBBase;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  TimeSeriesReportDumpManager EJB implementation
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, inc
+ *
+ * @author Sheng Song
+ * @version 2.0
+ */
+
+<span class="nc" id="L65">public class TimeSeriesReportDumpManagerEJB extends SessionEJBBase {</span>
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+
+<span class="nc" id="L71">	private static Category m_cat = Log.initCategory(TimeSeriesReportDumpManagerEJB.class.getName());</span>
+
+	private CampaignManager m_CampaignManager;
+	private TimeSeriesManager m_TimeSeriesManager;
+	private WorkloadManager m_WorkloadManager;
+	private TrackingManager m_TrackingManager;
+
+<span class="nc" id="L78">	private static TraceChunk NAChunk = new TraceChunk(null, null);</span>
+
+<span class="nc" id="L80">	static { NAChunk.setTraceValue(Trace.STAFFING, -2);}</span>
+
+<span class="nc" id="L82">	private static int LOOKBACKMONTH = 2;</span>
+<span class="nc" id="L83">	private static int LOOKFORWARDMONTH = 2;</span>
+<span class="nc" id="L84">	private static int USERTRANSACTION_TIMEOUT = 600;</span>
+<span class="nc" id="L85">	private static final ID ComQueID = new ID(-1);</span>
+
+	// override the base class to provide the appropriate logging category
+<span class="nc" id="L88">	protected Category getCategory() { return m_cat; }</span>
+
+	{
+<span class="nc" id="L91">		super.init(TimeSeriesReportDumpManagerEJB.class.getName());</span>
+	}
+
+<span class="nc" id="L94">	private static TrackingView tv = new TrackingView();</span>
+
+	static {
+<span class="nc" id="L97">		TraceChart tc1 = new TraceChart(Trace.CV, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+<span class="nc" id="L98">		TraceChart tc2 = new TraceChart(Trace.AHT, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+
+<span class="nc" id="L100">		TraceChart tc3 = new TraceChart(Trace.ASA, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE, TraceChart.REQUIRE_LINE}, true);</span>
+<span class="nc" id="L101">		TraceChart tc4 = new TraceChart(Trace.PCA, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE, TraceChart.REQUIRE_LINE}, true);</span>
+<span class="nc" id="L102">		TraceChart tc5 = new TraceChart(Trace.ABANDONMENT, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE, TraceChart.REQUIRE_LINE}, true);</span>
+<span class="nc" id="L103">		TraceChart tc6 = new TraceChart(Trace.FTE, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE, TraceChart.REQUIRE_LINE}, true);</span>
+<span class="nc" id="L104">		TraceChart tc7 = new TraceChart(Trace.STAFFING, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE, TraceChart.REQUIRE_LINE}, true);</span>
+<span class="nc" id="L105">		TraceChart tc8 = new TraceChart(Trace.OCCUPANCY, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+<span class="nc" id="L106">		TraceChart tc9 = new TraceChart(Trace.BACKLOG, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+<span class="nc" id="L107">		TraceChart tc10 = new TraceChart(Trace.DIALS, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+<span class="nc" id="L108">		TraceChart tc11 = new TraceChart(Trace.CONNECTS, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+<span class="nc" id="L109">		TraceChart tc12 = new TraceChart(Trace.CRATE, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+<span class="nc" id="L110">		TraceChart tc13 = new TraceChart(Trace.RPC, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+<span class="nc" id="L111">		TraceChart tc14 = new TraceChart(Trace.RPCRATE, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+<span class="nc" id="L112">		TraceChart tc15 = new TraceChart(Trace.RPCAHT, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE, TraceChart.FORECAST_LINE}, true);</span>
+<span class="nc" id="L113">		TraceChart tc16 = new TraceChart(Trace.VH, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE}, true);</span>
+<span class="nc" id="L114">		TraceChart tc17 = new TraceChart(Trace.VAR, TraceChart.ABSOLUTE_CHART, new short[]{TraceChart.ACTUAL_LINE}, true);</span>
+
+
+<span class="nc" id="L117">		ArrayList&lt;TraceChart&gt; defList = new ArrayList&lt;TraceChart&gt;();</span>
+<span class="nc" id="L118">		defList.add(tc1);</span>
+<span class="nc" id="L119">		defList.add(tc2);</span>
+<span class="nc" id="L120">		defList.add(tc3);</span>
+<span class="nc" id="L121">		defList.add(tc4);</span>
+<span class="nc" id="L122">		defList.add(tc5);</span>
+<span class="nc" id="L123">		defList.add(tc6);</span>
+<span class="nc" id="L124">		defList.add(tc7);</span>
+<span class="nc" id="L125">		defList.add(tc8);</span>
+<span class="nc" id="L126">		defList.add(tc9);</span>
+<span class="nc" id="L127">		defList.add(tc10);</span>
+<span class="nc" id="L128">		defList.add(tc11);</span>
+<span class="nc" id="L129">		defList.add(tc12);</span>
+<span class="nc" id="L130">		defList.add(tc13);</span>
+<span class="nc" id="L131">		defList.add(tc14);</span>
+<span class="nc" id="L132">		defList.add(tc15);</span>
+<span class="nc" id="L133">		defList.add(tc16);</span>
+<span class="nc" id="L134">		defList.add(tc17);</span>
+<span class="nc" id="L135">		tv.setChartDefinition(defList);</span>
+<span class="nc" id="L136">	}</span>
+
+<span class="nc" id="L138">	private boolean WhatIfMode = false;</span>
+
+	public void ejbCreate() {
+		try {
+			// First query environment to get WIF setting from DD
+<span class="nc" id="L143">			Context initialContext = new InitialContext();</span>
+<span class="nc" id="L144">			Boolean WIF = (Boolean) initialContext.lookup(&quot;java:comp/env/WIF&quot;);</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">			if (WIF != null)</span>
+<span class="nc" id="L146">				WhatIfMode = WIF.booleanValue();</span>
+<span class="nc" id="L147">			m_CampaignManager = WfmManagerFactory.getCampaignManager(WhatIfMode);</span>
+<span class="nc" id="L148">			m_TimeSeriesManager = WfmManagerFactory.getTimeSeriesManager(WhatIfMode);</span>
+<span class="nc" id="L149">			m_WorkloadManager = WfmManagerFactory.getWorkloadManager(WhatIfMode);</span>
+<span class="nc" id="L150">			m_TrackingManager = WfmManagerFactory.getPulseTrackingManager(WhatIfMode);</span>
+<span class="nc" id="L151">			String lookBack = BbmManagerFactory.getDBConfigManager(WhatIfMode).getValue(&quot;PERFREPORTLOOKBACK&quot;);</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">			if (lookBack != null) {</span>
+				try {
+<span class="nc" id="L154">					LOOKBACKMONTH = Integer.parseInt(lookBack);</span>
+<span class="nc" id="L155">				} catch (Exception e) {</span>
+<span class="nc" id="L156">					m_cat.info(&quot;Invalid value set for LookBackMonth, &quot; + lookBack);</span>
+<span class="nc" id="L157">				}</span>
+			}
+<span class="nc" id="L159">		} catch (Exception e) {</span>
+<span class="nc" id="L160">			handleException(&quot;ejbCreate&quot;, e);</span>
+<span class="nc" id="L161">		}</span>
+<span class="nc" id="L162">	}</span>
+
+	public void updateDumpLog(Jdmo jdmo, ID queueID, ID campaignID, ID mediaID, Date dumpStart, Date dumpEnd, Date lastDump) throws Exception {
+<span class="nc" id="L165">		UserTransaction ut = null;</span>
+		try {
+<span class="nc" id="L167">			ut = m_sessionContext.getUserTransaction();</span>
+<span class="nc" id="L168">			ut.setTransactionTimeout(USERTRANSACTION_TIMEOUT);</span>
+<span class="nc" id="L169">			ut.begin();</span>
+<span class="nc" id="L170">			StringBuffer pStmt = new StringBuffer(&quot;select TRACEDUMPTIME from TRACEDUMPLOG where &quot;);</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">			if (queueID != null)</span>
+<span class="nc" id="L172">				pStmt.append(&quot;QUEUEID=?&quot;);</span>
+			else {
+<span class="nc" id="L174">				pStmt.append(&quot;CAMPAIGNID=?&quot;);</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">				if (mediaID != null)</span>
+<span class="nc" id="L176">					pStmt.append(&quot; and MEDIAID=?&quot;);</span>
+				else
+<span class="nc" id="L178">					pStmt.append(&quot; and MEDIAID=-10&quot;);</span>
+			}
+<span class="nc" id="L180">			JdmoQuery jQuery = jdmo.createQuery(pStmt.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">			if (queueID != null)</span>
+<span class="nc" id="L182">				jQuery.setParID(1, queueID);</span>
+			else {
+<span class="nc" id="L184">				jQuery.setParID(1, campaignID);</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">				if (mediaID != null)</span>
+<span class="nc" id="L186">					jQuery.setParID(2, mediaID);</span>
+			}
+<span class="nc" id="L188">			JdmoRowset rs = jdmo.createRowset(jQuery, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">			if (rs.next()) {</span>
+<span class="nc" id="L190">				StringBuffer pStmt2 = new StringBuffer(&quot;update TRACEDUMPLOG set TRACEDUMPTIME=?, STARTTIME=?, ENDTIME=? where &quot;);</span>
+<span class="nc" id="L191">				int params = 3;</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">				if (queueID != null) {</span>
+<span class="nc" id="L193">					pStmt2.append(&quot;QUEUEID=?&quot;);</span>
+<span class="nc" id="L194">					params++;</span>
+				} else {
+<span class="nc" id="L196">					pStmt2.append(&quot;CAMPAIGNID=?&quot;);</span>
+<span class="nc" id="L197">					params++;</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">					if (mediaID != null) {</span>
+<span class="nc" id="L199">						pStmt2.append(&quot; and MEDIAID=?&quot;);</span>
+<span class="nc" id="L200">						params++;</span>
+					} else
+<span class="nc" id="L202">						pStmt2.append(&quot; and MEDIAID=-10&quot;);</span>
+				}
+<span class="nc" id="L204">				Object[] param = new Object[params];</span>
+<span class="nc" id="L205">				param[0] = TimeZoneUtil.toTimestamp(lastDump);</span>
+<span class="nc" id="L206">				param[1] = TimeZoneUtil.toTimestamp(dumpStart);</span>
+<span class="nc" id="L207">				param[2] = TimeZoneUtil.toTimestamp(dumpEnd);</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">				if (queueID != null)</span>
+<span class="nc" id="L209">					param[3] = queueID;</span>
+				else {
+<span class="nc" id="L211">					param[3] = campaignID;</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">					if (mediaID != null)</span>
+<span class="nc" id="L213">						param[4] = mediaID;</span>
+				}
+<span class="nc" id="L215">				jdmo.executePCommand(pStmt2.toString(), param);</span>
+<span class="nc" id="L216">			} else {</span>
+// there is no entry for that queue yet, create the entry
+<span class="nc" id="L218">				HashMap map = new HashMap(3);</span>
+<span class="nc" id="L219">				map.put(&quot;TRACEDUMPTIME&quot;, TimeZoneUtil.toTimestamp(lastDump));</span>
+<span class="nc" id="L220">				map.put(&quot;STARTTIME&quot;, TimeZoneUtil.toTimestamp(dumpStart));</span>
+<span class="nc" id="L221">				map.put(&quot;ENDTIME&quot;, TimeZoneUtil.toTimestamp(dumpEnd));</span>
+<span class="nc" id="L222">				map.put(&quot;QUEUEID&quot;, new ID(-1));</span>
+<span class="nc" id="L223">				map.put(&quot;CAMPAIGNID&quot;, new ID(-1));</span>
+<span class="nc" id="L224">				map.put(&quot;MEDIAID&quot;, new ID(-10));</span>
+<span class="nc bnc" id="L225" title="All 2 branches missed.">				if (queueID != null) {</span>
+<span class="nc" id="L226">					map.put(&quot;QUEUEID&quot;, queueID);</span>
+				} else {
+<span class="nc" id="L228">					map.put(&quot;CAMPAIGNID&quot;, campaignID);</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">					if (mediaID != null)</span>
+<span class="nc" id="L230">						map.put(&quot;MEDIAID&quot;, mediaID);</span>
+				}
+<span class="nc" id="L232">				jdmo.addBatchInsert(&quot;TRACEDUMPLOG&quot;, map);</span>
+<span class="nc" id="L233">				jdmo.executeBatch();</span>
+			}
+
+// finally dump the trace chunks
+<span class="nc" id="L237">			ut.commit();</span>
+<span class="nc" id="L238">		} catch (Exception e) {</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">			if (ut != null) ut.rollback();</span>
+<span class="nc" id="L240">			throw e;</span>
+<span class="nc" id="L241">		}</span>
+
+<span class="nc" id="L243">	}</span>
+
+	/**
+	 * update Report table based on meta TraceCube information for a queue
+	 * If queue ID is given, it is a real queue, else
+	 * If campaign and media ID given, it is a media combined queue, else
+	 * it is a combined/combined queue
+	 *
+	 * @param campaignID
+	 * @param mediaID
+	 * @param queueID
+	 * @param start
+	 * @param end
+	 * @param lastUpdate
+	 * @param alwaysUpdateDumpLog, for scheduled report dump, we always refresh dump log
+	 * @param fixHOO,              decide HOO should be honored or not, it depends on media ID
+	 * @throws JdmoException
+	 */
+	public void dumpTimeSeriesFromLastDump(ID campaignID, ID mediaID, ID queueID, Date start, Date end, boolean alwaysUpdateDumpLog, boolean fixHOO) throws BbmUpdateException {
+<span class="nc bnc" id="L262" title="All 4 branches missed.">		if (queueID == null || queueID.equals(new ID(-1)))</span>
+<span class="nc bnc" id="L263" title="All 2 branches missed.">			methodStart(&quot;dumpTimeSeriesFromLastUpdate&quot;, campaignID, mediaID, start, end, alwaysUpdateDumpLog ? Boolean.TRUE : Boolean.FALSE);</span>
+		else
+<span class="nc bnc" id="L265" title="All 2 branches missed.">			methodStart(&quot;dumpTimeSeriesFromLastUpdate&quot;, queueID, start, end, alwaysUpdateDumpLog ? Boolean.TRUE : Boolean.FALSE);</span>
+		//QA 79960 - Report Dump Failed after upgrade to 7.7.2
+<span class="nc" id="L267">		USERTRANSACTION_TIMEOUT = getReportDumpUserTransactionTimeOut();</span>
+<span class="nc" id="L268">		Jdmo jdmo = new Jdmo();</span>
+		try {
+<span class="nc" id="L270">			StringBuffer pStmt = new StringBuffer(&quot;select TRACEDUMPTIME, STARTTIME, ENDTIME from TRACEDUMPLOG where &quot;);</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">			if (queueID != null)</span>
+<span class="nc" id="L272">				pStmt.append(&quot;QUEUEID=?&quot;);</span>
+			else {
+<span class="nc" id="L274">				pStmt.append(&quot;CAMPAIGNID=?&quot;);</span>
+<span class="nc bnc" id="L275" title="All 2 branches missed.">				if (mediaID != null)</span>
+<span class="nc" id="L276">					pStmt.append(&quot; and MEDIAID=?&quot;);</span>
+				else
+<span class="nc" id="L278">					pStmt.append(&quot; and MEDIAID=-10&quot;);</span>
+			}
+<span class="nc" id="L280">			JdmoQuery jQuery = jdmo.createQuery(pStmt.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">			if (queueID != null)</span>
+<span class="nc" id="L282">				jQuery.setParID(1, queueID);</span>
+			else {
+<span class="nc" id="L284">				jQuery.setParID(1, campaignID);</span>
+<span class="nc bnc" id="L285" title="All 2 branches missed.">				if (mediaID != null)</span>
+<span class="nc" id="L286">					jQuery.setParID(2, mediaID);</span>
+			}
+<span class="nc" id="L288">			JdmoRowset rs = jdmo.createRowset(jQuery, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="nc" id="L289">			Date lastUpdate = null;</span>
+			// Use time before dump is really finished, so any update to existing data during dump will be picked up in next dump
+<span class="nc" id="L291">			Date lastDumpStart = null;</span>
+<span class="nc" id="L292">			Date lastDumpEnd = null;</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">			if (rs.next()) {</span>
+<span class="nc" id="L294">				lastUpdate = TimeZoneUtil.toDate(rs.getTimestamp(&quot;TRACEDUMPTIME&quot;));</span>
+<span class="nc" id="L295">				lastDumpStart = TimeZoneUtil.toDate(rs.getTimestamp(&quot;STARTTIME&quot;));</span>
+<span class="nc" id="L296">				lastDumpEnd = TimeZoneUtil.toDate(rs.getTimestamp(&quot;ENDTIME&quot;));</span>
+			}
+<span class="nc" id="L298">			rs.close();</span>
+<span class="nc" id="L299">			Date curDate = new Date();</span>
+			// We always dump for two previous months plus one future crossing the date
+<span class="nc bnc" id="L301" title="All 2 branches missed.">			if (lastUpdate == null) {</span>
+				// save dump log, if it is not for whole dump
+				//Changes start for QA100626 starts
+<span class="nc" id="L304">				int iLookForwardMonth=ConfigManager.NOVALUE;</span>
+				try
+				{
+<span class="nc" id="L307">					iLookForwardMonth = BbmManagerFactory.getDBConfigManager().getIntValue(ConfigKey.CRYSTAL_REPORTS_TIMSERIES_LOOKFORWARD_MONTH);</span>
+<span class="nc" id="L308">				}catch(Exception e)</span>
+				{
+<span class="nc" id="L310">					m_cat.debug(&quot;Exception while getting value for CRYSTAL_REPORTS_TIMSERIES_LOOKFORWARD_MONTH:&quot;+e);</span>
+<span class="nc" id="L311">				}</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">				if (iLookForwardMonth != ConfigManager.NOVALUE)</span>
+<span class="nc" id="L313">					LOOKFORWARDMONTH = iLookForwardMonth;</span>
+<span class="nc" id="L314">				Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L315">				cal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="nc" id="L316">				cal.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L317">				cal.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L318">				cal.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L319">				cal.set(Calendar.DAY_OF_MONTH, 1);</span>
+<span class="nc" id="L320">				cal.add(Calendar.MONTH, LOOKFORWARDMONTH);//QA100626</span>
+<span class="nc" id="L321">				cal.add(Calendar.DAY_OF_MONTH, 2);</span>
+<span class="nc" id="L322">				Date curDumpEnd = cal.getTime();</span>
+<span class="nc" id="L323">				cal.add(Calendar.MONTH, -(LOOKFORWARDMONTH + LOOKBACKMONTH));//QA100626</span>
+<span class="nc" id="L324">				cal.add(Calendar.DAY_OF_MONTH, -4);</span>
+<span class="nc" id="L325">				Date curDumpStart = cal.getTime();</span>
+				//Changes end for QA100626 starts
+				// as never dumped, use input start/end
+				// try to expand that window with the dump window, if they overlap
+<span class="nc" id="L329">				boolean saveLog = true;</span>
+<span class="nc bnc" id="L330" title="All 4 branches missed.">				if (start != null &amp;&amp; end != null) {</span>
+<span class="nc" id="L331">					boolean startsFallsIn = false;</span>
+<span class="nc" id="L332">					boolean endsFallsIn = false;</span>
+<span class="nc bnc" id="L333" title="All 6 branches missed.">					if (start != null &amp;&amp; !curDumpStart.after(start) &amp;&amp; !curDumpEnd.before(start)) {</span>
+<span class="nc" id="L334">						startsFallsIn = true;</span>
+					}
+<span class="nc bnc" id="L336" title="All 6 branches missed.">					if (end != null &amp;&amp; !curDumpStart.after(end) &amp;&amp; !curDumpEnd.before(end)) {</span>
+<span class="nc" id="L337">						endsFallsIn = true;</span>
+					}
+<span class="nc bnc" id="L339" title="All 4 branches missed.">					if (startsFallsIn &amp;&amp; endsFallsIn) {</span>
+						// if the window can be merged, we will dump a bigger window, and save log
+<span class="nc" id="L341">						dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, curDumpStart, curDumpEnd, null, fixHOO);</span>
+//						dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, start, end, null, fixHOO);
+					} else {
+<span class="nc bnc" id="L344" title="All 4 branches missed.">						if (!startsFallsIn &amp;&amp; !endsFallsIn) {</span>
+<span class="nc" id="L345">							dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, start, end, null, fixHOO);</span>
+<span class="nc bnc" id="L346" title="All 4 branches missed.">							if (end.before(curDumpStart) || start.after(curDumpEnd))</span>
+<span class="nc" id="L347">								saveLog = false;</span>
+						} else {
+							// QA 93001 
+<span class="nc bnc" id="L350" title="All 2 branches missed.">							curDumpStart = start.before(curDumpStart) ? start : curDumpStart;</span>
+<span class="nc bnc" id="L351" title="All 2 branches missed.">							curDumpEnd = end.after(curDumpEnd) ? end : curDumpEnd;</span>
+
+<span class="nc" id="L353">							dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, curDumpStart, curDumpEnd, null, fixHOO);</span>
+							// end of QA 93001
+						}
+					}
+<span class="nc" id="L357">				} else {</span>
+<span class="nc" id="L358">					dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, start, end, null, fixHOO);</span>
+<span class="nc bnc" id="L359" title="All 6 branches missed.">					if (start != null &amp;&amp; start.after(curDumpStart) ||</span>
+<span class="nc bnc" id="L360" title="All 2 branches missed.">					        end != null &amp;&amp; end.before(curDumpEnd))</span>
+<span class="nc" id="L361">						saveLog = false;</span>
+				}
+<span class="nc bnc" id="L363" title="All 2 branches missed.">				if (saveLog)</span>
+<span class="nc" id="L364">					updateDumpLog(jdmo, queueID, campaignID, mediaID, curDumpStart, curDumpEnd, curDate);</span>
+<span class="nc" id="L365">			} else {</span>
+<span class="nc bnc" id="L366" title="All 10 branches missed.">				if (lastDumpStart != null &amp;&amp; start != null &amp;&amp; start.equals(lastDumpStart) &amp;&amp;</span>
+<span class="nc bnc" id="L367" title="All 2 branches missed.">				        lastDumpEnd != null &amp;&amp; end != null &amp;&amp; end.equals(lastDumpEnd)) {</span>
+
+<span class="nc" id="L369">					m_cat.debug(&quot;Dump window is matching dump log window, simple redump and refresh log&quot;);</span>
+					// perfect match, simple redump
+<span class="nc" id="L371">					dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, start, end, lastUpdate, fixHOO);</span>
+<span class="nc" id="L372">					updateDumpLog(jdmo, queueID, campaignID, mediaID, start, end, curDate);</span>
+				} else {
+<span class="nc" id="L374">					boolean startsFallsIn = false;</span>
+<span class="nc" id="L375">					boolean endsFallsIn = false;</span>
+<span class="nc bnc" id="L376" title="All 6 branches missed.">					if (start != null &amp;&amp; !lastDumpStart.after(start) &amp;&amp; !lastDumpEnd.before(start)) {</span>
+<span class="nc" id="L377">						startsFallsIn = true;</span>
+					}
+<span class="nc bnc" id="L379" title="All 6 branches missed.">					if (end != null &amp;&amp; !lastDumpStart.after(end) &amp;&amp; !lastDumpEnd.before(end)) {</span>
+<span class="nc" id="L380">						endsFallsIn = true;</span>
+					}
+<span class="nc bnc" id="L382" title="All 4 branches missed.">					if (startsFallsIn &amp;&amp; endsFallsIn) {</span>
+						// falls in dump window, still dump for a bigger window
+
+<span class="nc" id="L385">						m_cat.debug(&quot;Dump window is inside dump log window, expand to dump window and refresh log&quot;);</span>
+<span class="nc" id="L386">						dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, lastDumpStart, lastDumpEnd, lastUpdate, fixHOO);</span>
+<span class="nc" id="L387">						updateDumpLog(jdmo, queueID, campaignID, mediaID, lastDumpStart, lastDumpEnd, curDate);</span>
+					} else {
+<span class="nc bnc" id="L389" title="All 4 branches missed.">						if (!startsFallsIn &amp;&amp; !endsFallsIn) {</span>
+							// it is totally out of current dumped window, or covers current dump window
+<span class="nc bnc" id="L391" title="All 6 branches missed.">							if (end != null &amp;&amp; end.before(lastDumpStart) ||</span>
+<span class="nc bnc" id="L392" title="All 2 branches missed.">							        start != null &amp;&amp; start.after(lastDumpEnd)) {</span>
+
+<span class="nc" id="L394">								m_cat.debug(&quot;Dump window is totally outside of dump log window, dump from scratch&quot;);</span>
+<span class="nc" id="L395">								dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, start, end, null, fixHOO);</span>
+							} else {
+
+<span class="nc" id="L398">								m_cat.debug(&quot;Dump window is covering outside of dump log window, dump from in three batches&quot;);</span>
+								// can split into three dumps
+<span class="nc" id="L400">								dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, start, new Date(lastDumpStart.getTime() - TimeZoneUtil.MINUTE_IN_MILLISECONDS), null, fixHOO);</span>
+<span class="nc" id="L401">								dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, lastDumpStart, lastDumpEnd, lastUpdate, fixHOO);</span>
+<span class="nc" id="L402">								dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, new Date(lastDumpEnd.getTime() + TimeZoneUtil.MINUTE_IN_MILLISECONDS), end, null, fixHOO);</span>
+							}
+<span class="nc bnc" id="L404" title="All 2 branches missed.">							if (alwaysUpdateDumpLog)</span>
+<span class="nc" id="L405">								updateDumpLog(jdmo, queueID, campaignID, mediaID, start, end, curDate);</span>
+						} else {
+<span class="nc bnc" id="L407" title="All 2 branches missed.">							if (startsFallsIn) {</span>
+
+<span class="nc" id="L409">								m_cat.debug(&quot;Dump window is overlapping with dump log window, ends after it, dump from in two batches&quot;);</span>
+								// then ends after cur window, split into two dumps
+<span class="nc" id="L411">								dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, lastDumpStart, lastDumpEnd, lastUpdate, fixHOO);</span>
+<span class="nc" id="L412">								dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, new Date(lastDumpEnd.getTime() + TimeZoneUtil.MINUTE_IN_MILLISECONDS), end, null, fixHOO);</span>
+<span class="nc bnc" id="L413" title="All 2 branches missed.">								if (alwaysUpdateDumpLog)</span>
+<span class="nc" id="L414">									updateDumpLog(jdmo, queueID, campaignID, mediaID, start, end, curDate);</span>
+								else
+<span class="nc" id="L416">									updateDumpLog(jdmo, queueID, campaignID, mediaID, lastDumpStart, lastDumpEnd, curDate);</span>
+							} else {
+
+<span class="nc" id="L419">								m_cat.debug(&quot;Dump window is overlapping with dump log window, starts before it, dump from in two batches&quot;);</span>
+<span class="nc" id="L420">								dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, lastDumpStart, lastDumpEnd, lastUpdate, fixHOO);</span>
+<span class="nc" id="L421">								dumpTimeSeriesFromLastDump(queueID, campaignID, mediaID, start, new Date(lastDumpStart.getTime() - TimeZoneUtil.MINUTE_IN_MILLISECONDS), null, fixHOO);</span>
+<span class="nc bnc" id="L422" title="All 2 branches missed.">								if (alwaysUpdateDumpLog)</span>
+<span class="nc" id="L423">									updateDumpLog(jdmo, queueID, campaignID, mediaID, start, end, curDate);</span>
+								else
+<span class="nc" id="L425">									updateDumpLog(jdmo, queueID, campaignID, mediaID, lastDumpStart, lastDumpEnd, curDate);</span>
+							}
+						}
+					}
+				}
+			}
+<span class="nc" id="L431">		} catch (Exception e) {</span>
+<span class="nc" id="L432">			handleException(e);</span>
+<span class="nc" id="L433">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L435">			jdmo.cleanUp();</span>
+<span class="nc" id="L436">			methodFinish();</span>
+<span class="nc" id="L437">		}</span>
+<span class="nc" id="L438">	}</span>
+
+	/**
+	 * update Report table based on meta TraceCube information for MultiSite campaign without smart dump feature
+	 * Only for MultiSite campaign (which will use TrackingManager) without any dump logging
+	 *
+	 * @param campaignID
+	 * @param mediaID
+	 * @param start
+	 * @param end
+	 * @param fixHOO,    decide HOO should be honored or not, it depends on media ID
+	 * @throws BbmUpdateException
+	 */
+	public void dumpMultiSiteTimeSeriesFromLastDump(ID campaignID, ID mediaID, Date start, Date end, boolean fixHOO) throws BbmUpdateException {
+<span class="nc" id="L452">		methodStart(&quot;dumpMultiSiteTimeSeriesFromLastDump&quot;, campaignID, mediaID, start, end);</span>
+<span class="nc" id="L453">		int nMaxRetry = getReportDumpRetryCount();</span>
+<span class="nc" id="L454">		boolean returnVal = false;</span>
+<span class="nc" id="L455">		int retryCount = 0;</span>
+		while (true) {
+			// we use -10 to represent null media ID
+<span class="nc bnc" id="L458" title="All 4 branches missed.">			ID realMediaID = (mediaID != null &amp;&amp; mediaID.equals(new ID(-10))) ? null : mediaID;</span>
+<span class="nc" id="L459">			Collection[] chunkCol = new Collection[5];</span>
+<span class="nc" id="L460">			Collection&lt;TimePeriod&gt; mergedClosedPeriod = null;</span>
+			try {
+<span class="nc" id="L462">				Map&lt;ID, TraceCube[]&gt; map = m_TrackingManager.getCombineTraceCubesByTrackingView(tv, campaignID, mediaID, start, end, false);//QA99997 passing false flag, to ignore missing values</span>
+				// TrackingManager returns Required at Pos 4, need swap
+<span class="nc" id="L464">				TraceCube[] cubes = map.get(ComQueID);</span>
+<span class="nc" id="L465">				TraceCube tempCube = cubes[3];</span>
+<span class="nc" id="L466">				cubes[3] = cubes[4];</span>
+<span class="nc" id="L467">				cubes[4] = tempCube;</span>
+				// now convert to chunk Col
+<span class="nc bnc" id="L469" title="All 4 branches missed.">				for (int i = 0; i &lt; cubes.length &amp;&amp; i &lt; chunkCol.length; i++) {</span>
+<span class="nc bnc" id="L470" title="All 2 branches missed.">					if (cubes[i] != null) {</span>
+<span class="nc" id="L471">						int maxLen = cubes[i].getMaximumLength(cubes[i].getTraceTypes());</span>
+<span class="nc" id="L472">						chunkCol[i] = new ArrayList(maxLen);</span>
+<span class="nc" id="L473">						Date chunkStart = TraceUtil.snapDate(cubes[i].getRawStartDate());</span>
+<span class="nc bnc" id="L474" title="All 2 branches missed.">						for (int j = 0; j &lt; maxLen; j++) {</span>
+<span class="nc" id="L475">							TraceChunk tc = new TraceChunk(ComQueID, chunkStart);</span>
+<span class="nc" id="L476">							tc.setTraceValues(cubes[i].getTraceTypes(), cubes[i].getTraceValueD(cubes[i].getTraceTypes(), chunkStart));</span>
+<span class="nc" id="L477">							chunkStart = new Date(chunkStart.getTime() + TimeZoneUtil.MINUTE_IN_MILLISECONDS_LONG * Trace.INTERVAL);</span>
+<span class="nc" id="L478">							chunkCol[i].add(tc);</span>
+						}
+					}
+				}
+				/*
+			 {
+				m_cat.debug(&quot;Campaign queue Campaign ID &quot;+campaignID+&quot; Media ID &quot;+mediaID);
+				m_cat.debug(chunkCol[0]);
+				m_cat.debug(chunkCol[1]);
+				m_cat.debug(chunkCol[2]);
+				m_cat.debug(chunkCol[3]);
+				m_cat.debug(chunkCol[4]);
+			}*/
+<span class="nc bnc" id="L491" title="All 2 branches missed.">				if (fixHOO) {</span>
+					// find HOO, then normalize the result
+					// for each campaign, fetch the HOO, convert to HOOPeriod, then normalize the result
+<span class="nc" id="L494">					Campaign cpg = m_CampaignManager.getCampaignByID(campaignID);</span>
+<span class="nc" id="L495">					Collection&lt;CampaignHOO&gt; cpgHOOCol = m_CampaignManager.getCampaignHOOAssignments(campaignID, start, end);</span>
+<span class="nc" id="L496">					CampaignHOOPeriod cpgPeriod = new CampaignHOOPeriod(start, end, cpg.getTimeZone(), cpgHOOCol);</span>
+<span class="nc" id="L497">					mergedClosedPeriod = cpgPeriod.getClosePeriods(start, end);</span>
+				}
+				// Now convert trace chunk to HashMap, and normalize them based on Campaign HOO definition
+<span class="nc" id="L500">				Map&lt;Date, TraceChunk[]&gt; chunkMap = new HashMap&lt;Date, TraceChunk[]&gt;();</span>
+<span class="nc" id="L501">				Date chunkStart = start;</span>
+<span class="nc" id="L502">				Date chunkEnd = end;</span>
+<span class="nc bnc" id="L503" title="All 2 branches missed.">				for (int i = 0; i &lt; chunkCol.length; i++) {</span>
+<span class="nc bnc" id="L504" title="All 2 branches missed.">					if (chunkCol[i] != null) {</span>
+<span class="nc bnc" id="L505" title="All 2 branches missed.">						for (Iterator chunkIT = chunkCol[i].iterator(); chunkIT.hasNext();) {</span>
+<span class="nc" id="L506">							TraceChunk chunk = (TraceChunk) chunkIT.next();</span>
+<span class="nc" id="L507">							Date startDate = chunk.getStartDate();</span>
+<span class="nc" id="L508">							TraceChunk[] chunkArray = chunkMap.get(startDate);</span>
+<span class="nc bnc" id="L509" title="All 2 branches missed.">							if (chunkArray == null)</span>
+<span class="nc" id="L510">								chunkArray = new TraceChunk[5];</span>
+<span class="nc" id="L511">							chunkArray[i] = chunk;</span>
+<span class="nc" id="L512">							chunkMap.put(startDate, chunkArray);</span>
+<span class="nc bnc" id="L513" title="All 6 branches missed.">							if (chunkStart == null || (chunkStart != null &amp;&amp; startDate.before(chunkStart)))</span>
+<span class="nc" id="L514">								chunkStart = startDate;</span>
+<span class="nc bnc" id="L515" title="All 6 branches missed.">							if (chunkEnd == null || (chunkEnd != null &amp;&amp; startDate.after(chunkEnd)))</span>
+<span class="nc" id="L516">								chunkEnd = startDate;</span>
+<span class="nc" id="L517">						}</span>
+					}
+				}
+<span class="nc" id="L520">				Set&lt;Date&gt; removeTimeSet = new HashSet&lt;Date&gt;();</span>
+<span class="nc" id="L521">				Map&lt;Date, CombinedQueueStaffing&gt; cmbStfMap = TimeSeriesDAO.getCombinedQueueStaffing(campaignID, mediaID, chunkStart, chunkEnd, null);</span>
+<span class="nc bnc" id="L522" title="All 6 branches missed.">				if (fixHOO &amp;&amp; mergedClosedPeriod != null &amp;&amp; !mergedClosedPeriod.isEmpty()) {</span>
+					// now normalize any chunk in the closedPeriod window
+<span class="nc bnc" id="L524" title="All 2 branches missed.">					for (TimePeriod period : mergedClosedPeriod) {</span>
+<span class="nc" id="L525">						Date pStart = TraceUtil.snapDate(period.getStartTime());</span>
+<span class="nc" id="L526">						Date pEnd = TraceUtil.snapDate(period.getEndTime());</span>
+						do {
+							// replace chunks start in non working period with -1 chunk
+							//			chunkMap.put(pStart, TraceUtil.NULL_TraceChunkArray);
+<span class="nc" id="L530">							chunkMap.remove(pStart);</span>
+<span class="nc" id="L531">							cmbStfMap.remove(pStart);</span>
+<span class="nc" id="L532">							removeTimeSet.add(pStart);</span>
+<span class="nc bnc" id="L533" title="All 6 branches missed.">							if (chunkStart == null || (chunkStart != null &amp;&amp; pStart.before(chunkStart)))</span>
+<span class="nc" id="L534">								chunkStart = pStart;</span>
+<span class="nc bnc" id="L535" title="All 6 branches missed.">							if (chunkEnd == null || (chunkEnd != null &amp;&amp; pStart.after(chunkEnd)))</span>
+<span class="nc" id="L536">								chunkEnd = pStart;</span>
+<span class="nc" id="L537">							pStart = new Date(pStart.getTime() + Trace.INTERVAL * TimeZoneUtil.MINUTE_IN_MILLISECONDS);</span>
+<span class="nc bnc" id="L538" title="All 2 branches missed.">						} while (pStart.before(pEnd));</span>
+<span class="nc" id="L539">					}</span>
+				}
+				// we decide to use UserTransaction, and only control the final dump to avoid JTA timeout
+<span class="nc" id="L542">				UserTransaction ut = m_sessionContext.getUserTransaction();</span>
+				try {
+<span class="nc" id="L544">					ut.setTransactionTimeout(USERTRANSACTION_TIMEOUT);</span>
+<span class="nc" id="L545">					ut.begin();</span>
+					// finally dump the trace chunks
+<span class="nc" id="L547">					TimeSeriesDAO.dumpTimeSeriesFromLastUpdate(null, campaignID, realMediaID, chunkMap, cmbStfMap, chunkStart, chunkEnd, removeTimeSet);</span>
+<span class="nc" id="L548">					ut.commit();</span>
+<span class="nc" id="L549">				} catch (Exception e) {</span>
+<span class="nc" id="L550">					ut.rollback();</span>
+<span class="nc" id="L551">					throw e;</span>
+<span class="nc" id="L552">				}</span>
+<span class="nc" id="L553">				returnVal = true;</span>
+<span class="nc" id="L554">			} catch (Exception e) {</span>
+<span class="nc" id="L555">				handleException(e);</span>
+<span class="nc" id="L556">				retryCount++;</span>
+<span class="nc bnc" id="L557" title="All 2 branches missed.">				if (retryCount &gt;= nMaxRetry) {</span>
+<span class="nc" id="L558">					throw new BbmUpdateException(e);</span>
+				}
+<span class="nc" id="L560">				m_cat.info(&quot;FAILED ON &quot; + retryCount + &quot; ATTEMPT, Dumping AGAIN campaignID: &quot; + campaignID + &quot;,mediaID =&quot; + mediaID + &quot;,start =&quot; + start + &quot;, end=&quot; + end + &quot;, fixHOO=&quot; + fixHOO);</span>
+			} finally {
+<span class="nc bnc" id="L562" title="All 6 branches missed.">				if (returnVal) {</span>
+<span class="nc bnc" id="L563" title="All 6 branches missed.">					if (retryCount &gt; 1) {</span>
+<span class="nc bnc" id="L564" title="All 6 branches missed.">						m_cat.info((returnVal ? &quot;SUCCEDED&quot; : &quot;FAILED&quot;) + &quot; AFTER &quot; + retryCount + &quot; ATTEMPTS &quot; + &quot;: Dumping campaignID: &quot; + campaignID + &quot;,mediaID =&quot; + mediaID + &quot;,start =&quot; + start + &quot;, end=&quot; + end + &quot;, fixHOO=&quot; + fixHOO);</span>
+					}
+<span class="nc" id="L566">					methodFinish();</span>
+<span class="nc" id="L567">					break;    // No Exception thrown in this method so no need to retry break the loop here &amp; return</span>
+				}
+			}
+<span class="nc" id="L570">		}</span>
+<span class="nc" id="L571">	}</span>
+
+	//QA 79960 - Report Dump Failed after upgrade to 7.7.2
+	public int getReportDumpUserTransactionTimeOut() {
+<span class="nc" id="L575">		int nUserTransactionTimeOut = USERTRANSACTION_TIMEOUT;</span>
+		try {
+<span class="nc" id="L577">			nUserTransactionTimeOut = BbmManagerFactory.getDBConfigManager(WhatIfMode).getIntValue(ConfigKey.REPORTDUMP_USER_TRANSACTION_TIMEOUT);</span>
+<span class="nc bnc" id="L578" title="All 2 branches missed.">			if (nUserTransactionTimeOut &lt; 120)</span>
+<span class="nc" id="L579">				nUserTransactionTimeOut = 120;</span>
+<span class="nc bnc" id="L580" title="All 2 branches missed.">			if (nUserTransactionTimeOut &gt; 1200)</span>
+<span class="nc" id="L581">				nUserTransactionTimeOut = 1200;</span>
+<span class="nc" id="L582">		} catch (Exception e) {</span>
+<span class="nc" id="L583">		}</span>
+<span class="nc" id="L584">		return nUserTransactionTimeOut;</span>
+	}
+
+	public int getReportDumpRetryCount() {
+<span class="nc" id="L588">		int nReportDumpMaxRetry = 10;</span>
+		try {
+<span class="nc" id="L590">			nReportDumpMaxRetry = BbmManagerFactory.getDBConfigManager(WhatIfMode).getIntValue(ConfigKey.CRYSTAL_REPORTS_DUMP_MAX_RETRY);</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">			if (nReportDumpMaxRetry &lt; 0)</span>
+<span class="nc" id="L592">				nReportDumpMaxRetry = 10;</span>
+<span class="nc" id="L593">		} catch (Exception e) {</span>
+<span class="nc" id="L594">		}</span>
+<span class="nc" id="L595">		return nReportDumpMaxRetry;</span>
+	}
+
+	/**
+	 * update Report table based on meta TraceCube information for a queue
+	 * If queue ID is given, it is a real queue, else
+	 * If campaign and media ID given, it is a media combined queue, else
+	 * it is a combined/combined queue
+	 *
+	 * @param queueID
+	 * @param campaignID
+	 * @param mediaID
+	 * @param start
+	 * @param end
+	 * @param lastUpdate
+	 * @param fixHOO,    decide HOO should be honored or not, it depends on media ID
+	 * @throws JdmoException
+	 */
+	private void dumpTimeSeriesFromLastDump(ID queueID, ID campaignID, ID mediaID, Date start, Date end, Date lastUpdate, boolean fixHOO) throws BbmUpdateException {
+<span class="nc" id="L614">		int nMaxRetry = getReportDumpRetryCount();</span>
+<span class="nc" id="L615">		boolean returnVal = false;</span>
+<span class="nc" id="L616">		int retryCount = 0;</span>
+		while (true) {
+			try {
+				// we use -10 to represent null media ID
+<span class="nc bnc" id="L620" title="All 4 branches missed.">				ID realMediaID = (mediaID != null &amp;&amp; mediaID.equals(new ID(-10))) ? null : mediaID;</span>
+<span class="nc" id="L621">				Collection[] chunkCol = new Collection[5];</span>
+				//need this collection to hold the data for combined queue in single queue NON-SKILL campaign scenario
+<span class="nc" id="L623">				Collection[] chunkColForCombinedQue = new Collection[5];</span>
+<span class="nc" id="L624">				Collection&lt;TimePeriod&gt; mergedClosedPeriod = null;</span>
+<span class="nc" id="L625">				m_cat.debug(&quot;Inside dumpTimeSeriesFromLastDump, where lastUpdate is &quot; + lastUpdate + &quot; and fixHOO is &quot; + fixHOO);</span>
+<span class="nc bnc" id="L626" title="All 4 branches missed.">				if (queueID != null &amp;&amp; !queueID.equals(new ID(-1))) {</span>
+<span class="nc" id="L627">					Queue queue = m_WorkloadManager.getQueueByID(queueID);</span>
+					//TODO: realQue appears never to be used.
+<span class="nc" id="L629">					Set&lt;ID&gt; realQue = new HashSet&lt;ID&gt;();</span>
+					// find queue campaign assignment, for HOO processing
+<span class="nc" id="L631">					Collection&lt;CampaignQueue&gt; queCpgAssCol = null;</span>
+<span class="nc bnc" id="L632" title="All 4 branches missed.">					if (fixHOO || queue.doesQueueHaveSubQs()) {</span>
+<span class="nc" id="L633">						queCpgAssCol = m_CampaignManager.getQueueCampaignAssignments(queueID, start, end);</span>
+<span class="nc" id="L634">						m_cat.debug(&quot;Campaign Queue assignments are &quot; + queCpgAssCol);</span>
+					}
+<span class="nc bnc" id="L636" title="All 2 branches missed.">					if (queue.doesQueueHaveSubQs()) {</span>
+<span class="nc" id="L637">						realQue.addAll(m_WorkloadManager.getSubQueues(Collections.singletonList(queueID)));</span>
+<span class="nc bnc" id="L638" title="All 2 branches missed.">						if (queCpgAssCol.isEmpty()) {</span>
+<span class="nc" id="L639">							m_cat.debug(&quot;Cannot find the campaign for the non real Queue &quot; + queueID);</span>
+							return;
+						}
+<span class="nc" id="L642">						ID cpgID = queCpgAssCol.iterator().next().getCampaignID();</span>
+
+<span class="nc" id="L644">						m_cat.debug(&quot;Find the campaign for the virtual Queue is &quot; + cpgID);</span>
+						//Bug #90300;Sameet March 2006; [7.6]Staff.Num.Ass.ByInterv.report,distrib. queue isn't show Actual data
+						//Fix for the Combined staffing issue. Cannot pass Last updated date since there is a substitution
+						// happening inside this method
+<span class="nc" id="L648">						TraceCube[] cubes = null;</span>
+<span class="nc" id="L649">						UserTransaction ut = m_sessionContext.getUserTransaction();</span>
+						try {
+<span class="nc" id="L651">							ut.setTransactionTimeout(USERTRANSACTION_TIMEOUT);</span>
+<span class="nc" id="L652">							ut.begin();</span>
+<span class="nc" id="L653">							cubes = m_TimeSeriesManager.getRefreshedRawNonRealQueueTimeSeries(tv, cpgID, queueID, queue.getQueueType(), realQue, start, end, null);</span>
+<span class="nc" id="L654">							ut.commit();</span>
+<span class="nc" id="L655">						} catch (Exception e) {</span>
+<span class="nc" id="L656">							ut.rollback();</span>
+<span class="nc" id="L657">							throw e;</span>
+<span class="nc" id="L658">						}</span>
+						// TrackingManager returns Required at Pos 4, need swap
+<span class="nc" id="L660">						TraceCube tempCube = cubes[3];</span>
+<span class="nc" id="L661">						cubes[3] = cubes[4];</span>
+<span class="nc" id="L662">						cubes[4] = tempCube;</span>
+						// now convert to chunk Col
+<span class="nc bnc" id="L664" title="All 4 branches missed.">						for (int i = 0; i &lt; cubes.length &amp;&amp; i &lt; chunkCol.length; i++) {</span>
+<span class="nc bnc" id="L665" title="All 2 branches missed.">							if (cubes[i] != null) {</span>
+<span class="nc" id="L666">								int maxLen = cubes[i].getMaximumLength(cubes[i].getTraceTypes());</span>
+<span class="nc" id="L667">								chunkCol[i] = new ArrayList(maxLen);</span>
+<span class="nc" id="L668">								Date chunkStart = TraceUtil.snapDate(cubes[i].getRawStartDate());</span>
+<span class="nc bnc" id="L669" title="All 2 branches missed.">								for (int j = 0; j &lt; maxLen; j++) {</span>
+<span class="nc" id="L670">									TraceChunk tc = new TraceChunk(queueID, chunkStart);</span>
+<span class="nc" id="L671">									tc.setTraceValues(cubes[i].getTraceTypes(), cubes[i].getTraceValueD(cubes[i].getTraceTypes(), chunkStart));</span>
+<span class="nc" id="L672">									chunkStart = new Date(chunkStart.getTime() + TimeZoneUtil.MINUTE_IN_MILLISECONDS_LONG * Trace.INTERVAL);</span>
+<span class="nc" id="L673">									chunkCol[i].add(tc);</span>
+								}
+							}
+						}
+
+<span class="nc" id="L678">					} else {</span>
+<span class="nc" id="L679">						ID realID = queueID;</span>
+						// Get skill based info and media ID
+<span class="nc" id="L681">						Jdmo jdmo = null;</span>
+						// Special handling for non-skillBased
+<span class="nc" id="L683">						HashSet&lt;ID&gt; nonSkillBasedSPSet = new HashSet&lt;ID&gt;();</span>
+<span class="nc" id="L684">						ArrayList&lt;Date[]&gt; nonSkillRangeSet = new ArrayList&lt;Date[]&gt;();</span>
+<span class="nc" id="L685">						String mediaDeID = null;</span>
+						try {
+<span class="nc" id="L687">							 jdmo = new Jdmo();</span>
+<span class="nc" id="L688">							String checkSkilledBased = &quot;select ISSKILLBASED, A.MEDIAID, C.SID, C.FROMDATE, C.TODATE from QUEUE A, SPQUEUE B, SP C where A.ID=B.QUEUEID and B.SPID=C.ID and A.SID=? and C.FROMDATE&lt;=? and C.TODATE&gt;=? order by C.FROMDATE asc&quot;;</span>
+<span class="nc" id="L689">							JdmoQuery jQuery1 = jdmo.createQuery(checkSkilledBased, Jdmo.PARAM_QUERY);</span>
+<span class="nc" id="L690">							jQuery1.setParID(1, realID);</span>
+<span class="nc" id="L691">							jQuery1.setParTimestamp(2, TimeZoneUtil.toTimestamp(end));</span>
+<span class="nc" id="L692">							jQuery1.setParTimestamp(3, TimeZoneUtil.toTimestamp(start));</span>
+<span class="nc" id="L693">							JdmoRowset rs1 = jdmo.createRowset(jQuery1, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="nc bnc" id="L694" title="All 2 branches missed.">							while (rs1.next()) {</span>
+<span class="nc" id="L695">								boolean skillBased = rs1.getBoolean(1);</span>
+<span class="nc" id="L696">								mediaDeID = rs1.getString(2);</span>
+<span class="nc bnc" id="L697" title="All 2 branches missed.">								if (!skillBased) {</span>
+<span class="nc" id="L698">									nonSkillBasedSPSet.add(rs1.getID(3));</span>
+<span class="nc" id="L699">									Date[] range = new Date[2];</span>
+<span class="nc" id="L700">									range[0] = rs1.getTimestamp(4);</span>
+<span class="nc" id="L701">									range[1] = rs1.getTimestamp(5);</span>
+<span class="nc" id="L702">									nonSkillRangeSet.add(range);</span>
+								}
+<span class="nc" id="L704">							}</span>
+<span class="nc" id="L705">							rs1.close();</span>
+<span class="nc" id="L706">							jQuery1.close();</span>
+<span class="nc" id="L707">							chunkCol[0] = TimeSeriesDAO.getTimeSeriesFromLastUpdate(TraceUtil.META_REPORT_ACTUAL, realID, start, end, lastUpdate, jdmo, false);</span>
+<span class="nc" id="L708">							chunkCol[1] = TimeSeriesDAO.getTimeSeriesFromLastUpdate(TraceUtil.META_FORECAST, realID, start, end, lastUpdate, jdmo, false);</span>
+<span class="nc" id="L709">							chunkCol[2] = new ArrayList();</span>
+<span class="nc" id="L710">							Collection prdCol = TimeSeriesDAO.getTimeSeriesFromLastUpdate(TraceUtil.META_REPORT_PREDICT, realID, start, end, lastUpdate, jdmo, false);</span>
+<span class="nc bnc" id="L711" title="All 4 branches missed.">							if (prdCol != null &amp;&amp; !prdCol.isEmpty())</span>
+<span class="nc" id="L712">								chunkCol[2].addAll(prdCol);</span>
+							// Add back RFTE
+<span class="nc" id="L714">							chunkCol[3] = TimeSeriesDAO.getTimeSeriesFromLastUpdate(TraceUtil.META_REQUIRE, realID, start, end, lastUpdate, jdmo, false);</span>
+<span class="nc" id="L715">							chunkCol[4] = new ArrayList();</span>
+<span class="nc" id="L716">							Collection sgCol = TimeSeriesDAO.getTimeSeriesFromLastUpdate(TraceUtil.META_SERVICEGOAL, realID, start, end, lastUpdate, jdmo, false);</span>
+<span class="nc bnc" id="L717" title="All 4 branches missed.">							if (sgCol != null &amp;&amp; !sgCol.isEmpty())</span>
+<span class="nc" id="L718">								chunkCol[4].addAll(sgCol);</span>
+
+							// fix predicted trace in nonskill mode
+							// add NAChunk to staffing
+<span class="nc bnc" id="L722" title="All 2 branches missed.">							if (!nonSkillRangeSet.isEmpty()) {</span>
+								//  non skill SG is direct load
+<span class="nc" id="L724">								Collection nonSkillSGCol = TimeSeriesDAO.getSGTimeSeriesFromLastUpdate(realID, nonSkillBasedSPSet, mediaDeID, start, end, lastUpdate,jdmo);</span>
+<span class="nc bnc" id="L725" title="All 4 branches missed.">								if (nonSkillSGCol != null &amp;&amp; !nonSkillSGCol.isEmpty())</span>
+<span class="nc" id="L726">									chunkCol[4].addAll(nonSkillSGCol);</span>
+<span class="nc" id="L727">								TraceChunk tc = null;</span>
+<span class="nc" id="L728">								Iterator cubeIT = chunkCol[2].iterator();</span>
+<span class="nc bnc" id="L729" title="All 2 branches missed.">								if (cubeIT.hasNext())</span>
+<span class="nc" id="L730">									tc = (TraceChunk) cubeIT.next();</span>
+								// if no predicted trace, still need put -2 to staffing
+<span class="nc" id="L732">								ArrayList&lt;TraceChunk&gt; NAStaffList = new ArrayList&lt;TraceChunk&gt;();</span>
+<span class="nc bnc" id="L733" title="All 2 branches missed.">								for (Date[] tr : nonSkillRangeSet) {</span>
+<span class="nc" id="L734">									Date st = new Date(tr[0].getTime());</span>
+<span class="nc bnc" id="L735" title="All 2 branches missed.">									while (st.before(tr[1])) {</span>
+<span class="nc bnc" id="L736" title="All 4 branches missed.">										if (tc != null &amp;&amp; TimeSeriesDAO.fallsIn(tc.getStartDate(), tr[0], tr[1])) {</span>
+<span class="nc bnc" id="L737" title="All 2 branches missed.">											if (st.equals(tc.getStartDate())) {</span>
+<span class="nc" id="L738">												tc.setTraceValue(Trace.STAFFING, -2);</span>
+<span class="nc bnc" id="L739" title="All 2 branches missed.">												if (cubeIT.hasNext()) {</span>
+<span class="nc" id="L740">													tc = (TraceChunk) cubeIT.next();</span>
+<span class="nc" id="L741">													st.setTime(st.getTime() + Trace.INTERVAL * TimeZoneUtil.MINUTE_IN_MILLISECONDS_LONG);</span>
+<span class="nc" id="L742">													continue;</span>
+												}
+											} else {
+<span class="nc" id="L745">												TraceChunk stfChunk = new TraceChunk(null, new Date(st.getTime()));</span>
+<span class="nc" id="L746">												stfChunk.setTraceValue(Trace.STAFFING, -2);</span>
+<span class="nc" id="L747">												NAStaffList.add(stfChunk);</span>
+											}
+<span class="nc" id="L749">											st.setTime(st.getTime() + Trace.INTERVAL * TimeZoneUtil.MINUTE_IN_MILLISECONDS_LONG);</span>
+										} else {
+<span class="nc bnc" id="L751" title="All 4 branches missed.">											if (tc == null || tc.getStartDate().after(tr[1])) {</span>
+<span class="nc" id="L752">												TraceChunk stfChunk = new TraceChunk(null, new Date(st.getTime()));</span>
+<span class="nc" id="L753">												stfChunk.setTraceValue(Trace.STAFFING, -2);</span>
+<span class="nc" id="L754">												NAStaffList.add(stfChunk);</span>
+<span class="nc" id="L755">											} else {</span>
+<span class="nc bnc" id="L756" title="All 2 branches missed.">												if (cubeIT.hasNext())</span>
+<span class="nc" id="L757">													tc = (TraceChunk) cubeIT.next();</span>
+											}
+										}
+<span class="nc" id="L760">										st.setTime(st.getTime() + Trace.INTERVAL * TimeZoneUtil.MINUTE_IN_MILLISECONDS_LONG);</span>
+									}
+<span class="nc" id="L762">								}</span>
+<span class="nc" id="L763">								chunkCol[2].addAll(NAStaffList);</span>
+							}
+							/*Sameet: 9/29/2005 Call to Adjust Required and Predicted Timeseries for Campaigns having Single NON-Skill Queue for IMMEDIATE Media Only*/
+<span class="nc" id="L766">							adjustTimeSeriesForSingleQueueCampaigns(queueID, mediaID, queCpgAssCol, start, end, lastUpdate, chunkColForCombinedQue);</span>
+						} finally {
+<span class="nc bnc" id="L768" title="All 4 branches missed.">							if (jdmo != null) jdmo.cleanUp();</span>
+						}
+					}
+<span class="nc bnc" id="L771" title="All 2 branches missed.">					if (fixHOO) {</span>
+						// for each campaign, fetch the HOO, convert to HOOPeriod, then normalize the result
+<span class="nc" id="L773">						HashMap&lt;ID, Campaign&gt; cpgMap = new HashMap&lt;ID, Campaign&gt;();</span>
+<span class="nc" id="L774">						ArrayList&lt;TimePeriod&gt; closedPeriodList = new ArrayList&lt;TimePeriod&gt;();</span>
+<span class="nc bnc" id="L775" title="All 2 branches missed.">						for (CampaignQueue cq : queCpgAssCol) {</span>
+<span class="nc" id="L776">							ID cpgID = cq.getCampaignID();</span>
+<span class="nc bnc" id="L777" title="All 2 branches missed.">							if (cpgMap.get(cpgID) == null)</span>
+<span class="nc" id="L778">								cpgMap.put(cpgID, m_CampaignManager.getCampaignByID(cpgID));</span>
+<span class="nc" id="L779">							Collection&lt;CampaignHOO&gt; cpgHOOCol = m_CampaignManager.getCampaignHOOAssignments(cpgID, cq.getStartTime(), cq.getEndTime());</span>
+<span class="nc" id="L780">							Campaign cpg = (Campaign) cpgMap.get(cpgID);</span>
+<span class="nc" id="L781">							CampaignHOOPeriod cpgPeriod = new CampaignHOOPeriod(cq.getStartTime(), cq.getEndTime(), cpg.getTimeZone(), cpgHOOCol);</span>
+<span class="nc" id="L782">							Collection&lt;TimePeriod&gt; closedPeriod = cpgPeriod.getClosePeriods(cq.getStartTime(), cq.getEndTime());</span>
+<span class="nc" id="L783">							closedPeriodList.addAll(closedPeriod);</span>
+<span class="nc" id="L784">							m_cat.debug(&quot;For campaign &quot; + cpgID + &quot; the closed periods are &quot; + closedPeriod);</span>
+<span class="nc" id="L785">						}</span>
+						// merge all closed period
+<span class="nc" id="L787">						mergedClosedPeriod = TimePeriodUtil.merge(closedPeriodList);</span>
+					}
+<span class="nc" id="L789">				} else {</span>
+					//Start For Campaign and Combined Media Trace type (COMB &amp; COMB-COMB Queues)
+<span class="nc" id="L791">					boolean hasOutBoundQue = false;</span>
+<span class="nc" id="L792">					Collection&lt;CampaignQueue&gt; queueAssignment = m_CampaignManager.getCampaignQueueAssignments(campaignID, realMediaID, start, end);</span>
+<span class="nc bnc" id="L793" title="All 2 branches missed.">					if (queueAssignment.isEmpty())</span>
+						return;
+<span class="nc" id="L795">					m_cat.debug(&quot;CampaignQueue Assignments are&quot;);</span>
+<span class="nc" id="L796">					m_cat.debug(queueAssignment);</span>
+<span class="nc" id="L797">					HashMap&lt;ID, Collection&lt;ID&gt;&gt; spQMap = new HashMap&lt;ID, Collection&lt;ID&gt;&gt;();</span>
+<span class="nc" id="L798">					HashMap&lt;ID, Date[]&gt; spTimeRangeMap = new HashMap&lt;ID, Date[]&gt;();</span>
+<span class="nc" id="L799">					Date spStart = null;</span>
+<span class="nc" id="L800">					Date spEnd = null;</span>
+<span class="nc bnc" id="L801" title="All 2 branches missed.">					for (CampaignQueue cq : queueAssignment) {</span>
+<span class="nc" id="L802">						ID qID = cq.getQueueID();</span>
+<span class="nc" id="L803">						ID spID = cq.getSPID();</span>
+<span class="nc" id="L804">						Collection&lt;ID&gt; qCol = spQMap.get(spID);</span>
+<span class="nc bnc" id="L805" title="All 2 branches missed.">						if (qCol == null)</span>
+<span class="nc" id="L806">							qCol = new ArrayList&lt;ID&gt;();</span>
+<span class="nc bnc" id="L807" title="All 2 branches missed.">						if (!hasOutBoundQue) {</span>
+<span class="nc" id="L808">							Queue queue = m_WorkloadManager.getQueueByID(qID);</span>
+<span class="nc bnc" id="L809" title="All 4 branches missed.">							hasOutBoundQue = queue != null &amp;&amp; Media.MEDIA_ID_PHONE_OUTBOUND.equals(queue.getMediaID());</span>
+						}
+<span class="nc" id="L811">						qCol.add(qID);</span>
+<span class="nc" id="L812">						spQMap.put(spID, qCol);</span>
+<span class="nc" id="L813">						Date[] timeRange = (Date[]) spTimeRangeMap.get(spID);</span>
+<span class="nc bnc" id="L814" title="All 2 branches missed.">						if (timeRange == null) {</span>
+<span class="nc bnc" id="L815" title="All 4 branches missed.">							if (spStart == null || spStart.after(cq.getStartTime()))</span>
+<span class="nc" id="L816">								spStart = cq.getStartTime();</span>
+<span class="nc bnc" id="L817" title="All 4 branches missed.">							if (spEnd == null || spEnd.before(cq.getEndTime()))</span>
+<span class="nc" id="L818">								spEnd = cq.getEndTime();</span>
+<span class="nc" id="L819">							timeRange = new Date[2];</span>
+<span class="nc" id="L820">							timeRange[0] = cq.getStartTime();</span>
+<span class="nc" id="L821">							timeRange[1] = cq.getEndTime();</span>
+<span class="nc" id="L822">							spTimeRangeMap.put(spID, timeRange);</span>
+						}
+<span class="nc" id="L824">					}</span>
+					// Now go fetch SP skill based information
+<span class="nc" id="L826">					HashMap&lt;ID, Boolean&gt; spSkillMap = new HashMap&lt;ID, Boolean&gt;();</span>
+<span class="nc" id="L827">					Collection&lt;SchedulingPeriod&gt; spCol = m_CampaignManager.getSchedulingPeriods(campaignID, spStart, spEnd);</span>
+<span class="nc bnc" id="L828" title="All 2 branches missed.">					for (SchedulingPeriod sp : spCol) {</span>
+<span class="nc bnc" id="L829" title="All 2 branches missed.">						spSkillMap.put(sp.getID(), sp.getSkillBased() ? Boolean.TRUE : Boolean.FALSE);</span>
+<span class="nc" id="L830">					}</span>
+					//				long s2 = System.currentTimeMillis();
+					// Actual/Forecast always need additional aggregation
+<span class="nc" id="L833">					HashSet&lt;ID&gt; qIDSet = new HashSet&lt;ID&gt;();</span>
+<span class="nc bnc" id="L834" title="All 2 branches missed.">					for (ID spID : spQMap.keySet()) {</span>
+						//qIDSet.addAll((Collection) spQMap.get(it.next()));
+						//QA 92889 - Missing data in the daily global performance report
+<span class="nc" id="L837">						Collection&lt;ID&gt; qIDs = spQMap.get(spID);</span>
+<span class="nc" id="L838">						Collection&lt;Queue&gt; qs = m_WorkloadManager.getQueuesByIDs(qIDs);</span>
+<span class="nc bnc" id="L839" title="All 2 branches missed.">						for (Queue q : qs) {</span>
+<span class="nc" id="L840">							ID qID = q.getID();</span>
+<span class="nc bnc" id="L841" title="All 2 branches missed.">							if (q.getQueueType() == Queue.QUEUE_TYPE_VIRTUAL) {</span>
+<span class="nc" id="L842">								Collection&lt;ID&gt; subQIDs = m_WorkloadManager.getSubQueues(Collections.singletonList(qID));</span>
+<span class="nc" id="L843">								qIDs.addAll(subQIDs);</span>
+							}
+<span class="nc" id="L845">						}</span>
+<span class="nc" id="L846">						spQMap.put(spID, qIDs);</span>
+<span class="nc" id="L847">						qIDSet.addAll(qIDs);</span>
+						//End #92889
+<span class="nc" id="L849">					}</span>
+<span class="nc" id="L850">					chunkCol[0] = TimeSeriesDAO.getCombinedQueueTimeSeriesFromLastUpdate(TraceUtil.META_REPORT_ACTUAL, qIDSet, spQMap, spTimeRangeMap, start, end, lastUpdate);</span>
+
+					// predicted is direct load always
+<span class="nc bnc" id="L853" title="All 2 branches missed.">					if (hasOutBoundQue) {</span>
+<span class="nc" id="L854">						chunkCol[1] = TimeSeriesDAO.getCombinedQueueForecastTimeSeriesFromLastUpdate(TraceUtil.META_FORECAST, qIDSet, spQMap, spTimeRangeMap, start, end, lastUpdate);</span>
+					} else {
+<span class="nc" id="L856">						chunkCol[1] = TimeSeriesDAO.getCombinedQueueTimeSeriesFromLastUpdate(TraceUtil.META_FORECAST, qIDSet, spQMap, spTimeRangeMap, start, end, lastUpdate);</span>
+					}
+<span class="nc" id="L858">					chunkCol[2] = TimeSeriesDAO.getCombinedQueueTimeSeriesFromLastUpdate(TraceUtil.META_REPORT_PREDICT, campaignID, realMediaID, spQMap.keySet(), start, end, lastUpdate);</span>
+					// Require/ServiceGoal has timeseries for non-skill based combined queue, skill based sp need aggregation
+					// split SPs by Skill based info
+<span class="nc" id="L861">					HashMap&lt;ID, Collection&lt;ID&gt;&gt; n_spQMap = new HashMap&lt;ID, Collection&lt;ID&gt;&gt;();</span>
+<span class="nc" id="L862">					HashMap&lt;ID, Date[]&gt; n_spTimeRangeMap = new HashMap&lt;ID, Date[]&gt;();</span>
+<span class="nc bnc" id="L863" title="All 2 branches missed.">					for (ID spID : spSkillMap.keySet()) {</span>
+<span class="nc" id="L864">						Boolean skillBased = spSkillMap.get(spID);</span>
+<span class="nc bnc" id="L865" title="All 4 branches missed.">						if (skillBased == null || !skillBased.booleanValue()) {</span>
+<span class="nc" id="L866">							n_spQMap.put(spID, spQMap.get(spID));</span>
+<span class="nc" id="L867">							spQMap.remove(spID);</span>
+<span class="nc" id="L868">							n_spTimeRangeMap.put(spID, spTimeRangeMap.get(spID));</span>
+<span class="nc" id="L869">							spTimeRangeMap.remove(spID);</span>
+						}
+<span class="nc" id="L871">					}</span>
+					// the timerange may cover skill/non-skill based so need add them all
+<span class="nc" id="L873">					chunkCol[4] = new ArrayList();</span>
+<span class="nc" id="L874">					chunkCol[3] = new ArrayList();</span>
+					// Add non-skill based for service goal
+<span class="nc bnc" id="L876" title="All 2 branches missed.">					if (!n_spQMap.isEmpty()) {</span>
+
+<span class="nc" id="L878">						m_cat.debug(&quot;Non skill based service goal dump for sp &quot; + n_spQMap.keySet());</span>
+<span class="nc" id="L879">						Collection sgCol = TimeSeriesDAO.getCombinedQueueTimeSeriesFromLastUpdate(TraceUtil.META_SERVICEGOAL, campaignID, realMediaID, n_spQMap.keySet(), start, end, lastUpdate);</span>
+<span class="nc" id="L880">						chunkCol[4].addAll(sgCol);</span>
+						// direct load for required traces for non-skill based sps
+<span class="nc" id="L882">						Collection stfCol = TimeSeriesDAO.getCombinedQueueTimeSeriesFromLastUpdate(TraceUtil.META_REQUIRE, campaignID, realMediaID, n_spQMap.keySet(), start, end, lastUpdate);</span>
+<span class="nc bnc" id="L883" title="All 2 branches missed.">						if (stfCol != null)</span>
+<span class="nc" id="L884">							chunkCol[3].addAll(stfCol);</span>
+					}
+					//				long s6 = System.currentTimeMillis();
+					// Add skill based combined result
+<span class="nc bnc" id="L888" title="All 2 branches missed.">					if (!spQMap.isEmpty()) {</span>
+
+<span class="nc" id="L890">						m_cat.debug(&quot;Skill based required/service goal dump for sp &quot; + spQMap);</span>
+						//collection of tracechunks
+<span class="nc" id="L892">						Collection stfCol = TimeSeriesDAO.getCombinedQueueTimeSeriesFromLastUpdate(TraceUtil.META_REQUIRE, qIDSet, spQMap, spTimeRangeMap, start, end, lastUpdate);</span>
+<span class="nc bnc" id="L893" title="All 2 branches missed.">						if (stfCol != null)</span>
+<span class="nc" id="L894">							chunkCol[3].addAll(stfCol);</span>
+						// combine for service goal
+<span class="nc" id="L896">						Collection sgCol = TimeSeriesDAO.getCombinedQueueTimeSeriesFromLastUpdate(TraceUtil.META_SERVICEGOAL, qIDSet, spQMap, spTimeRangeMap, start, end, lastUpdate);</span>
+<span class="nc bnc" id="L897" title="All 2 branches missed.">						if (sgCol != null)</span>
+<span class="nc" id="L898">							chunkCol[4].addAll(sgCol);</span>
+					}
+<span class="nc bnc" id="L900" title="All 2 branches missed.">					if (fixHOO) {</span>
+						// find HOO, then normalize the result
+						// for each campaign, fetch the HOO, convert to HOOPeriod, then normalize the result
+<span class="nc" id="L903">						Campaign cpg = m_CampaignManager.getCampaignByID(campaignID);</span>
+<span class="nc" id="L904">						Collection&lt;CampaignHOO&gt; cpgHOOCol = m_CampaignManager.getCampaignHOOAssignments(campaignID, start, end);</span>
+<span class="nc" id="L905">						CampaignHOOPeriod cpgPeriod = new CampaignHOOPeriod(start, end, cpg.getTimeZone(), cpgHOOCol);</span>
+<span class="nc" id="L906">						mergedClosedPeriod = cpgPeriod.getClosePeriods(start, end);</span>
+					}
+				}
+<span class="nc" id="L909">				m_cat.debug(&quot;Merged HOO closed periods are &quot; + mergedClosedPeriod);</span>
+				// Now convert trace chunk to HashMap, and normalize them based on Campaign HOO definition
+<span class="nc" id="L911">				Map&lt;Date, TraceChunk[]&gt; chunkMap = new HashMap&lt;Date, TraceChunk[]&gt;();</span>
+<span class="nc" id="L912">				Map&lt;Date, CombinedQueueStaffing&gt; cmbStfMap = new HashMap&lt;Date, CombinedQueueStaffing&gt;();</span>
+<span class="nc bnc" id="L913" title="All 4 branches missed.">				if (!(queueID != null &amp;&amp; !queueID.equals(new ID(-1))))</span>
+<span class="nc" id="L914">					cmbStfMap = TimeSeriesDAO.getCombinedQueueStaffing(campaignID, mediaID, start, end, lastUpdate);</span>
+<span class="nc" id="L915">				Date chunkStart = start;</span>
+<span class="nc" id="L916">				Date chunkEnd = end;</span>
+<span class="nc bnc" id="L917" title="All 2 branches missed.">				for (int i = 0; i &lt; chunkCol.length; i++) {</span>
+<span class="nc bnc" id="L918" title="All 2 branches missed.">					if (chunkCol[i] != null) {</span>
+<span class="nc bnc" id="L919" title="All 2 branches missed.">						for (Iterator chunkIT = chunkCol[i].iterator(); chunkIT.hasNext();) {</span>
+<span class="nc" id="L920">							TraceChunk chunk = (TraceChunk) chunkIT.next();</span>
+<span class="nc" id="L921">							Date startDate = chunk.getStartDate();</span>
+<span class="nc bnc" id="L922" title="All 8 branches missed.">							if ((end != null &amp;&amp; startDate.after(end)) || (start != null &amp;&amp; startDate.before(start)))</span>
+<span class="nc" id="L923">								continue;</span>
+<span class="nc" id="L924">							TraceChunk[] chunkArray = chunkMap.get(startDate);</span>
+<span class="nc bnc" id="L925" title="All 2 branches missed.">							if (chunkArray == null)</span>
+<span class="nc" id="L926">								chunkArray = new TraceChunk[5];</span>
+							/*if (queueID != null &amp;&amp; !queueID.equals(new ID(-1))) {
+								chunkArray[3] = NAChunk;
+							}*/
+<span class="nc" id="L930">							chunkArray[i] = chunk;</span>
+							//Calculate Computed Values For Forecast Trace Cube
+<span class="nc bnc" id="L932" title="All 4 branches missed.">							if (i == 1 &amp;&amp; chunkArray[1] != null) {</span>
+<span class="nc" id="L933">								(new ForecastTraceCube()).calcComputedTraceValuesForTraceChunk(chunkArray[1], mediaID);</span>
+							}
+<span class="nc bnc" id="L935" title="All 6 branches missed.">							if (i == 2 &amp;&amp; chunkArray[1] != null &amp;&amp; chunkArray[2] != null) {</span>
+<span class="nc" id="L936">								PredictTraceCube.calcComputedTraceValuesForTraceChunk(chunkArray[2], chunkArray[1]);</span>
+							}
+<span class="nc" id="L938">							chunkMap.put(startDate, chunkArray);</span>
+<span class="nc bnc" id="L939" title="All 6 branches missed.">							if (chunkStart == null || (chunkStart != null &amp;&amp; startDate.before(chunkStart)))</span>
+<span class="nc" id="L940">								chunkStart = startDate;</span>
+<span class="nc bnc" id="L941" title="All 6 branches missed.">							if (chunkEnd == null || (chunkEnd != null &amp;&amp; startDate.after(chunkEnd)))</span>
+<span class="nc" id="L942">								chunkEnd = startDate;</span>
+<span class="nc" id="L943">						}</span>
+					}
+				}
+				//Sameet 9/29/2005 New block added to populate the Required &amp; Predicted timeseries for a single NON SKill Queue in a Campaign
+<span class="nc bnc" id="L947" title="All 4 branches missed.">				for (int i = 0; chunkColForCombinedQue != null &amp;&amp; i &lt; chunkColForCombinedQue.length; i++) {</span>
+<span class="nc bnc" id="L948" title="All 2 branches missed.">					if (chunkColForCombinedQue[i] != null) {</span>
+<span class="nc bnc" id="L949" title="All 2 branches missed.">						for (Iterator chunkIT = chunkColForCombinedQue[i].iterator(); chunkIT.hasNext();) {</span>
+<span class="nc" id="L950">							TraceChunk chunk = (TraceChunk) chunkIT.next();</span>
+<span class="nc" id="L951">							Date startDate = chunk.getStartDate();</span>
+<span class="nc bnc" id="L952" title="All 8 branches missed.">							if ((end != null &amp;&amp; startDate.after(end)) || (start != null &amp;&amp; startDate.before(start)))</span>
+<span class="nc" id="L953">								continue;</span>
+<span class="nc" id="L954">							TraceChunk[] chunkArray = chunkMap.get(startDate);</span>
+<span class="nc bnc" id="L955" title="All 2 branches missed.">							if (chunkArray == null) {</span>
+<span class="nc" id="L956">								chunkArray = new TraceChunk[5];</span>
+							}
+<span class="nc" id="L958">							chunkArray[i] = chunk;</span>
+<span class="nc" id="L959">							chunkMap.put(startDate, chunkArray);</span>
+<span class="nc bnc" id="L960" title="All 6 branches missed.">							if (chunkStart == null || (chunkStart != null &amp;&amp; startDate.before(chunkStart)))</span>
+<span class="nc" id="L961">								chunkStart = startDate;</span>
+<span class="nc bnc" id="L962" title="All 6 branches missed.">							if (chunkEnd == null || (chunkEnd != null &amp;&amp; startDate.after(chunkEnd)))</span>
+<span class="nc" id="L963">								chunkEnd = startDate;</span>
+<span class="nc" id="L964">						}</span>
+					}
+				}
+				//End of change
+<span class="nc" id="L968">				Set&lt;Date&gt; removeTimeSet = new HashSet&lt;Date&gt;();</span>
+<span class="nc bnc" id="L969" title="All 6 branches missed.">				if (fixHOO &amp;&amp; mergedClosedPeriod != null &amp;&amp; !mergedClosedPeriod.isEmpty()) {</span>
+					// now normalize any chunk in the closedPeriod window
+<span class="nc bnc" id="L971" title="All 2 branches missed.">					for (TimePeriod period : mergedClosedPeriod) {</span>
+<span class="nc" id="L972">						Date pStart = TraceUtil.snapDate(period.getStartTime());</span>
+<span class="nc" id="L973">						Date pEnd = TraceUtil.snapDate(period.getEndTime());</span>
+						do {
+							// replace chunks start in non working period with -1 chunk
+//						chunkMap.put(pStart, TraceUtil.NULL_TraceChunkArray);
+							//QA46352 - staffing number by interval report not showing data for 12AM interval
+							//if the start time and end time is the same, then it should not delete the period for chunk
+<span class="nc bnc" id="L979" title="All 2 branches missed.">							if (pStart.compareTo(pEnd) == 0) {</span>
+<span class="nc" id="L980">								m_cat.debug(&quot; While fixing the merged Closed period when start time and end time of closed period is same &quot; + chunkMap.get(pStart));</span>
+							} else {
+<span class="nc" id="L982">								chunkMap.remove(pStart);</span>
+<span class="nc" id="L983">								cmbStfMap.remove(pStart);</span>
+<span class="nc" id="L984">								removeTimeSet.add(pStart);</span>
+							}
+<span class="nc bnc" id="L986" title="All 6 branches missed.">							if (chunkStart == null || (chunkStart != null &amp;&amp; pStart.before(chunkStart)))</span>
+<span class="nc" id="L987">								chunkStart = pStart;</span>
+<span class="nc bnc" id="L988" title="All 6 branches missed.">							if (chunkEnd == null || (chunkEnd != null &amp;&amp; pStart.after(chunkEnd)))</span>
+<span class="nc" id="L989">								chunkEnd = pStart;</span>
+<span class="nc" id="L990">							pStart = new Date(pStart.getTime() + Trace.INTERVAL * TimeZoneUtil.MINUTE_IN_MILLISECONDS);</span>
+<span class="nc bnc" id="L991" title="All 2 branches missed.">						} while (pStart.before(pEnd));</span>
+<span class="nc" id="L992">					}</span>
+				}
+				// we decide to use UserTransaction, and only control the final dump to avoid JTA timeout
+<span class="nc" id="L995">				UserTransaction ut = m_sessionContext.getUserTransaction();</span>
+				try {
+<span class="nc" id="L997">					ut.setTransactionTimeout(USERTRANSACTION_TIMEOUT);</span>
+<span class="nc" id="L998">					ut.begin();</span>
+					// finally dump the trace chunks
+<span class="nc bnc" id="L1000" title="All 4 branches missed.">					if (queueID != null &amp;&amp; !queueID.equals(new ID(-1)))</span>
+<span class="nc" id="L1001">						TimeSeriesDAO.dumpTimeSeriesFromLastUpdate(queueID, null, null, chunkMap, cmbStfMap, chunkStart, chunkEnd, removeTimeSet);</span>
+					else
+<span class="nc" id="L1003">						TimeSeriesDAO.dumpTimeSeriesFromLastUpdate(null, campaignID, realMediaID, chunkMap, cmbStfMap, chunkStart, chunkEnd, removeTimeSet);</span>
+<span class="nc" id="L1004">					ut.commit();</span>
+<span class="nc" id="L1005">				} catch (Exception e) {</span>
+<span class="nc" id="L1006">					ut.rollback();</span>
+<span class="nc" id="L1007">					throw e;</span>
+<span class="nc" id="L1008">				}</span>
+<span class="nc" id="L1009">				returnVal = true;</span>
+<span class="nc" id="L1010">			} catch (Exception e) {</span>
+<span class="nc" id="L1011">				handleException(e);</span>
+<span class="nc" id="L1012">				retryCount++;</span>
+<span class="nc bnc" id="L1013" title="All 2 branches missed.">				if (retryCount &gt;= nMaxRetry) {</span>
+<span class="nc" id="L1014">					throw new BbmUpdateException(e);</span>
+				}
+<span class="nc" id="L1016">				m_cat.info(&quot;FAILED ON &quot; + retryCount + &quot; ATTEMPT, Dumping AGAIN campaignID: &quot; + campaignID + &quot;,mediaID =&quot; + mediaID + &quot;,queueID =&quot; + queueID + &quot;,start =&quot; + start + &quot;, end=&quot; + end + &quot;,lastUpdate =&quot; + lastUpdate + &quot;, fixHOO=&quot; + fixHOO);</span>
+			} finally {
+<span class="nc bnc" id="L1018" title="All 10 branches missed.">				if (retryCount &gt; 1) {</span>
+<span class="nc bnc" id="L1019" title="All 10 branches missed.">					m_cat.info((returnVal ? &quot;SUCCEDED&quot; : &quot;FAILED&quot;) + &quot; AFTER &quot; + retryCount + &quot; ATTEMPTS &quot; + &quot;: Dumping campaignID: &quot; + campaignID + &quot;,mediaID =&quot; + mediaID + &quot;,queueID =&quot; + queueID + &quot;,start =&quot; + start + &quot;, end=&quot; + end + &quot;,lastUpdate =&quot; + lastUpdate + &quot;, fixHOO=&quot; + fixHOO);</span>
+				}
+<span class="nc" id="L1021">				methodFinish();</span>
+<span class="nc" id="L1022">				break;    // No Exception thrown in this method so no need to retry break the loop here &amp; return</span>
+			}
+		}
+<span class="nc" id="L1025">	}</span>
+
+	/**
+	 * Adjust the timeseries for QUEUE that has Single-Queue-Camapigns to include the Predicated and required time series
+	 *
+	 * @param queueID
+	 * @param queCpgAssCol Collections of campaigns that used this queue for the specified period
+	 * @param mediaID
+	 * @param start        start of the period
+	 * @param end
+	 * @param lastUpdate
+	 * @throws BbmUpdateException
+	 */
+	private void adjustTimeSeriesForSingleQueueCampaigns(ID queueID, ID mediaID, Collection&lt;CampaignQueue&gt; queCpgAssCol, Date start, Date end, Date lastUpdate, Collection[] chunkColForCombinedQue) throws BbmUpdateException {
+
+<span class="nc" id="L1040">		m_cat.debug(&quot;Inside adjustTimeSeriesForSingleQueueCampaigns, where Queue &quot; + queueID + &quot;For Time Period:&quot; + start + &quot;:END =&quot; + end + &quot; LAST UPDATE:&quot; + lastUpdate);</span>
+		try {
+			//Find the campaigns for the specified time period for given Queue
+			//Collection queCpgAssCol = m_CampaignManager.getQueueCampaignAssignments(queueID, start, end);
+			//For the campaigns find the SPs with only one non skill queue attached
+<span class="nc bnc" id="L1045" title="All 4 branches missed.">			if (queCpgAssCol == null || queCpgAssCol.isEmpty()) {</span>
+
+<span class="nc bnc" id="L1047" title="All 2 branches missed.">				m_cat.debug(&quot;Cannot find any campaign for the real Queue &quot; + queueID + &quot;For Time Period:&quot; + start + &quot;:END =&quot; + end + &quot; LAST UPDATE:&quot; + lastUpdate + &quot; : Campaign is &quot; + (queCpgAssCol == null ? &quot;NULL&quot; : &quot;EMPTY&quot;));</span>
+<span class="nc" id="L1048">				return;</span>
+			}
+<span class="nc" id="L1050">			Map&lt;ID, Map&lt;ID, List&lt;CampaignQueue&gt;&gt;&gt; campaignSPMap = new HashMap&lt;ID, Map&lt;ID, List&lt;CampaignQueue&gt;&gt;&gt;(); //Hashmap having  camapignID &lt;-&gt; Hashmap of SP that have queues</span>
+<span class="nc bnc" id="L1051" title="All 2 branches missed.">			for (CampaignQueue cq : queCpgAssCol) {</span>
+<span class="nc" id="L1052">				ID campaignID = cq.getCampaignID();</span>
+				// get all SPs for the campaign and create a hashmap SP&lt;&gt; QUEUES for all sps
+<span class="nc" id="L1054">				Collection&lt;CampaignQueue&gt; cpgQueCol = m_CampaignManager.getCampaignQueueAssignmentsAndCombinedQueues(campaignID, start, end);</span>
+<span class="nc" id="L1055">				Map&lt;ID, List&lt;CampaignQueue&gt;&gt; spCpgQueMap = new HashMap&lt;ID, List&lt;CampaignQueue&gt;&gt;(); //hashmap that holds SP ID&lt;--&gt; Arraylist of QUEUES for all sps</span>
+<span class="nc bnc" id="L1056" title="All 2 branches missed.">				for (CampaignQueue cpgQue : cpgQueCol) {</span>
+<span class="nc" id="L1057">					ID spID = cpgQue.getSPID();</span>
+<span class="nc" id="L1058">					List&lt;CampaignQueue&gt; cpqQueList = spCpgQueMap.get(spID);</span>
+<span class="nc bnc" id="L1059" title="All 2 branches missed.">					if (cpqQueList == null) {</span>
+<span class="nc" id="L1060">						cpqQueList = new ArrayList&lt;CampaignQueue&gt;();</span>
+					}
+<span class="nc" id="L1062">					cpqQueList.add(cpgQue);</span>
+<span class="nc" id="L1063">					spCpgQueMap.put(spID, cpqQueList);</span>
+<span class="nc" id="L1064">				}</span>
+<span class="nc bnc" id="L1065" title="All 2 branches missed.">				if (!spCpgQueMap.isEmpty()) {</span>
+<span class="nc" id="L1066">					campaignSPMap.put(campaignID, spCpgQueMap);</span>
+				}
+<span class="nc" id="L1068">			}</span>
+			// find SP that only has one Queue linked
+			//Sameet: if the ArrayList of queues for SP has two queues then it is defintely having only one real queue
+<span class="nc" id="L1071">			Map&lt;ID, Map&lt;ID, CampaignQueue&gt;&gt; campaignSPMapForSingleNonSkillQs = new HashMap&lt;ID, Map&lt;ID, CampaignQueue&gt;&gt;();  //Hashmap having  camapignID &lt;-&gt; Hashmap of SP that have only single NON-SKILL queue</span>
+<span class="nc bnc" id="L1072" title="All 2 branches missed.">			for (ID campaignID : campaignSPMap.keySet()) {</span>
+<span class="nc" id="L1073">				Map&lt;ID, List&lt;CampaignQueue&gt;&gt; spCpgQueMap = campaignSPMap.get(campaignID);//hashmap that already holds SP ID&lt;--&gt; Arraylist of All QUEUES in that SP</span>
+<span class="nc" id="L1074">				HashMap&lt;ID, CampaignQueue&gt; spQueIDMap = new HashMap&lt;ID, CampaignQueue&gt;();   //Hashmap that will contain  SP ID&lt;--&gt; queue for SP that have only one QUEUE</span>
+<span class="nc bnc" id="L1075" title="All 2 branches missed.">				for (ID spID : spCpgQueMap.keySet()) {</span>
+<span class="nc" id="L1076">					List&lt;CampaignQueue&gt; cpqQueList = spCpgQueMap.get(spID);</span>
+<span class="nc bnc" id="L1077" title="All 2 branches missed.">					if (cpqQueList.size() == 2) {</span>
+						// if cpgQue list size is 2, check if the media is Phone or not
+<span class="nc" id="L1079">						CampaignQueue cpgQue1 = (CampaignQueue) cpqQueList.get(0);       //INDV QUEUE ; always normal queue</span>
+<span class="nc" id="L1080">						CampaignQueue cpgQue2 = (CampaignQueue) cpqQueList.get(1);       //combined queue</span>
+<span class="nc bnc" id="L1081" title="All 2 branches missed.">						CampaignQueue medQue = cpgQue1.getMediaID() == null ? cpgQue2 : cpgQue1; //getMediaID is always always null for cpgQue1;( real queues)</span>
+<span class="nc bnc" id="L1082" title="All 2 branches missed.">						CampaignQueue relQue = cpgQue1.getQueueID() == null ? cpgQue2 : cpgQue1; //getQueueID will never be null for cpgQue1</span>
+						// THIS applies to  PHONE QUEUES only; rest should be ignored
+						// TODO eclingman Not clear what this logic does, so we still need 
+						// to verify that we don't need face to face test as well as phone test 
+<span class="nc bnc" id="L1086" title="All 2 branches missed.">						if (medQue.getMediaID().equals(Media.MEDIA_ID_PHONE)) {</span>
+							// Put only those SPs that have the queue that we are working on
+<span class="nc bnc" id="L1088" title="All 4 branches missed.">							if (queueID != null &amp;&amp; queueID.equals(relQue.getQueueID())) {</span>
+<span class="nc" id="L1089">								spQueIDMap.put(relQue.getSPID(), relQue);</span>
+							}
+						}
+					}
+<span class="nc" id="L1093">				}</span>
+				//If the SP is skill based then remove it from the Hashmap
+<span class="nc" id="L1095">				Collection&lt;SchedulingPeriod&gt; spCol = m_CampaignManager.getSchedulingPeriodsByID(spQueIDMap.keySet());</span>
+<span class="nc bnc" id="L1096" title="All 2 branches missed.">				for (SchedulingPeriod sp : spCol) {</span>
+<span class="nc bnc" id="L1097" title="All 2 branches missed.">					if (sp.getSkillBased()) {</span>
+<span class="nc" id="L1098">						spQueIDMap.remove(sp.getID());</span>
+					}
+<span class="nc" id="L1100">				}</span>
+				// now if SP is not empty then put it in the campaign HASHMAP.
+<span class="nc bnc" id="L1102" title="All 4 branches missed.">				if (spQueIDMap != null &amp;&amp; !spQueIDMap.isEmpty()) {</span>
+<span class="nc" id="L1103">					campaignSPMapForSingleNonSkillQs.put(campaignID, spQueIDMap);</span>
+				}
+<span class="nc" id="L1105">			}</span>
+			/*
+			chunkCol : Array of 5 holding collection of tracechunks FOR A REAL QUEUE
+			combQueCube : TRACECUBE OF SOME TYPE FOR THE ENTIRE RANGE    */
+			// TODO eclingman: do we want to consider face-to-face as similar to phone here?
+<span class="nc bnc" id="L1110" title="All 4 branches missed.">			if (campaignSPMapForSingleNonSkillQs != null &amp;&amp; !campaignSPMapForSingleNonSkillQs.isEmpty()) {</span>
+<span class="nc bnc" id="L1111" title="All 2 branches missed.">				for (ID campaignID : campaignSPMapForSingleNonSkillQs.keySet()) {</span>
+<span class="nc" id="L1112">					Map&lt;ID, List&lt;CampaignQueue&gt;&gt; spQueIDMap = campaignSPMap.get(campaignID);//hashmap that already holds SP ID&lt;--&gt; Arraylist of single NONSKILL PHONE QUEUEs</span>
+<span class="nc bnc" id="L1113" title="All 2 branches missed.">					if (!spQueIDMap.isEmpty()) {</span>
+<span class="nc" id="L1114">						Collection stfCol = TimeSeriesDAO.getCombinedQueueTimeSeriesFromLastUpdate(TraceUtil.META_REPORT_PREDICT, campaignID, Media.MEDIA_ID_PHONE, spQueIDMap.keySet(), start, end, null);</span>
+<span class="nc bnc" id="L1115" title="All 2 branches missed.">						if (stfCol != null) {</span>
+<span class="nc bnc" id="L1116" title="All 2 branches missed.">							if (chunkColForCombinedQue[2] == null) {</span>
+<span class="nc" id="L1117">								chunkColForCombinedQue[2] = new ArrayList();</span>
+							}
+<span class="nc" id="L1119">							chunkColForCombinedQue[2].addAll(stfCol);</span>
+						}
+<span class="nc" id="L1121">						stfCol = TimeSeriesDAO.getCombinedQueueTimeSeriesFromLastUpdate(TraceUtil.META_REQUIRE, campaignID, Media.MEDIA_ID_PHONE, spQueIDMap.keySet(), start, end, null);</span>
+<span class="nc bnc" id="L1122" title="All 2 branches missed.">						if (stfCol != null) {</span>
+<span class="nc bnc" id="L1123" title="All 2 branches missed.">							if (chunkColForCombinedQue[3] == null) {</span>
+<span class="nc" id="L1124">								chunkColForCombinedQue[3] = new ArrayList();</span>
+							}
+<span class="nc" id="L1126">							chunkColForCombinedQue[3].addAll(stfCol);</span>
+						}
+					}
+<span class="nc" id="L1129">				}</span>
+			}
+<span class="nc" id="L1131">		} catch (Exception e) {</span>
+<span class="nc" id="L1132">			handleException(e);</span>
+<span class="nc" id="L1133">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L1135">			methodFinish();</span>
+<span class="nc" id="L1136">		}</span>
+<span class="nc" id="L1137">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

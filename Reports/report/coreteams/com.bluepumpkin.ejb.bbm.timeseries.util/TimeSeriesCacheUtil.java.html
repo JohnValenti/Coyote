@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeSeriesCacheUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.timeseries.util</a> &gt; <span class="el_source">TimeSeriesCacheUtil.java</span></div><h1>TimeSeriesCacheUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.timeseries.util;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+
+import com.bluepumpkin.common.cache.Cache;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmTimeSeriesException;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ActualTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceChunk;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  TimeSeries Cache related Util methods
+ * Copyright:    Copyright (c) 2004
+ * Company:      Blue Pumpkin Software, inc
+ * @author       Sheng Song
+ * @version 1.0
+ */
+
+<span class="nc" id="L26">public class TimeSeriesCacheUtil</span>
+{
+<span class="fc" id="L28">	private static int CachedMilliSeconds = TimeZoneUtil.DAY_IN_MILLISECONDS;</span>
+
+	/**
+	 * Add TraceChunk into Cache 
+	 * @param tsCache
+	 * @param chunk
+	 */
+	public static void addInActualCache(Cache tsCache, TraceChunk chunk) {
+<span class="nc" id="L36">		Date[] window = getActualCacheWindow();</span>
+<span class="nc bnc" id="L37" title="All 2 branches missed.">		if (!chunk.getStartDate().before(window[0])) {</span>
+			// if chunk starts after the cache window start, need add it
+<span class="nc bnc" id="L39" title="All 4 branches missed.">			if (tsCache != null &amp;&amp; tsCache.lock(chunk.getQueueID(), -1)) {</span>
+<span class="nc" id="L40">				ArrayList chunkList = (ArrayList)tsCache.get(chunk.getQueueID());</span>
+<span class="nc bnc" id="L41" title="All 2 branches missed.">				if (chunkList == null)</span>
+<span class="nc" id="L42">					return;</span>
+				// remove out of dated ones, or existing point
+<span class="nc bnc" id="L44" title="All 2 branches missed.">				for (Iterator it = chunkList.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L45">					TraceChunk exChunk = (TraceChunk)it.next();</span>
+<span class="nc bnc" id="L46" title="All 2 branches missed.">					if (exChunk.getStartDate().before(window[0]))</span>
+<span class="nc" id="L47">						it.remove();</span>
+<span class="nc bnc" id="L48" title="All 2 branches missed.">					else if (exChunk.getStartDate().equals(chunk.getStartDate()))</span>
+<span class="nc" id="L49">						it.remove();</span>
+<span class="nc" id="L50">				}</span>
+				// then add new chunk
+<span class="nc" id="L52">				chunkList.add(chunk);</span>
+<span class="nc" id="L53">				chunk.setLastModifiedDate(new Date());</span>
+<span class="nc" id="L54">				tsCache.put(chunk.getQueueID(), chunkList);</span>
+				// unlock
+<span class="nc" id="L56">				tsCache.unLock(chunk.getQueueID());</span>
+			}
+		}
+<span class="nc" id="L59">	}</span>
+
+	/**
+	 * Pass an ActualTraceCube, and fill it in with the data from cache
+	 * @param tsCache
+	 * @param actCube
+	 */
+	public static void fillFromActualcache(Cache tsCache, ActualTraceCube actCube) {		
+<span class="nc" id="L67">		ArrayList chunkList = (ArrayList)tsCache.get(actCube.getQueueID());</span>
+<span class="nc bnc" id="L68" title="All 2 branches missed.">		if (chunkList != null) {</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">			for (Iterator it=chunkList.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L70">				TraceChunk chunk = (TraceChunk)it.next();</span>
+<span class="nc" id="L71">				short[] types = chunk.getTraceTypes();</span>
+<span class="nc" id="L72">				int[] values = new int[types.length];</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">				for (int i = 0; i &lt; types.length; i++) {</span>
+<span class="nc" id="L74">					values[i] = TraceUtil.roundDouble(chunk.getTraceValue(types[i]));					</span>
+				}
+<span class="nc" id="L76">				actCube.setTraceValue(chunk.getTraceTypes(), values, chunk.getStartDate());</span>
+<span class="nc" id="L77">			}</span>
+		}				
+<span class="nc" id="L79">	}</span>
+	
+	/**
+	 * Pass an ActualTraceCube, and fill it in with the data from cache
+	 * @param tsCache
+	 * @param actCube
+	 */
+	public static TraceCube readFromActualcache(Cache tsCache, ID queueID, Date start, Date end, Date lastCheck) throws BbmTimeSeriesException{
+<span class="nc" id="L87">		ArrayList chunkList = (ArrayList)tsCache.get(queueID);</span>
+<span class="nc" id="L88">		TraceCube atc = null;		</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">		if (chunkList != null) {</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">			for (Iterator it=chunkList.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L91">				TraceChunk chunk = (TraceChunk)it.next();</span>
+<span class="nc" id="L92">				short[] types = chunk.getTraceTypes();</span>
+<span class="nc bnc" id="L93" title="All 6 branches missed.">				if (atc == null &amp;&amp; !chunk.getStartDate().before(start) &amp;&amp; !chunk.getLastModifedDate().before(lastCheck)) {</span>
+<span class="nc" id="L94">					atc = new ActualTraceCube(queueID, chunk.getStartDate(), end, types);</span>
+				}
+<span class="nc bnc" id="L96" title="All 2 branches missed.">				if (atc == null)</span>
+<span class="nc" id="L97">					continue;</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">				if (!chunk.getStartDate().after(end)) {</span>
+<span class="nc" id="L99">					int[] values = new int[types.length];</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">					for (int i = 0; i &lt; types.length; i++) {</span>
+<span class="nc" id="L101">						values[i] = TraceUtil.roundDouble(chunk.getTraceValue(types[i]));					</span>
+					}
+<span class="nc" id="L103">					atc.setTraceValue(chunk.getTraceTypes(), values, chunk.getStartDate());</span>
+				}
+<span class="nc" id="L105">			}</span>
+		}		
+<span class="nc" id="L107">		return atc;</span>
+	}
+	/**
+	 * Pass an ActualTraceCube, and fill it in with the data from cache, for non-real queue mode
+	 * @param tsCache
+	 * @param actCube
+	 */
+	public static Collection readFromActualcache(Cache tsCache, Collection queueIDCol, Date start, Date end, Date lastCheck) throws BbmTimeSeriesException{
+<span class="nc" id="L115">		ArrayList atcList = new ArrayList(queueIDCol.size());</span>
+<span class="nc" id="L116">		HashMap atcMap = new HashMap(queueIDCol.size());</span>
+<span class="nc" id="L117">		Date earliestDate = null;</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">		for (Iterator itQue = queueIDCol.iterator(); itQue.hasNext(); ) {</span>
+<span class="nc" id="L119">			ID queueID = (ID)itQue.next();</span>
+<span class="nc" id="L120">			ArrayList chunkList = (ArrayList)tsCache.get(queueID);</span>
+					
+<span class="nc bnc" id="L122" title="All 2 branches missed.">			if (chunkList != null) {				</span>
+<span class="nc" id="L123">				atcMap.put(queueID, chunkList);</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">				for (Iterator it=chunkList.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L125">					TraceChunk chunk = (TraceChunk)it.next();</span>
+<span class="nc bnc" id="L126" title="All 4 branches missed.">					if (!chunk.getStartDate().before(start) &amp;&amp; !chunk.getLastModifedDate().before(lastCheck)) {</span>
+<span class="nc bnc" id="L127" title="All 4 branches missed.">						if (earliestDate == null || earliestDate.after(chunk.getStartDate()))  </span>
+<span class="nc" id="L128">							earliestDate = chunk.getStartDate();</span>
+						break;
+					}
+<span class="nc" id="L131">				}				</span>
+			} else
+<span class="nc" id="L133">				return atcList;</span>
+<span class="nc" id="L134">		}</span>
+<span class="nc" id="L135">		short[] types = TraceUtil.META_ACTUAL.getTraceTypes();</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">		for (Iterator itQue = queueIDCol.iterator(); itQue.hasNext(); ) {</span>
+<span class="nc" id="L137">			ID queueID = (ID)itQue.next();</span>
+<span class="nc" id="L138">			ArrayList chunkList = (ArrayList)atcMap.get(queueID);</span>
+<span class="nc" id="L139">			TraceCube atc = new ActualTraceCube(queueID, earliestDate, end, types);</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">			for (Iterator it=chunkList.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L141">				TraceChunk chunk = (TraceChunk)it.next();</span>
+<span class="nc bnc" id="L142" title="All 4 branches missed.">				if (!chunk.getStartDate().after(end) &amp;&amp; !chunk.getStartDate().before(earliestDate)) {</span>
+<span class="nc" id="L143">					int[] values = new int[types.length];</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">					for (int i = 0; i &lt; types.length; i++) {</span>
+<span class="nc" id="L145">						values[i] = TraceUtil.roundDouble(chunk.getTraceValue(types[i]));					</span>
+					}
+<span class="nc" id="L147">					atc.setTraceValue(chunk.getTraceTypes(), values, chunk.getStartDate());					</span>
+				}
+<span class="nc" id="L149">			}		</span>
+<span class="nc" id="L150">		    atcList.add(atc);	</span>
+<span class="nc" id="L151">		}</span>
+<span class="nc" id="L152">		return atcList;</span>
+	}
+
+	/**
+	 * Util function to return Actual TimeSeries Cached window, based on a default size
+	 * @param int, cache window size
+	 * @return Date[], [0] is Start Date, [1] is End Date(should be current System time)
+	 */
+	public static Date[] getActualCacheWindow() {
+<span class="nc" id="L161">		long currentTime = System.currentTimeMillis();</span>
+<span class="nc" id="L162">		long cacheStartTime = currentTime - CachedMilliSeconds;</span>
+<span class="nc" id="L163">		Date[] window = new Date[2];</span>
+<span class="nc" id="L164">		window[0] = new Date(cacheStartTime);</span>
+<span class="nc" id="L165">		window[1] = new Date(currentTime);</span>
+<span class="nc" id="L166">		return window;</span>
+	}
+	
+	/**
+	 * Util function to return Actual TimeSeries Cached window, based on a default size
+	 * @param int, cache window size
+	 * @return Date[], [0] is Start Date, [1] is End Date(should be current System time)
+	 */
+	public static Date[] getCacheWindow() {
+<span class="fc" id="L175">		long currentTime = System.currentTimeMillis();</span>
+<span class="fc" id="L176">		long cacheStartTime = currentTime - CachedMilliSeconds;</span>
+<span class="fc" id="L177">		Date[] window = new Date[2];</span>
+<span class="fc" id="L178">		window[0] = new Date(cacheStartTime);</span>
+<span class="fc" id="L179">		window[1] = new Date(currentTime + CachedMilliSeconds);</span>
+<span class="fc" id="L180">		return window;</span>
+	}
+
+	/**
+	 * 
+	 * @param tsCache
+	 * @param qid
+	 * @param traceType
+	 * @param value
+	 * @param start
+	 * @param window
+	 */
+	public static void addInActualCache(Cache tsCache, ID qid, short traceType, int value, Date start, Date[] window) {		
+<span class="nc bnc" id="L193" title="All 4 branches missed.">		if (tsCache != null &amp;&amp; tsCache.lock(qid, -1)) {</span>
+<span class="nc" id="L194">			ArrayList chunkList = (ArrayList)tsCache.get(qid);</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">			if (chunkList == null)</span>
+<span class="nc" id="L196">				return;</span>
+			// remove out of dated ones, or existing point
+<span class="nc bnc" id="L198" title="All 2 branches missed.">			for (Iterator it = chunkList.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L199">				TraceChunk exChunk = (TraceChunk)it.next();</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">				if (exChunk.getStartDate().before(window[0])) {</span>
+<span class="nc" id="L201">					it.remove();</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">				} else if (exChunk.getStartDate().equals(start)) {</span>
+<span class="nc" id="L203">					exChunk.setTraceValue(traceType, exChunk.getTraceValue(traceType)+value);</span>
+				}
+<span class="nc" id="L205">			}			</span>
+<span class="nc" id="L206">			tsCache.put(qid, chunkList);</span>
+			// unlock
+<span class="nc" id="L208">			tsCache.unLock(qid);</span>
+		}
+<span class="nc" id="L210">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

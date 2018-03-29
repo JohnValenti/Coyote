@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>NoShiftsOnReceivedShiftOrgDayHV.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.request.validation</a> &gt; <span class="el_source">NoShiftsOnReceivedShiftOrgDayHV.java</span></div><h1>NoShiftsOnReceivedShiftOrgDayHV.java</h1><pre class="source lang-java linenums">/*
+ * Created on Apr 7, 2004
+ *
+ * To change the template for this generated file go to
+ * Window&amp;gt;Preferences&amp;gt;Java&amp;gt;Code Generation&amp;gt;Code and Comments
+ */
+package com.bluepumpkin.ejb.rm.requests.swap.request.validation;
+
+import java.util.List;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.rm.l10n.ResourceBundleKeyWrapper;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+
+/**
+ * @author rrajendran
+ *
+ * Ensures that there are no shifts which start during the org day of the received
+ * shift (to enforce the rule that two shifts cannot start in the same org day for an employee).
+ * Both the published and the unpublished schedule are checked. 
+ * 
+ * &lt;p&gt; For two way swaps, both shiftswap items are checked.  For one way swaps, only the shiftswap
+ * item of type 'shiftswap' is checked and the shiftswap item of type 'timeoff' is not checked. 
+ * 
+ * &lt;p&gt; For tentatively approved check only the published schedule.    
+ */
+<span class="nc" id="L36">public class NoShiftsOnReceivedShiftOrgDayHV implements Validator {</span>
+<span class="nc" id="L37">	public static final String m_className = NoShiftsOnReceivedShiftOrgDayHV.class.getName();</span>
+	
+	/* (non-Javadoc)
+	 * @see com.bluepumpkin.ejb.rm.requests.common.validation.Validator#validate(com.bluepumpkin.ejb.rm.requests.common.validation.Validatable)
+	 */
+	public ValidationResult validate(Validatable validatable) throws Exception {
+		
+
+<span class="nc" id="L45">        ShiftSwapRequest ssReq = (ShiftSwapRequest) validatable;</span>
+        
+<span class="nc" id="L47">        ScheduleAccessManager sam = RequestUtil.getScheduleAccessManager();</span>
+        
+<span class="nc" id="L49">        List ssItems = ssReq.getShiftSwapItems();</span>
+<span class="nc" id="L50">        ShiftSwapItem ssItem1 = (ShiftSwapItem) ssItems.get(0);</span>
+<span class="nc" id="L51">		ShiftSwapItem ssItem2 = (ShiftSwapItem) ssItems.get(1);</span>
+        
+        
+        // check the published schedule for any shift during the org day of the received shift.
+<span class="nc" id="L55">        ValidationResult valResult = verifyNoShiftAssnOnReceivedShiftOrgDay(ssReq, ssItem1, ssItem2, true, sam);</span>
+<span class="nc bnc" id="L56" title="All 2 branches missed.">        if (valResult != null) {</span>
+<span class="nc" id="L57">        	return valResult;</span>
+        }            
+
+		// check the un-published schedule for any shift during the org day of the received shift.
+		//
+		// unpublished schedule for a tentatively approved request need not be checked as the shifts have
+		// already been swapped in the unpub schedule.
+<span class="nc bnc" id="L64" title="All 2 branches missed.">		if ( !ssReq.isTentative() ) {</span>
+<span class="nc" id="L65">			valResult = verifyNoShiftAssnOnReceivedShiftOrgDay(ssReq, ssItem1, ssItem2, false, sam);</span>
+<span class="nc bnc" id="L66" title="All 2 branches missed.">			if (valResult != null) {</span>
+<span class="nc" id="L67">				return valResult;</span>
+			}
+		}
+		
+<span class="nc" id="L71">		return null;            </span>
+	}
+
+	/**
+	 * check if there is no existing shift on the received shift's org day for both 'ssItem1' and
+	 * 'ssItem2'.  
+	 * 
+	 * @param ssReq
+	 * @param ssItem1
+	 * @param ssItem2
+	 * @param published
+	 * @param sam
+	 * @return
+	 * @throws Exception
+	 */
+	private ValidationResult verifyNoShiftAssnOnReceivedShiftOrgDay(ShiftSwapRequest ssReq, 
+		ShiftSwapItem ssItem1, ShiftSwapItem ssItem2, boolean published, ScheduleAccessManager sam) throws Exception {
+			
+		//  AS == After swap;  BS == Before Swap.
+		//
+		//  BS: ssItem1, empID1                    AS: ssItem2, empID1
+		//  ===================                   - - - - - - - - - - -
+		//         |                                        ^
+		//         |                                        |
+		//         |                                        |
+		//         V                                        |
+		//  - - - - - - - - - -                    ====================
+		//  AS: ssItem1, empID2                       BS: ssItem2, empID2
+			
+		// shiftAssignmentsOnReceivedShiftOrgDay.
+        //
+        // [0] == shiftAssn same org day for ssItem1 with empID2
+        // [1] == shiftAssn same org day for ssItem2 with empID1
+<span class="nc" id="L104">        ShiftAssignment[] SAsOnReceivedShiftOrgDay = </span>
+        	 // ssReq.getCache().getSwappedShiftAssignsForReqSameOrgDay(published, sam);
+        	//Silk 80581
+            //QA46082 - To consider only the shifts that start on the org day for comparision
+            // change of logic is required because we do allow shifts to be created on 
+            // org day when there is a shift extending from previous day
+            //Only below method is changed as it tries to get the shifts for the org 
+<span class="nc" id="L111">             ssReq.getCache().getSwappedSAForReqWithStartDateOnSameOrgDay(published, sam);</span>
+
+		// [0] == shiftAssn for ssItem1 
+		// [1] == shiftAssn for ssItem2 
+<span class="nc" id="L115">        ShiftAssignment[] SAsForExportedShift = </span>
+<span class="nc" id="L116">            ssReq.getCache().getShiftAssignsForReqAligned(published, sam);</span>
+
+		// check ssItem1 received by emp2.            
+<span class="nc bnc" id="L119" title="All 2 branches missed.">        if (ssItem1.isSwapTypeShift()) {</span>
+<span class="nc" id="L120">			ShiftAssignment SAOnReceivedShiftOrgDayForEmp2 = SAsOnReceivedShiftOrgDay[0];</span>
+<span class="nc" id="L121">            ShiftAssignment SAForExportedShiftForEmp2 = SAsForExportedShift[1];</span>
+            
+			// if shift exists on received shift's org day, 
+<span class="nc bnc" id="L124" title="All 4 branches missed.">			if (SAOnReceivedShiftOrgDayForEmp2 != null &amp;&amp; SAForExportedShiftForEmp2 != null) {</span>
+				 // verify if the shift on the received shift's org day is the exported shift (this is 
+				// the case if the ssReq involves swapping shifts on the same org day).
+				//   
+				// If this is not the case:
+<span class="nc bnc" id="L129" title="All 2 branches missed.">				if ( !SAForExportedShiftForEmp2.equals(SAOnReceivedShiftOrgDayForEmp2) ) {</span>
+<span class="nc" id="L130">				    ID emp2ID = (ID) SAOnReceivedShiftOrgDayForEmp2.getWorkResourceIDs().iterator().next();</span>
+					
+<span class="nc" id="L132">					return ValidationUtil.setHardValidationResult(ssReq, </span>
+						RmEjbBundleKey.SS_SHIFT_EXISTS_ON_RECEIVED_SHIFT_ORG_DAY,
+<span class="nc" id="L134">						ssReq.getCache().getEmployeeNameByID(emp2ID), </span>
+<span class="nc" id="L135">						SAOnReceivedShiftOrgDayForEmp2.getStartTime(),</span>
+<span class="nc" id="L136">						SAOnReceivedShiftOrgDayForEmp2.getEndTime(), </span>
+						new ResourceBundleKeyWrapper(RmEjbBundleKey.GEN_PUBLISHED), m_className );					
+				}
+			}
+        }
+        
+		// check ssItem2 received by emp1.            
+<span class="nc bnc" id="L143" title="All 2 branches missed.">		if (ssItem2.isSwapTypeShift()) {</span>
+<span class="nc" id="L144">			ShiftAssignment SAOnReceivedShiftOrgDayForEmp1 = SAsOnReceivedShiftOrgDay[1];</span>
+<span class="nc" id="L145">			ShiftAssignment SAForExportedShiftForEmp1 = SAsForExportedShift[0];</span>
+            
+			// if shift exists on received shift's org day, 
+<span class="nc bnc" id="L148" title="All 4 branches missed.">			if (SAOnReceivedShiftOrgDayForEmp1 != null &amp;&amp; SAForExportedShiftForEmp1 != null) {</span>
+				// verify if the shift on the received shift's org day is the exported shift (this is 
+				// the case if the ssReq involves swapping shifts on the same org day).
+				//   
+				// If this is not the case:
+<span class="nc bnc" id="L153" title="All 2 branches missed.">				if ( !SAForExportedShiftForEmp1.equals(SAOnReceivedShiftOrgDayForEmp1)) {</span>
+<span class="nc" id="L154">					ID emp1ID = (ID) SAOnReceivedShiftOrgDayForEmp1.getWorkResourceIDs().iterator().next();</span>
+					
+<span class="nc" id="L156">					return ValidationUtil.setHardValidationResult(ssReq, </span>
+						RmEjbBundleKey.SS_SHIFT_EXISTS_ON_RECEIVED_SHIFT_ORG_DAY,
+<span class="nc" id="L158">						ssReq.getCache().getEmployeeNameByID(emp1ID), </span>
+<span class="nc" id="L159">						SAOnReceivedShiftOrgDayForEmp1.getStartTime(),</span>
+<span class="nc" id="L160">						SAOnReceivedShiftOrgDayForEmp1.getEndTime(), </span>
+						new ResourceBundleKeyWrapper(RmEjbBundleKey.GEN_PUBLISHED), m_className );					
+				}
+			}
+		}
+        
+<span class="nc" id="L166">		return null;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

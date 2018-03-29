@@ -1,0 +1,372 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>FlexTimeRequestFormPopupPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.requests.flextime</a> &gt; <span class="el_source">FlexTimeRequestFormPopupPM.java</span></div><h1>FlexTimeRequestFormPopupPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.requests.flextime;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Date;
+import java.util.List;
+import java.util.ResourceBundle;
+import java.util.TimeZone;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestFieldInfo;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.FlexRequestMakeup;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequestFieldInfo;
+import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.keys.RmKeys;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.requests.timeoff.TimeOffRequestFormPopupPM;
+import com.bluepumpkin.web.rm.requests.timeoff.TimeOffRequestUtil;
+import com.bluepumpkin.web.rm.requests.timeoff.TimeOffRequestsMH;
+import com.bluepumpkin.web.rm.requests.timeoff.TimeOffRequestsMH.TODetailData;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.list.DynamicMultiColListPC;
+import com.witness.web.uif.pagecomponent.picker.date.DateRangePickerPC;
+import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarUtil;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+
+public class FlexTimeRequestFormPopupPM extends TimeOffRequestFormPopupPM {
+
+	private static final int DEFAULT_FLEX_DURATION_IN_MINUTES = 15;
+	private static final long serialVersionUID = 1L;
+	private static final String SHIFT_REQUEST_PC = &quot;shiftRequestPC&quot;;
+<span class="fc" id="L51">	private static final Category LOG = Log.initCategory(FlexTimeRequestFormPopupPM.class.getName());</span>
+
+	private FlexTimeRequestsMH modelHandler;
+	private DynamicMultiColListPC timeOffChoiceListPC;
+	private FlexTimeShiftRequestPC shiftRequestPC;
+
+	/**
+	 * Return an instance of the model that is ready for rendering
+	 */
+	public static PageModel getInstance(RequestContext context) throws Exception {
+<span class="nc" id="L61">		return getInstance(context, FlexTimeRequestFormPopupPM.class);</span>
+	}
+
+	public FlexTimeRequestFormPopupPM(RequestContext context) {
+<span class="nc" id="L65">		super(context);</span>
+
+		// Update form action
+<span class="nc" id="L68">		m_formAction = RmKeys.RH_FLEXTIME_FORM;</span>
+
+<span class="nc" id="L70">		modelHandler = new FlexTimeRequestsMH();</span>
+
+<span class="nc" id="L72">		shiftRequestPC = new FlexTimeShiftRequestPC(m_context, SHIFT_REQUEST_PC, getTimeOffRequest(), false);</span>
+<span class="nc" id="L73">		addChildComponent(shiftRequestPC);</span>
+
+<span class="nc" id="L75">		addJSVariable(RmWebBundleKey.FLEX_TIMEOFF_HOURS_NOT_EQUALS_MAKEUP_HOURS_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_TIMEOFF_HOURS_NOT_EQUALS_MAKEUP_HOURS_ERROR_MESSAGE);</span>
+<span class="nc" id="L76">		addJSVariable(RmWebBundleKey.FLEX_TIMEOFF_ZERO_LENGTH_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_TIMEOFF_ZERO_LENGTH_ERROR_MESSAGE);</span>
+<span class="nc" id="L77">		addJSVariable(RmWebBundleKey.FLEX_EMPTY_TIMEOFF_TYPE_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_EMPTY_TIMEOFF_TYPE_ERROR_MESSAGE);</span>
+<span class="nc" id="L78">		addJSVariable(RmWebBundleKey.FLEX_EMPTY_TIMEOFF_DATE_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_EMPTY_TIMEOFF_DATE_ERROR_MESSAGE);</span>
+<span class="nc" id="L79">		addJSVariable(RmWebBundleKey.FLEX_NO_MAKEUP_DATE_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_NO_MAKEUP_DATE_ERROR_MESSAGE);</span>
+<span class="nc" id="L80">		addJSVariable(RmWebBundleKey.FLEX_DUPLICATE_MAKEUP_DATE_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_DUPLICATE_MAKEUP_DATE_ERROR_MESSAGE);</span>
+<span class="nc" id="L81">		addJSVariable(RmWebBundleKey.FLEX_INVALID_MAKEUP_BEFORE_ACTIVITY_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_INVALID_MAKEUP_BEFORE_ACTIVITY_ERROR_MESSAGE);</span>
+<span class="nc" id="L82">		addJSVariable(RmWebBundleKey.FLEX_INVALID_MAKEUP_BEFORE_DURATION_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_INVALID_MAKEUP_BEFORE_DURATION_ERROR_MESSAGE);</span>
+<span class="nc" id="L83">		addJSVariable(RmWebBundleKey.FLEX_INVALID_MAKEUP_AFTER_ACTIVITY_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_INVALID_MAKEUP_AFTER_ACTIVITY_ERROR_MESSAGE);</span>
+<span class="nc" id="L84">		addJSVariable(RmWebBundleKey.FLEX_INVALID_MAKEUP_AFTER_DURATION_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_INVALID_MAKEUP_AFTER_DURATION_ERROR_MESSAGE);</span>
+<span class="nc" id="L85">		addJSVariable(RmWebBundleKey.FLEX_NO_MAKEUP_DURATION_ERROR_MESSAGE, m_bundle, RmWebBundleKey.FLEX_NO_MAKEUP_DURATION_ERROR_MESSAGE);</span>
+<span class="nc" id="L86">	}</span>
+
+	@Override
+	protected DateRangePickerPC initDateRangePickerPC() {
+<span class="nc" id="L90">		DateRangePickerPC picker = super.initDateRangePickerPC();</span>
+<span class="nc" id="L91">		picker.setOnChangeJS(&quot;jQuery(document).trigger('timeOffPickerUpdatedEvent')&quot;);</span>
+<span class="nc" id="L92">		return picker;</span>
+	}
+
+	@Override
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="nc" id="L97">		boolean result = super.extractParameters(request);</span>
+
+		// Always use TORequest.DEBITTYPE_DEBIT for debit type
+<span class="nc" id="L100">		setDebitType(TORequest.DEBITTYPE_DEBIT);</span>
+
+		// Flex type
+<span class="nc" id="L103">		getTimeOffRequest().setFieldValue(TORequestFieldInfo.TIMEOFFREQUEST_N_FLEXTYPE, TORequest.FLEXTYPE_FLEXWITHMAKEUP);</span>
+<span class="nc" id="L104">		getTimeOffRequest().getAggregatedRequest().setFieldValue(RequestFieldInfo.REQUEST_S_REQUESTTYPE, Request.REQUESTTYPE_FLEXTIME);</span>
+
+<span class="nc" id="L106">		return result;</span>
+	}
+
+	@Override
+	protected Date roundTOStartDateParameter(Date startDate,int timeInterval) {
+		// Disable roundup TO's startDate
+<span class="nc" id="L112">		return startDate;</span>
+	}
+
+	@Override
+	protected Date roundTOEndDateParameter(Date endDate,int timeInterval) {
+		// Disable roundup TO's endDate
+<span class="nc" id="L118">		return endDate;</span>
+	}
+
+	@Override
+	protected TODetailData initializeModelTimeOffData(ID empID, TORequest aRequest)
+			throws Exception {
+
+		// Load data using FlexTimeRequestsMH instead TimeOffRequestsMH
+
+		TimeOffRequestsMH.TODetailData toData;
+<span class="nc bnc" id="L128" title="All 2 branches missed.">		if (isManagerMode()) {</span>
+<span class="nc" id="L129">			toData = modelHandler.getFlexTimeDetailDataForManager(m_context, m_context.getUser(), empID, isNew(), aRequest, getIsFromNetStaffingRibbon());</span>
+		} else {
+<span class="nc" id="L131">			toData = modelHandler.getFlexTimeDetailData(m_context, empID, aRequest, getIsFromNetStaffingRibbon());</span>
+		}
+
+<span class="nc" id="L134">		mergeValidationResult(aRequest);</span>
+
+		// set default values for time off date range picker and time off type (and employee ID if manager mode)
+		// note: using toData.getEmpID() instead provided empID because empID value will be null when manager creating new Flex Request
+<span class="nc" id="L138">		setDefaultTimeOffAndMakeup(toData.getEmpID() , toData.getTOTypes(), toData.getOrgSetting(), new Date(), DEFAULT_FLEX_DURATION_IN_MINUTES);</span>
+
+<span class="nc" id="L140">		return toData;</span>
+
+	}
+
+	/**
+	 * Set default for time off date range picker to first 15' if this is a new flex request
+	 * and also set default time off type and employee ID (so the Length and Accounted Hours can be calculated)
+	 */
+	private void setDefaultTimeOffAndMakeup(ID empID, Collection&lt;Activity&gt; toTypes, OrganizationSetting organizationSetting,
+			Date shiftDate, int durationMins) throws Exception {
+<span class="nc bnc" id="L150" title="All 8 branches missed.">		if (isNew() &amp;&amp; isTimeOffRangeEmpty(getTimeOffRequest()) &amp;&amp; !toTypes.isEmpty() &amp;&amp; empID != null) {</span>
+			// calculate date range for first 15 mins of shift event
+<span class="nc" id="L152">			ShiftAssignmentDetailData db = modelHandler.getShiftAssignmentDetail(m_context, m_context.getUser().getEmployeeID(), empID, shiftDate);</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">			if (db.getShiftAssignment() != null) {</span>
+
+<span class="nc" id="L155">				TimeRange timeOffDuration = setDefaultTimeOff(empID, toTypes, durationMins, db);</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">				if (timeOffDuration != null) {</span>
+<span class="nc" id="L157">					setDefaultMakeup(empID, shiftDate, organizationSetting, (int) timeOffDuration.getDurationMin(), db);</span>
+				}
+			}
+		}
+<span class="nc" id="L161">	}</span>
+
+	private TimeRange setDefaultTimeOff(ID empID, Collection&lt;Activity&gt; toTypes, int durationMins, ShiftAssignmentDetailData db) throws Exception {
+		// first 15 minutes of shift event
+<span class="nc" id="L165">		ShiftAssignment sa = db.getShiftAssignment();</span>
+<span class="nc" id="L166">		TimeRange duration = modelHandler.getDurationFromFirstAvailableBlock(empID, sa.getStartTime(), sa.getEndTime(), durationMins);</span>
+
+<span class="nc bnc" id="L168" title="All 2 branches missed.">		if (duration != null) {</span>
+			// update TORequest with default values
+<span class="nc" id="L170">			List&lt;TOChoice&gt; choiceList = new ArrayList&lt;TOChoice&gt;();</span>
+<span class="nc" id="L171">			TOChoice choice = new TOChoice();</span>
+<span class="nc" id="L172">			choice.setRank(1);</span>
+<span class="nc" id="L173">			choice.setUserRank(1);</span>
+<span class="nc" id="L174">			choice.setStartDate(duration.getStartDate());</span>
+<span class="nc" id="L175">			choice.setEndDate(duration.getEndDate());</span>
+<span class="nc" id="L176">			choiceList.add(choice);</span>
+<span class="nc" id="L177">			getTimeOffRequest().setRequestChoiceList(choiceList);</span>
+
+			// time off type must be set so Accounted Hours can be calculated
+<span class="nc" id="L180">			getTimeOffRequest().setTimeOffType(toTypes.iterator().next().getID());</span>
+
+<span class="nc bnc" id="L182" title="All 2 branches missed.">			if (getRequestedFor() == null) {</span>
+				// manager creating new Flex request, set default requestedFor to first option so Accounted Hours can be calculated
+<span class="nc" id="L184">				getTimeOffRequest().setEmployeeID(empID);</span>
+			}
+
+		}
+
+<span class="nc" id="L189">		return duration;</span>
+	}
+
+
+	private void setDefaultMakeup(ID empID, Date shiftDate, OrganizationSetting organizationSetting, int durationMins,
+			ShiftAssignmentDetailData db) throws Exception {
+		// Set default 15' makeup if AFTER extension is available
+<span class="nc bnc" id="L196" title="All 4 branches missed.">		if (organizationSetting.getAllowMakeupAfterShift() &amp;&amp; modelHandler.isAfterExtensionEditable(db.getShiftAssignment())) {</span>
+
+<span class="nc" id="L198">			FlexRequestMakeup flexMakeup = new FlexRequestMakeup();</span>
+<span class="nc" id="L199">			getTimeOffRequest().setFlexRequestMakeupList(new ArrayList&lt;FlexRequestMakeup&gt;(Arrays.asList(flexMakeup)));</span>
+
+<span class="nc" id="L201">			flexMakeup.setShiftAssignmentID(db.getShiftAssignmentInfo().getShiftAssignmentId());</span>
+<span class="nc" id="L202">			flexMakeup.setSPID(modelHandler.getSPID(this.getRequestContext(), empID, shiftDate));</span>
+<span class="nc" id="L203">			Pair&lt;Date, Date&gt; mainShiftStartEnd = modelHandler.getMainShiftStartEnd(this.getRequestContext(), db.getShiftAssignment());</span>
+<span class="nc" id="L204">			flexMakeup.setShiftStartTime(mainShiftStartEnd.getFirst());</span>
+<span class="nc" id="L205">			flexMakeup.setShiftEndTime(mainShiftStartEnd.getSecond());</span>
+
+<span class="nc" id="L207">			flexMakeup.setExtAfterActivityID(db.getShiftAssignment().getActivityID());</span>
+<span class="nc" id="L208">			flexMakeup.setExtAfterGap(0);</span>
+<span class="nc" id="L209">			flexMakeup.setExtAfterDuration(durationMins);</span>
+
+<span class="nc" id="L211">			modelHandler.setMakeupStartAndEnd(flexMakeup, this.getRequestContext());</span>
+		}
+<span class="nc" id="L213">	}</span>
+
+	private boolean isTimeOffRangeEmpty(TORequest toRequest) {
+		boolean empty;
+<span class="nc" id="L217">		List&lt;TOChoice&gt; toChoices = toRequest.getRequestChoiceList();</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">		if (toChoices.isEmpty()) {</span>
+<span class="nc" id="L219">			empty = true;</span>
+		} else {
+<span class="nc" id="L221">			TOChoice toChoice = toChoices.get(0);</span>
+<span class="nc bnc" id="L222" title="All 4 branches missed.">			empty = toChoice.getStartDate() == null || toChoice.getEndDate() == null;</span>
+		}
+<span class="nc" id="L224">		return empty;</span>
+	}
+
+	@Override
+	protected void initPageMessages() {
+		// Overwrite parent logic to avoid showing the message about rounding up
+<span class="nc" id="L230">	}</span>
+
+	@Override
+	protected void initContentTitle() {
+<span class="nc" id="L234">		super.initContentTitle();</span>
+		// Update Item Name from Time Off to Flex Time
+<span class="nc" id="L236">		getContentTitle().setItemName(i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME));</span>
+<span class="nc" id="L237">	}</span>
+
+	@Override
+	protected void addPageMessageNoActivities() {
+<span class="nc" id="L241">		addPageMessage(Message.WARNING_TYPE, RmWebBundleKey.WARNING_NO_FT_ACTIVITIES, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L242">	}</span>
+
+	@Override
+	protected void initMainListTimeOffHours() {
+		// Hide &quot;Time Off Hours&quot; row but still need the dropdown element to avoid JS errors
+<span class="nc" id="L247">		addGenericHTML(&quot;&lt;span style='display:none'&gt;&quot; +createDebitTypeDD() + &quot;&lt;/span&gt;&quot;);</span>
+<span class="nc" id="L248">	}</span>
+
+	@Override
+	protected boolean initMainListRowAddToWaitlist() {
+		// Hide &quot;Add to Waitlist&quot; row
+<span class="nc" id="L253">		return false;</span>
+	}
+
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	@Override
+	public void initChoiceList() {
+
+		// Below logic is modified from TimeOffRequestFormPopupPM.initChoiceList()
+
+<span class="nc" id="L263">		timeOffChoiceListPC = new DynamicMultiColListPC(m_context);</span>
+<span class="nc bnc" id="L264" title="All 2 branches missed.">		timeOffChoiceListPC.setEnabled( !isTOChoiceEditDisabled() );</span>
+<span class="nc" id="L265">		getContainers().add(timeOffChoiceListPC);</span>
+
+		// Init List
+<span class="nc" id="L268">		timeOffChoiceListPC.setTableAttribute(&quot;summary&quot;, i18n(m_bundle, RmWebBundleKey.FT_REQUEST_POPUP_CHOICES_TABLE_SUMMARY));</span>
+
+		// Init Header
+<span class="nc" id="L271">		TableHeaderPC headerPC = timeOffChoiceListPC.getHeader();</span>
+<span class="nc" id="L272">		headerPC.addColumnHeaderData(&quot;&quot;, i18n(m_bundle, RmWebBundleKey.FLEXTIME_CHOICES));</span>
+<span class="nc" id="L273">		headerPC.addColumnHeaderData(&quot;&quot;, i18n(m_common_bundle, UIFWebBundleKey.LENGTH));</span>
+<span class="nc" id="L274">		headerPC.addColumnHeaderData(&quot;&quot;, i18n(m_bundle, RmWebBundleKey.TIMEOFF_HOURS_ACCOUNTED_LABEL));</span>
+
+		// Init Template Node
+<span class="nc" id="L277">		DefaultMultiColumnNodeData tmplNodeData = getTemplateData();</span>
+<span class="nc" id="L278">		timeOffChoiceListPC.setTemplateNodeData(tmplNodeData);</span>
+
+		// Populate List Model
+<span class="nc" id="L281">		List&lt;DefaultMultiColumnNodeData&gt; listModel = getChoiceDateList();</span>
+<span class="nc" id="L282">		listModel.add(getDefaultLastRow());</span>
+<span class="nc" id="L283">		timeOffChoiceListPC.setListModel(listModel);</span>
+<span class="nc" id="L284">	}</span>
+
+	@Override
+	protected String[] getTimeOffChoiceLenAndAlerts(TOChoice choice, Localizer localizer, TimeZone tz, ResourceBundle rmBundle, boolean isApproved, boolean printAccountedHours) {
+
+<span class="nc" id="L289">		String[] result = TimeOffRequestUtil.getTimeOffChoiceLenAndAlerts(choice, localizer, tz, rmBundle, isApproved, true);</span>
+
+		// if valid data and length is not calculated, calculate and update length and accounted hours only
+<span class="nc bnc" id="L292" title="All 12 branches missed.">		if (choice != null &amp;&amp; getRequestedFor() != null &amp;&amp; getTimeOffType() != null &amp;&amp; choice.getStartDate() != null &amp;&amp; choice.getEndDate() != null &amp;&amp; !choice.isLengthSet()) {</span>
+			try {
+<span class="nc" id="L294">				String[] data = modelHandler.calculateTOLengthAndAccountedHours(getRequestContext(), getRequestedFor(), getTimeOffType(), choice.getStartDate(), choice.getEndDate(), this.getTimeOffRequest().isApproved());</span>
+<span class="nc" id="L295">				result[0] = data[0];</span>
+<span class="nc" id="L296">				result[1] = data[1];</span>
+<span class="nc" id="L297">			} catch (Exception e) {</span>
+<span class="nc" id="L298">				LOG.error(&quot;Exception when calculating accounted hours&quot;, e);</span>
+<span class="nc" id="L299">			}</span>
+		}
+<span class="nc" id="L301">		return new String[] {result[0], result[1]};</span>
+	}
+
+	private static DefaultMultiColumnNodeData getDefaultLastRow() {
+<span class="nc" id="L305">		DefaultMultiColumnNodeData lastRow = new DefaultMultiColumnNodeData(&quot;&quot;);</span>
+		// for some reason, adding first empty cell without label will set its width to 20% so addidng the label
+<span class="nc" id="L307">		lastRow.add(&quot;&lt;span&gt;&amp;nbsp;&lt;/span&gt;&lt;label name=\&quot;SelectInfo\&quot; class=\&quot;hidden-label\&quot;&gt;&lt;/label&gt;&quot;, &quot;height:8px&quot;);</span>
+<span class="nc" id="L308">		lastRow.add(null);</span>
+<span class="nc" id="L309">		lastRow.add(null);</span>
+<span class="nc" id="L310">		lastRow.setSelectable(false);</span>
+<span class="nc" id="L311">		return lastRow;</span>
+	}
+
+	@Override
+	protected void initForDisplayChoiceList() {
+		// Replace parent's logic by empty method
+<span class="nc" id="L317">	}</span>
+
+	@Override
+	protected void initAdditionalContent() {
+<span class="nc" id="L321">		initMakeupTable();</span>
+<span class="nc" id="L322">		initAlert();</span>
+<span class="nc" id="L323">	}</span>
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	protected void initAlert() {
+<span class="nc" id="L327">		super.initAlertList();</span>
+<span class="nc" id="L328">		getContainers().add(m_alertListPC);</span>
+<span class="nc" id="L329">	}</span>
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	protected void initMakeupTable() {
+		try {
+<span class="nc" id="L334">			shiftRequestPC.initializeModel(getTimeOffRequest(), getRequestedFor(), m_orgSetting);</span>
+
+<span class="nc" id="L336">			shiftRequestPC.initializeContent();</span>
+
+			// Append shift requests table after TimeOffCalendars section
+			// (remove from parent before adding to container list to avoid duplicate messages)
+<span class="nc" id="L340">			removeChildComponent(shiftRequestPC);</span>
+<span class="nc" id="L341">			getContainers().add(shiftRequestPC);</span>
+<span class="nc" id="L342">		} catch (Exception e) {</span>
+<span class="nc" id="L343">			LOG.error(&quot;Exception when initialize FlexTimeShiftRequestPC component&quot;, e);</span>
+<span class="nc" id="L344">			addPageMessage(Message.ERROR_TYPE, RmWebBundleKey.FLEX_SHIFT_INVALID_INPUT_ERROR, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L345">		}</span>
+<span class="nc" id="L346">	}</span>
+
+	private void mergeValidationResult(TORequest toRequest) {
+<span class="nc bnc" id="L349" title="All 2 branches missed.">		if(toRequest != null) {</span>
+<span class="nc" id="L350">			Collection valResult = toRequest.getValidationResults(true);</span>
+<span class="nc bnc" id="L351" title="All 4 branches missed.">			if(valResult != null &amp;&amp; !valResult.isEmpty()) {</span>
+<span class="nc" id="L352">				List&lt;ValidationResult&gt; newList = new ArrayList&lt;ValidationResult&gt;();</span>
+<span class="nc" id="L353">				newList.addAll(valResult);</span>
+<span class="nc" id="L354">				m_valResults = newList;</span>
+			}
+		}
+<span class="nc" id="L357">	}</span>
+
+	@Override
+	protected void initToolbar() {
+<span class="nc" id="L361">		ToolbarUtil.addValidateSaveBtn(m_toolbar, isSaveButtonEnabled());</span>
+<span class="nc bnc" id="L362" title="All 2 branches missed.">		if (m_isShowDoneInsteadOfCancelBtn) {</span>
+<span class="nc" id="L363">			ToolbarUtil.addCloseWindowDoneBtn(m_toolbar, true);</span>
+		} else {
+<span class="nc" id="L365">			ToolbarUtil.addCloseWindowCancelBtn(m_toolbar, true);</span>
+		}
+
+<span class="nc" id="L368">		String lbl = m_toolbar.i18nCore(UIFWebBundleKey.TOOLBAR_RESET);</span>
+<span class="nc" id="L369">		m_toolbar.addSubmitTextButton(PageAction.RESTORE_DEFAULTS, lbl, true);</span>
+<span class="nc" id="L370">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

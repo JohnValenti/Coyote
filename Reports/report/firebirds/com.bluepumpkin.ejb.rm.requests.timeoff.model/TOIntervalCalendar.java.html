@@ -1,0 +1,535 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TOIntervalCalendar.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.timeoff.model</a> &gt; <span class="el_source">TOIntervalCalendar.java</span></div><h1>TOIntervalCalendar.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.timeoff.model;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.Log;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TOCalcUtil;
+import com.bluepumpkin.ejb.rm.DSTTransitionMode;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.BlackoutDay;
+import com.bluepumpkin.ejb.rm.util.DateUtil;
+
+/**
+ * Time Off Interval Calendar contains intervals and increments broken down into 15 minutes for special statuses
+ * such as Blackout day, holiday, etc.
+ */
+public class TOIntervalCalendar {
+<span class="nc" id="L27">	private static Category LOG = Log.initCategory(TOIntervalCalendar.class.getName());</span>
+	private static final int MILLISECONDS_IN_INTERVAL = 15 * 60 * 1000;
+
+	private final List&lt;TOIntervalCalendarInterval&gt; intervals;
+	private List&lt;TOIntervalCalendarIncrement&gt; increments;
+	private final Date startTime;
+	private final Date endTime;
+	private final TimeZone timeZone;
+<span class="nc" id="L35">	private final List&lt;TOIntervalCalendarDay&gt; days = new ArrayList&lt;TOIntervalCalendarDay&gt;();</span>
+<span class="nc" id="L36">	private TOIntervalCalendarDay longestDay = null;</span>
+<span class="nc" id="L37">	private int dstTransitionIndex = -1;</span>
+<span class="nc" id="L38">	private DSTTransitionMode dstTransitionMode = DSTTransitionMode.NEUTRAL;</span>
+<span class="nc" id="L39">	private final SimpleDateFormat dateFormat = new SimpleDateFormat(&quot;MM/dd/yyyy HH:mm:ss zZ&quot;, Locale.US);</span>
+
+	// ================================================================================
+	// CONSTRUCTION
+	// ================================================================================
+
+	/**
+	 * Creates a new instance based on the specified start and end times, rounding to the nearest 15 minutes if necessary.
+	 */
+<span class="nc" id="L48">	public TOIntervalCalendar(Date startTime, Date endTime, TimeZone timeZone) {</span>
+<span class="nc" id="L49">		this.startTime = DateUtil.roundToNearestInterval(startTime);</span>
+<span class="nc" id="L50">		this.endTime = DateUtil.roundToNearestInterval(endTime);</span>
+<span class="nc" id="L51">		this.timeZone = timeZone;</span>
+<span class="nc" id="L52">		this.intervals = new ArrayList&lt;TOIntervalCalendarInterval&gt;();</span>
+<span class="nc" id="L53">		createIncrements();</span>
+<span class="nc" id="L54">	}</span>
+
+	/**
+	 * Creates a new instance based on the specified start and end times, rounding to the nearest 15 minutes if necessary.
+	 * This is shorthand for creating and then adding intervals.
+	 */
+	public TOIntervalCalendar(Date startTime, Date endTime, TimeZone timeZone, List&lt;TOIntervalCalendarInterval&gt; intervals) {
+<span class="nc" id="L61">		this(startTime, endTime, timeZone);</span>
+
+<span class="nc" id="L63">		addIntervals(intervals);</span>
+<span class="nc" id="L64">	}</span>
+
+	// ================================================================================
+	// PROPERTIES
+	// ================================================================================
+
+	public List&lt;TOIntervalCalendarDay&gt; getDays() {
+<span class="nc" id="L71">		return days;</span>
+	}
+
+	public int getDstTransitionIndex() {
+<span class="nc" id="L75">		return dstTransitionIndex;</span>
+	}
+
+	public DSTTransitionMode getDstTransitionMode() {
+<span class="nc" id="L79">		return dstTransitionMode;</span>
+	}
+
+	public Date getEndTime() {
+<span class="nc" id="L83">		return endTime;</span>
+	}
+
+	public List&lt;TOIntervalCalendarIncrement&gt; getIncrements() {
+<span class="nc" id="L87">		return this.increments;</span>
+	}
+
+	public List&lt;TOIntervalCalendarInterval&gt; getIntervals() {
+<span class="nc" id="L91">		return this.intervals;</span>
+	}
+
+	public TOIntervalCalendarDay getLongestDay() {
+<span class="nc" id="L95">		return longestDay;</span>
+	}
+
+	public Date getStartTime() {
+<span class="nc" id="L99">		return startTime;</span>
+	}
+
+	public TimeZone getTimeZone() {
+<span class="nc" id="L103">		return timeZone;</span>
+	}
+
+	// ================================================================================
+	// INTERFACE
+	// ================================================================================
+
+	/**
+	 * Add blackout days to the calendar. This will mark organization days if they align with the blackout day.
+	 */
+	public void addBlackoutDays(Collection&lt;BlackoutDay&gt; blackoutDays, TimeZone timeZone, int orgDayBoundaryOffset) {
+<span class="nc" id="L114">		Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc bnc" id="L115" title="All 4 branches missed.">		if (blackoutDays.isEmpty() || days.isEmpty()) {</span>
+<span class="nc" id="L116">			return;</span>
+		}
+
+<span class="nc" id="L119">		int daysIndex = 0;</span>
+<span class="nc" id="L120">		TOIntervalCalendarDay day = days.get(0);</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">		for (BlackoutDay blackoutDay : blackoutDays) {</span>
+<span class="nc" id="L122">			LocalDate localDate = blackoutDay.getBlackoutLocalDate();</span>
+<span class="nc" id="L123">			Date orgDate = localDate.getTime(timeZone);</span>
+<span class="nc" id="L124">			cal.setTime(orgDate);</span>
+<span class="nc" id="L125">			TOCalcUtil.setCalMinsOffsetFromMidnight(cal, orgDayBoundaryOffset);</span>
+
+<span class="nc bnc" id="L127" title="All 2 branches missed.">			while (day.getStartTime().before(cal.getTime())) {</span>
+<span class="nc" id="L128">				daysIndex++;</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">				if (daysIndex &gt;= days.size()) {</span>
+<span class="nc" id="L130">					return;</span>
+				}
+<span class="nc" id="L132">				day = days.get(daysIndex);</span>
+			}
+<span class="nc bnc" id="L134" title="All 2 branches missed.">			if (cal.getTime().equals(day.getStartTime())) {</span>
+<span class="nc" id="L135">				day.setBlackoutDay(blackoutDay);</span>
+			}
+<span class="nc" id="L137">		}</span>
+<span class="nc" id="L138">	}</span>
+
+	/**
+	 * Adds the Intervals to each increment in which they overlap. This will replace any existing assignment.
+	 * Intervals are expected to be in ascending order with no overlap.
+	 *
+	 * @param intervals
+	 */
+	public void addIntervals(List&lt;TOIntervalCalendarInterval&gt; intervals) {
+<span class="nc bnc" id="L147" title="All 2 branches missed.">		if (intervals.isEmpty()) {</span>
+<span class="nc" id="L148">			return;</span>
+		}
+<span class="nc" id="L150">		this.intervals.addAll(intervals);</span>
+<span class="nc" id="L151">		List&lt;TOIntervalCalendarInterval&gt; intervalQueue = new ArrayList&lt;TOIntervalCalendarInterval&gt;(intervals);</span>
+<span class="nc" id="L152">		TOIntervalCalendarInterval interval = intervalQueue.get(0);</span>
+		// skip to the index of this interval
+<span class="nc" id="L154">		int index = getIndex(interval.getStartTime());</span>
+<span class="nc bnc" id="L155" title="All 4 branches missed.">		index = (0 &lt;= index &amp;&amp; index &lt; this.increments.size()) ? index : 0;</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">		for (; index &lt; this.increments.size(); index++) {</span>
+<span class="nc" id="L157">			TOIntervalCalendarIncrement increment = this.increments.get(index);</span>
+<span class="nc" id="L158">			interval = findInterval(intervalQueue, increment.getDate());</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">			if (interval != null) {</span>
+<span class="nc" id="L160">				increment.setInterval(interval);</span>
+			}
+		}
+<span class="nc" id="L163">	}</span>
+
+	public TOIntervalCalendarDay getDSTTransitionDay() {
+<span class="nc bnc" id="L166" title="All 2 branches missed.">		if (dstTransitionIndex &lt; 0) {</span>
+<span class="nc" id="L167">			return null;</span>
+		}
+<span class="nc bnc" id="L169" title="All 2 branches missed.">		for (TOIntervalCalendarDay day : days) {</span>
+<span class="nc" id="L170">			int startIndex = getIndex(day.getStartTime());</span>
+<span class="nc" id="L171">			int endIndex = getIndex(day.getEndTime());</span>
+<span class="nc bnc" id="L172" title="All 4 branches missed.">			if (startIndex &lt;= dstTransitionIndex &amp;&amp; dstTransitionIndex &lt; endIndex) {</span>
+<span class="nc" id="L173">				return day;</span>
+			}
+<span class="nc" id="L175">		}</span>
+<span class="nc" id="L176">		return null;</span>
+	}
+
+	/**
+	 * Gets the DST transition mode for the specified interval.
+	 */
+	public DSTTransitionMode getDstTransitionMode(TOIntervalCalendarInterval interval) {
+<span class="nc" id="L183">		int startIndex = getIndex(interval.getStartTime());</span>
+<span class="nc" id="L184">		int endIndex = getIndex(interval.getEndTime());</span>
+<span class="nc bnc" id="L185" title="All 4 branches missed.">		if (startIndex &lt;= dstTransitionIndex &amp;&amp; dstTransitionIndex &lt; endIndex) {</span>
+<span class="nc" id="L186">			return dstTransitionMode;</span>
+		}
+<span class="nc" id="L188">		return DSTTransitionMode.NEUTRAL;</span>
+	}
+
+	/**
+	 * Gets whether a gap is before the increment.
+	 */
+	public boolean hasDstTransitionGapBefore(TOIntervalCalendarIncrement increment) {
+<span class="nc" id="L195">		int index = getIndex(increment.getDate());</span>
+		// fallback has an extra hour, only add a gap for other days
+<span class="nc bnc" id="L197" title="All 2 branches missed.">		if (dstTransitionMode == DSTTransitionMode.FALLBACK) {</span>
+<span class="nc" id="L198">			return increment.isNonDstDayTransition();</span>
+		}
+<span class="nc bnc" id="L200" title="All 2 branches missed.">		return index == dstTransitionIndex;</span>
+	}
+
+	/**
+	 * Gets whether a gap is before the interval.
+	 */
+	public boolean hasDstTransitionGapBefore(TOIntervalCalendarInterval interval, TOIntervalCalendarDay day) {
+<span class="nc" id="L207">		int startIndex = getIndex(interval.getStartTime());</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">		if (dstTransitionMode == DSTTransitionMode.SPRINGFORWARD) {</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">			if (startIndex == this.dstTransitionIndex) {</span>
+<span class="nc bnc" id="L210" title="All 2 branches missed.">				if (day.getLength() == TimeZoneUtil.DAY_IN_MILLISECONDS_LONG) {</span>
+					// this day is 24 hours so the DST hour is on the previous day
+<span class="nc" id="L212">					return false;</span>
+				}
+<span class="nc" id="L214">				return true;</span>
+			}
+<span class="nc" id="L216">			int difference = startIndex - this.dstTransitionIndex;</span>
+<span class="nc bnc" id="L217" title="All 6 branches missed.">			if (interval.getStartTime().equals(day.getStartTime()) &amp;&amp; 0 &lt; difference &amp;&amp; difference &lt; DateUtil.INTERVALS_IN_HOUR) {</span>
+<span class="nc" id="L218">				return true;</span>
+			}
+		}
+<span class="nc" id="L221">		return this.increments.get(startIndex).isNonDstDayTransition();</span>
+	}
+
+	/**
+	 * Gets whether the interval contains the DST transition gap for the day. Intervals
+	 * that start on the transition will return false (See hasDstTransitionGapBefore).
+	 */
+	public boolean hasDstTransitionGapWithin(TOIntervalCalendarInterval interval) {
+<span class="nc" id="L229">		int startIndex = getIndex(interval.getStartTime());</span>
+<span class="nc" id="L230">		int endIndexExclusive = getIndex(interval.getEndTime());</span>
+<span class="nc bnc" id="L231" title="All 4 branches missed.">		if (startIndex &lt; dstTransitionIndex &amp;&amp; dstTransitionIndex &lt; endIndexExclusive) {</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">			if (dstTransitionMode == DSTTransitionMode.SPRINGFORWARD) {</span>
+<span class="nc" id="L233">				return true;</span>
+			}
+			// FallBack already contains extra increments for the DST hour
+<span class="nc" id="L236">			return false;</span>
+		}
+<span class="nc bnc" id="L238" title="All 2 branches missed.">		for (int index = startIndex + 1; index &lt; endIndexExclusive; index++) {</span>
+<span class="nc" id="L239">			TOIntervalCalendarIncrement increment = increments.get(index);</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">			if (increment.isNonDstDayTransition()) {</span>
+<span class="nc" id="L241">				return true;</span>
+			}
+		}
+<span class="nc" id="L244">		return false;</span>
+	}
+
+	/**
+	 * Marks the increments with the specified type for each date range pair.
+	 */
+	public void markIncrements(Date startTime, Date endTime, int type) {
+<span class="nc" id="L251">		List&lt;TimeRange&gt; dates = new ArrayList&lt;TimeRange&gt;(1);</span>
+<span class="nc" id="L252">		dates.add(new TimeRange(startTime, endTime));</span>
+<span class="nc" id="L253">		markIncrements(dates, type);</span>
+<span class="nc" id="L254">	}</span>
+
+	/**
+	 * Marks the increments with the specified type for each date range pair.
+	 */
+	public void markIncrements(List&lt;TimeRange&gt; dates, int type) {
+<span class="nc bnc" id="L260" title="All 2 branches missed.">		for (TimeRange range : dates) {</span>
+			// adjust the range
+<span class="nc" id="L262">			int startIndex = getIndex(range.getStartDate());</span>
+<span class="nc" id="L263">			int endIndexExclusive = getIndex(range.getEndDate());</span>
+<span class="nc bnc" id="L264" title="All 2 branches missed.">			if (startIndex &lt; 0) {</span>
+<span class="nc" id="L265">				startIndex = 0;</span>
+			}
+<span class="nc bnc" id="L267" title="All 2 branches missed.">			if (increments.size() &lt;= endIndexExclusive) {</span>
+<span class="nc" id="L268">				endIndexExclusive = increments.size();</span>
+			}
+<span class="nc bnc" id="L270" title="All 4 branches missed.">			if (startIndex &gt;= increments.size() || endIndexExclusive &lt; 0) {</span>
+<span class="nc" id="L271">				continue;</span>
+			}
+
+			// mark increments
+<span class="nc bnc" id="L275" title="All 2 branches missed.">			for (int index = startIndex; index &lt; endIndexExclusive; index++) {</span>
+<span class="nc" id="L276">				increments.get(index).setTypeIfHigherPriority(type);</span>
+			}
+<span class="nc" id="L278">		}</span>
+<span class="nc" id="L279">	}</span>
+
+	/**
+	 * Splits the collection of intervals up into a series of days. If an interval spans days, it will be split in two.
+	 * This will also find the longest day so it can be used for DST logic.
+	 */
+	public void splitIntoDays() {
+<span class="nc" id="L286">		splitIntoDays(timeZone, startTime, endTime);</span>
+<span class="nc" id="L287">	}</span>
+
+	/**
+	 * Splits the collection of intervals up into a series of days. If an interval spans days, it will be split in two.
+	 * Days will be ignored and intervals will be ignored or trimmed to fit the specified range.
+	 * This will also find the longest day so it can be used for DST logic.
+	 *
+	 * @param timeZone
+	 *            The time zone to use for &quot;days&quot;.
+	 * @param startTime
+	 *            The start time of the range. This must be within the existing range.
+	 * @param endTime
+	 *            The end time of the range. This must be within the existing range.
+	 */
+	public void splitIntoDays(TimeZone timeZone, Date startTime, Date endTime) {
+<span class="nc" id="L302">		assertTimeIsWithinRange(startTime);</span>
+<span class="nc" id="L303">		assertTimeIsWithinRange(endTime);</span>
+<span class="nc" id="L304">		Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L305">		int offsetMinutes = DateUtil.getTimeInMinutesFromStartOfDay(startTime, cal);</span>
+<span class="nc" id="L306">		cal.setTime(startTime);</span>
+<span class="nc" id="L307">		Calendar tomorrow = (Calendar) cal.clone();</span>
+<span class="nc" id="L308">		DateUtil.addDays(tomorrow, 1, offsetMinutes);</span>
+
+<span class="nc" id="L310">		int intervalIndex = getFirstIntervalIndexFor(startTime);</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">		while (cal.getTime().before(endTime)) {</span>
+			// do not go past the endTime
+<span class="nc bnc" id="L313" title="All 2 branches missed.">			if (tomorrow.getTime().after(endTime)) {</span>
+<span class="nc" id="L314">				tomorrow.setTime(endTime);</span>
+			}
+<span class="nc" id="L316">			TOIntervalCalendarDay day = new TOIntervalCalendarDay(cal.getTime(), tomorrow.getTime());</span>
+<span class="nc" id="L317">			days.add(day);</span>
+<span class="nc" id="L318">			updateLongestDay(day);</span>
+<span class="nc bnc" id="L319" title="All 2 branches missed.">			while (intervalIndex &lt; intervals.size()) {</span>
+<span class="nc" id="L320">				TOIntervalCalendarInterval interval = intervals.get(intervalIndex);</span>
+<span class="nc bnc" id="L321" title="All 2 branches missed.">				if (DateUtil.isAfterOrEqual(interval.getStartTime(), tomorrow.getTime())) {</span>
+					// done with the day
+<span class="nc" id="L323">					break;</span>
+				}
+<span class="nc bnc" id="L325" title="All 2 branches missed.">				if (tomorrow.getTime().before(interval.getEndTime())) {</span>
+					// split up the interval &amp; update increments.
+<span class="nc" id="L327">					TOIntervalCalendarInterval split = new TOIntervalCalendarInterval(interval);</span>
+<span class="nc" id="L328">					interval.setEndTime(tomorrow.getTime());</span>
+<span class="nc" id="L329">					split.setStartTime(tomorrow.getTime());</span>
+<span class="nc" id="L330">					intervals.add(intervalIndex + 1, split);</span>
+<span class="nc" id="L331">					updateIncrements(split);</span>
+				}
+				// trim interval if it starts before the current time
+<span class="nc bnc" id="L334" title="All 2 branches missed.">				if (interval.getStartTime().before(cal.getTime())) {</span>
+<span class="nc" id="L335">					interval.setStartTime(cal.getTime());</span>
+				}
+				// only add the interval if there is time (This might never be the case b/c getFirstIntervalIndexFor)
+<span class="nc bnc" id="L338" title="All 2 branches missed.">				if (interval.getStartTime().before(interval.getEndTime())) {</span>
+<span class="nc" id="L339">					day.add(interval);</span>
+				}
+<span class="nc" id="L341">				intervalIndex++;</span>
+<span class="nc" id="L342">			}</span>
+<span class="nc" id="L343">			cal.setTime(tomorrow.getTime());</span>
+<span class="nc" id="L344">			DateUtil.addDays(tomorrow, 1, offsetMinutes);</span>
+<span class="nc" id="L345">		}</span>
+
+<span class="nc" id="L347">		updateDSTTransition(timeZone, startTime, endTime);</span>
+<span class="nc" id="L348">	}</span>
+
+	public int getIndex(Date date) {
+<span class="nc" id="L351">		return (int) ((date.getTime() - this.startTime.getTime()) / (MILLISECONDS_IN_INTERVAL));</span>
+	}
+
+	@Override
+	public String toString() {
+<span class="nc" id="L356">		return String.format(&quot;(%s - %s, Increments=%s, Intervals=%s)&quot;, this.startTime, this.endTime,</span>
+<span class="nc" id="L357">				this.increments.size(), this.intervals.size());</span>
+	}
+
+	// ================================================================================
+	// IMPLEMENTATION
+	// ================================================================================
+
+	private void assertTimeIsWithinRange(Date time) {
+<span class="nc" id="L365">		TimeRange range = new TimeRange(startTime, endTime);</span>
+<span class="nc bnc" id="L366" title="All 2 branches missed.">		if (!range.includes(time)) {</span>
+<span class="nc" id="L367">			throw new IllegalArgumentException(</span>
+<span class="nc" id="L368">					String.format(&quot;Date '%s' must be within range '%s' - '%s'.&quot;, time, startTime, endTime));</span>
+		}
+<span class="nc" id="L370">	}</span>
+
+	/**
+	 * Create the 15 minute increments between the start time and exclusive end time.
+	 */
+	private void createIncrements() {
+<span class="nc" id="L376">		int numberOfIncrements = (int) ((this.endTime.getTime() - this.startTime.getTime()) / (MILLISECONDS_IN_INTERVAL));</span>
+<span class="nc bnc" id="L377" title="All 2 branches missed.">		this.increments = new ArrayList&lt;TOIntervalCalendarIncrement&gt;(numberOfIncrements &gt; 0 ? numberOfIncrements : 0);</span>
+<span class="nc" id="L378">		Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L379">		cal.setTime(this.startTime);</span>
+<span class="nc bnc" id="L380" title="All 2 branches missed.">		while (cal.getTime().compareTo(endTime) &lt; 0) {</span>
+<span class="nc" id="L381">			this.increments.add(new TOIntervalCalendarIncrement(cal.getTime()));</span>
+<span class="nc" id="L382">			cal.add(Calendar.MINUTE, DateUtil.TIME_INTERVAL);</span>
+		}
+<span class="nc" id="L384">	}</span>
+
+	private int getFirstIntervalIndexFor(Date date) {
+<span class="nc bnc" id="L387" title="All 2 branches missed.">		for (int index = 0; index &lt; intervals.size(); index++) {</span>
+<span class="nc" id="L388">			TOIntervalCalendarInterval interval = intervals.get(index);</span>
+<span class="nc" id="L389">			TimeRange range = new TimeRange(interval.getStartTime(), interval.getEndTime());</span>
+<span class="nc bnc" id="L390" title="All 4 branches missed.">			if (range.includes(date) &amp;&amp; !interval.getEndTime().equals(date)) {</span>
+<span class="nc" id="L391">				return index;</span>
+			}
+		}
+		// return size so comparisons using this index will automatically fail
+<span class="nc" id="L395">		return intervals.size();</span>
+	}
+
+	/**
+	 * Gets whether the DST Transition point is within the last hour of the longest day.
+	 * 1:00 am - 1:45 am EST with an org offset of 1 hour has the first 1am on the previous day.
+	 * Since it is at the end, none of the other days require gaps before them.
+	 */
+	private boolean isDstTransitionWithinLastHourOfLongestDay(TOIntervalCalendarIncrement increment, TimeZone timeZone) {
+<span class="nc bnc" id="L404" title="All 2 branches missed.">		if (longestDay == null) {</span>
+<span class="nc" id="L405">			return false;</span>
+		}
+<span class="nc" id="L407">		Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L408">		cal.setTime(longestDay.getEndTime());</span>
+<span class="nc" id="L409">		cal.add(Calendar.HOUR, -1);</span>
+<span class="nc" id="L410">		TimeRange range = new TimeRange(cal.getTime(), longestDay.getEndTime());</span>
+<span class="nc" id="L411">		return range.includes(increment.getDate());</span>
+	}
+
+	/**
+	 * Marks increments on non-DST days that match the DST transition point when the mode is FallBack.
+	 */
+	private void markNonDstDayTransitions(TOIntervalCalendarIncrement increment, TimeZone timeZone, Date startTime, Date endTime) {
+<span class="nc bnc" id="L418" title="All 2 branches missed.">		if (dstTransitionMode != DSTTransitionMode.FALLBACK) {</span>
+<span class="nc" id="L419">			return;</span>
+		}
+<span class="nc" id="L421">		Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L422">		cal.setTime(increment.getDate());</span>
+		/*
+		 * Note to self: We can't just add a day here because org offsets that align with DST cause it to pick the
+		 * second 1 am during fallback. Adding days will cause the extra time to appear in the wrong place. So we
+		 * add an hour to push the transition to 2 am and then mark the increments. Please note that these increments
+		 * might be the start of a day, which means the gap is actually on the day before. The call to
+		 * isDstTransitionWithinLastHourOfLongestDay should protect against adding gaps in that case.
+		 */
+<span class="nc" id="L430">		cal.add(Calendar.DATE, -1);</span>
+<span class="nc" id="L431">		cal.add(Calendar.HOUR, 1);</span>
+<span class="nc" id="L432">		debugMarkNonDstDayTransitions(increment, timeZone, startTime, endTime);</span>
+<span class="nc bnc" id="L433" title="All 2 branches missed.">		if (!isDstTransitionWithinLastHourOfLongestDay(increment, timeZone)) {</span>
+<span class="nc bnc" id="L434" title="All 2 branches missed.">			while (DateUtil.isBeforeOrEqual(startTime, cal.getTime())) {</span>
+<span class="nc" id="L435">				int index = getIndex(cal.getTime());</span>
+<span class="nc" id="L436">				TOIntervalCalendarIncrement inc = increments.get(index);</span>
+<span class="nc" id="L437">				inc.setIsNonDstDayTransition(true);</span>
+<span class="nc" id="L438">				cal.add(Calendar.DATE, -1);</span>
+<span class="nc" id="L439">			}</span>
+<span class="nc" id="L440">			cal.setTime(increment.getDate());</span>
+<span class="nc" id="L441">			cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L442">			cal.add(Calendar.HOUR, 1);</span>
+<span class="nc bnc" id="L443" title="All 2 branches missed.">			while (cal.getTime().before(endTime)) {</span>
+<span class="nc" id="L444">				int index = getIndex(cal.getTime());</span>
+<span class="nc" id="L445">				TOIntervalCalendarIncrement inc = increments.get(index);</span>
+<span class="nc" id="L446">				inc.setIsNonDstDayTransition(true);</span>
+<span class="nc" id="L447">				cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L448">			}</span>
+		}
+<span class="nc" id="L450">	}</span>
+
+	private void updateDSTTransition(TimeZone timeZone, Date startTime, Date endTime) {
+<span class="nc bnc" id="L453" title="All 2 branches missed.">		if (increments.isEmpty()) {</span>
+<span class="nc" id="L454">			return;</span>
+		}
+<span class="nc" id="L456">		boolean prevIsInDst = timeZone.inDaylightTime(startTime);</span>
+<span class="nc" id="L457">		TOIntervalCalendarIncrement increment = null;</span>
+<span class="nc bnc" id="L458" title="All 2 branches missed.">		for (int index = getIndex(startTime); index &lt; increments.size(); index++) { // NOSONAR</span>
+<span class="nc" id="L459">			increment = increments.get(index);</span>
+<span class="nc bnc" id="L460" title="All 2 branches missed.">			if (increment.getDate().after(endTime)) {</span>
+<span class="nc" id="L461">				break;</span>
+			}
+<span class="nc" id="L463">			boolean isInDst = timeZone.inDaylightTime(increment.getDate());</span>
+<span class="nc bnc" id="L464" title="All 4 branches missed.">			if (prevIsInDst &amp;&amp; !isInDst) {</span>
+				// Fall Back / DST Ends (25 hour day)
+<span class="nc" id="L466">				dstTransitionMode = DSTTransitionMode.FALLBACK;</span>
+<span class="nc" id="L467">				dstTransitionIndex = index;</span>
+<span class="nc" id="L468">				break;</span>
+<span class="nc bnc" id="L469" title="All 4 branches missed.">			} else if (!prevIsInDst &amp;&amp; isInDst) {</span>
+				// Spring Forward / DST Starts (23 hour day)
+<span class="nc" id="L471">				dstTransitionMode = DSTTransitionMode.SPRINGFORWARD;</span>
+<span class="nc" id="L472">				dstTransitionIndex = index;</span>
+<span class="nc" id="L473">				break;</span>
+			}
+		}
+<span class="nc" id="L476">		markNonDstDayTransitions(increment, timeZone, startTime, endTime);</span>
+<span class="nc" id="L477">	}</span>
+
+	/**
+	 * Updates the increments's interval value.
+	 */
+	private void updateIncrements(TOIntervalCalendarInterval interval) {
+<span class="nc" id="L483">		int index = getIndex(interval.getStartTime());</span>
+<span class="nc" id="L484">		int endIndex = getIndex(interval.getEndTime());</span>
+<span class="nc bnc" id="L485" title="All 8 branches missed.">		if (index &lt; 0 || this.increments.size() &lt; index || endIndex &lt; 0 || this.increments.size() &lt; endIndex) {</span>
+<span class="nc" id="L486">			return;</span>
+		}
+<span class="nc bnc" id="L488" title="All 2 branches missed.">		for (; index &lt; endIndex; index++) {</span>
+<span class="nc" id="L489">			TOIntervalCalendarIncrement increment = this.increments.get(index);</span>
+<span class="nc" id="L490">			increment.setInterval(interval);</span>
+		}
+<span class="nc" id="L492">	}</span>
+
+	private void updateLongestDay(TOIntervalCalendarDay day) {
+<span class="nc bnc" id="L495" title="All 4 branches missed.">		if (longestDay == null || longestDay.getLength() &lt; day.getLength()) {</span>
+<span class="nc" id="L496">			longestDay = day;</span>
+		}
+<span class="nc" id="L498">	}</span>
+
+	/**
+	 * Finds the interval that contains the date within the queue. Unmatched items are dequeued.
+	 */
+	private TOIntervalCalendarInterval findInterval(List&lt;TOIntervalCalendarInterval&gt; intervalQueue, Date date) {
+<span class="nc bnc" id="L504" title="All 2 branches missed.">		if (intervalQueue.isEmpty()) {</span>
+<span class="nc" id="L505">			return null;</span>
+		}
+<span class="nc" id="L507">		TOIntervalCalendarInterval interval = intervalQueue.get(0);</span>
+<span class="nc bnc" id="L508" title="All 2 branches missed.">		if (date.compareTo(interval.getStartTime()) &lt; 0) {</span>
+			// they are in order so the rest of the intervals start in the future.
+			// this happens when we &quot;append&quot; intervals to a single TOIC.
+<span class="nc" id="L511">			return null;</span>
+		}
+<span class="nc bnc" id="L513" title="All 2 branches missed.">		while (interval.getEndTime().compareTo(date) &lt;= 0) {</span>
+<span class="nc" id="L514">			intervalQueue.remove(0);</span>
+<span class="nc bnc" id="L515" title="All 2 branches missed.">			if (intervalQueue.isEmpty()) {</span>
+<span class="nc" id="L516">				return null;</span>
+			}
+<span class="nc" id="L518">			interval = intervalQueue.get(0);</span>
+		}
+<span class="nc" id="L520">		return interval;</span>
+	}
+
+	private void debugMarkNonDstDayTransitions(TOIntervalCalendarIncrement increment, TimeZone timeZone, Date startTime, Date endTime) {
+<span class="nc bnc" id="L524" title="All 2 branches missed.">		if (!LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L525">			return;</span>
+		}
+<span class="nc" id="L527">		dateFormat.setTimeZone(timeZone);</span>
+<span class="nc" id="L528">		LOG.debug(dateFormat.format(startTime) + &quot; - &quot; + dateFormat.format(endTime));</span>
+<span class="nc" id="L529">		LOG.debug(&quot;DST Transition: &quot; + dateFormat.format(increment.getDate()));</span>
+<span class="nc" id="L530">		LOG.debug(&quot;LongestDay: &quot; + dateFormat.format(longestDay.getStartTime()) + &quot; - &quot; +</span>
+<span class="nc" id="L531">				dateFormat.format(longestDay.getEndTime()));</span>
+<span class="nc" id="L532">	}</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

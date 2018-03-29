@@ -1,0 +1,1167 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftSwapPostingDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.posting.ejb</a> &gt; <span class="el_source">ShiftSwapPostingDAO.java</span></div><h1>ShiftSwapPostingDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.swap.posting.ejb;
+
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoQuery;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.dao.DAOBase;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectBase;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RmDAONode;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.model.ShiftSwapPosting;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.model.ShiftSwapPostingFieldInfo;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.ejb.ShiftSwapItemDAO;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.util.DAOUtil;
+
+
+/**
+ * Title:        ShiftSwapPostingDAO
+ * Description:  DAO class for ShiftSwapPosting
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, Inc.
+ * @author       Zhibo Wang
+ * @version 1.0
+ */
+public class ShiftSwapPostingDAO extends RmDAONode {
+<span class="nc" id="L40">    private static String COLNAME_SHIFTSWAPITEMID = &quot;A.&quot; + ShiftSwapPostingFieldInfo.COLNAME_SHIFTSWAPITEMID;</span>
+
+<span class="nc" id="L42">    private static final Category m_cat = Log.initCategory(ShiftSwapPostingDAO.class.getName());</span>
+
+<span class="nc" id="L44">    private static final FieldInfo m_fieldInfo = new ShiftSwapPostingFieldInfo();</span>
+
+    /** 
+     * @see #initQueries()
+     */
+    private static String m_postingsForMyOrgTmpl;  //Tmpl == template
+
+    private static String m_postingsForMyCampaignTmpl; //Tmpl == template
+
+    /** 
+     * @see #initQueries()
+     */
+    private static String m_postingsAllForEmpTmpl; //Tmpl == template
+
+    private static String m_postingsForEmpFromSwappableEmpsTmpl; //Tmpl == template
+
+<span class="nc" id="L60">    protected long m_detailLevel = ShiftSwapPosting.DL_BASIC;</span>
+
+<span class="nc" id="L62">    private static String m_queryFindSSPostingIDByStartEndDate = &quot;SELECT &quot; +</span>
+        &quot;   SSP.ID &quot; +
+        &quot;FROM &quot; +
+        &quot;   SHIFTSWAPPOSTING SSP, SHIFTSWAPITEM SSI &quot; +
+        &quot;WHERE  &quot; +
+        &quot;   SSP.SHIFTSWAPITEMID = SSI.ID AND &quot; +
+        &quot;   SSI.EMPLOYEEID = ? AND &quot; +
+        &quot;   SSI.STARTTIME = ? AND &quot; +
+        &quot;   SSI.ENDTIME = ? &quot;;
+    
+<span class="nc" id="L72">    private static String m_queryFindOverlappingSSPostingIDByStartEndDate = </span>
+    	&quot;SELECT SSP.ID &quot; +
+    	&quot;FROM SHIFTSWAPPOSTING SSP, SHIFTSWAPITEM SSI &quot; +
+    	&quot;WHERE SSP.SHIFTSWAPITEMID = SSI.ID AND &quot; +
+              &quot;SSI.EMPLOYEEID = ? AND &quot; +
+    	      &quot;SSI.STARTTIME &lt; ? AND SSI.ENDTIME &gt; ?&quot;;
+
+<span class="nc" id="L79">    private static final String m_whereClauseTmplForFindSSPostingsForSSItems =</span>
+        COLNAME_SHIFTSWAPITEMID + &quot; IN (SELECT ID FROM SHIFTSWAPITEM WHERE STARTTIME IN {0} AND &quot; +
+            &quot;ENDTIME IN {1} AND EMPLOYEEID IN {2} AND SHIFTTYPE IN {3})&quot;;
+
+    static
+    {
+        //
+        // Note: The query for &quot;all postings&quot; depends on this.  Any changes to
+        // the numbered arguments must be consistent with the dependent query.
+        //DIRECT_DB_ACCESS
+       /**
+        * Find the postings  
+        * &lt;li&gt; made by employees in the specified organization
+        * &lt;li&gt; posting startTime between the &lt;specifed dateRange&gt;
+        * &lt;li&gt; posting startTime between posting employee WRO's timeRange. 
+        *
+        * &lt;pre&gt;
+        * Find posting IDs by applying the following constraints;
+        *    posting startTime between &lt;given daterange&gt;
+        *    posting startTime between posting employee WRO's timeRange
+        *    posting employee WRO's organization is one of the specified &lt;orgID list&gt; 
+        * &lt;/pre&gt;
+        */
+<span class="nc" id="L102">        String postingsCommonTmpl =</span>
+        &quot;SELECT &quot; +
+        &quot;   ssp.ID &quot; +
+        &quot;FROM &quot; +
+        &quot;   WorkResourceOrganization wro, &quot; +
+        &quot;   ShiftSwapItem ssi, &quot; +
+        &quot;   ShiftSwapPosting ssp &quot; +
+        &quot;WHERE &quot; +
+        // Note: checking for the overlap of WRO with the &lt;given interval&gt; is redundant since if 
+        //     ssi.StartTime is between wro.StartTime and wro.EndTime and 
+        //     ssi.StartTime is between the &lt;given interval&gt;
+        // then WRO must overlap the &lt;given interval&gt;
+//            buildExprForDateOverlap(&quot;wro.StartTime&quot;, &quot;wro.EndTime&quot;, &quot;''{2}''&quot;, &quot;''{3}''&quot;) + &quot; AND &quot; +
+        &quot;   ssi.ID = ssp.ShiftSwapItemID AND &quot; +
+        &quot;   ssi.StartTime BETWEEN ''{2}'' AND ''{3}'' AND &quot; +
+        &quot;   wro.WorkResourceID = ssi.EmployeeID AND &quot; +
+        &quot;   ssi.StartTime &gt;= wro.StartTime AND (ssi.StartTime &lt;= wro.EndTime OR wro.EndTime IS NULL) &quot;;
+
+        /**
+         * See javadoc for postingsCommonTmpl
+         */
+<span class="nc" id="L123">        m_postingsForMyOrgTmpl = postingsCommonTmpl + &quot; AND wro.OrganizationID = {1}&quot;;</span>
+
+        /**
+         * See javadoc for postingsCommonTmpl
+         */
+<span class="nc" id="L128">         m_postingsAllForEmpTmpl = postingsCommonTmpl + &quot; AND wro.OrganizationID IN {1}&quot;;</span>
+
+       /**
+        * Fetch postings made by employees in the swappable org list during the specified
+        * time range.
+        * 
+        * &lt;p&gt; Query to retrive postings  
+        * &lt;li&gt; with a startTime between the specified dateRange
+        * &lt;li&gt; made by a given set of employees
+        * &lt;li&gt; made by employees who belong to a given set of swappable orgIDs. 
+        * &lt;li&gt; with a startTime between the employee WRO's timeRange.
+        *
+        */
+        //DIRECT_DB_ACCESS
+<span class="nc" id="L142">        m_postingsForEmpFromSwappableEmpsTmpl =</span>
+        &quot;SELECT &quot; +
+        &quot;   ssp.ID &quot; +
+        &quot;FROM &quot; +
+        &quot;   WorkResouceOrganization wro, &quot; +
+        &quot;   ShiftSwapItem ssi, &quot; + &quot;&quot; +
+        &quot;   ShiftSwapPosting ssp &quot; +
+        &quot;WHERE &quot; +
+        &quot;   ssi.ID = ssp.ShiftSwapItemID AND &quot; + 
+        &quot;   ssi.EmployeeID &lt;&gt; {0} AND &quot; +   //exclude postings from specified workResourceID.
+        &quot;   ssi.StartTime BETWEEN ''{3}'' AND ''{4}'' AND &quot; +
+        &quot;   wro.WorkResourceID = ssi.EmployeeID AND &quot; +
+        &quot;   wro.OrganizationID IN {1} AND &quot; +
+        &quot;   wro.WorkResourceID IN {2} AND &quot; +
+        &quot;   ssi.StartTime &gt;= wro.StartTime AND (ssi.StartTime &lt;= wro.EndTime OR wro.EndTime IS NULL) &quot;;
+        // Note: checking for the overlap of WRO with the &lt;given interval&gt; is redundant since if 
+        //     ssi.StartTime is between wro.StartTime and wro.EndTime and 
+        //     ssi.StartTime is between the &lt;given interval&gt;
+        // then WRO must overlap the &lt;given interval&gt;
+//            buildExprForDateOverlap(&quot;wro.StartTime&quot;, &quot;wro.EndTime&quot;, &quot;''{3}''&quot;, &quot;''{4}''&quot;) + &quot; AND &quot; +
+
+        /**
+         * Find all postings from the employee's campaign.  Note that the employee's campaign
+         * association varies with time.
+         * 
+         * &lt;p&gt; Find all SSPostings
+         * &lt;li&gt; made after the &lt;specified date&gt;
+         * &lt;li&gt; made by employees in SPs to which the &lt;given employee&gt; belongs to.
+         * &lt;li&gt; made by employees who belong to the list of &lt;given swappable orgs&gt;
+         * &lt;li&gt; posting startTime is between posting employee's WRO timeRange
+         *   
+         * &lt;pre&gt;
+         * givenEmp -- (1 to many) --&gt; SPs in the future -- (1 to many) --&gt; employees in each SP
+         *
+         * Legend: --- (one to one);  ==== (one to many)
+         * SP --- (one to one) -- SPEmpG ==== (one to many) === SPEmpO ==== (one to many) === SSI
+         *
+         * Identifies:
+         *     - All SPs in the future to which the given emp belongs.
+         *     - For each SP, all employees who belong to these SPs.
+         *     - For each employee, the SSPs made during the SP's timerange
+         *     - For each employee, if the employee belongs the specified swappable org list during the SSP's timerange.
+         *
+         * DIRECT_DB_ACCESS
+         * &lt;/pre&gt;
+         */
+<span class="nc" id="L188">        m_postingsForMyCampaignTmpl =</span>
+            &quot;SELECT &quot; +
+            &quot;   SSP.ID &quot; +
+            &quot;FROM &quot; +
+            &quot;   SP, &quot; +
+            &quot;   SPWorkResource SPWorkResG, &quot; +  //SPEmployee for Given employee
+            &quot;   SPWorkResource SPWorkResO, &quot; +  //SPEmployee for Other employees
+            &quot;   ShiftSwapPosting SSP, &quot; +
+            &quot;   ShiftSwapItem SSI, &quot; +
+            &quot;   WorkResourceOrganization WRO &quot; +
+            &quot;WHERE &quot; +
+            &quot;   SP.toDate &gt; ''{0}'' AND &quot; +  // {0} == given date; all campaigns in the future.
+            &quot;   SP.ID = SPWorkResG.SPID AND &quot; +
+            &quot;   SPWorkResG.WorkResourceID = {1} AND &quot; +   // {1} == given employee ID; all campaigns in the future for this employee.
+            &quot;   SPWorkResG.SPID = SPWorkResO.SPID AND &quot; + // all other employees in each SP given employee is associated with.
+            &quot;   SPWorkResO.WorkResourceID = SSI.EmployeeID AND &quot; +
+            &quot;   SSI.StartTime between SP.fromDate AND SP.toDate AND &quot; +
+            &quot;   SPWorkResO.WorkResourceID = WRO.WorkResourceID AND &quot; +
+            &quot;   WRO.OrganizationID in {2} AND &quot; +   // swappable orgIDs
+            &quot;   ssi.StartTime &gt;= wro.StartTime AND (ssi.StartTime &lt;= wro.EndTime OR wro.EndTime IS NULL) AND &quot; +
+            &quot;   SSP.ShiftSwapItemID = SSI.ID&quot;;
+<span class="nc" id="L209">    }</span>
+
+    public ShiftSwapPostingDAO(long detailLevel) throws Exception {
+<span class="nc" id="L212">        super();</span>
+<span class="nc" id="L213">        m_detailLevel = detailLevel;</span>
+<span class="nc" id="L214">    }</span>
+
+    //Constructor
+    /*public ShiftSwapPostingDAO(Jdmo dmo) {
+        super(dmo);
+    }*/
+
+    @Override
+	protected FieldInfo getFieldInfo() {
+<span class="nc" id="L223">        return m_fieldInfo;</span>
+    }
+
+    //
+    @Override
+	protected ValueObjectBase createValueObject() {
+<span class="nc" id="L229">        return new ShiftSwapPosting(m_detailLevel);</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.bbm.dao.DAONode#needToLoadChildObjects()
+     */
+    @Override
+	protected boolean needToLoadChildObjects() {
+<span class="nc bnc" id="L237" title="All 2 branches missed.">        if ((m_detailLevel &amp; ShiftSwapPosting.DL_SHIFTSWAP_ITEMS) != 0) {</span>
+<span class="nc" id="L238">			return true;</span>
+		}
+
+<span class="nc" id="L241">        return false;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.bbm.dao.DAONode#needToLoadChildObjects(int)
+     */
+    @Override
+	protected boolean needToLoadChildObjects(int childType) {
+<span class="nc bnc" id="L249" title="All 2 branches missed.">        if (childType == ShiftSwapPostingFieldInfo.ITEM_CHILD_TYPE) {</span>
+<span class="nc" id="L250">			return true;</span>
+		}
+
+<span class="nc" id="L253">        throw new IllegalArgumentException(&quot;childType = &quot; + childType);</span>
+    }
+
+    /** create a child DAO object given the type  */
+    @Override
+	protected DAOBase createChildDAO(int childType) {
+<span class="nc bnc" id="L259" title="All 2 branches missed.">        if (childType == ShiftSwapPostingFieldInfo.ITEM_CHILD_TYPE) {</span>
+<span class="nc" id="L260">            return new ShiftSwapItemDAO(m_dmo);</span>
+        }
+
+<span class="nc" id="L263">        return null;</span>
+    }
+
+    /**
+    /**
+     * Calls findShiftSwapPostingIDsByEmployee to get a Collection of value object
+     * IDs for ShiftSwapPosting objects whose employee in the associated
+     * ShiftSwapItem matches the input ID.
+     * Passes these IDs to method getObjsByIDs(), which
+     * returns the ValueObjects of interest.
+     *
+     * @param id An Employee ID
+     * @return A Collection of ShiftSwapPosting objects
+     * @throws Exception
+     */
+    public Collection findSSPostingsByEmployee(ID empID, long detailLevel, boolean fetchPartial) throws Exception {
+        // find all the posting IDs
+<span class="nc" id="L280">        Collection arrIDs = findSSPostingIDsByEmployee(empID, fetchPartial);</span>
+
+        // return the ShiftSwapPosting objects represented by those IDs.
+        // Note: conditional statement needed  as getObjectsByIDs() will return NULL if passed collection is empty.
+<span class="nc bnc" id="L284" title="All 2 branches missed.">        return arrIDs.isEmpty()?Collections.EMPTY_LIST:findSSPostingsByIDs(arrIDs, detailLevel);</span>
+    }
+
+    /**
+     * @param arrIDs
+     * @param detailLevel
+     * @return
+     */
+    public Collection findSSPostingsByIDs(Collection arrIDs, long detailLevel) throws Exception {
+<span class="nc" id="L293">        saveAndSetDetailLevel(detailLevel);</span>
+
+        try {
+<span class="nc" id="L296">            Collection coll = getObjectsByIDs(arrIDs);</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">            return (coll != null)?coll:Collections.EMPTY_LIST;</span>
+        } finally {
+<span class="nc" id="L299">            resetDetailLevel();</span>
+        }
+    }
+
+    /**
+     * Constructs a query to get the IDs of the ShiftSwapPosting value objects
+     * whose employee ID in the associated ShiftSwapItem matches the input ID.
+     *
+     * @param id An Employee ID
+     * @return A Collection of ShiftSwapPosting object IDs
+     * @throws Exception
+     */
+    public List findSSPostingIDsByEmployee(ID empID, boolean fetchPartial) throws Exception
+    {
+<span class="nc" id="L313">        deleteSSPostingsExpired();</span>
+
+        //joined query to find all the posting IDs
+<span class="nc" id="L316">        String strQuery = &quot;select SSP.ID &quot; + &quot;from SHIFTSWAPPOSTING SSP, SHIFTSWAPITEM SSI &quot; +</span>
+            &quot;where SSP.SHIFTSWAPITEMID = SSI.ID &quot; + &quot;and SSI.EMPLOYEEID = &quot; + empID;
+<span class="nc" id="L318">        m_cat.debug(&quot;strQuery: &quot; + strQuery);</span>
+        
+<span class="nc bnc" id="L320" title="All 2 branches missed.">        if (!fetchPartial) {</span>
+<span class="nc" id="L321">			strQuery += &quot; AND SSI.ISPARTIAL = 0&quot;;</span>
+		}
+
+<span class="nc" id="L324">        return DAOUtil.getIDsUsingSQLQuery(m_dmo,strQuery);</span>
+    }
+
+    /**
+     * Calls findSSPostingIDsByOrg to get a Collection of value object
+     * IDs for ShiftSwapPosting objects whose employee in the associated
+     * ShiftSwapItem belongs to the Organization represented by the input ID.
+     * Passes these IDs to method getObjsByIDs(), which
+     * returns the ValueObjects of interest.
+     *
+     * @param id An Organization ID
+     * @return A Collection of ShiftSwapPosting objects
+     * @throws Exception
+     */
+    public Collection findSSPostingsByOrg(ID orgID, long detailLevel) throws Exception {
+        // find all the posting IDs
+<span class="nc" id="L340">        Collection arrIDs = findSSPostingIDsByOrg(orgID);</span>
+
+        // return the ShiftSwapPosting objects represented by those IDs.
+        // Note: conditional statement needed  as getObjectsByIDs() will return NULL if passed collection is empty.
+<span class="nc bnc" id="L344" title="All 2 branches missed.">        return arrIDs.isEmpty()?Collections.EMPTY_LIST:findSSPostingsByIDs(arrIDs, detailLevel);</span>
+    }
+
+    /**
+     * Constructs a query to get the IDs of the ShiftSwapPosting value objects
+     * whose employee in the associated ShiftSwapItem belongs to the
+     * Organization represented by the input ID.
+     *
+     * @param id A Campaign ID
+     * @return A Collection of ShiftSwapPosting object IDs
+     * @throws Exception
+     */
+    public List findSSPostingIDsByOrg(ID orgID) throws Exception
+    {
+<span class="nc" id="L358">        deleteSSPostingsExpired();</span>
+
+        // find all the posting IDs
+        //DIRECT_DB_ACCESS
+<span class="nc" id="L362">        String strQuery = &quot;select SSP.ID &quot; +</span>
+            &quot;from SHIFTSWAPPOSTING SSP, SHIFTSWAPITEM SSI, WORKRESOURCEORGANIZATION WRO &quot; +
+            &quot;where SSP.SHIFTSWAPITEMID = SSI.ID &quot; + &quot;and SSI.EMPLOYEEID = WRO.WORKRESOURCEID &quot; +
+            &quot;and WRO.ORGANIZATIONID=&quot; + orgID;
+<span class="nc" id="L366">        m_cat.debug(&quot;strQuery: &quot; + strQuery);</span>
+
+<span class="nc" id="L368">        return DAOUtil.getIDsUsingSQLQuery(m_dmo,strQuery);</span>
+    }
+
+    /**
+     * Calls findShiftSwapPostingIDsByCampaign to get a Collection of value object
+     * IDs for ShiftSwapPosting objects whose employee in the associated
+     * ShiftSwapItem belongs to the Campaign represented by the input ID.
+     * Passes these IDs to method getObjsByIDs(), which
+     * returns the ValueObjects of interest.
+     *
+     * @param id A Campaign ID
+     * @return A Collection of ShiftSwapPosting objects
+     * @throws Exception
+     */
+    public Collection findSSPostingsByCampaign(ID campaignID, long detailLevel)
+		throws Exception {
+        // find all the posting IDs
+<span class="nc" id="L385">        Collection arrIDs = findSSPostingIDsByCampaign(campaignID);</span>
+
+        // return the ShiftSwapPosting objects represented by those IDs.
+        // Note: conditional statement needed  as getObjectsByIDs() will return NULL if passed collection is empty.
+<span class="nc bnc" id="L389" title="All 2 branches missed.">        return arrIDs.isEmpty()?Collections.EMPTY_LIST:findSSPostingsByIDs(arrIDs, detailLevel);</span>
+    }
+
+    /**
+     * Constructs a sql query to get the IDs of the ShiftSwapPosting value objects
+     * whose employee in the associated ShiftSwapItem belongs to the
+     * Campaign represented by the input ID.
+     *
+     * @param id A Campaign ID
+     * @return A Collection of ShiftSwapPosting object IDs
+     * @throws Exception
+     */
+    public List findSSPostingIDsByCampaign(ID campaignID) throws Exception
+    {
+<span class="nc" id="L403">        deleteSSPostingsExpired();</span>
+
+        //joined query to find all the posting IDs
+        // constraints:
+        //   only employees associated with this campaign starting now and later.
+        //   only postings that haven't expired (todo:)
+
+        // find future SPs for campaigns starting now.
+        // for each SP find employees
+        //   for each employee collect postings between the SP date
+        // end for
+        //
+        // Query:
+        //    from ssp, ssi, spemp, sp
+        //    where ssi.employeeid = spemp.employeeid and spemp.spid = sp.id and sp.campaignid = &lt;given id&gt;
+        //
+        //DIRECT_DB_ACCESS
+<span class="nc" id="L420">        Date now = new Date();</span>
+<span class="nc" id="L421">        String strQuery = &quot;SELECT DISTINCT ssp.id &quot; +</span>
+            &quot; FROM ShiftSwapPosting ssp, ShiftSwapItem ssi, spworkresource spwkr, sp, campaign camp &quot; +
+            &quot; where ssi.employeeid = spwkr.workresourceid AND &quot; +
+            &quot; spwkr.spid = sp.id AND sp.campaignid = camp.id AND camp.sid = &quot; +
+<span class="nc" id="L425">            campaignID + &quot; AND sp.todate &gt; '&quot;  + JdmoUtil.formatDBString(now) + &quot;' AND &quot; +</span>
+<span class="nc" id="L426">            &quot; ssi.ExpirationDate &gt; '&quot; + JdmoUtil.formatDBString(now) + &quot;'&quot;; //Expiration date must be &gt; current time</span>
+
+//        String strQuery = &quot;select SSP.ID &quot; +
+//            &quot;from SHIFTSWAPPOSTING SSP, SHIFTSWAPITEM SSI, CAMPAIGNWORKRESOURCE CWR &quot; +
+//            &quot;where SSP.SHIFTSWAPITEMID = SSI.ID AND SSI.EMPLOYEEID = CWR.WORKRESOURCEID AND &quot; +
+//                    &quot;CWR.CAMPAIGNID=&quot; + campaignID + &quot; AND CWR.STARTTIME &gt;= '&quot; +
+//                    m_dmo.formatDBString(new Date()) + &quot;'&quot;;
+
+        //m_cat.debug(&quot;strQuery: &quot; + strQuery);
+
+<span class="nc" id="L436">        return DAOUtil.getIDsUsingSQLQuery(m_dmo,strQuery);</span>
+    }
+
+    /**
+     * Finds all the shift swap postings for my campaign, starting now.  Parameter 'end' is ignored for
+     * London.
+     *
+     * &lt;p&gt; Algorithm for London
+     * &lt;li&gt; (givenEmpID) --&gt;
+     * &lt;li&gt; 1 or more SPs for the given employee in the future (givenEmpSPID, givenEmpSPStartTime, giveEmpSPEndTime) using SP &amp; SPEmployee table--&gt;
+     * &lt;li&gt; 1 or more (otherEmpSPID, otherEmployeeID, otherEmpStartTime, otherEmpEndTime) for (givenEmpSPID) using SPEmployee table --&gt;
+     * &lt;li&gt; 1 (otherEmployeeOrg) for (otherEmployeeID) using WorkResourceOrganization table --&gt;
+     * &lt;li&gt; 1 or more Posting by (otherEmployeeID) between (otherEmpStarttime, otherEmpEndTime) and (otherEmployeeOrg) in swappablr org list.
+     *
+     * &lt;p&gt; Simplications for London:
+     * &lt;li&gt; Only one org employee association.
+     * &lt;li&gt; SPs are always for a week (scheduling period is a week).  And SPs for an employee do not overlap.
+     *
+     * &lt;p&gt; SQL:
+     * &lt;code&gt;
+     *
+       SELECT
+          SSP.ID
+       FROM
+          SP,
+          SPEmployee SPEmpG,
+          AMKeyMap AMKeyMapG,
+           SPEmpO,
+          AMKeyMap AMKeyMapO,
+          ShiftSwapPosting SSP,
+          ShiftSwapItem SSI,
+          WorkResourceOrganization WRO
+       WHERE
+          SP.toDate &gt; @currDate AND
+          SPEmpG.SPID = SP.ID AND
+          SPEmpG.EmployeeID = AMKeyMapG.DEID AND
+          AMKeyMapG.AMTbl = 'EmployeeAM' AND
+          AMKeyMapG.AMID = @givenEmpID AND
+          SPEmpG.SPID = SPEmpO.SPID AND
+          SPEmpO.EmployeeID &lt;&gt; SPEmpG.EmployeeID AND
+          SPEmpO.EmployeeID = AMKeyMapO.DEID AND
+          AmKeyMapO.AMTbl = 'EmployeeAM' AND
+          AMKeyMapO.AMID = SSI.EmployeeID AND
+          SSI.StartTime between SP.fromDate AND SP.toDate AND
+          AmKeyMapO.AMID = WRO.WorkResourceID AND
+          WRO.OrganizationID in @swappableOrgs AND
+          SSI.StartTime between WRO.startTime and WRO.endTime AND
+          SSP.ShiftSwapItemID = SSI.ID
+
+     * &lt;/code&gt;
+     * &lt;p&gt; TODO: revise javadoc (not accurate).
+     *
+     * &lt;p&gt;Algorithm for 5.0 suite:
+     * &lt;li&gt; Obtain all campaign associations for the given employee starting now.  Note that campaign
+     * associations are time bound.
+     * &lt;li&gt; For each given employee's campaign association,  obtain campaign associations of other
+     * employees whose timerange overlaps given employee's campaign association timerange.
+     * &lt;li&gt; For each employee campaign association,  obtain the org association for the employee, if the org association
+     * timerange overlaps the campaign association timerange and the org is in the swappable list.
+     * &lt;li&gt; retrieve all postings made by employees in the org associations, during the period of overlap
+     * of the following 3 time ranges: &lt;br&gt;
+     *    1. the given employee's campaign association time range,&lt;br&gt;
+     *    2. the campaign employee association time range&lt;br&gt;
+     *    3. and the org employee association timerange&lt;br&gt;
+     *
+     * Steps
+     * Get all campaigns user is associated with starting now.
+     * Find all orgs user is associated with starting now.
+     * For each campaign, during the campaign's effectivity, find the org the user is associated with.
+     * for (each campaign, org, effectivity) tuple
+     *    get list of swappale orgs.
+     *    get posting list during effectivity period: Restrict postings to employees from same campaign and
+     *       belonging to one of the swappable orgs.
+     * end for.
+     *
+     * @param empID
+     * @param swappableOrgIDs
+     * @return
+     * @throws Exception
+     */
+    public List findSSPostingIDsForMyCampaign(ID empID, Date start,
+        Date end, Collection swappableOrgIDs, boolean fetchPartial) throws Exception
+    {
+<span class="nc" id="L519">        deleteSSPostingsExpired();</span>
+
+<span class="nc bnc" id="L521" title="All 2 branches missed.">        if (swappableOrgIDs.isEmpty()) {</span>
+<span class="nc" id="L522">			return Collections.emptyList();</span>
+		}
+
+<span class="nc" id="L525">        String strQuery = MessageFormat.format(m_postingsForMyCampaignTmpl,</span>
+<span class="nc" id="L526">            new Object[] {JdmoUtil.formatDBString(start), empID,</span>
+<span class="nc" id="L527">                m_dmo.createInClause(swappableOrgIDs)</span>
+            }
+        );
+        
+<span class="nc bnc" id="L531" title="All 2 branches missed.">        if (!fetchPartial) {</span>
+<span class="nc" id="L532">			strQuery += &quot; AND SSI.ISPARTIAL = 0&quot;;</span>
+		}
+
+
+<span class="nc" id="L536">        return DAOUtil.getIDsUsingSQLQuery(m_dmo, strQuery);</span>
+    }
+
+    public Collection findSSPostingsForMyCampaign(ID empID, Date start, Date end,
+        Collection swappableOrgIDs, long detailLevel, boolean fetchPartial) throws Exception
+    {
+<span class="nc" id="L542">        List arrIDs = findSSPostingIDsForMyCampaign(empID, start, end, swappableOrgIDs, fetchPartial);</span>
+
+        // return the SSPosting objects represented by those IDs.
+        // Note: conditional statement needed  as getObjectsByIDs() will return NULL if passed collection is empty.
+<span class="nc bnc" id="L546" title="All 2 branches missed.">        return arrIDs.isEmpty()?Collections.EMPTY_LIST:findSSPostingsByIDs(arrIDs, detailLevel);</span>
+    }
+
+    /**
+     * See javadoc in the static initializer
+     * 
+     * @param empID
+     * @param orgID
+     * @param start
+     * @param end
+     * @return
+     * @throws Exception
+     */
+    public List findSSPostingIDsForMyOrg(ID empID, ID orgID, Date start, Date end,
+    		boolean fetchPartial)
+        throws Exception
+    {
+<span class="nc" id="L563">        deleteSSPostingsExpired();</span>
+
+<span class="nc bnc" id="L565" title="All 2 branches missed.">        end = (end == null)?RequestUtil.MAX_DATE:end;</span>
+<span class="nc" id="L566">        String myOrgQuery = MessageFormat.format(m_postingsForMyOrgTmpl,</span>
+<span class="nc" id="L567">            new Object[] {empID, orgID, JdmoUtil.formatDBString(start),</span>
+<span class="nc" id="L568">				JdmoUtil.formatDBString(end)</span>
+            }
+        );
+<span class="nc bnc" id="L571" title="All 2 branches missed.">        if (!fetchPartial) {</span>
+<span class="nc" id="L572">			myOrgQuery += &quot; AND SSI.ISPARTIAL = 0&quot;;</span>
+		}
+
+<span class="nc" id="L575">        return DAOUtil.getIDsUsingSQLQuery(m_dmo, myOrgQuery);</span>
+    }
+
+    /**
+     * See javadoc in the static initializer
+     * 
+     * @param empID
+     * @param orgID
+     * @param start
+     * @param end
+     * @param detailLevel
+     * @return
+     * @throws Exception
+     */
+    public Collection findSSPostingsForMyOrg(ID empID, ID orgID, Date start, Date end, long detailLevel,
+    		boolean fetchPartial)
+        throws Exception
+    {
+<span class="nc" id="L593">        List arrIDs = findSSPostingIDsForMyOrg(empID, orgID, start, end, fetchPartial);</span>
+
+        // return the SSPosting objects represented by those IDs.
+        // Note: conditional statement needed  as getObjectsByIDs() will return NULL if passed collection is empty.
+<span class="nc bnc" id="L597" title="All 2 branches missed.">        return arrIDs.isEmpty()?Collections.EMPTY_LIST:findSSPostingsByIDs(arrIDs, detailLevel);</span>
+    }
+
+    public List findAllSSPostingIDsForEmp(ID empID, Collection swappableOrgIDs, Date start, Date end,
+    		boolean fetchPartial)
+        throws Exception
+    {
+<span class="nc" id="L604">        deleteSSPostingsExpired();</span>
+
+<span class="nc bnc" id="L606" title="All 2 branches missed.">        end = (end == null)?RequestUtil.MAX_DATE:end;</span>
+<span class="nc" id="L607">        String strQuery = MessageFormat.format(m_postingsAllForEmpTmpl,</span>
+            new Object[] {
+<span class="nc" id="L609">                empID, m_dmo.createInClause(swappableOrgIDs),</span>
+<span class="nc" id="L610">				JdmoUtil.formatDBString(start), JdmoUtil.formatDBString(end)</span>
+            }
+        );
+        
+<span class="nc bnc" id="L614" title="All 2 branches missed.">        if (!fetchPartial) {</span>
+<span class="nc" id="L615">			strQuery += &quot; AND SSI.ISPARTIAL = 0&quot;;</span>
+		}
+
+
+<span class="nc" id="L619">        return DAOUtil.getIDsUsingSQLQuery(m_dmo, strQuery);</span>
+    }
+
+    public Collection findAllSSPostingsForEmp(ID empID, Collection swappableOrgIDs,
+        Date start, Date end, long detailLevel, boolean fetchPartial) throws Exception
+    {
+<span class="nc" id="L625">        List arrIDs = findAllSSPostingIDsForEmp(empID, swappableOrgIDs, start, end, fetchPartial);</span>
+
+        // return the SSPosting objects represented by those IDs.
+        // Note: conditional statement needed  as getObjectsByIDs() will return NULL if passed collection is empty.
+<span class="nc bnc" id="L629" title="All 2 branches missed.">        return arrIDs.isEmpty()?Collections.EMPTY_LIST:findSSPostingsByIDs(arrIDs, detailLevel);</span>
+    }
+
+    /**
+     * Retrieves postings made by employees in the 'swappableEmpIDs'
+     * collection, provided they belong to one of the swappable orgs.
+     *
+     * @param empID
+     * @param swappableEmpIDs
+     * @param start
+     * @param end
+     * @return
+     */
+    public Collection findSSPostingIDsFromSwappableEmps(ID empID, Collection
+        swappableOrgIDs, Collection swappableEmpIDs, Date start, Date end) throws Exception
+    {
+<span class="nc" id="L645">        deleteSSPostingsExpired();</span>
+
+<span class="nc bnc" id="L647" title="All 2 branches missed.">        end = (end == null)?RequestUtil.MAX_DATE:end;</span>
+<span class="nc" id="L648">        String strQuery = MessageFormat.format(m_postingsForEmpFromSwappableEmpsTmpl,</span>
+            new Object[] {
+<span class="nc" id="L650">                empID, m_dmo.createInClause(swappableOrgIDs),</span>
+<span class="nc" id="L651">                m_dmo.createInClause(swappableEmpIDs), JdmoUtil.formatDBString(start),</span>
+<span class="nc" id="L652">                JdmoUtil.formatDBString(end)</span>
+            }
+        );
+
+<span class="nc" id="L656">        return DAOUtil.getIDsUsingSQLQuery(m_dmo, strQuery);</span>
+    }
+
+    public Collection findSSPostingsFromSwappableEmps(ID empID, Collection swappableOrgIDs,
+        Collection swappableEmpIDs, Date start, Date end, long detailLevel) throws Exception
+    {
+<span class="nc" id="L662">        Collection arrIDs = findSSPostingIDsFromSwappableEmps(empID,</span>
+            swappableOrgIDs, swappableEmpIDs, start, end);
+
+        // return the SSPosting objects represented by those IDs.
+        // Note: conditional statement needed as getObjectsByIDs() will return NULL
+        // if passed collection is empty.
+<span class="nc bnc" id="L668" title="All 2 branches missed.">        return arrIDs.isEmpty()?Collections.EMPTY_LIST:findSSPostingsByIDs(arrIDs, detailLevel);</span>
+    }
+
+    /**
+     * Find the ShiftSwap Posting which corresponds to the specified shiftswap items.
+     * The startDate, endDate, swapType and empID of the ssItem are used.
+     *
+     * &lt;p&gt; Note: This method is used to locate any shiftswap postings associated with the
+     * shiftswapitems of a shiftswaprequest (during request approval).  The ID of the ssItem is
+     * not used to locate the ssPosting since the ssItem is not shared by the ssReq and ssPosting.
+     * See {@link com.bluepumpkin.ejb.bbm.dao.DAOUtil#deleteObjects(Jdmo, String, Collection) deleteObjects}
+     * for more information.
+     *
+     * @param ssItem
+     * @return
+     */
+    public Collection findSSPostingsForSSItems(Collection givenSSItems, long detailLevel) throws Exception {
+<span class="nc" id="L685">        saveAndSetDetailLevel(detailLevel);</span>
+
+        try {
+            // get an array of start and end dates formatted as strings.
+<span class="nc" id="L689">            String[] startDateStrArr = new String[givenSSItems.size()];</span>
+<span class="nc" id="L690">            String[] endDateStrArr = new String[givenSSItems.size()];</span>
+<span class="nc" id="L691">            String[] swapTypeArr = new String[givenSSItems.size()];</span>
+<span class="nc" id="L692">            Collection empIDs = new ArrayList(givenSSItems.size());</span>
+<span class="nc" id="L693">            int i = 0;</span>
+<span class="nc bnc" id="L694" title="All 2 branches missed.">            for (Iterator iter = givenSSItems.iterator(); iter.hasNext();) {</span>
+<span class="nc" id="L695">                ShiftSwapItem ssItem = (ShiftSwapItem) iter.next();</span>
+
+<span class="nc" id="L697">                startDateStrArr[i] = JdmoUtil.formatDBString(ssItem.getStartDate());</span>
+<span class="nc" id="L698">                endDateStrArr[i] = JdmoUtil.formatDBString(ssItem.getEndDate());</span>
+<span class="nc" id="L699">                swapTypeArr[i] = ssItem.getShiftType();</span>
+<span class="nc" id="L700">                empIDs.add(ssItem.getEmployeeID());</span>
+
+<span class="nc" id="L702">                i++;</span>
+<span class="nc" id="L703">            }</span>
+
+            // conver the array to a SQL in clause
+<span class="nc" id="L706">            String startDateInClause = DAOUtil.createInClause(startDateStrArr);</span>
+<span class="nc" id="L707">            String endDateInClause = DAOUtil.createInClause(endDateStrArr);</span>
+<span class="nc" id="L708">            Object empIDInClause = getDMO().createInClause(empIDs);</span>
+<span class="nc" id="L709">            String swapTypeInClause = DAOUtil.createInClause(swapTypeArr);</span>
+
+            // using a subquery (slower) instead of a join since the DAO framework does not support joins.
+            // See DAOBase.getObjects() for a better implementation suggestion.
+            //
+            // Note: loaded postings is a superset of the postings we need.  This is due to loading
+            // postings corresponding to multiple ssItems in a single query and the 'IN' clause in the query.
+            // For instance assume ssItems has 2 ssItems: ssItem1 belongs to empID1 and ssItem2 belongs to empID2.
+            // We need to identify postings with ssItems which match
+            //    (ssItem1.empID, ssItem1.startTime, ssItem1.endTime, ssItem1.swapType)
+            //       or
+            //    (ssItem2.empID, ssItem2.startTime, ssItem2.endTime, ssItem2.swapType)
+            // But this query might return any ssPosting which matches a combination of the above tuples: for
+            // instance (ssItem2.empID, ssItem1.startTime, ssItem1.endTime, ssItem1.swapType).
+<span class="nc" id="L723">            String whereClause = MessageFormat.format(m_whereClauseTmplForFindSSPostingsForSSItems,</span>
+                new Object[] {startDateInClause, endDateInClause, empIDInClause, swapTypeInClause});
+
+            // fetch postings
+<span class="nc" id="L727">            Collection ssPostings = getObjects(whereClause);</span>
+
+            // The above query condition loads a superset of the postings needed.  So filter the postings
+            // and only retain the ones which match the givenSSItems.  see above for further details.
+            // Note: not a very efficient algorithm for searching but since ssPostings will be a small
+            // collection, it is acceptable.
+<span class="nc bnc" id="L733" title="All 2 branches missed.">            for (Iterator iter = ssPostings.iterator(); iter.hasNext();) {</span>
+<span class="nc" id="L734">                ShiftSwapPosting ssPosting = (ShiftSwapPosting) iter.next();</span>
+<span class="nc" id="L735">                ShiftSwapItem ssItemForSSPosting = ssPosting.getShiftSwapItem();</span>
+                // sr# 28260 protect against Null Pointer
+                // don't throw exception: if this fails, the Request won't get approved.
+                // by logging an error and continuing, the Posting won't get cleaned up,
+                // which is not as bad as failing the approval.
+<span class="nc bnc" id="L740" title="All 2 branches missed.">                if (ssItemForSSPosting == null) {</span>
+<span class="nc" id="L741">                  m_cat.error(&quot;Cannot find ShiftSwapItem for posting: \n&quot; + ssPosting.toString() +</span>
+                              &quot;\n. Posting will not be removed.&quot;);
+<span class="nc" id="L743">                  continue;</span>
+                }
+
+                // does the ssItem for the posting match one of the givenSSItems
+<span class="nc" id="L747">                boolean found = false;</span>
+<span class="nc bnc" id="L748" title="All 2 branches missed.">                for (Iterator iterator = givenSSItems.iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L749">                    ShiftSwapItem givenSSItem = (ShiftSwapItem) iterator.next();</span>
+
+                    // does the ssItem for the posting match the givenSSItem
+<span class="nc bnc" id="L752" title="All 2 branches missed.">                    if (ssItemForSSPosting.equalsSwapItemUsingESES(givenSSItem)) {</span>
+<span class="nc" id="L753">                        found = true;</span>
+<span class="nc" id="L754">                        break;</span>
+                    }
+<span class="nc" id="L756">                }</span>
+
+                // if ssItem for ssPosting does not match any of the given ssItems
+<span class="nc bnc" id="L759" title="All 2 branches missed.">                if (!found) {</span>
+<span class="nc" id="L760">                    iter.remove();</span>
+                }
+<span class="nc" id="L762">            }</span>
+
+<span class="nc" id="L764">            return ssPostings;</span>
+        } finally {
+<span class="nc" id="L766">            resetDetailLevel();</span>
+        }
+    }
+    private String getWhereClauseToFindDayOffPosting(List givenSSItems) throws Exception {
+<span class="nc" id="L770">    	ShiftSwapItem ssItem1 = (ShiftSwapItem) givenSSItems.get(0);</span>
+<span class="nc" id="L771">    	ShiftSwapItem ssItem2 = (ShiftSwapItem) givenSSItems.get(1);</span>
+    	
+<span class="nc" id="L773">    	ID  ssItemId1= ssItem1.getID();</span>
+<span class="nc" id="L774">    	ID  ssItemId2= ssItem2.getID();</span>
+<span class="nc" id="L775">    	Collection ssItemIDs = new ArrayList(givenSSItems.size());</span>
+<span class="nc" id="L776">    	Collection empIDs = new ArrayList(givenSSItems.size());</span>
+<span class="nc" id="L777">    	ssItemIDs.add(ssItemId1);</span>
+<span class="nc" id="L778">    	ssItemIDs.add(ssItemId2);</span>
+<span class="nc" id="L779">    	ID empID1 = ssItem1.getEmployeeID();</span>
+<span class="nc" id="L780">    	ID empID2 = ssItem2.getEmployeeID();</span>
+<span class="nc" id="L781">    	empIDs.add(empID1);</span>
+<span class="nc" id="L782">    	empIDs.add(empID2);</span>
+    	  
+<span class="nc" id="L784">    	Object ssItemIdInClause = getDMO().createInClause(ssItemIDs);</span>
+<span class="nc" id="L785">        Object empIDInClause = getDMO().createInClause(empIDs);</span>
+<span class="nc" id="L786">        StringBuilder whereClauseTmp= new StringBuilder();</span>
+<span class="nc" id="L787">        whereClauseTmp.append(COLNAME_SHIFTSWAPITEMID).append(&quot; IN  (SELECT I2.ID from SHIFTSWAPITEM I INNER JOIN SHIFTSWAPITEM I2 ON &quot;);</span>
+<span class="nc" id="L788">        whereClauseTmp.append(&quot; I.STARTTIME &lt;= I2.ENDTIME AND I.ENDTIME &gt;= I2.STARTTIME AND I2.SHIFTTYPE = '&quot;).append(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF);</span>
+<span class="nc" id="L789">        whereClauseTmp.append(&quot;' AND I.SHIFTTYPE='shift' AND I.EMPLOYEEID IN&quot;).append(empIDInClause).append(&quot; AND  I2.EMPLOYEEID IN&quot;).append(empIDInClause);</span>
+<span class="nc" id="L790">        whereClauseTmp.append(&quot; WHERE I.ID IN&quot;).append(ssItemIdInClause).append(&quot;)&quot;);</span>
+         
+<span class="nc" id="L792">        return whereClauseTmp.toString();</span>
+    }
+    /*  Find day off postings for 2-way swap- Agent A want to swap the Day Off on Day X to Day Off on Day Y of Agent B
+     *  since there  is adjustment of shifttype, start date, end date before creating shift swap items
+     *  so that  system actually swaps the shift of Agent B on Day X(the Day off of Agent A) and the shift of agent A Day Y (the Day off of Agent B)          
+     * */
+    public Collection findSSDayOffPostingsForSSItems(List givenSSItems, long detailLevel) throws Exception {
+<span class="nc" id="L799">        saveAndSetDetailLevel(detailLevel);</span>
+        try {
+<span class="nc" id="L801">        	String whereClause = getWhereClauseToFindDayOffPosting(givenSSItems);</span>
+<span class="nc" id="L802">            Collection ssPostings = getObjects(whereClause);</span>
+<span class="nc" id="L803">            return ssPostings;</span>
+        } finally {
+<span class="nc" id="L805">            resetDetailLevel();</span>
+        }
+    }
+
+    /**
+     * Note: refer to {@link com.bluepumpkin.ejb.bbm.dao.DAOUtil#deleteObjects(Jdmo, String, Collection) deleteObjects}
+     * for information about ssItems shared between ssReqs and ssPostings
+     *
+     * @param id The ID of the SSPosting object to be deleted.
+     * @throws Exception
+     */
+    public void deleteSSPosting(ID id) throws Exception {
+<span class="nc" id="L817">        deleteSSPostings(Collections.singleton(id));</span>
+<span class="nc" id="L818">    }</span>
+
+    /**
+     * Note: refer to {@link com.bluepumpkin.ejb.bbm.dao.DAOUtil#deleteObjects(Jdmo, String, Collection) deleteObjects}
+     * for information about ssItems shared between ssReqs and ssPostings
+     *
+     * Deletes a SSPosting object and its child ShiftSwapItem object
+     * from the database. To do this it only explicitly deletes the child
+     * (ShiftSwapItem) object, which automatically causes the parent to be
+     * deleted, because the underlying methods use cascading delete. (The
+     * BP_CASCADEDELETE stored procedure relies on the DELETECONTROL table
+     * in the database.)
+     *
+     * @param id The ID of the SSPosting object to be deleted.
+     * @throws Exception
+     */
+    public void deleteSSPostings(Collection ssPostingIDs) throws Exception {
+
+<span class="nc" id="L836">        DAOBase idao = null;</span>
+
+        try {
+        	// the update will lock the rows to prevent deadlock
+        	// execute a stored procedure to delete data
+<span class="nc" id="L841">			JdmoQuery  query = m_dmo.createQuery(&quot;bp_updateSSItem&quot;, Jdmo.STORPROC_QUERY_NORS);</span>
+<span class="nc" id="L842">			query.setParString(1, StringUtil.createDelimitedString(ssPostingIDs, &quot;,&quot;));</span>
+<span class="nc" id="L843">			m_dmo.execute(query);</span>
+
+            //Find posting valueobject to retrieve shiftswapItemID
+<span class="nc" id="L846">            Collection ssPostings = getObjectsByIDs(ssPostingIDs);</span>
+
+<span class="nc bnc" id="L848" title="All 2 branches missed.">            if (!ssPostings.isEmpty()) {</span>
+<span class="nc" id="L849">                idao = createChildDAO(ShiftSwapPostingFieldInfo.ITEM_CHILD_TYPE);</span>
+<span class="nc" id="L850">                List ssItemIDs = RequestUtil.getListOfFieldValuesFromVOBases(ssPostings,</span>
+                    ShiftSwapPostingFieldInfo.SHIFTSWAPPOSTING_I_SHIFTSWAPITEMID);
+
+                //Delete ShiftSwapItem, which will cascade delete the ShiftSwapPosting
+<span class="nc" id="L854">                idao.deleteObjects(ssItemIDs);</span>
+<span class="nc" id="L855">            }</span>
+            // this should never happen, but we can try to delete the posting
+            // by ID, which will leave a dangling ShiftSwapItem
+            else {
+<span class="nc" id="L859">                this.deleteObjects(ssPostingIDs);</span>
+            }
+        } finally {
+<span class="nc bnc" id="L862" title="All 4 branches missed.">			if (idao != null) {</span>
+<span class="nc" id="L863">				idao.cleanUp();</span>
+			}
+        }
+<span class="nc" id="L866">    }</span>
+
+     /**
+     * Note: refer to {@link com.bluepumpkin.ejb.bbm.dao.DAOUtil#deleteObjects(Jdmo, String, Collection) deleteObjects}
+     * for information about ssItems shared between ssReqs and ssPostings
+     *
+     * @throws Exception
+     */
+    protected void deleteSSPostingsExpired() throws Exception
+    {
+//        try {
+<span class="nc" id="L877">			String dateNow = JdmoUtil.formatDBString(new Date());</span>
+        	// the update will lock the rows to prevent deadlock
+        	// execute a stored procedure to delete data
+<span class="nc" id="L880">			JdmoQuery  query = m_dmo.createQuery(&quot;bp_updateSSItemsExpired&quot;, Jdmo.STORPROC_QUERY_NORS);</span>
+<span class="nc" id="L881">			query.setParString(1, dateNow);</span>
+<span class="nc" id="L882">			m_dmo.execute(query);</span>
+
+        	//find expired postings and its ssItems.  Ensure that the ssItem is not associated with
+            // any SSRequestItem.
+<span class="nc" id="L886">            String strQuery =</span>
+            &quot;SELECT ssi.ID FROM ShiftSwapPosting ssp, ShiftSwapItem ssi &quot; +
+            &quot;WHERE &quot; +
+                &quot; ssp.ShiftSwapItemID = ssi.ID AND &quot; +
+                &quot; ssi.ExpirationDate &lt; '&quot; + dateNow + &quot;' AND &quot; +
+                &quot; NOT EXISTS (SELECT * FROM ShiftSwapRequestItem ssri WHERE ssri.ShiftSwapItemId = ssi.ID)&quot;;
+            //TODO: delete will fail if ssItem is shared between the SSPosting and SSRequest.
+<span class="nc bnc" id="L893" title="All 2 branches missed.">            if (com.bluepumpkin.ejb.bbm.dao.DAOUtil.dataExist(strQuery, m_dmo)) {</span>
+                // underlying BP_CASCADEDELETE will delete the shiftSwapItem and its associated posting if any.
+                //delete posting; delete ssItem if not associated with an SSRequest.
+<span class="nc" id="L896">                com.bluepumpkin.ejb.bbm.dao.DAOUtil.deleteObjects(m_dmo, &quot;SHIFTSWAPITEM&quot;, strQuery);</span>
+            }
+//        } c_atch (Exception e) {
+//            t_hrow RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);
+//        }
+<span class="nc" id="L901">    }</span>
+
+    /*
+     * Updates a ShiftSwapPosting object and its child ShiftSwapItem object in
+     * the database.
+     * @param objValue The ShiftSwapPosting object to be updated.
+     * @throws Exception
+     */
+    public void updateSSPosting(ShiftSwapPosting objValue) throws Exception {
+        //objValue.updateChildObject();
+        //this.updateChildObjects(ShiftSwapPostingFieldInfo.ITEM_CHILD_TYPE, objValue);
+<span class="nc" id="L912">        this.updateObject(objValue);</span>
+<span class="nc" id="L913">    }</span>
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.bbm.dao.DAOBase#appendFromWhereStatement(java.lang.StringBuffer)
+     */
+     //TODO: Expired postings must be purged.
+    @Override
+	protected boolean appendFromWhereStatement(StringBuffer strSQL) {
+<span class="nc" id="L921">        boolean hasWhere = super.appendFromWhereStatement(strSQL);</span>
+<span class="nc bnc" id="L922" title="All 2 branches missed.">        if (hasWhere) {</span>
+<span class="nc" id="L923">            throw new IllegalArgumentException();</span>
+        }
+
+        // TODO: table name SHIFTSWAPITEM is hardcoded.  use FieldInfo.getTableName() instead.
+<span class="nc" id="L927">        strSQL.append(&quot;, SHIFTSWAPITEM B WHERE A.SHIFTSWAPITEMID = B.ID AND B.EXPIRATIONDATE &gt;= '&quot;).</span>
+<span class="nc" id="L928">            append(JdmoUtil.formatDBString(new Date())).append('\'');</span>
+
+<span class="nc" id="L930">        return true;</span>
+    }
+
+    /**
+     * @param ssPosting
+     */
+    public List findSSPostingIDsByStartEndDate(ID empID, Date startDate, Date endDate) throws JdmoException {
+<span class="nc" id="L937">        List idList = DAOUtil.getIDsUsingSQLQuery(getDMO(), m_queryFindSSPostingIDByStartEndDate,</span>
+            new Object[] {empID, startDate, endDate},
+            new DAOUtil.ColumnMetaData[] {
+<span class="nc" id="L940">                DAOUtil.ColumnMetaData.getColMetaDataForID(),</span>
+<span class="nc" id="L941">                DAOUtil.ColumnMetaData.getColMetaDataForDate(),</span>
+<span class="nc" id="L942">                DAOUtil.ColumnMetaData.getColMetaDataForDate()</span>
+            });
+
+<span class="nc" id="L945">       return idList;</span>
+    }
+    
+    /**
+     * @param ssPosting
+     */
+    public List findOverlappingSSPostingIDsByStartEndDate(ID empID, Date startDate, Date endDate) throws JdmoException {
+<span class="nc" id="L952">        List idList = DAOUtil.getIDsUsingSQLQuery(getDMO(), m_queryFindOverlappingSSPostingIDByStartEndDate,</span>
+            new Object[] {empID, endDate, startDate},
+            new DAOUtil.ColumnMetaData[] {
+<span class="nc" id="L955">                DAOUtil.ColumnMetaData.getColMetaDataForID(),</span>
+<span class="nc" id="L956">                DAOUtil.ColumnMetaData.getColMetaDataForDate(),</span>
+<span class="nc" id="L957">                DAOUtil.ColumnMetaData.getColMetaDataForDate(),</span>
+            });
+
+<span class="nc" id="L960">       return idList;</span>
+    }
+
+
+    /**
+     * Builds a SQL case expression to find the max of two given dates.  The dates
+     * must be non null.
+     *
+     * @param date1Col
+     * @param date2Col
+     * @return
+     */
+    /*private static String buildCaseForMaxDate(String date1Col, String date2Col)
+    {
+        String caseStmt =
+        &quot;(CASE &quot; +
+        &quot;   WHEN date1 &gt;= date2 THEN date1 &quot; +
+        &quot;   ELSE date2 &quot; +
+        &quot;END)&quot;;
+
+        caseStmt = StringUtil.replace(caseStmt, &quot;date1&quot;, date1Col);
+        caseStmt = StringUtil.replace(caseStmt, &quot;date2&quot;, date2Col);
+        return caseStmt;
+    }*/
+
+    /**
+     * Builds a SQL Case expression to find the minimum of two given dates. Either
+     * or both the dates can be null.
+     *
+     * @param date1Col
+     * @param date2Col
+     * @param limitCol
+     * @return
+     */
+    /*private static String buildCaseForMinDate(String date1Col, String date2Col, String limitCol)
+    {
+        String caseStmt =
+        &quot;(CASE &quot; +
+        &quot;   WHEN (date1 IS NULL AND date2 IS NULL) THEN limit &quot; +
+        &quot;   WHEN date1 IS NULL THEN date2 &quot; +
+        &quot;   WHEN date2 IS NULL THEN date1 &quot; +
+        &quot;   WHEN date1 &lt;= date2 THEN date1 &quot; +
+        &quot;   ELSE date2 &quot; +
+        &quot;END)&quot;;
+
+        caseStmt = StringUtil.replace(caseStmt, &quot;date1&quot;, date1Col);
+        caseStmt = StringUtil.replace(caseStmt, &quot;date2&quot;, date2Col);
+        caseStmt = StringUtil.replace(caseStmt, &quot;limit&quot;, limitCol);
+
+        return caseStmt;
+    }*/
+
+    /*
+     * 5.0 code; not necessary
+     * Find all campaigns for the given employee starting now.
+     * For each campaign association and its effectivity, find all organization
+     *   associations and its effectivity for the given employeee if the org effectivity
+     *   overlaps the campaign effectivity.
+     *
+     * SELECT
+     *    cwr.campaignID, wro.organizationID, OverlapPeriod(cwr.effectivity, wro.effectivity)
+     * FROM
+     *    CampaignWorkResource cwr, WorkResourceOrganization wro
+     * WHERE
+     *    cwr.effectivty overlaps wro.effectivity AND
+     *    cwr.WorkResourceID = &lt;empid&gt; AND
+     *    wro.WorkResourceID = &lt;empid&gt; AND
+     *    cwr.EndTime &gt;= &lt;now&gt;
+     */
+//    m_campaignOrgEffectivityTmpl =
+//    &quot;SELECT &quot; +
+//    &quot;   cwr.campaignID, &quot; +
+//    &quot;   cwr.StartTime, &quot; +
+//        buildCaseForNullDate(&quot;cwr.Endtime&quot;) + &quot;, &quot; +
+//    &quot;   wro.organizationID, &quot; +
+//    &quot;   wro.StartTime, &quot; +
+//        buildCaseForNullDate(&quot;wro.Endtime&quot;) + ' ' +
+//    &quot;FROM &quot; +
+//    &quot;   CampaignWorkResource cwr, &quot; +
+//    &quot;   WorkResourceOrganization wro &quot; +
+//    &quot;WHERE &quot; +
+//       buildCaseForNullDate(&quot;cwr.EndTime&quot;) + &quot; &gt;= ''{1}'' AND &quot; +
+//    &quot;  cwr.WorkResourceID = {0} AND &quot; +
+//    &quot;  wro.WorkResourceID = {0} AND &quot; +
+//       buildExprForDateOverlap(&quot;cwr.StartTime&quot;, &quot;cwr.EndTime&quot;, &quot;wro.StartTime&quot;, &quot;wro.EndTime&quot;);
+
+    /*
+     * 5.0 code; not necessary
+     * Find all ShiftSwapPostings for my campaign.
+     * Finds all postings made by employees
+     * in my campaign, restricted by the org swap settings.
+     *
+     * Find all employees, their campaign associatin and effectivity if they
+     *    belong to the given campaign and their campaign
+     *    effectivity overlaps the the given daterange.
+     * for each employee, find the org(s) association he/she belongs to and the org effectivity if
+     *    their org effectivity overlaps their campaign effectivity.
+     * verify if the org the mployee belongs to is one of the swappable orgs.
+     * if so, retrieve all postings made by the employee during the
+     *    common period of overlap between the given time range, campaign effectivty and org effectivity.
+     *
+     * SELECT
+     *   ssp.ID
+     * FROM
+     *   CampaignWorkResource cwr, WorkResourceOrganization wro,
+     *   ShiftSwapItem ssi, ShiftSwapPosting ssp
+     * WHERE
+     *   cwr.Effectivity OVERLAPS &lt;given range&gt; AND
+     *   cwr.WorkResourceID != &lt;given emp ID&gt; AND
+     *   cwr.WorkResourceID = wro.workResourceID AND
+     *   cwr.Effectivity OVERLAPS wro.Effectivity AND
+     *   wro.organizationID IN (swappable org ID list) AND
+     *   ssi.EmployeeID = cwr.WorkResourceID AND
+     *   ssi.ID = ssp.ShiftSwapItemID AND
+     *   ssi.TimeRange BETWEEN MAX(cwr.StartTime, wro.StartTime, &lt;startTime&gt;) AND MIN(cwr.EndTime, wro.EndTime, &lt;endTime&gt;)
+     */
+    //TODO: buildCaseForMaxDate(&quot;cwr1.StartTime&quot;, &quot;cwr2.StartTime&quot;) will not be sufficient.  Might need
+    // buildCaseForMaxDate(&quot;cwr1.StartTime&quot;, &quot;cwr2.StartTime&quot;, wro.StartTime)
+    //TODO: buildCaseForMinDate(&quot;cwr1.EndTime&quot;, &quot;cwr2.EndTime&quot;) will not be sufficient.  Might need
+    // buildCaseForMinDate(&quot;cwr1.StartTime&quot;, &quot;cwr2.StartTime&quot;, wro.MinTime)
+    //TODO: buildCaseForMaxDate(&quot;cwr1.StartTime&quot;, &quot;''{1}''&quot;)
+//    m_postingsForMyCampaignTmpl =
+//    &quot;SELECT &quot; +
+//    &quot;   ssp.ID &quot; +
+//    &quot;FROM &quot; +
+//    &quot;   CampaignWorkResource cwr, &quot; +
+//    &quot;   WorkResourceOrganization wro, &quot; +
+//    &quot;   ShiftSwapItem ssi, &quot; +
+//    &quot;   ShiftSwapPosting &quot; +
+//    &quot;WHERE &quot; +
+//    &quot;   cwr.WorkResourceID &lt;&gt; {0} AND &quot; +
+//    &quot;   cwr.CampaignID = {1} AND &quot; +
+//    &quot;   cwr.StartTime &gt;= ''{2}'' AND ( (cwr.EndTime IS NULL) OR (cwr.EndTime &lt;= ''{3}'') )  AND &quot; +
+//    &quot;   cwr.WorkResourceID = wro.WorkResourceID  AND &quot; +
+//        buildExprForDateOverlap(&quot;cwr.StartTime&quot;, &quot;cwr.EndTime&quot;, &quot;wro.StartTime&quot;, &quot;wro.EndTime&quot;) + &quot; AND &quot; +
+//    &quot;   wro.OrganizationID IN ( {4} ) AND &quot; +
+//    &quot;   ssi.EmployeeID = cwr.WorkResourceID AND &quot; +
+//    &quot;   ssi.ID = ssp.ShiftSwapItemID AND &quot; +
+//    &quot;   ssi.StartTime BETWEEN ''{2}'' AND ''{3}'' AND &quot; +
+//    &quot;   ssi.StartTime BETWEEN cwr.StartTime AND &quot; + buildCaseForNullDate(&quot;cwr.EndTime&quot;) + &quot; AND &quot; +
+//    &quot;   ssi.StartTime BETWEEN wro.StartTime AND &quot; + buildCaseForNullDate(&quot;wro.EndTime&quot;);
+
+   /*
+    * 5.0 code; not needed.
+    * All SSPosting for My Org.
+    * All postings made by agents in my organization subject to the swappable org setting.
+    *
+    * Find all organization associations for the agent and its effectivity, starting now.
+    *
+    * SELECT
+    *    wro.OrganizationID, MAX(wro.StartTime, now), wro.EndTime
+    * FROM
+    *    WorkResourceOrganization wro
+    * WHERE
+    *    wro.WorkResourceID = &lt;given workresource ID&gt; AND
+    *    wro.EndTime &gt; &lt;now&gt;
+    */
+//   m_orgEffectivityTmpl =
+//   &quot;SELECT &quot; +
+//   &quot;   wro.OrganizationID, &quot; +
+//   &quot;   wro.StartTime, &quot; +
+//       buildCaseForNullDate(&quot;wro.EndTime&quot;) + ' ' +
+//   &quot;FROM &quot; +
+//   &quot;   WorkResourceOrganization wro &quot; +
+//   &quot;WHERE &quot; +
+//   &quot;   wro.WorkResourceID = {0} AND &quot; +
+//       buildExprForDateOverlap(&quot;wro.StartTime&quot;, &quot;wro.EndTime&quot;, &quot;''{1}''&quot;, &quot;''{2}''&quot;);
+
+//    public List[] findCampaignOrgEffectivities(ID empID) throws Exception
+//    {
+//        String query = MessageFormat.format(m_campaignOrgEffectivityTmpl,
+//            new Object[] {empID, JdmoUtil.formatDBString(new Date())});
+//
+//        //TODO: passed ColumnMetaData array can be made static.
+//        ColumnMetaData[] CampaignOrgEffecColMetaDataArr = new DAOUtil.ColumnMetaData[] {
+//            new DAOUtil.ColumnMetaData(DAOUtil.ColumnMetaData.COLUMNTYPE_ID, 1),
+//            new DAOUtil.ColumnMetaData(DAOUtil.ColumnMetaData.COLUMNTYPE_DATE, 2),
+//            new DAOUtil.ColumnMetaData(DAOUtil.ColumnMetaData.COLUMNTYPE_DATE, 3),
+//            new DAOUtil.ColumnMetaData(DAOUtil.ColumnMetaData.COLUMNTYPE_ID, 4),
+//            new DAOUtil.ColumnMetaData(DAOUtil.ColumnMetaData.COLUMNTYPE_DATE, 5),
+//            new DAOUtil.ColumnMetaData(DAOUtil.ColumnMetaData.COLUMNTYPE_DATE, 6)
+//            };
+//
+//        return DAOUtil.getFromSQLQueryCols(m_dmo, query, CampaignOrgEffecColMetaDataArr);
+//    }
+
+//      Replaced my WorkResourceManager.getEmployeesReportingOrgs()
+//      public List[] findOrgEffectivities(ID empID, Date start, Date end) throws Exception
+//      {
+//          String dateNow = JdmoUtil.formatDBString(new Date());
+//
+//          String query = MessageFormat.format(m_orgEffectivityTmpl,
+//              new Object[] {
+//                  empID, JdmoUtil.formatDBString(start),
+//                  (end != null)?JdmoUtil.formatDBString(end):m_tenYearsFromNow
+//              }
+//          );
+//
+//          //TODO: make DAOUtil.ColumnMetaData array static
+//          return DAOUtil.getFromSQLQueryCols(m_dmo, query, new DAOUtil.ColumnMetaData[] {
+//              new DAOUtil.ColumnMetaData(DAOUtil.ColumnMetaData.COLUMNTYPE_ID, 1),
+//              new DAOUtil.ColumnMetaData(DAOUtil.ColumnMetaData.COLUMNTYPE_DATE, 2),
+//              new DAOUtil.ColumnMetaData(DAOUtil.ColumnMetaData.COLUMNTYPE_DATE, 3)
+//              }
+//          );
+//      }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

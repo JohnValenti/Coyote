@@ -1,0 +1,439 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PulsePortletEditPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.dashboard.portlets.pulse</a> &gt; <span class="el_source">PulsePortletEditPM.java</span></div><h1>PulsePortletEditPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.dashboard.portlets.pulse;
+
+import java.text.DateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.TimeZone;
+
+import javax.portlet.PortletPreferences;
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.web.core.keys.CoreJavaScriptFileID;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.web.core.dashboard.pluto.PlutoPreferencesUtil;
+import com.verint.web.core.dashboard.portlets.MultiIFramePortlet;
+import com.verint.web.fs.dashboard.portlets.pulse.util.Constants;
+import com.verint.web.wfm.keys.WfmJavaScriptFileID;
+import com.witness.ejb.core.security.model.User;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.CommonWebBundleKey;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.PageComponent;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.pagemodel.WorkpaneFormPM;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+
+public class PulsePortletEditPM
+	extends WorkpaneFormPM
+{
+	private static final long serialVersionUID = -2815302616689463480L;
+	private static final String FN_TEMPLATE_ID = &quot;templateID&quot;;
+	private static final String FN_INSTANCE_ID = &quot;instanceID&quot;;
+	private static final String INITIAL_LOAD = &quot;initialLoad&quot;;
+
+<span class="nc" id="L42">	private boolean m_initialized = false;</span>
+<span class="nc" id="L43">	private boolean editComplete = false;</span>
+	private String instanceID;
+	private String templateID;
+<span class="nc" id="L46">	private User m_user = m_context.getUser();</span>
+
+<span class="nc" id="L48">	private boolean initialLoad = true;</span>
+
+<span class="nc" id="L50">	private ID m_campaignID = null;</span>
+<span class="nc" id="L51">	private TimeZone m_campaignTimeZone = null;</span>
+	private StatisticType m_statisticType;
+<span class="nc" id="L53">	private ID m_QueueID = null;</span>
+<span class="nc" id="L54">	private boolean savePressed = false;</span>
+	
+<span class="nc" id="L56">	private String m_datePickerType = null;</span>
+<span class="nc" id="L57">	private int m_lastNPeriodType = -1;</span>
+<span class="nc" id="L58">	private int m_lastNPeriods = Constants.DATE_LAST_N_PERIOD_INVALID;</span>
+<span class="nc" id="L59">	private String m_errorMessageId = null;</span>
+
+	private Date m_tpSDate;
+	private Date m_tpEDate;
+
+<span class="nc" id="L64">	private Boolean m_trimToHOO = true;</span>
+
+	protected PulsePortletEditPC m_portletEditPC;
+	private Collection&lt;Campaign&gt; m_campaignList;
+
+	public PulsePortletEditPM(RequestContext context) {
+<span class="nc" id="L70">		super(context, PageModel.BASIC_MODEL);</span>
+<span class="nc" id="L71">		m_bodyStyle = &quot;margin: 0px; overflow: auto;&quot;;</span>
+<span class="nc" id="L72">		m_workAreaStyle = &quot;height: expression(document.body.clientHeight-28);&quot;;</span>
+<span class="nc" id="L73">		m_workContentStyle = &quot;margin: 0px; border: 0px;&quot;;</span>
+<span class="nc" id="L74">		m_workPaneStyle = &quot;height: 100%;&quot;;</span>
+
+<span class="nc" id="L76">		addRequiredJavaScriptFile(CoreJavaScriptFileID.PORTLET_POPUP_UTIL);</span>
+		
+<span class="nc" id="L78">		setIsAutoResizeEnabled(false);</span>
+<span class="nc" id="L79">		m_portletEditPC = new PulsePortletEditPC(context);</span>
+<span class="nc" id="L80">		addChildComponent(m_portletEditPC);</span>
+<span class="nc" id="L81">		setJSMediator(WfmJavaScriptFileID.MEDIATOR_QUEUE_SELECTOR);</span>
+<span class="nc" id="L82">	}</span>
+
+	public static PageModel getInstance(RequestContext context) {
+<span class="nc" id="L85">		return PageModel.getInstance(context, PulsePortletEditPM.class);</span>
+	}
+
+	@Override
+	public String getScreenTitle() {
+<span class="nc" id="L90">		return m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.PULSE_PORTLET_EDIT);</span>
+	}
+
+	@Override
+	protected void initializeModel() {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">		if (!m_initialized) {</span>
+<span class="nc" id="L96">			m_initialized = true;</span>
+
+<span class="nc bnc" id="L98" title="All 2 branches missed.">			if (!m_user.isSuperUser()) {</span>
+				try {
+<span class="nc" id="L100">					setForm(m_portletEditPC);</span>
+					// On first load, we want to pull the values that may be stored in portlet prefs
+<span class="nc bnc" id="L102" title="All 2 branches missed.">					if (initialLoad) {</span>
+<span class="nc" id="L103">						initialLoad = false;</span>
+
+<span class="nc" id="L105">						Calendar now = Calendar.getInstance();</span>
+<span class="nc" id="L106">						Calendar weekFromNow = Calendar.getInstance();</span>
+<span class="nc" id="L107">						weekFromNow.add(Calendar.DATE, 6);</span>
+
+<span class="nc" id="L109">						CampaignManager campaignManager = PulsePortletUtil.getCampaignManager();</span>
+
+						// get or set the campaign ID
+<span class="nc" id="L112">						PortletPreferences prefs = PlutoPreferencesUtil.getPortletPreferences(m_context, templateID, instanceID);</span>
+<span class="nc" id="L113">						String campaignIDStr = prefs.getValue(Constants.CAMPAIGN_ID, null);</span>
+<span class="nc bnc" id="L114" title="All 4 branches missed.">						if (campaignIDStr != null &amp;&amp; !&quot;&quot;.equals(campaignIDStr)) {</span>
+<span class="nc" id="L115">							Campaign prefsCampaign = campaignManager.getCampaignByID(new ID(campaignIDStr));</span>
+<span class="nc" id="L116">							m_campaignTimeZone = prefsCampaign.getTimeZone();</span>
+<span class="nc" id="L117">							m_campaignID = prefsCampaign.getID();</span>
+<span class="nc" id="L118">						}</span>
+						else  {
+<span class="nc" id="L120">							m_campaignList = PulsePortletUtil.getCampaignsForUser(m_context);</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">							if (m_campaignList.isEmpty()) {</span>
+<span class="nc" id="L122">								addPageMessage(Message.WARNING_TYPE, FsWebBundleKey.WARN_NO_CAMPAIGNS_FOUND_FOR_USER, FsWebBundleKey.BUNDLE_NAME);</span>
+							}
+							else {
+<span class="nc" id="L125">								m_campaignTimeZone = ((Campaign)((ArrayList)m_campaignList).get(0)).getTimeZone();</span>
+<span class="nc" id="L126">								m_campaignID = ((Campaign)((ArrayList)m_campaignList).get(0)).getID();</span>
+							}
+						}
+
+						// get or set the date picker type
+<span class="nc" id="L131">						m_datePickerType = prefs.getValue(Constants.DATE_PICKER_TYPE, null);</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">						if (m_datePickerType == null) {</span>
+<span class="nc" id="L133">							m_datePickerType = LastNPeriodPickerPC.PICKER_TYPE_DATE_RANGE;</span>
+						}
+
+						// get the periodicity type - doesn't need to be assigned a default as the LastNPeriodPickerPC provides one
+<span class="nc" id="L137">						String lastNPeriodTypeStr = prefs.getValue(Constants.DATE_LAST_N_PERIOD_TYPE, null);</span>
+<span class="nc bnc" id="L138" title="All 4 branches missed.">						if (lastNPeriodTypeStr != null &amp;&amp; !&quot;&quot;.equals(lastNPeriodTypeStr)) {</span>
+<span class="nc" id="L139">							m_lastNPeriodType = Integer.parseInt(lastNPeriodTypeStr);</span>
+						}
+
+						// get the number of periods - doesn't need to be assigned a default as the LastNPeriodPickerPC provides one
+<span class="nc" id="L143">						String lastNPeriodStr = prefs.getValue(Constants.DATE_LAST_N_PERIOD, null);</span>
+<span class="nc bnc" id="L144" title="All 4 branches missed.">						if (lastNPeriodStr != null &amp;&amp; !&quot;&quot;.equals(lastNPeriodStr)) {</span>
+<span class="nc" id="L145">							m_lastNPeriods = Integer.parseInt(lastNPeriodStr);</span>
+						}
+
+						// get or set the start date
+<span class="nc" id="L149">						String startDateStr = prefs.getValue(Constants.DATE_DATE_RANGE_START_DATE, null);</span>
+<span class="nc bnc" id="L150" title="All 4 branches missed.">						if (startDateStr != null &amp;&amp; !&quot;&quot;.equals(startDateStr)) {</span>
+<span class="nc" id="L151">							m_tpSDate = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.FULL).parse(startDateStr);</span>
+						}
+<span class="nc bnc" id="L153" title="All 2 branches missed.">						else if (m_campaignID != null) {</span>
+<span class="nc" id="L154">							m_tpSDate = PulsePortletUtil.getCampaignStartOfDay(m_campaignID, now.getTime());</span>
+						}
+
+						// get or set the end date
+<span class="nc" id="L158">						String endDateStr = prefs.getValue(Constants.DATE_DATE_RANGE_END_DATE, null);</span>
+<span class="nc bnc" id="L159" title="All 4 branches missed.">						if (endDateStr != null &amp;&amp; !&quot;&quot;.equals(endDateStr)) {</span>
+<span class="nc" id="L160">							m_tpEDate = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.FULL).parse(endDateStr);</span>
+						}
+<span class="nc bnc" id="L162" title="All 2 branches missed.">						else if (m_campaignID != null) {</span>
+<span class="nc" id="L163">							m_tpEDate = PulsePortletUtil.getCampaignEndOfDay(m_campaignID, weekFromNow.getTime());</span>
+						}
+
+						// get or set the queue ID
+<span class="nc" id="L167">						String queueIdStr = prefs.getValue(Constants.QUEUE_ID, null);</span>
+<span class="nc bnc" id="L168" title="All 4 branches missed.">						if (queueIdStr != null &amp;&amp; !&quot;&quot;.equals(queueIdStr)) {</span>
+<span class="nc" id="L169">							m_QueueID = new ID(queueIdStr);</span>
+						}
+
+						// get or set the statistic type
+<span class="nc" id="L173">						String statisticTypeStr = prefs.getValue(Constants.STATISTIC_TYPE, null);</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">						if (statisticTypeStr != null) {</span>
+<span class="nc" id="L175">							int statisticTypeId = Integer.parseInt(statisticTypeStr);</span>
+<span class="nc" id="L176">							m_statisticType = StatisticType.getStatisticType(statisticTypeId);</span>
+<span class="nc" id="L177">						}</span>
+						else  {
+<span class="nc" id="L179">							m_statisticType = StatisticType.FTE;</span>
+						}
+
+						// get or set the trim to HOO flag
+<span class="nc" id="L183">						String trimToHOOStr = prefs.getValue(Constants.TRIM_TO_HOO, null);</span>
+<span class="nc bnc" id="L184" title="All 4 branches missed.">						if (trimToHOOStr != null &amp;&amp; !&quot;&quot;.equals(trimToHOOStr)) {</span>
+<span class="nc" id="L185">							m_trimToHOO = Boolean.parseBoolean(trimToHOOStr);</span>
+						}
+						else {
+							// setting default
+<span class="nc" id="L189">							m_trimToHOO = true;</span>
+						}
+					}
+
+					try {
+<span class="nc" id="L194">						m_campaignList = PulsePortletUtil.getCampaignsForUser(m_context);</span>
+<span class="nc" id="L195">						initCampaignContent();</span>
+<span class="nc" id="L196">						m_portletEditPC.init();</span>
+<span class="nc" id="L197">						m_portletEditPC.initForDisplay();</span>
+					}
+<span class="nc" id="L199">					catch (Exception ex) {</span>
+<span class="nc" id="L200">						handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L201">					}</span>
+
+<span class="nc" id="L203">					m_toolbar.addSubmitTextButton(</span>
+						PageAction.SAVE,
+<span class="nc" id="L205">						m_localizer.i18n(CommonWebBundleKey.BUNDLE_NAME, CommonWebBundleKey.TOOLBAR_SAVE),</span>
+						true);
+<span class="nc" id="L207">					m_toolbar.addConfirmSubmitTextButton(PageAction.CANCEL,</span>
+<span class="nc" id="L208">							i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_CANCEL), true);</span>
+				}
+<span class="nc" id="L210">				catch (Exception ex) {</span>
+<span class="nc" id="L211">					handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L212">				}</span>
+			}
+		}
+<span class="nc" id="L215">	}</span>
+
+	/**
+	 * Initialize Content
+	 */
+	protected void initCampaignContent()
+	{
+<span class="nc" id="L222">		m_portletEditPC.setStatisticType(m_statisticType);</span>
+<span class="nc" id="L223">		m_portletEditPC.setCampaignID(m_campaignID);</span>
+<span class="nc" id="L224">		m_portletEditPC.setCampaignList(m_campaignList);</span>
+<span class="nc" id="L225">		m_portletEditPC.setQueueID(m_QueueID);</span>
+<span class="nc" id="L226">		m_portletEditPC.setDatePickerType(m_datePickerType);</span>
+<span class="nc bnc" id="L227" title="All 4 branches missed.">		if (m_lastNPeriodType != -1 &amp;&amp; m_lastNPeriods != Constants.DATE_LAST_N_PERIOD_INVALID) {</span>
+<span class="nc" id="L228">			m_portletEditPC.setLastNPeriods(m_lastNPeriods, m_lastNPeriodType);</span>
+		}
+<span class="nc" id="L230">		setPortletEditPCDateRangePickerTimeZone();</span>
+<span class="nc" id="L231">		m_portletEditPC.setStartDate(m_tpSDate);</span>
+<span class="nc" id="L232">		m_portletEditPC.setEndDate(m_tpEDate);</span>
+<span class="nc" id="L233">		m_portletEditPC.setTrimToHOO(m_trimToHOO);</span>
+<span class="nc" id="L234">	}</span>
+
+	/**
+	 * Extract parameter using current Request Context
+	 */
+	@Override
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="nc" id="L241">		boolean success = super.extractParameters(request);</span>
+<span class="nc" id="L242">		m_statisticType = m_portletEditPC.getStatisticType();</span>
+<span class="nc" id="L243">		m_campaignID = m_portletEditPC.getCampaignID();</span>
+<span class="nc" id="L244">		m_campaignList = m_portletEditPC.getCampaignList();</span>
+<span class="nc" id="L245">		m_datePickerType = m_portletEditPC.getDatePickerType();</span>
+<span class="nc" id="L246">		m_lastNPeriodType = m_portletEditPC.getLastNPeriodsPeriodicity();</span>
+<span class="nc" id="L247">		m_lastNPeriods = m_portletEditPC.getNoLastNPeriods();</span>
+<span class="nc" id="L248">		setPortletEditPCDateRangePickerTimeZone();</span>
+<span class="nc" id="L249">		m_tpSDate = m_portletEditPC.getStartDate();</span>
+<span class="nc" id="L250">		m_tpEDate = m_portletEditPC.getEndDate();</span>
+<span class="nc" id="L251">		m_QueueID = m_portletEditPC.getQueueID();</span>
+<span class="nc" id="L252">		m_trimToHOO = m_portletEditPC.getTrimToHOO();</span>
+<span class="nc" id="L253">		return success;</span>
+	}
+
+	@Override
+	protected void initForm() {
+		// TODO Auto-generated method stub
+<span class="nc" id="L259">	}</span>
+
+	@Override
+	public PageComponent getForm() {
+<span class="nc" id="L263">		return this;</span>
+	}
+
+	/**
+	 * @param editComplete a boolean flag denoting the edit is complete
+	 */
+	public void setEditComplete(boolean editComplete) {
+<span class="nc" id="L270">		this.editComplete = editComplete;</span>
+<span class="nc" id="L271">	}</span>
+
+	/**
+	 * @param initialLoad a boolean flag denoting the initial load has completed
+	 */
+	public void setInitialLoad(boolean initialLoad) {
+<span class="nc" id="L277">		this.initialLoad = initialLoad;</span>
+<span class="nc" id="L278">	}</span>
+
+	/**
+	 * @return the instanceID
+	 */
+	public String getInstanceID() {
+<span class="nc" id="L284">		return instanceID;</span>
+	}
+
+	/**
+	 * @param instanceID the instanceID to set
+	 */
+	public void setInstanceID(String instanceID) {
+<span class="nc" id="L291">		this.instanceID = instanceID;</span>
+<span class="nc" id="L292">	}</span>
+
+	/**
+	 * @return the templateID
+	 */
+	public String getTemplateID() {
+<span class="nc" id="L298">		return templateID;</span>
+	}
+
+	/**
+	 * @param templateID the templateID to set
+	 */
+	public void setTemplateID(String templateID) {
+<span class="nc" id="L305">		this.templateID = templateID;</span>
+<span class="nc" id="L306">	}</span>
+
+	@Override
+	public String getRequiredHTML() {
+<span class="nc" id="L310">		return super.getRequiredHTML();</span>
+	}
+	
+	/**
+	 * @param setSavePressed The savePressed to set
+	 */
+	public void setSavePressed(boolean savePressed) {
+<span class="nc" id="L317">		this.savePressed = savePressed;</span>
+<span class="nc" id="L318">	}</span>
+
+	@Override
+	public String getHtmlDisplay() {
+<span class="nc" id="L322">		StringBuffer html = new StringBuffer();</span>
+<span class="nc bnc" id="L323" title="All 2 branches missed.">		if (editComplete) {</span>
+<span class="nc bnc" id="L324" title="All 4 branches missed.">			if (this.getSaveErrMsgID() != null &amp;&amp; this.getSaveErrMsgID().length() &gt; 0) { //if there is error messageID, then call setErrorMsg() on the JS like below.</span>
+<span class="nc" id="L325">				html.append(&quot;&lt;script type='text/javascript'&gt;setErrorMsg('&quot; + this.getSaveErrMsgID() + &quot;')&lt;/script&gt;&quot;);</span>
+			}
+<span class="nc bnc" id="L327" title="All 2 branches missed.">			if (savePressed) {</span>
+<span class="nc" id="L328">				html.append(MultiIFramePortlet.getPortletModeSwitchJavascriptTag(templateID, &quot;view&quot;, &quot;save&quot;));</span>
+			} else {
+<span class="nc" id="L330">				html.append(MultiIFramePortlet.getPortletModeSwitchJavascriptTag(templateID, &quot;view&quot;, &quot;cancel&quot;));</span>
+			}
+		}
+<span class="nc bnc" id="L333" title="All 2 branches missed.">		if (m_user.isSuperUser()) {</span>
+<span class="nc" id="L334">			addPageMessage(Message.WARNING_TYPE, m_localizer.i18n(</span>
+				FsWebBundleKey.BUNDLE_NAME,
+				FsWebBundleKey.PULSE_PORTLET_ILLEGAL_EMPLOYEE_MESSAGE));
+<span class="nc" id="L337">			return displayAllMessages(m_context);</span>
+		}
+		else {
+<span class="nc bnc" id="L340" title="All 2 branches missed.">			if (getPageMessageList().size() &gt; 0) {</span>
+<span class="nc" id="L341">				html.append(displayAllMessages(m_context));</span>
+			}
+<span class="nc" id="L343">			html.append(m_portletEditPC.getHtmlDisplay());</span>
+<span class="nc" id="L344">			html.append(HtmlUtil.makeHiddenInput(FN_TEMPLATE_ID, templateID));</span>
+<span class="nc" id="L345">			html.append(HtmlUtil.makeHiddenInput(FN_INSTANCE_ID, instanceID));</span>
+<span class="nc" id="L346">			html.append(HtmlUtil.makeHiddenInput(INITIAL_LOAD, initialLoad));</span>
+
+<span class="nc" id="L348">			return html.toString();</span>
+		}
+	}
+
+	public ID getCampaignID() {
+<span class="nc" id="L353">		return m_campaignID;</span>
+	}
+
+	public void setCampaignID(ID campaignID) {
+<span class="nc" id="L357">		m_campaignID = campaignID;</span>
+<span class="nc" id="L358">	}</span>
+
+	public StatisticType getStatisticType() {
+<span class="nc" id="L361">		return m_statisticType;</span>
+	}
+
+	public void setStatisticType(StatisticType type) {
+<span class="nc" id="L365">		m_statisticType = type;</span>
+<span class="nc" id="L366">	}</span>
+
+	public String getDatePickerType(){
+<span class="nc" id="L369">		return m_datePickerType;</span>
+	}
+
+	public int getLastNPeriodType(){
+<span class="nc" id="L373">		return m_lastNPeriodType;</span>
+	}
+
+	public int getLastNPeriods(){
+<span class="nc" id="L377">		return m_lastNPeriods;</span>
+	}
+
+	public Date getDateRangeStartDate() {
+<span class="nc" id="L381">		return m_tpSDate;</span>
+	}
+
+	public Date getDateRangeEndDate() {
+<span class="nc" id="L385">		return m_tpEDate;</span>
+	}
+
+	public ID getQueueID() {
+<span class="nc" id="L389">		return m_QueueID;</span>
+	}
+
+	public Boolean getTrimToHOO() {
+<span class="nc" id="L393">		return m_trimToHOO;</span>
+	}
+
+	public TimeZone getCampaignTimeZone() {
+<span class="nc" id="L397">		return m_campaignTimeZone;</span>
+	}
+
+	/*
+	 * (non-Javadoc)
+	 *
+	 * @see com.witness.web.uif.pagemodel.WorkpaneFormPM#getForms()
+	 */
+	@Override
+	public Collection getForms() {
+<span class="nc" id="L407">		return Collections.singleton(this);</span>
+	}
+
+	/**
+	 * This method will set the {@code PortletEditPC}'s {@code DateRangePicker}'s
+	 * time zone.
+	 */
+	private void setPortletEditPCDateRangePickerTimeZone()
+	{
+<span class="nc bnc" id="L416" title="All 2 branches missed.">		if (m_campaignID != null) {</span>
+			try {
+<span class="nc" id="L418">				CampaignManager campaignManager = PulsePortletUtil.getCampaignManager();</span>
+<span class="nc" id="L419">				m_campaignTimeZone = campaignManager.getCampaignByID(m_campaignID).getTimeZone();</span>
+<span class="nc bnc" id="L420" title="All 2 branches missed.">				if (m_campaignTimeZone != null) {</span>
+					// if no campaign default, the picker will run with user timezone
+<span class="nc" id="L422">					m_portletEditPC.setDateRangePickerTimeZone(m_campaignTimeZone);</span>
+				}
+			}
+<span class="nc" id="L425">			catch (Exception ex) {</span>
+<span class="nc" id="L426">				log.error(&quot;Unable to get campaign.&quot;, ex);</span>
+<span class="nc" id="L427">			}</span>
+		}
+<span class="nc" id="L429">	}</span>
+
+	public void setSaveErrMsgID(String msgID) {
+<span class="nc" id="L432">		m_errorMessageId = msgID;	</span>
+<span class="nc" id="L433">	}</span>
+
+	public String getSaveErrMsgID() {
+<span class="nc" id="L436">		return m_errorMessageId;	</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

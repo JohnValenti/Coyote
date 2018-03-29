@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>FTValidationCache.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.flextime.validation</a> &gt; <span class="el_source">FTValidationCache.java</span></div><h1>FTValidationCache.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.flextime.validation;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.activity.ejb.ActivityManager;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+import com.bluepumpkin.ejb.bbm.cache.CacheUtilBBM;
+import com.bluepumpkin.ejb.bbm.schedule.model.CalendarEventAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.PlannedEvent;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.workresource.model.OrganizationHOO;
+import com.bluepumpkin.ejb.bbm.workrules.ejb.WorkRuleManager;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftOTExtension;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.RmManagerFactory;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.validation.FilingRuleChecker;
+import com.bluepumpkin.ejb.rm.requests.common.validation.FilingRuleCheckerHelper;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.custshift.ejb.CustShiftReqMgr;
+import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.FlexRequestMakeup;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.AvaliableHoursValidationRule;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.AvoidBlackoutsValidationRule;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.EmployeeHoursValidationRule;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.RequestInPastValidationRule;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TOValidationCache;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TimeOffNotBeingSwappedValidationRule;
+import com.bluepumpkin.ejb.rm.util.CustomShiftEJBUtil;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+public class FTValidationCache extends TOValidationCache {
+
+<span class="nc" id="L48">	private static final Category LOG = Log.initCategory(FTValidationCache.class.getName());</span>
+
+	private static final String FILING_RULE_CHECKER = &quot;FILING_RULE_CHECKER&quot;;
+
+	private TORequest tor;
+
+	public FTValidationCache(TORequest tor) {
+<span class="nc" id="L55">		super(tor);</span>
+<span class="nc" id="L56">		this.tor = tor;</span>
+<span class="nc" id="L57">	}</span>
+
+	private CustShiftReqMgr getCSRequestManager() throws BbmCreateException {
+<span class="nc" id="L60">		return RmManagerFactory.getInstance().getCustShiftReqMgr();</span>
+	}
+
+	private WorkRuleManager getWorkRuleManager() throws BbmEJBCreateException {
+<span class="nc" id="L64">		return WfmManagerFactory.getWorkRuleManager(false);</span>
+	}
+
+	@Cacheable
+	public ShiftAssignment getShiftAssignmentByID(ID shiftAssignmentID) throws Exception {
+		try {
+<span class="nc" id="L70">			return getScheduleAccessManager().getShiftAssignmentByID(shiftAssignmentID);</span>
+<span class="nc" id="L71">		} catch (BbmObjectNotFoundException e) {</span>
+			// not found
+<span class="nc" id="L73">			LOG.warn(&quot;Could not find shift assignment for ID=&quot; + shiftAssignmentID, e);</span>
+<span class="nc" id="L74">			return null;</span>
+		}
+	}
+
+	@Cacheable
+	public ShiftOTExtension getShiftOTExtensionByID(ID shiftOTExtensionID) throws Exception {
+		try {
+<span class="nc" id="L81">			return getWorkRuleManager().getShiftOTExtensionByID(shiftOTExtensionID);</span>
+<span class="nc" id="L82">		} catch (BbmObjectNotFoundException e) {</span>
+			// not found
+<span class="nc" id="L84">			LOG.warn(&quot;Could not find shift OT extension for ID=&quot; + shiftOTExtensionID, e);</span>
+<span class="nc" id="L85">			return null;</span>
+		}
+	}
+
+	@Cacheable
+	public boolean isPublishedShiftInSync(ShiftAssignment sa) throws Exception {
+<span class="nc" id="L91">		return CustomShiftEJBUtil.isPublishedShiftInSync(sa, getScheduleAccessManager());</span>
+	}
+
+	/**
+	 * Get a filing rules checker for this request.  Subclasses may specialize this method
+	 * if a different implementation from this default is required.  In such cases, the parameter
+	 * 'notUsed' can be used to pass additional information.
+	 *
+	 * @param notUsed Not used in this implementation.  Sub classes may decide to use it when overriding this
+	 * method.
+	 */
+	@Override
+	public FilingRuleChecker getFilingRuleChecker(Object requestObject) throws Exception {
+<span class="nc" id="L104">		TORequest request = (TORequest) requestObject;</span>
+
+		// Check to see if the checker is already in the cache
+<span class="nc" id="L107">		FilingRuleChecker result = (FilingRuleChecker) get(FILING_RULE_CHECKER);</span>
+
+		// If map was in the cache, use it
+<span class="nc bnc" id="L110" title="All 2 branches missed.">		if (result != null) {</span>
+<span class="nc" id="L111">			return result;</span>
+		}
+
+<span class="nc" id="L114">		result = FilingRuleCheckerHelper.getChecker(request.getCache().getOrg(),</span>
+				Request.REQUESTTYPE_FLEXTIME,
+<span class="nc" id="L116">				request.getTimeOffType(),</span>
+<span class="nc" id="L117">				request.getFlexTimeRequestSubType(),</span>
+<span class="nc" id="L118">				getDateRange());</span>
+
+		// Save in cache
+<span class="nc" id="L121">		put(FILING_RULE_CHECKER, result);</span>
+
+<span class="nc" id="L123">		return result;</span>
+	}
+
+
+	/**
+	 * Returns a sorted list of makeup time ranges for this flex request.
+	 *
+	 * @return
+	 * @throws Exception
+	 */
+	@SuppressWarnings(&quot;unchecked&quot;)
+	@Cacheable
+	public List&lt;TimeRange&gt; getMakeupDurations() {
+		// Find makeup durations
+<span class="nc" id="L137">		List&lt;TimeRange&gt; makeupDurations = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">		for (FlexRequestMakeup flexMakeup : tor.getFlexRequestMakeupList()) {</span>
+<span class="nc" id="L139">			TimeRange timeRange = getMakupDurationBeforeShift(flexMakeup);</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">			if (timeRange != null) {</span>
+<span class="nc" id="L141">				makeupDurations.add(timeRange);</span>
+			}
+<span class="nc" id="L143">			timeRange = getMakupDurationAfterShift(flexMakeup);</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">			if (timeRange != null) {</span>
+<span class="nc" id="L145">				makeupDurations.add(timeRange);</span>
+			}
+<span class="nc" id="L147">		}</span>
+<span class="nc" id="L148">		Collections.sort(makeupDurations);</span>
+<span class="nc" id="L149">		return Collections.unmodifiableList(makeupDurations);</span>
+	}
+
+	private TimeRange getMakupDurationAfterShift(FlexRequestMakeup flexMakeup) {
+		TimeRange timeRange;
+<span class="nc bnc" id="L154" title="All 2 branches missed.">		if (flexMakeup.getExtAfterActivityID() != null) {</span>
+<span class="nc" id="L155">			Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L156">			cal.setTime(flexMakeup.getShiftEndTime());</span>
+<span class="nc" id="L157">			cal.add(Calendar.MINUTE, flexMakeup.getExtAfterGap());</span>
+<span class="nc" id="L158">			Date afterStartTime = cal.getTime();</span>
+<span class="nc" id="L159">			cal.add(Calendar.MINUTE, flexMakeup.getExtAfterDuration());</span>
+<span class="nc" id="L160">			Date afterEndTime = cal.getTime();</span>
+<span class="nc" id="L161">			timeRange = new TimeRange(afterStartTime, afterEndTime);</span>
+<span class="nc" id="L162">		} else {</span>
+<span class="nc" id="L163">			timeRange = null;</span>
+		}
+<span class="nc" id="L165">		return timeRange;</span>
+	}
+
+	private TimeRange getMakupDurationBeforeShift(FlexRequestMakeup flexMakeup) {
+		TimeRange timeRange;
+<span class="nc bnc" id="L170" title="All 2 branches missed.">		if (flexMakeup.getExtBeforeActivityID() != null) {</span>
+<span class="nc" id="L171">			Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L172">			cal.setTime(flexMakeup.getShiftStartTime());</span>
+<span class="nc" id="L173">			cal.add(Calendar.MINUTE, - (flexMakeup.getExtBeforeGap() + flexMakeup.getExtBeforeDuration()));</span>
+<span class="nc" id="L174">			Date beforeStartTime = cal.getTime();</span>
+<span class="nc" id="L175">			cal.add(Calendar.MINUTE, flexMakeup.getExtBeforeDuration());</span>
+<span class="nc" id="L176">			Date beforeEndTime = cal.getTime();</span>
+<span class="nc" id="L177">			timeRange = new TimeRange(beforeStartTime, beforeEndTime);</span>
+<span class="nc" id="L178">		} else {</span>
+<span class="nc" id="L179">			timeRange = null;</span>
+		}
+<span class="nc" id="L181">		return timeRange;</span>
+	}
+
+	public Collection&lt;TimeRange&gt; getMakeupAndGapDurations() throws Exception {
+		// Find makeup durations
+<span class="nc" id="L186">		Collection&lt;TimeRange&gt; makeupDurations = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="nc" id="L187">		Calendar cal = Calendar.getInstance(getOrg().getTimeZone());</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">		for (FlexRequestMakeup flexMakeup : tor.getFlexRequestMakeupList()) {</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">			if (flexMakeup.getExtBeforeActivityID() != null) {</span>
+<span class="nc" id="L190">				cal.setTime(flexMakeup.getShiftStartTime());</span>
+<span class="nc" id="L191">				cal.add(Calendar.MINUTE, - (flexMakeup.getExtBeforeGap() + flexMakeup.getExtBeforeDuration()));</span>
+<span class="nc" id="L192">				makeupDurations.add(new TimeRange(cal.getTime(), flexMakeup.getShiftStartTime()));</span>
+			}
+<span class="nc bnc" id="L194" title="All 2 branches missed.">			if (flexMakeup.getExtAfterActivityID() != null) {</span>
+<span class="nc" id="L195">				cal.setTime(flexMakeup.getShiftEndTime());</span>
+<span class="nc" id="L196">				cal.add(Calendar.MINUTE, flexMakeup.getExtAfterGap() + flexMakeup.getExtAfterDuration());</span>
+<span class="nc" id="L197">				makeupDurations.add(new TimeRange(flexMakeup.getShiftEndTime(), cal.getTime()));</span>
+			}
+<span class="nc" id="L199">		}</span>
+<span class="nc" id="L200">		return makeupDurations;</span>
+	}
+
+	public int getTotalMakeupMinutes() {
+<span class="nc" id="L204">		int minutes = 0;</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">		for(FlexRequestMakeup flex : tor.getFlexRequestMakeupList()) {</span>
+<span class="nc" id="L206">			minutes += flex.getExtBeforeDuration() + flex.getExtAfterDuration();</span>
+<span class="nc" id="L207">		}</span>
+<span class="nc" id="L208">		return minutes;</span>
+	}
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	@Cacheable
+	public Collection&lt;OrganizationHOO&gt; getHOOAssignmentsDuringPeriod(TimeRange range) throws Exception {
+<span class="nc" id="L214">		return Collections.unmodifiableCollection(CacheUtilBBM.getOrganizationHOO(getOrg().getID(), range.getStartDate(), range.getEndDate()));</span>
+	}
+
+	@Cacheable
+	public Collection&lt;ShiftAssignment&gt; getPublishedShiftAssignments(TimeRange duration) throws Exception {
+		@SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L220">		Collection&lt;PlannedEvent&gt; pubShifts = ValidationUtil.getPublishedEventsForWorkResourceByType(</span>
+				Event.EVENT_TYPE_SHIFT_ASSIGNMENT,
+<span class="nc" id="L222">				tor.getEmployeeID(),</span>
+<span class="nc" id="L223">				duration.getStartDate(), duration.getEndDate());</span>
+
+<span class="nc" id="L225">		Collection&lt;ShiftAssignment&gt; shiftAssignments = new ArrayList&lt;ShiftAssignment&gt;();</span>
+<span class="nc bnc" id="L226" title="All 2 branches missed.">		for (PlannedEvent obj : pubShifts) {</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">			if (obj.getEventType() == Event.EVENT_TYPE_SHIFT_ASSIGNMENT) {</span>
+<span class="nc" id="L228">				shiftAssignments.add((ShiftAssignment) obj);</span>
+			}
+<span class="nc" id="L230">		}</span>
+<span class="nc" id="L231">		return Collections.unmodifiableCollection(shiftAssignments);</span>
+	}
+
+	@Cacheable
+	public Collection&lt;CalendarEventAssignment&gt; getPublishedCalendarEvents(TimeRange duration) throws Exception {
+		@SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L237">		Collection&lt;PlannedEvent&gt; pubShifts = ValidationUtil.getPublishedEventsForWorkResourceByType(</span>
+				Event.EVENT_TYPE_CALENDAR_EVENT_ASSIGNMENT |
+				Event.EVENT_TYPE_TIME_OFF |
+				Event.EVENT_TYPE_UNAVAILABILITY,
+<span class="nc" id="L241">				tor.getEmployeeID(),</span>
+<span class="nc" id="L242">				duration.getStartDate(), duration.getEndDate());</span>
+
+<span class="nc" id="L244">		Collection&lt;CalendarEventAssignment&gt; calendarEvents = new ArrayList&lt;CalendarEventAssignment&gt;();</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">		for (PlannedEvent obj : pubShifts) {</span>
+<span class="nc" id="L246">			int eventType = obj.getEventType();</span>
+<span class="nc bnc" id="L247" title="All 6 branches missed.">			if (eventType == Event.EVENT_TYPE_CALENDAR_EVENT_ASSIGNMENT || eventType == Event.EVENT_TYPE_TIME_OFF</span>
+					|| eventType == Event.EVENT_TYPE_UNAVAILABILITY) {
+<span class="nc" id="L249">				calendarEvents.add((CalendarEventAssignment) obj);</span>
+			}
+<span class="nc" id="L251">		}</span>
+<span class="nc" id="L252">		return Collections.unmodifiableCollection(calendarEvents);</span>
+	}
+
+	@Cacheable
+	public Collection&lt;Activity&gt; getActivitiesFromIDs(Collection&lt;ID&gt; activityIDs) throws Exception {
+<span class="nc" id="L257">		ActivityManager activityManager = WfmManagerFactory.getActivityManager();</span>
+<span class="nc" id="L258">		return Collections.unmodifiableCollection(activityManager.findActivities(activityIDs));</span>
+	}
+
+	@Cacheable
+	public Activity getActivityByID(ID activityID) throws Exception {
+<span class="nc" id="L263">		ActivityManager activityManager = WfmManagerFactory.getActivityManager();</span>
+<span class="nc" id="L264">		return activityManager.findActivityById(activityID);</span>
+	}
+	
+	@Override
+	public Collection&lt;String&gt; getValidators() throws Exception {
+<span class="nc" id="L269">		Collection&lt;String&gt; allConfiguredValidators = new ArrayList&lt;String&gt;();</span>
+
+		//Add all enabled and applicable Time Off validators
+<span class="nc" id="L272">		allConfiguredValidators.addAll(filterUnapplicableTimeOffValidators(super.getValidators()));</span>
+
+		//Add all enabled Flex Time validators
+<span class="nc" id="L275">		allConfiguredValidators.addAll(getValidators(getOrgID(), Request.REQUESTTYPE_FLEXTIME));</span>
+
+<span class="nc" id="L277">		return allConfiguredValidators;</span>
+	}
+
+	/**
+	 * Remove any Time Off validator that is not in this following list
+	 * &lt;ol&gt;
+	 * &lt;li&gt;Time Off Pool has available time off hours&lt;/li&gt;
+	 * &lt;li&gt;Request avoids blackout days for the Time Off&lt;/li&gt;
+	 * &lt;li&gt;Employee has enough time off hours&lt;/li&gt;
+	 * &lt;li&gt;Requested time off is not being swapped.&lt;/li&gt;
+	 * &lt;li&gt;Requested time off is for a past date.&lt;/li&gt;
+	 * &lt;li&gt;Minimum duration of request with a net staffing&lt;/li&gt;
+	 * &lt;/ol&gt;
+	 *
+	 * @param timeOffValidatorsOnFlexActivity
+	 * @param flexValidators
+	 * @return
+	 */
+	protected Collection&lt;String&gt; filterUnapplicableTimeOffValidators(
+			Collection&lt;String&gt; timeOffValidatorsOnFlexActivity) {
+
+<span class="nc" id="L298">		Collection&lt;String&gt; applicableTimeOffValidatorsOnFlexRequest = getApplicableTimeOffValidatorsOnFlexRequest();</span>
+<span class="nc" id="L299">		Collection&lt;String&gt; filteredValidators = new ArrayList&lt;String&gt;(timeOffValidatorsOnFlexActivity);</span>
+<span class="nc" id="L300">		filteredValidators.retainAll(applicableTimeOffValidatorsOnFlexRequest);</span>
+
+<span class="nc" id="L302">		return filteredValidators;</span>
+	}
+
+	protected Collection&lt;String&gt; getApplicableTimeOffValidatorsOnFlexRequest() {
+<span class="nc" id="L306">		return Arrays.asList(</span>
+				// Validator: Time Off Pool has available time off hours.
+<span class="nc" id="L308">				AvaliableHoursValidationRule.class.getName(),</span>
+				// Validator: Request avoids blackout days for the Time Off
+				// Pool.
+<span class="nc" id="L311">				AvoidBlackoutsValidationRule.class.getName(),</span>
+				// Validator: Employee has enough time off hours.
+<span class="nc" id="L313">				EmployeeHoursValidationRule.class.getName(),</span>
+				// Validator: Requested time off is not being swapped.
+<span class="nc" id="L315">				TimeOffNotBeingSwappedValidationRule.class.getName(),</span>
+				// Validator: Requested time off is for a past date.
+<span class="nc" id="L317">				RequestInPastValidationRule.class.getName());</span>
+	}
+
+	public CustShiftReq createCustShiftReqFromMakeup(FlexRequestMakeup makeup, Request aggregatedRequest) {
+
+		// Create an equivalent CustShiftReq from FlexRequestMakeup to re-use logic from CustShiftReqMgrEJB
+<span class="nc" id="L323">		CustShiftReq custShiftReq = new CustShiftReq(CustShiftReq.getDetailLevelForValidation());</span>
+
+		// SPID
+		// STARTTIME
+		// ENDTIME
+		// ISOT = 0
+		// SUBTYPE = 4
+		// SHIFTSTARTTIME
+		// SHIFTENDTIME
+		// SHIFTASSIGNMENTID
+<span class="nc" id="L333">		custShiftReq.setSPID(makeup.getSPID());</span>
+<span class="nc" id="L334">		custShiftReq.setStartTime(makeup.getStartTime());</span>
+<span class="nc" id="L335">		custShiftReq.setEndTime(makeup.getEndTime());</span>
+<span class="nc" id="L336">		custShiftReq.setIsOT(false);</span>
+<span class="nc" id="L337">		custShiftReq.setSubType(CustShiftReq.REQUEST_SUB_TYPE_REG_SHIFT_CHANGE.toInt());</span>
+<span class="nc" id="L338">		custShiftReq.setShiftStartTime(makeup.getShiftStartTime());</span>
+<span class="nc" id="L339">		custShiftReq.setShiftEndTime(makeup.getShiftEndTime());</span>
+<span class="nc" id="L340">		custShiftReq.setShiftAssignmentID(makeup.getShiftAssignmentID());</span>
+
+		// EXTBEFOREID
+		// EXTBEFOREACTIVITYID
+		// EXTBEFOREISOT = 0
+		// EXTBEFOREGAP
+		// EXTBEFOREDURATION
+<span class="nc" id="L347">		custShiftReq.setExtBeforeID(null);</span>
+<span class="nc" id="L348">		custShiftReq.setExtBeforeActivityID(makeup.getExtBeforeActivityID());</span>
+<span class="nc" id="L349">		custShiftReq.setExtBeforeIsOT(false);</span>
+<span class="nc" id="L350">		custShiftReq.setExtBeforeGap(makeup.getExtBeforeGap());</span>
+<span class="nc" id="L351">		custShiftReq.setExtBeforeDuration(makeup.getExtBeforeDuration());</span>
+
+		// EXTAFTERID
+		// EXTAFTERACTIVITYID
+		// EXTAFTERISOT = 0
+		// EXTAFTERGAP
+		// EXTAFTERDURATION
+<span class="nc" id="L358">		custShiftReq.setExtAfterID(null);</span>
+<span class="nc" id="L359">		custShiftReq.setExtAfterActivityID(makeup.getExtAfterActivityID());</span>
+<span class="nc" id="L360">		custShiftReq.setExtAfterIsOT(false);</span>
+<span class="nc" id="L361">		custShiftReq.setExtAfterGap(makeup.getExtAfterGap());</span>
+<span class="nc" id="L362">		custShiftReq.setExtAfterDuration(makeup.getExtAfterDuration());</span>
+
+<span class="nc" id="L364">		custShiftReq.setAggregatedRequest(aggregatedRequest);</span>
+<span class="nc" id="L365">		return custShiftReq;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

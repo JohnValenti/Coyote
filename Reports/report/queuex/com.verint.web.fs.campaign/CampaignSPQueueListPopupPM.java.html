@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CampaignSPQueueListPopupPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.campaign</a> &gt; <span class="el_source">CampaignSPQueueListPopupPM.java</span></div><h1>CampaignSPQueueListPopupPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.campaign;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.SPQueue;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.workload.ejb.WorkloadManager;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.ejb.bbm.workload.model.Queue;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.core.l10n.CoreWebBundleKey;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.web.fs.workrules.WorkRulesJSFileID;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarTextButton;
+import com.witness.web.uif.pagemodel.PopupWindowPM;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+
+public class CampaignSPQueueListPopupPM extends PopupWindowPM {
+	private static final long serialVersionUID = 1L;
+
+	public static final String FORM_ACTION = &quot;campaign_spqueue_list_popup&quot;;
+	public static final String POPUP_ID = &quot;POPUP_CAMPAIGN_SP_QUEUES&quot;;
+	public static final String POPUP_ARGS = &quot;otExtensionIDs,isByOrg,isSelectionPopup,ownerID,selectedIDs&quot;;
+
+	private CampaignSPQueuesListPopupPC m_listPC;
+	private ID ownerID;
+<span class="fc" id="L37">	private boolean isSelectionPopup = false;</span>
+<span class="fc" id="L38">	private HashSet&lt;ID&gt; selectedIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L39">	private HashSet&lt;Queue&gt; m_Queues = new HashSet&lt;Queue&gt;();</span>
+
+<span class="fc" id="L41">	boolean m_shouldCloseOnLoad = false; // default</span>
+
+	public CampaignSPQueueListPopupPM(RequestContext context) {
+<span class="fc" id="L44">		super(context);</span>
+
+<span class="fc" id="L46">		addRequiredJavaScriptFile(WorkRulesJSFileID.WORK_RULES_UTIL);</span>
+<span class="fc" id="L47">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="fc" id="L48">	}</span>
+
+	public static CampaignSPQueueListPopupPM getInstance(RequestContext context) {
+<span class="fc" id="L51">		return (CampaignSPQueueListPopupPM) getInstance(context, CampaignSPQueueListPopupPM.class);</span>
+	}
+
+	protected void initializeModel() {
+<span class="fc bfc" id="L55" title="All 2 branches covered.">		if (m_isInitialized)</span>
+<span class="fc" id="L56">			return;</span>
+		else
+<span class="fc" id="L58">			m_isInitialized = true;</span>
+		try {
+<span class="fc" id="L60">			loadData();</span>
+<span class="fc" id="L61">			initContentTitle();</span>
+<span class="fc" id="L62">			initList();</span>
+<span class="pc bpc" id="L63" title="1 of 2 branches missed.">			if (isSelectionPopup) {</span>
+<span class="fc" id="L64">				ToolbarTextButton addButton = m_toolbar.addSubmitTextButton(PageAction.ADD,</span>
+<span class="fc" id="L65">						m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.CAMPAIGN_QUEUE_ADD_QUEUE), true);</span>
+<span class="fc" id="L66">				addButton.setCustomJS(&quot;setSelectedQueueIDs()&quot;);</span>
+
+<span class="fc" id="L68">				m_toolbar.addCloseWindowTextButton(&quot;cancel&quot;,</span>
+<span class="fc" id="L69">						m_localizer.i18n(CoreWebBundleKey.BUNDLE_NAME, CoreWebBundleKey.TOOLBAR_CANCEL), true);</span>
+			}
+
+<span class="fc" id="L72">			setIsRefreshOpenerOnClose(true);</span>
+<span class="nc" id="L73">		} catch (Exception ex) {</span>
+<span class="nc" id="L74">			handleUnableToLoadDataError(log, ex);</span>
+<span class="fc" id="L75">		}</span>
+<span class="fc" id="L76">	}</span>
+
+	protected void initUtilityPane() {
+<span class="fc" id="L79">		getUtilityPane().setIsHelpEnabled(false);</span>
+<span class="fc" id="L80">	}</span>
+
+	protected void initContentTitle() {
+<span class="fc" id="L83">		m_contentTitlePC.setPageTitle(getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+				FsWebBundleKey.CAMPAIGN_QUEUE_ADD));
+<span class="fc" id="L85">	}</span>
+
+	protected void loadData() throws Exception {
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">		if (ownerID != null) {</span>
+<span class="fc" id="L89">			SchedulingPeriod selectedSchedulingPeriod = CampaignModelHandler</span>
+<span class="fc" id="L90">					.getSchedulingPeriodByID(m_context, ownerID);</span>
+<span class="fc" id="L91">			CampaignManager camManager = WfmManagerFactory.getCampaignManager(m_context.isInWhatIfMode());</span>
+<span class="fc" id="L92">			Collection&lt;ID&gt; orgIds = camManager.getLinkedOrgsforSP(selectedSchedulingPeriod.getID());</span>
+<span class="fc" id="L93">			WorkloadManager wlMgr = WfmManagerFactory.getWorkloadManager(m_context.isInWhatIfMode());</span>
+
+<span class="fc bfc" id="L95" title="All 2 branches covered.">			for (ID orgId : orgIds) {</span>
+<span class="fc" id="L96">				Collection&lt;Queue&gt; col = wlMgr.getQueuesByRecursedOrgID(orgId);</span>
+<span class="fc" id="L97">				m_Queues.addAll(col);</span>
+<span class="fc" id="L98">			}</span>
+
+			// If we are assigning ot extensions to some work patterns, filter
+			// out the OT extensions that are already assigned to all work
+			// patterns
+<span class="fc" id="L103">			Iterator&lt;Queue&gt; iter = m_Queues.iterator();</span>
+<span class="fc" id="L104">			boolean isSkillBased = selectedSchedulingPeriod.getSkillBased();</span>
+<span class="fc" id="L105">			ID parentid = selectedSchedulingPeriod.getParentSPID();</span>
+
+			// Identify queues that are already assigned.
+<span class="fc" id="L108">			ArrayList&lt;SPQueue&gt; alreadyAssignedQueues = new ArrayList&lt;SPQueue&gt;(</span>
+<span class="fc" id="L109">					camManager.getSPQueuesBySPID(selectedSchedulingPeriod.getID()));</span>
+<span class="fc" id="L110">			ArrayList&lt;ID&gt; alreadyAssignQueueIds = new ArrayList&lt;ID&gt;();</span>
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">			for (SPQueue queue : alreadyAssignedQueues) {</span>
+<span class="nc" id="L112">				alreadyAssignQueueIds.add(queue.getQueueID());</span>
+<span class="nc" id="L113">			}</span>
+
+<span class="fc" id="L115">			HashSet&lt;Queue&gt; filteredQueues = new HashSet&lt;Queue&gt;();</span>
+
+<span class="fc bfc" id="L117" title="All 2 branches covered.">			for (Queue queue : m_Queues) {</span>
+<span class="fc" id="L118">				ID mediaID = queue.getMediaID();</span>
+<span class="pc bpc" id="L119" title="1 of 2 branches missed.">				if (alreadyAssignQueueIds.contains(queue.getID())) {</span>
+<span class="nc" id="L120">					continue;</span>
+<span class="pc bpc" id="L121" title="1 of 4 branches missed.">				} else if (!isSkillBased &amp;&amp; !mediaID.equals(Media.MEDIA_ID_PHONE)</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">						&amp;&amp; !mediaID.equals(Media.MEDIA_ID_PROJECT)) {</span>
+<span class="nc" id="L123">					continue;</span>
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">				} else if (queue.getQueueType() == Queue.QUEUE_TYPE_DISTRIBUTED) {</span>
+<span class="nc" id="L125">					continue;</span>
+				} else {
+<span class="pc bpc" id="L127" title="1 of 2 branches missed.">					if (parentid == null) {</span>
+<span class="pc bpc" id="L128" title="1 of 2 branches missed.">						if (queue.getParentID() != null) {</span>
+<span class="nc" id="L129">							continue;</span>
+						}
+					} else {
+<span class="nc bnc" id="L132" title="All 2 branches missed.">						if (queue.getParentID() == null) {</span>
+<span class="nc" id="L133">							continue;</span>
+						}
+					}
+				}
+				// If you make through the filters, add the queue.
+<span class="fc" id="L138">				filteredQueues.add(queue);</span>
+<span class="fc" id="L139">			}</span>
+
+<span class="fc" id="L141">			m_Queues = filteredQueues;</span>
+
+		}
+<span class="fc" id="L144">	}</span>
+
+	protected void initList() {
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">		if (m_listPC == null) {</span>
+<span class="fc" id="L148">			m_listPC = new CampaignSPQueuesListPopupPC(m_context, m_Queues);</span>
+
+<span class="fc" id="L150">			m_listPC.setIsAutoSortEnabled(true);</span>
+<span class="pc bpc" id="L151" title="1 of 4 branches missed.">			if (null != getPageAction() &amp;&amp; PageAction.TABLE_SORT.equals(getPageAction()))</span>
+<span class="nc" id="L152">				m_listPC.extractParameters(m_context.getRequest());</span>
+<span class="fc" id="L153">			addChildComponent(m_listPC);</span>
+		}
+<span class="fc" id="L155">	}</span>
+
+	public String getHtmlDisplay() {
+<span class="fc" id="L158">		return m_listPC.getHtmlDisplay();</span>
+	}
+
+	public void setIsSelectionPopup(boolean isSelectionPopup) {
+<span class="fc" id="L162">		this.isSelectionPopup = isSelectionPopup;</span>
+<span class="fc" id="L163">	}</span>
+
+	public void setOwnerID(String ownerID) {
+<span class="fc" id="L166">		this.ownerID = new ID(ownerID);</span>
+<span class="fc" id="L167">	}</span>
+
+	public void setSelectedIDs(String selectedIDs) {
+<span class="nc" id="L170">		this.selectedIDs = new HashSet&lt;ID&gt;(StringUtil.parseIDStringToCollection(selectedIDs));</span>
+<span class="nc" id="L171">	}</span>
+
+	public void setShouldCloseOnLoad(boolean b) {
+<span class="fc" id="L174">		m_shouldCloseOnLoad = b;</span>
+<span class="fc" id="L175">	}</span>
+
+	/**
+	 * Return JavaScript Init Code
+	 */
+	public String getJavaScriptInitCode() {
+<span class="fc" id="L181">		String superJS = super.getJavaScriptInitCode();</span>
+<span class="fc bfc" id="L182" title="All 2 branches covered.">		return superJS + &quot;\n&quot; + (m_shouldCloseOnLoad ? &quot;window.close();\n&quot; : &quot;&quot;);</span>
+	}
+
+	public Collection&lt;ID&gt; getSelectedQueueIDs(RequestContext context) {
+<span class="fc" id="L186">		String strSelectId = context.getParameter(&quot;selectedQueueIDs&quot;);</span>
+<span class="fc" id="L187">		return new HashSet&lt;ID&gt;(StringUtil.parseIDStringToCollection(strSelectId));</span>
+	}
+
+	public ID getSPID() {
+<span class="fc" id="L191">		return ownerID;</span>
+	}
+
+	public String getCustomJavaScript() {
+<span class="fc" id="L195">		String str = &quot;function setSelectedQueueIDs() {&quot;;</span>
+<span class="fc" id="L196">		str += &quot;\n  var curStr = '';&quot;;</span>
+<span class="fc" id="L197">		str += &quot;\n  var selectedStr = '';&quot;;</span>
+<span class="fc" id="L198">		str += &quot;\n  var rowNames = table.getSelectedRowList();&quot;;</span>
+<span class="fc" id="L199">		str += &quot;\n  if (rowNames == null || rowNames.length == 0) return;&quot;;</span>
+<span class="fc" id="L200">		str += &quot;\n  for (var i = 0; i &lt; rowNames.length; i++) {&quot;;</span>
+<span class="fc" id="L201">		str += &quot;\n  curStr = DOM2.getElementById('table'+ rowNames[i]).getAttribute('uid');&quot;;</span>
+<span class="fc" id="L202">		str += &quot;\n selectedStr += curStr;&quot;;</span>
+<span class="fc" id="L203">		str += &quot;\n if (i != rowNames.length -1) selectedStr += ','&quot;;</span>
+<span class="fc" id="L204">		str += &quot;\n }&quot;;</span>
+<span class="fc" id="L205">		str += &quot;\n DOM2.getElementById('selectedQueueIDs').value=selectedStr;&quot;;</span>
+<span class="fc" id="L206">		str += &quot;\n }&quot;;</span>
+
+<span class="fc" id="L208">		return super.getCustomJavaScript() + &quot; &quot; + str;</span>
+	}
+
+	public String getRequiredHTML() {
+<span class="fc" id="L212">		StringBuffer reqHtml = new StringBuffer(512);</span>
+<span class="fc" id="L213">		reqHtml.append(super.getRequiredHTML());</span>
+
+<span class="fc" id="L215">		reqHtml.append(&quot;\n&quot;);</span>
+<span class="fc" id="L216">		reqHtml.append(HtmlUtil.makeHiddenInput(&quot;selectedQueueIDs&quot;, &quot;&quot;));</span>
+<span class="fc" id="L217">		reqHtml.append(&quot;\n&quot;);</span>
+
+<span class="fc" id="L219">		return reqHtml.toString();</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

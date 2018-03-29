@@ -1,0 +1,1004 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ScheduleExportServlet.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.fs.schedule.export</a> &gt; <span class="el_source">ScheduleExportServlet.java</span></div><h1>ScheduleExportServlet.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.fs.schedule.export;
+
+/**
+ * Title:        Schedule Export Servlet
+ * Description:  This servlet implements the back-end functionality for
+ *               exporting the selected employees' published schedules to
+ *               a text file
+ * Copyright:    Copyright (c) 2003
+ * Company:      Blue Pumpkin Software, Inc
+ * @author       Greg Fichtenholtz
+ * @version 1.0
+ */
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Locale;
+import java.util.Map;
+import java.util.StringTokenizer;
+import java.util.TimeZone;
+
+import javax.servlet.ServletConfig;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import com.bluepumpkin.common.base.BPException;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.l10n.TimeZoneBundleKey;
+import com.bluepumpkin.common.util.DateTimeDisplay;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.activity.ejb.ActivityManager;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingState;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingWarning;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.shifts.model.ShiftsUtil;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
+import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.web.fs.keys.FsKeys;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.witness.web.uif.util.NetworkUtil;
+
+/**
+ * @todo: add localization support: move all hardcoded strings into bundles!!!
+ */
+
+<span class="nc" id="L64">public class ScheduleExportServlet extends HttpServlet</span>
+{
+	private static final String CONTENT_TYPE_HTML = NetworkUtil.CONTENT_TYPE_HTML;
+	private static final String DEFAULT_EXPORT_FILE = &quot;ScheduleExport.txt&quot;;
+
+<span class="nc" id="L69">	private static WorkResourceManager  m_WorkResourceManager = null;</span>
+<span class="nc" id="L70">	private static ScheduleAccessManager m_ScheduleManager = null;</span>
+<span class="nc" id="L71">	private static ActivityManager       m_ActivityManager = null;</span>
+<span class="nc" id="L72">	private static CampaignManager m_campaignManager = null;</span>
+	private static SimpleDateFormat      m_dateFormat;
+	private static EventStartTimeComparator m_comparator;
+
+	/**Initialize global variables*/
+	public void init(ServletConfig config) throws ServletException
+	{
+<span class="nc" id="L79">		super.init(config);</span>
+<span class="nc" id="L80">		synchronized (ScheduleExportServlet.class)</span>
+		{
+			try
+			{
+<span class="nc" id="L84">				m_WorkResourceManager = BbmManagerFactory.getWorkResourceManager();</span>
+<span class="nc" id="L85">				m_ScheduleManager = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc" id="L86">				m_ActivityManager = WfmManagerFactory.getActivityManager();</span>
+<span class="nc" id="L87">				m_campaignManager = WfmManagerFactory.getCampaignManager();</span>
+<span class="nc" id="L88">				m_dateFormat = new SimpleDateFormat(&quot;MM/dd/yyyy&quot;);</span>
+<span class="nc" id="L89">				m_comparator = new EventStartTimeComparator();</span>
+			}
+<span class="nc" id="L91">			catch (BPException e)</span>
+			{
+<span class="nc" id="L93">				e.printStackTrace(System.err);</span>
+<span class="nc" id="L94">			}</span>
+<span class="nc" id="L95">		}</span>
+<span class="nc" id="L96">	}</span>
+
+	/**Process the HTTP Get request*/
+<span class="nc" id="L99">	private boolean isExportFromWebCalendar = false;</span>
+<span class="nc" id="L100">	private TimeZone viewTimeZone = null;</span>
+<span class="nc" id="L101">	private String localeString = null;</span>
+<span class="nc" id="L102">	private String timeFormat = null;</span>
+<span class="nc" id="L103">	private String campaignName = null;</span>
+<span class="nc" id="L104">	private boolean isExportAbsenceType = false; //should read from db</span>
+<span class="nc" id="L105">	private Collection m_filterShiftIDs = null;</span>
+<span class="nc" id="L106">	private Collection m_filterActivityIDs = null;</span>
+	
+	public void doGet(HttpServletRequest request, HttpServletResponse response)
+		throws ServletException, IOException
+	{
+<span class="nc" id="L111">		PrintWriter out = response.getWriter();</span>
+<span class="nc" id="L112">		String actionStr = request.getParameter(&quot;action&quot;);</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">		if (actionStr == null)</span>
+		{
+<span class="nc" id="L115">			response.setContentType(CONTENT_TYPE_HTML);</span>
+<span class="nc" id="L116">			printMainPage(out);</span>
+		}
+<span class="nc bnc" id="L118" title="All 2 branches missed.">		else if (actionStr.equals(&quot;main&quot;))</span>
+		{
+<span class="nc" id="L120">			response.setContentType(CONTENT_TYPE_HTML);</span>
+<span class="nc" id="L121">			printMainPage(out);</span>
+		}
+<span class="nc bnc" id="L123" title="All 4 branches missed.">		else if (actionStr.equals(&quot;export&quot;) || actionStr.equals(&quot;webexport&quot;))</span>
+		{
+<span class="nc" id="L125">			NetworkUtil.initResponseForDownload(response, DEFAULT_EXPORT_FILE);			</span>
+			try
+			{
+<span class="nc" id="L128">				Locale locale = Locale.getDefault(); </span>
+<span class="nc" id="L129">				String exportType = request.getParameter(&quot;exporttype&quot;);				</span>
+				
+<span class="nc bnc" id="L131" title="All 2 branches missed.">				if (actionStr.equals(&quot;webexport&quot;)) </span>
+				{
+<span class="nc" id="L133">					isExportFromWebCalendar = true;</span>
+					
+<span class="nc bnc" id="L135" title="All 2 branches missed.">					if (exportType.equalsIgnoreCase(FsKeys.EXPORTSCHED_EXPORTTYPE_WARNINGS))</span>
+					{
+<span class="nc" id="L137">						exportScheduleWarnings(request, out, locale);</span>
+<span class="nc" id="L138">						return;</span>
+					}					
+					
+<span class="nc" id="L141">					viewTimeZone = TimeZone.getTimeZone(request.getParameter(&quot;viewtimezone&quot;));</span>
+<span class="nc" id="L142">					localeString = request.getParameter(&quot;locale&quot;);</span>
+<span class="nc" id="L143">					timeFormat = request.getParameter(&quot;format&quot;);</span>
+<span class="nc" id="L144">					String sID = request.getParameter(&quot;campaignId&quot;);</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">					if (sID != null){</span>
+<span class="nc" id="L146">						ID campaignID = new ID(sID);</span>
+<span class="nc" id="L147">						Campaign campaign = m_campaignManager.getCampaignByID(campaignID);</span>
+<span class="nc" id="L148">						campaignName = campaign.getName();</span>
+					}
+
+<span class="nc" id="L151">					m_dateFormat.setTimeZone(viewTimeZone);</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">					if (locale != null) {</span>
+<span class="nc" id="L153">						StringTokenizer st = new StringTokenizer(localeString, &quot;_&quot;);</span>
+<span class="nc" id="L154">						String language = st.nextToken();</span>
+<span class="nc" id="L155">						String country = st.nextToken();</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">						String variant = st.hasMoreElements()?st.nextToken():null;</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">						if (variant == null)</span>
+<span class="nc" id="L158">							locale = new Locale(language, country);</span>
+						else
+<span class="nc" id="L160">							locale = new Locale(language, country, variant);</span>
+					}
+				}
+
+<span class="nc" id="L164">				Date from = m_dateFormat.parse(request.getParameter(&quot;from&quot;)); </span>
+<span class="nc" id="L165">				Date to = m_dateFormat.parse(request.getParameter(&quot;to&quot;));</span>
+<span class="nc" id="L166">				to = TimeZoneUtil.addDay(to);</span>
+<span class="nc" id="L167">				String[] employees = request.getParameterValues(&quot;employees&quot;);</span>
+<span class="nc" id="L168">				ArrayList workResourceIDs = new ArrayList();</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">				for (int i = 0; i &lt; employees.length; i++)</span>
+<span class="nc" id="L170">					workResourceIDs.add(new ID(employees[i]));</span>
+				
+<span class="nc" id="L172">				String[] filter = request.getParameterValues(FsKeys.EXPORTSCHED_SHIFT_FILTER);</span>
+<span class="nc bnc" id="L173" title="All 4 branches missed.">				if (filter != null &amp;&amp; filter.length &gt; 0) {</span>
+<span class="nc" id="L174">					m_filterShiftIDs = new ArrayList();</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">					for (int i = 0; i &lt; filter.length; i++)</span>
+<span class="nc" id="L176">						m_filterShiftIDs.add(new ID(filter[i]));</span>
+				}
+				
+<span class="nc" id="L179">				filter = request.getParameterValues(FsKeys.EXPORTSCHED_ACTIVITY_FILTER);</span>
+<span class="nc bnc" id="L180" title="All 4 branches missed.">				if (filter != null &amp;&amp; filter.length &gt; 0) {</span>
+<span class="nc" id="L181">					m_filterActivityIDs = new ArrayList();</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">					for (int i = 0; i &lt; filter.length; i++)</span>
+<span class="nc" id="L183">						m_filterActivityIDs.add(new ID(filter[i]));</span>
+				}
+				
+<span class="nc bnc" id="L186" title="All 2 branches missed.">				if (isExportFromWebCalendar) </span>
+				{
+<span class="nc" id="L188">					exportSchedule(out, workResourceIDs, from, to, exportType, locale);</span>
+				} 
+				else 
+				{
+<span class="nc bnc" id="L192" title="All 2 branches missed.">					if (exportType.equalsIgnoreCase(&quot;activityassn&quot;))</span>
+					{
+<span class="nc" id="L194">						exportActivityAssignments(out, workResourceIDs, from, to, locale, ',');</span>
+					}
+					else
+					{
+<span class="nc" id="L198">						exportStartEndTimes(out, workResourceIDs, from, to, locale, ',');</span>
+					}
+				}
+			}
+<span class="nc" id="L202">			catch (IOException e)</span>
+			{
+<span class="nc" id="L204">				response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);</span>
+<span class="nc" id="L205">				throw e;</span>
+			}
+<span class="nc" id="L207">			catch (Exception e)</span>
+			{
+<span class="nc" id="L209">				response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);</span>
+<span class="nc" id="L210">				throw new ServletException(e);</span>
+<span class="nc" id="L211">			}</span>
+		}
+<span class="nc" id="L213">	}</span>
+	
+	/**
+	 * The user wants to export the Scheduler/Analyzer warnings to a text file.
+	 */
+	private void exportScheduleWarnings(HttpServletRequest request, PrintWriter out, Locale locale) throws IOException
+	{
+		try
+		{
+<span class="nc" id="L222">		String sID = request.getParameter(FsKeys.SP_ID);</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">		if (sID != null)</span>
+		{
+<span class="nc" id="L225">			ID spID = new ID(sID);</span>
+<span class="nc" id="L226">			boolean isAnalyze = false;</span>
+<span class="nc" id="L227">			String sAnalyze = request.getParameter(&quot;isAnalyze&quot;);</span>
+<span class="nc bnc" id="L228" title="All 4 branches missed.">			if (sAnalyze != null &amp;&amp; sAnalyze.equals(&quot;true&quot;))</span>
+<span class="nc" id="L229">				isAnalyze = true;</span>
+			
+<span class="nc bnc" id="L231" title="All 2 branches missed.">			SchedulingState schedulingState = m_campaignManager.getSchedulingState(spID, isAnalyze?&quot;A&quot;:&quot;S&quot;);</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">			if (schedulingState != null)</span>
+			{								
+<span class="nc" id="L234">				Collection warnings = schedulingState.getWarnings();</span>
+<span class="nc bnc" id="L235" title="All 4 branches missed.">				if (warnings != null &amp;&amp; !warnings.isEmpty()) </span>
+				{
+<span class="nc" id="L237">					HashMap warningMap = new HashMap(20);</span>
+<span class="nc" id="L238">					SchedulingWarning warning = null;</span>
+<span class="nc" id="L239">					Integer typeIndex = null;</span>
+<span class="nc" id="L240">					Collection warningsPerType = null;</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">					for (Iterator i = warnings.iterator(); i.hasNext(); )</span>
+					{
+<span class="nc" id="L243">						warning = (SchedulingWarning)i.next();</span>
+<span class="nc" id="L244">						typeIndex = new Integer(warning.getTypeIndex());</span>
+<span class="nc" id="L245">						warningsPerType = (Collection)warningMap.get(typeIndex);</span>
+<span class="nc bnc" id="L246" title="All 2 branches missed.">						if (warningsPerType == null) </span>
+						{
+<span class="nc" id="L248">							warningsPerType = new ArrayList();</span>
+<span class="nc" id="L249">							warningMap.put(typeIndex, warningsPerType);</span>
+						}
+<span class="nc" id="L251">						warningsPerType.add(warning);</span>
+					}
+					
+<span class="nc" id="L254">					out.println(&quot;Scheduler Issues&quot;); //@todo: localize</span>
+					
+<span class="nc" id="L256">					Map.Entry entry = null;</span>
+<span class="nc bnc" id="L257" title="All 2 branches missed.">					for (Iterator i = warningMap.entrySet().iterator(); i.hasNext(); )</span>
+					{
+<span class="nc" id="L259">						entry = (Map.Entry)i.next();</span>
+<span class="nc" id="L260">						warnings = (Collection)entry.getValue();</span>
+<span class="nc" id="L261">						warning = (SchedulingWarning)warnings.iterator().next();</span>
+						
+<span class="nc" id="L263">						out.println(&quot;------------------------------------------------&quot;);</span>
+<span class="nc" id="L264">						out.println(warning.getTypeString());</span>
+<span class="nc" id="L265">						out.println(&quot;------------------------------------------------&quot;);</span>
+						
+<span class="nc bnc" id="L267" title="All 2 branches missed.">						for (Iterator iWarning = warnings.iterator(); iWarning.hasNext(); ) </span>
+						{
+<span class="nc" id="L269">							warning = (SchedulingWarning)iWarning.next();</span>
+<span class="nc" id="L270">							out.println(warning.getWarning());</span>
+						}
+					}
+				}
+			}
+		}
+<span class="nc" id="L276">		out.println();</span>
+		} 
+<span class="nc" id="L278">		catch (Exception ex) </span>
+		{
+<span class="nc" id="L280">			throw new IOException(ex.getMessage());</span>
+<span class="nc" id="L281">		}</span>
+<span class="nc" id="L282">	}</span>
+
+	/**Process the HTTP Post request*/
+	public void doPost(HttpServletRequest request, HttpServletResponse response)
+		throws ServletException, java.io.IOException
+	{
+<span class="nc" id="L288">		response.sendError(HttpServletResponse.SC_FORBIDDEN);</span>
+<span class="nc" id="L289">	}</span>
+
+	private void printMainPage(PrintWriter out)
+	{
+		try
+		{
+<span class="nc" id="L295">			Collection listEmployees =</span>
+<span class="nc" id="L296">				m_WorkResourceManager.getEmployees(Organization.ROOT_ORG_ID_OBJ,</span>
+																					 null,
+																					 Employee.DETAIL_LEVEL_EMPLOYEE_BASIC);
+
+<span class="nc" id="L300">			out.println(&quot;&lt;html&gt;&quot;);</span>
+<span class="nc" id="L301">			out.println(&quot;&lt;head&gt;&lt;title&gt;Blue Pumpkin Schedule Export Service&lt;/title&gt;&quot;);</span>
+<span class="nc" id="L302">			out.println(&quot;&lt;meta http-equiv='expires' content='0'&gt;&quot;);</span>
+<span class="nc" id="L303">			out.println(&quot;&lt;meta http-equiv='pragma' content='no-cache'&gt;&quot;);</span>
+<span class="nc" id="L304">			out.println(&quot;&lt;/head&gt;&quot;);</span>
+<span class="nc" id="L305">			out.println(&quot;&lt;body&gt;&quot;);</span>
+<span class="nc" id="L306">			out.println(&quot;&lt;h2&gt;Export Schedules&lt;/h2&gt;&quot;);</span>
+<span class="nc bnc" id="L307" title="All 2 branches missed.">			if (!listEmployees.isEmpty())</span>
+			{
+<span class="nc" id="L309">				out.println(&quot;&lt;form method='GET'&gt;&quot;);</span>
+<span class="nc" id="L310">				out.println(&quot;&lt;input type='hidden' name='action' value='export'&gt;&quot;);</span>
+<span class="nc" id="L311">				out.println(&quot;&lt;p&gt;Select employees to export schedules for:&lt;BR&gt;&quot;);</span>
+<span class="nc" id="L312">				out.println(&quot;&lt;select size=\&quot;8\&quot; name=\&quot;employees\&quot; multiple&gt;&quot;);</span>
+<span class="nc bnc" id="L313" title="All 2 branches missed.">				for (Iterator it = listEmployees.iterator(); it.hasNext(); )</span>
+				{
+<span class="nc" id="L315">					Employee employee = (Employee)it.next();</span>
+<span class="nc" id="L316">					out.print(&quot;&lt;option value='&quot; + employee.getID() + &quot;'&gt;&quot;);</span>
+<span class="nc" id="L317">					out.print(employee.getEmployeeName(Locale.getDefault()));</span>
+<span class="nc" id="L318">					out.println(&quot;&lt;/option&gt;&quot;);</span>
+<span class="nc" id="L319">				}</span>
+<span class="nc" id="L320">				out.println(&quot;&lt;/select&gt;&quot;);</span>
+<span class="nc" id="L321">				out.println(&quot;&lt;p&gt;Select dates (MM/DD/YYYY): &quot;);</span>
+<span class="nc" id="L322">				out.println(&quot;from: &lt;input type=\&quot;text\&quot; size=\&quot;8\&quot; value=\&quot;07/01/2002\&quot; name=\&quot;from\&quot;&gt;&quot;);</span>
+<span class="nc" id="L323">				out.println(&quot;to: &lt;input type=\&quot;text\&quot; size=\&quot;8\&quot; value=\&quot;07/07/2002\&quot; name=\&quot;to\&quot;&gt;&quot;);</span>
+<span class="nc" id="L324">				out.println(&quot;&lt;BR&gt;Export:&quot;);</span>
+<span class="nc" id="L325">				out.println(&quot;&lt;table&gt;&quot;);</span>
+<span class="nc" id="L326">				out.println(&quot;&lt;tr&gt;&lt;td&gt;&quot;);</span>
+<span class="nc" id="L327">				out.println(&quot;&lt;input type=\&quot;radio\&quot; value=\&quot;startendtimes\&quot; name=\&quot;exporttype\&quot;&gt;&quot;);</span>
+<span class="nc" id="L328">				out.println(&quot;employee start/end times&quot;);</span>
+<span class="nc" id="L329">				out.println(&quot;&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;&quot;);</span>
+<span class="nc" id="L330">				out.println(&quot;&lt;input type=\&quot;radio\&quot; value=\&quot;activityassn\&quot; checked name=\&quot;exporttype\&quot;&gt;&quot;);</span>
+<span class="nc" id="L331">				out.println(&quot;employee activity assignments&quot;);</span>
+<span class="nc" id="L332">				out.println(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L333">				out.println(&quot;&lt;/table&gt;&quot;);</span>
+<span class="nc" id="L334">				out.println(&quot;&lt;p&gt;&lt;input type=\&quot;submit\&quot; value=\&quot;Submit\&quot;&gt;&lt;/p&gt;&quot;);</span>
+<span class="nc" id="L335">				out.println(&quot;&lt;/form&gt;&quot;);</span>
+			}
+			else
+			{
+<span class="nc" id="L339">				out.println(&quot;There are no employees in the database &quot;);</span>
+<span class="nc" id="L340">				out.println(&quot;whose schedules can be exported.&quot;);</span>
+			}
+<span class="nc" id="L342">			out.println(&quot;&lt;/body&gt;&lt;/html&gt;&quot;);</span>
+		}
+<span class="nc" id="L344">		catch (Exception e)</span>
+		{
+<span class="nc" id="L346">			out.print(&quot;&lt;B&gt;&lt;pre&gt;&quot;);</span>
+<span class="nc" id="L347">			out.println(&quot;Failure: &quot; + e.getMessage());</span>
+<span class="nc" id="L348">			e.printStackTrace(out);</span>
+<span class="nc" id="L349">			out.println(&quot;&lt;BR&gt;&lt;/pre&gt;&lt;/B&gt;&quot;);</span>
+<span class="nc" id="L350">		}</span>
+<span class="nc" id="L351">	}</span>
+
+	private void exportActivityAssignments(PrintWriter out,
+																				 Collection workResourceIDs,
+																				 Date dtFrom,
+																				 Date dtTo,
+																				 Locale locale,
+																				 char delimiter)
+		throws IOException
+	{
+		try
+		{
+<span class="nc" id="L363">			Calendar cal = getCalendar();</span>
+			/* when the user says I want to export schedules from 07/01/2002 to
+				 07/01/2002, they really mean that they want to export schedules
+				 starting from 07/01/2002 00:00 to 07/01/2002 23:59, so adjust the
+				 dates accordingly */
+<span class="nc" id="L368">			cal.setTime(dtTo);</span>
+<span class="nc" id="L369">			cal.set(Calendar.HOUR_OF_DAY,23);</span>
+<span class="nc" id="L370">			cal.set(Calendar.MINUTE,59);</span>
+<span class="nc" id="L371">			cal.set(Calendar.SECOND,0);</span>
+<span class="nc" id="L372">			cal.set(Calendar.MILLISECOND,0);</span>
+<span class="nc" id="L373">			dtTo = cal.getTime();</span>
+
+<span class="nc" id="L375">			Collection listEvents = filterEvents(workResourceIDs, </span>
+<span class="nc" id="L376">				m_ScheduleManager.getPublishedEventsForWorkResources(</span>
+															workResourceIDs, dtFrom, dtTo));
+
+<span class="nc" id="L379">			HashMap mapActivities = getActivityIDsForEvents(listEvents);</span>
+
+<span class="nc" id="L381">			HashMap mapNames =</span>
+<span class="nc" id="L382">				m_WorkResourceManager.getEmployeeNamesByIDs(workResourceIDs);</span>
+
+<span class="nc" id="L384">			printHeaderActivityAssignments(out, locale, delimiter);</span>
+
+<span class="nc" id="L386">			cal.setTime(dtFrom);</span>
+<span class="nc bnc" id="L387" title="All 2 branches missed.">			while (!cal.getTime().after(dtTo))</span>
+			{
+<span class="nc" id="L389">				Date day = cal.getTime();</span>
+<span class="nc" id="L390">				printDate(out, day, locale);</span>
+<span class="nc" id="L391">				out.println();</span>
+
+				/* for each employee, print the events on that day */
+<span class="nc" id="L394">				Iterator it = workResourceIDs.iterator();</span>
+<span class="nc" id="L395">				Iterator itEvents = listEvents.iterator();</span>
+<span class="nc bnc" id="L396" title="All 4 branches missed.">				while (it.hasNext() &amp;&amp; itEvents.hasNext())</span>
+				{
+<span class="nc" id="L398">					ID workResourceID = (ID)it.next();</span>
+<span class="nc" id="L399">					Collection listWrkEvents = (Collection)itEvents.next();</span>
+<span class="nc" id="L400">					EmployeeName name = (EmployeeName)mapNames.get(workResourceID);</span>
+<span class="nc" id="L401">					out.print('\&quot;');</span>
+<span class="nc" id="L402">					out.print(name.getDisplayName(locale));</span>
+<span class="nc" id="L403">					out.print('\&quot;');</span>
+<span class="nc" id="L404">					out.print(delimiter);</span>
+<span class="nc" id="L405">					Collection listEventsOnDay = findEventsOccuringOnDate(day, listWrkEvents);</span>
+<span class="nc" id="L406">					printActivityAssignmentsOnDay(out, day, listEventsOnDay, locale, mapActivities, null);</span>
+<span class="nc" id="L407">					out.println();</span>
+<span class="nc" id="L408">				}</span>
+<span class="nc" id="L409">				cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L410">			}</span>
+		}
+<span class="nc" id="L412">		catch (Exception e)</span>
+		{
+<span class="nc" id="L414">			throw new IOException(e.getMessage());</span>
+<span class="nc" id="L415">		}</span>
+<span class="nc" id="L416">	}</span>
+
+	private void exportStartEndTimes(PrintWriter out,
+																	 Collection workResourceIDs,
+																	 Date dtFrom,
+																	 Date dtTo,
+																	 Locale locale,
+																	 char delimiter)
+		throws IOException
+	{
+		try
+		{
+<span class="nc" id="L428">			Calendar cal = getCalendar();</span>
+			/* when the user says I want to export schedules from 07/01/2002 to
+				 07/01/2002, they really mean that they want to export schedules
+				 starting from 07/01/2002 00:00 to 07/01/2002 23:59, so adjust the
+				 dates accordingly */
+<span class="nc" id="L433">			cal.setTime(dtTo);</span>
+<span class="nc" id="L434">			cal.set(Calendar.HOUR_OF_DAY,23);</span>
+<span class="nc" id="L435">			cal.set(Calendar.MINUTE,59);</span>
+<span class="nc" id="L436">			cal.set(Calendar.SECOND,0);</span>
+<span class="nc" id="L437">			cal.set(Calendar.MILLISECOND,0);</span>
+<span class="nc" id="L438">			dtTo = cal.getTime();</span>
+
+			/* only need tolook at shift assignments here */
+<span class="nc" id="L441">			Collection listEvents = filterEvents(workResourceIDs,</span>
+<span class="nc" id="L442">				m_ScheduleManager.getPublishedEventsForWorkResourcesByType(</span>
+					Event.EVENT_TYPE_SHIFT_ASSIGNMENT, workResourceIDs, dtFrom, dtTo));
+
+<span class="nc" id="L445">			HashMap mapNames =</span>
+<span class="nc" id="L446">				m_WorkResourceManager.getEmployeeNamesByIDs(workResourceIDs);</span>
+
+<span class="nc" id="L448">			printHeaderStartEndTimes(out, locale, delimiter, dtFrom, dtTo);</span>
+
+			/* for each employee, print the events on that day */
+<span class="nc" id="L451">			Iterator it = workResourceIDs.iterator();</span>
+<span class="nc" id="L452">			Iterator itEvents = listEvents.iterator();</span>
+<span class="nc bnc" id="L453" title="All 4 branches missed.">			while (it.hasNext() &amp;&amp; itEvents.hasNext())</span>
+			{
+<span class="nc" id="L455">				ID workResourceID = (ID)it.next();</span>
+<span class="nc" id="L456">				Collection listWrkEvents = (Collection)itEvents.next();</span>
+<span class="nc" id="L457">				EmployeeName name = (EmployeeName)mapNames.get(workResourceID);</span>
+<span class="nc" id="L458">				out.print('\&quot;');</span>
+<span class="nc" id="L459">				out.print(name.getDisplayName(locale));</span>
+<span class="nc" id="L460">				out.print('\&quot;');</span>
+<span class="nc" id="L461">				cal.setTime(dtFrom);</span>
+<span class="nc bnc" id="L462" title="All 2 branches missed.">				while (!cal.getTime().after(dtTo))</span>
+				{
+<span class="nc" id="L464">					Date day = cal.getTime();</span>
+<span class="nc" id="L465">					Collection listEventsOnDay =</span>
+<span class="nc" id="L466">						findEventsOccuringOnDate(day, listWrkEvents);</span>
+<span class="nc" id="L467">					out.print(delimiter);</span>
+<span class="nc" id="L468">					printStartEndTimesOnDay(out, day, listEventsOnDay, locale, null, null);</span>
+<span class="nc" id="L469">					cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L470">				}</span>
+<span class="nc" id="L471">				out.println();</span>
+<span class="nc" id="L472">			}</span>
+		}
+<span class="nc" id="L474">		catch (Exception e)</span>
+		{
+<span class="nc" id="L476">			throw new IOException(e.getMessage());</span>
+<span class="nc" id="L477">		}</span>
+<span class="nc" id="L478">	}</span>
+
+	/**
+	 * @todo: get the column header strings out of resource bundles using
+	 * appropriate locale
+	 */
+	private void printHeaderActivityAssignments(PrintWriter out,
+																							Locale locale,
+																							char delimiter)
+	{
+<span class="nc" id="L488">		out.print(&quot;Name&quot;);</span>
+<span class="nc" id="L489">		out.print(delimiter);</span>
+<span class="nc" id="L490">		out.print(&quot;Shift Assignment&quot;);</span>
+<span class="nc" id="L491">		out.print(delimiter);</span>
+<span class="nc" id="L492">		out.print(&quot;Shift Activity or Event&quot;);</span>
+<span class="nc" id="L493">		out.println();</span>
+<span class="nc" id="L494">	}</span>
+
+	/**
+	 * @todo: get the column header strings out of resource bundles using
+	 * appropriate locale
+	 */
+	private void printHeaderStartEndTimes(PrintWriter out,
+																				Locale locale,
+																				char delimiter,
+																				Date dtFrom,
+																				Date dtTo)
+	{
+<span class="nc" id="L506">		out.print(&quot;Name&quot;);</span>
+<span class="nc" id="L507">		Calendar cal = getCalendar();</span>
+<span class="nc" id="L508">		cal.setTime(dtFrom);</span>
+<span class="nc bnc" id="L509" title="All 2 branches missed.">		while (!cal.getTime().after(dtTo))</span>
+		{
+<span class="nc" id="L511">			out.print(delimiter);</span>
+<span class="nc" id="L512">			printDate(out, cal.getTime(), locale);</span>
+<span class="nc" id="L513">			cal.add(Calendar.DATE, 1);</span>
+		}
+<span class="nc" id="L515">		out.println();</span>
+<span class="nc" id="L516">	}</span>
+
+	private void printDate(PrintWriter out, Date dt, Locale locale)
+	{
+		/* print the date */
+<span class="nc" id="L521">		String strDay = DateTimeDisplay.getString(dt, viewTimeZone,</span>
+																TimeZoneBundleKey.SIMPLE_MEDIUMDATE_FORMAT,
+																locale);
+<span class="nc" id="L524">		out.print('\&quot;');</span>
+<span class="nc" id="L525">		out.print(strDay);</span>
+<span class="nc" id="L526">		out.print('\&quot;');</span>
+<span class="nc" id="L527">	}</span>
+
+	/**
+	 * Returns only those events from the given collection whose time window
+	 * overlaps with a calendar day defined by the date
+	 */
+	private Collection findEventsOccuringOnDate(Date dtDate, Collection listEvents)
+	{
+<span class="nc bnc" id="L535" title="All 2 branches missed.">		if (listEvents == null)</span>
+<span class="nc" id="L536">			return new ArrayList();</span>
+
+<span class="nc" id="L538">		Calendar cal = getCalendar();</span>
+<span class="nc" id="L539">		cal.setTime(dtDate);</span>
+<span class="nc" id="L540">		Date dtDayStart = TimeZoneUtil.getMinOfCalendar(cal).getTime();</span>
+<span class="nc" id="L541">		Date dtDayEnd = TimeZoneUtil.getMaxOfCalendar(cal).getTime();</span>
+
+<span class="nc" id="L543">		ArrayList listEventsOnDate = new ArrayList();</span>
+<span class="nc bnc" id="L544" title="All 2 branches missed.">		for (Iterator it = listEvents.iterator(); it.hasNext(); )</span>
+		{
+<span class="nc" id="L546">			Event event = (Event)it.next();</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">			if (event.getStartTime().before(dtDayEnd) &amp;&amp;</span>
+<span class="nc bnc" id="L548" title="All 2 branches missed.">					!event.getStartTime().before(dtDayStart))</span>
+			{
+<span class="nc" id="L550">				listEventsOnDate.add(event);</span>
+			}
+<span class="nc" id="L552">		}</span>
+<span class="nc" id="L553">		return listEventsOnDate;</span>
+	}
+
+	private void printActivityAssignmentsOnDay(PrintWriter out,
+											 Date day,
+											 Collection listEventsOnDay,
+											 Locale locale,
+											 HashMap mapActivities,
+											 Collection listOtherEvents)
+	{
+		/* find shift assignments and calendar event assignments */
+<span class="nc" id="L564">		ShiftAssignment shiftAssignment = null;</span>
+<span class="nc bnc" id="L565" title="All 4 branches missed.">		if (listOtherEvents == null || listOtherEvents.isEmpty())</span>
+<span class="nc" id="L566">			listOtherEvents = new ArrayList();</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">		for (Iterator it = listEventsOnDay.iterator(); it.hasNext(); )</span>
+		{
+<span class="nc" id="L569">			Event event = (Event)it.next();</span>
+<span class="nc bnc" id="L570" title="All 2 branches missed.">			if (event.getEventType() == Event.EVENT_TYPE_SHIFT_ASSIGNMENT)</span>
+			{
+<span class="nc" id="L572">				shiftAssignment = (ShiftAssignment)event;</span>
+			}
+<span class="nc" id="L574">		}</span>
+
+<span class="nc bnc" id="L576" title="All 2 branches missed.">		if (shiftAssignment == null)</span>
+		{
+<span class="nc" id="L578">			out.print(&quot;Off&quot;);</span>
+		}
+		
+<span class="nc" id="L581">		printActivityAssignment(out, day, shiftAssignment, locale, mapActivities, listOtherEvents);</span>
+<span class="nc" id="L582">	}</span>
+
+	private void printStartEndTimesOnDay(PrintWriter out,
+										 Date day,
+										 Collection listEventsOnDay,
+										 Locale locale,
+										 HashMap mapActivities,
+										 Collection listTimeOffsOnDay)
+	{
+		/* find shift assignment on that day */
+<span class="nc" id="L592">		ShiftAssignment shiftAssignment = null;</span>
+<span class="nc" id="L593">		Date dtShiftStart = null;</span>
+<span class="nc" id="L594">		Date dtShiftEnd = null;</span>
+<span class="nc" id="L595">		Event timeOff = null;</span>
+<span class="nc bnc" id="L596" title="All 2 branches missed.">		for (Iterator it = listEventsOnDay.iterator(); it.hasNext(); )</span>
+		{
+<span class="nc" id="L598">			Event event = (Event)it.next();</span>
+<span class="nc bnc" id="L599" title="All 2 branches missed.">			if (event.getEventType() == Event.EVENT_TYPE_SHIFT_ASSIGNMENT)</span>
+			{
+<span class="nc" id="L601">				shiftAssignment = (ShiftAssignment)event;</span>
+<span class="nc" id="L602">				dtShiftStart = shiftAssignment.getStartTime();</span>
+<span class="nc" id="L603">				dtShiftEnd = shiftAssignment.getEndTime();</span>
+				
+				//adjust start and end based on the following rule
+				/*
+				   A	When EXPORTABSENCETYPE is false, which is the default
+						i.	Export using 'Export start/end times'
+						If time off is completely cover a shift, will display as �OFF�
+				   B    When EXPORTABSENCETYPE is true
+						i.	Export using 'Export start/end times'
+						If time off is completely cover a shift, instead of �OFF�, will display activity type of time off
+						If time off is not completely cover a shift,  for example, a shift from 9am to 5pm covered by a time off from 8-12, we will export the shift as from 12- 5pm.
+				 */
+				
+<span class="nc" id="L616">				boolean isShiftCoverdByTimeOffFully = false;</span>
+<span class="nc bnc" id="L617" title="All 4 branches missed.">				if (listTimeOffsOnDay != null &amp;&amp; !listTimeOffsOnDay.isEmpty()) {</span>
+<span class="nc" id="L618">					Collection timeOffOverLapShifts = findTimeOffs(dtShiftStart, dtShiftEnd, listTimeOffsOnDay);</span>
+<span class="nc bnc" id="L619" title="All 2 branches missed.">					if (timeOffOverLapShifts.size() == 1) {</span>
+<span class="nc" id="L620">						timeOff = (Event)timeOffOverLapShifts.iterator().next();</span>
+<span class="nc bnc" id="L621" title="All 2 branches missed.">						if (!timeOff.getStartTime().after(shiftAssignment.getStartTime()) &amp;&amp;</span>
+<span class="nc bnc" id="L622" title="All 2 branches missed.">								!timeOff.getEndTime().before(shiftAssignment.getEndTime())) {</span>
+<span class="nc" id="L623">							isShiftCoverdByTimeOffFully = true;</span>
+<span class="nc bnc" id="L624" title="All 2 branches missed.">							if (!isExportAbsenceType)</span>
+<span class="nc" id="L625">								shiftAssignment = null; //show &quot;OFF&quot;</span>
+							else {
+								//display time off activity instead of 'OFF'
+<span class="nc" id="L628">								printSingleEvent(out, day, timeOff.getActivityID(), dtShiftStart, dtShiftEnd, locale, mapActivities);</span>
+<span class="nc" id="L629">								return;</span>
+							}
+						}
+					} 
+					
+<span class="nc bnc" id="L634" title="All 2 branches missed.">					if (!isShiftCoverdByTimeOffFully) {</span>
+						//no overlap time off or partially overlap time offs
+<span class="nc" id="L636">						Date previousTimeOffEnd = null;</span>
+<span class="nc bnc" id="L637" title="All 2 branches missed.">						for (Iterator i = timeOffOverLapShifts.iterator(); i.hasNext(); ) {</span>
+<span class="nc" id="L638">							timeOff = (Event)i.next();</span>
+<span class="nc bnc" id="L639" title="All 6 branches missed.">							if (!timeOff.getStartTime().after(dtShiftStart) &amp;&amp; !timeOff.getEndTime().before(dtShiftStart) &amp;&amp;</span>
+<span class="nc bnc" id="L640" title="All 2 branches missed.">								(previousTimeOffEnd == null || previousTimeOffEnd.equals(timeOff.getStartTime()))) {</span>
+<span class="nc" id="L641">								dtShiftStart = timeOff.getEndTime();</span>
+<span class="nc" id="L642">								previousTimeOffEnd = timeOff.getEndTime();</span>
+							} else {
+								break;
+							}
+						}
+					}
+<span class="nc" id="L648">				}</span>
+				break;
+			}
+<span class="nc" id="L651">		}</span>
+
+<span class="nc bnc" id="L653" title="All 2 branches missed.">		if (shiftAssignment == null)</span>
+		{
+<span class="nc" id="L655">			out.print(&quot;Off&quot;);</span>
+		}
+		else
+		{
+<span class="nc" id="L659">			printSingleEvent(out, day, shiftAssignment.getActivityID(), dtShiftStart, dtShiftEnd, locale, mapActivities);</span>
+		}
+<span class="nc" id="L661">	}</span>
+	
+	private Collection findTimeOffs(Date start, Date end, Collection listTimeOffsOnDay) {
+<span class="nc" id="L664">		ArrayList list = new ArrayList(listTimeOffsOnDay.size());</span>
+		
+<span class="nc" id="L666">		Event event = null;</span>
+<span class="nc bnc" id="L667" title="All 2 branches missed.">		for (Iterator i = listTimeOffsOnDay.iterator(); i.hasNext(); ) {</span>
+<span class="nc" id="L668">			event = (Event)i.next();</span>
+<span class="nc bnc" id="L669" title="All 4 branches missed.">			if (event.getStartTime().before(end) &amp;&amp; event.getEndTime().after(start))</span>
+<span class="nc" id="L670">				list.add(event);</span>
+		}
+		
+<span class="nc" id="L673">		return list;</span>
+	}
+
+	/**
+	 * prints the information about single event out. If the mapActivities argument
+	 * is null, no activity name will be printed, just start and end times
+	 */
+	private void printSingleEvent(PrintWriter out,
+																Date day,
+																ID eventActivityID,
+																Date dtEventStart,
+																Date dtEventEnd,
+																Locale locale,
+																HashMap mapActivities)
+	{
+<span class="nc bnc" id="L688" title="All 2 branches missed.">		if (mapActivities != null)</span>
+		{
+<span class="nc" id="L690">			Activity activity =</span>
+<span class="nc" id="L691">				(Activity)mapActivities.get(eventActivityID);</span>
+<span class="nc" id="L692">			String strActivity = &quot;Unknown&quot;;</span>
+<span class="nc bnc" id="L693" title="All 2 branches missed.">			if (activity != null)</span>
+<span class="nc" id="L694">				strActivity = activity.getName();</span>
+<span class="nc" id="L695">			out.print(strActivity);</span>
+<span class="nc" id="L696">			out.print(' ');</span>
+		}
+		
+<span class="nc bnc" id="L699" title="All 4 branches missed.">		if (dtEventStart == null &amp;&amp; dtEventEnd == null)</span>
+<span class="nc" id="L700">			return;</span>
+
+		/* find the time range for the day */
+<span class="nc" id="L703">		Calendar cal = getCalendar();</span>
+<span class="nc" id="L704">		cal.setTime(day);</span>
+<span class="nc" id="L705">		Date dtDayStart = TimeZoneUtil.getMinOfCalendar(cal).getTime();</span>
+<span class="nc" id="L706">		Date dtDayEnd = TimeZoneUtil.getMaxOfCalendar(cal).getTime();</span>
+		/*
+		if (dtEventStart.before(dtDayStart))
+		{
+			out.print(DateTimeDisplay.getString(dtEventStart, viewTimeZone,
+								TimeZoneBundleKey.MEDIUM_DATETIME_FORMAT, locale));
+		}
+		else
+		{*/
+<span class="nc bnc" id="L715" title="All 2 branches missed.">			out.print(DateTimeDisplay.getString(dtEventStart, viewTimeZone,</span>
+					timeFormat==null?TimeZoneBundleKey.REGIONAL_TIME_FORMAT:timeFormat, locale));
+		//}
+<span class="nc" id="L718">		out.print('-');</span>
+		/*
+		if (dtEventEnd.after(dtDayEnd))
+		{
+			out.print(DateTimeDisplay.getString(dtEventEnd, viewTimeZone,
+								TimeZoneBundleKey.MEDIUM_DATETIME_FORMAT, locale));
+		}
+		else
+		{*/
+<span class="nc bnc" id="L727" title="All 2 branches missed.">			out.print(DateTimeDisplay.getString(dtEventEnd, viewTimeZone, </span>
+					timeFormat==null?TimeZoneBundleKey.REGIONAL_TIME_FORMAT:timeFormat, locale));
+		//}
+		
+<span class="nc" id="L731">		out.print('\t');</span>
+<span class="nc" id="L732">	}</span>
+
+	/**
+	 * Returns a hashmap of all activities used in the given collection of events
+	 * keyed by activity ID
+	 */
+	private HashMap getActivityIDsForEvents(Collection listEvents)
+		throws Exception
+	{
+<span class="nc" id="L741">		HashSet setActivityIDs = new HashSet();</span>
+<span class="nc" id="L742">		ShiftAssignment shift = null;</span>
+<span class="nc bnc" id="L743" title="All 4 branches missed.">		if (listEvents != null &amp;&amp; !listEvents.isEmpty())</span>
+		{
+<span class="nc bnc" id="L745" title="All 2 branches missed.">			for (Iterator it = listEvents.iterator(); it.hasNext(); )</span>
+			{
+<span class="nc" id="L747">				Collection listWrkEvents = (Collection)it.next();</span>
+<span class="nc bnc" id="L748" title="All 4 branches missed.">				if (listWrkEvents != null &amp;&amp; !listWrkEvents.isEmpty())</span>
+				{
+<span class="nc bnc" id="L750" title="All 2 branches missed.">					for (Iterator it2 = listWrkEvents.iterator(); it2.hasNext(); )</span>
+					{
+<span class="nc" id="L752">						Event event = (Event)it2.next();</span>
+<span class="nc" id="L753">						setActivityIDs.add(event.getActivityID());</span>
+<span class="nc bnc" id="L754" title="All 2 branches missed.">						for (Iterator it3 = event.getChildren().iterator(); it3.hasNext(); )</span>
+						{
+<span class="nc" id="L756">							Event child = (Event)it3.next();</span>
+<span class="nc" id="L757">							setActivityIDs.add(child.getActivityID());</span>
+<span class="nc" id="L758">						}</span>
+<span class="nc bnc" id="L759" title="All 2 branches missed.">						if (event.getEventType() == Event.EVENT_TYPE_SHIFT_ASSIGNMENT) {</span>
+<span class="nc" id="L760">							shift = (ShiftAssignment)event;</span>
+<span class="nc bnc" id="L761" title="All 2 branches missed.">							if (shift.getOTExtensionBeforeActivityID() != null)</span>
+<span class="nc" id="L762">								setActivityIDs.add(shift.getOTExtensionBeforeActivityID());</span>
+<span class="nc bnc" id="L763" title="All 2 branches missed.">							if (shift.getOTExtensionAfterActivityID() != null)</span>
+<span class="nc" id="L764">								setActivityIDs.add(shift.getOTExtensionAfterActivityID());</span>
+		
+						}
+<span class="nc" id="L767">					}</span>
+				}
+<span class="nc" id="L769">			}</span>
+		}
+
+<span class="nc" id="L772">		Collection listActivities = m_ActivityManager.findActivities(setActivityIDs);</span>
+
+<span class="nc" id="L774">		HashMap mapActivities = new HashMap();</span>
+<span class="nc bnc" id="L775" title="All 2 branches missed.">		for (Iterator it = listActivities.iterator(); it.hasNext(); )</span>
+		{
+<span class="nc" id="L777">			Activity activity = (Activity)it.next();</span>
+<span class="nc" id="L778">			mapActivities.put(activity.getID(), activity);</span>
+<span class="nc" id="L779">		}</span>
+<span class="nc" id="L780">		return mapActivities;</span>
+	}
+	
+	private void exportSchedule(PrintWriter out, Collection workResourceIDs,
+			 Date dtFrom, Date dtTo, String exportType, Locale locale) throws IOException {
+		try {
+<span class="nc bnc" id="L786" title="All 2 branches missed.">			boolean isStartEndOnly = exportType.equalsIgnoreCase(&quot;activityassn&quot;)?false:true;</span>
+			//print title
+<span class="nc" id="L788">			out.print(&quot;Name\t&quot;);</span>
+<span class="nc bnc" id="L789" title="All 2 branches missed.">			if (isStartEndOnly) {</span>
+				//header: name day1 day2.....
+<span class="nc" id="L791">				Date date = dtFrom;</span>
+<span class="nc" id="L792">				Calendar calendar = Calendar.getInstance(viewTimeZone);</span>
+<span class="nc bnc" id="L793" title="All 2 branches missed.">				while (date.before(dtTo)) {</span>
+<span class="nc" id="L794">					calendar.setTime(date);</span>
+<span class="nc" id="L795">					printDate(out, calendar.getTime(), locale);</span>
+<span class="nc" id="L796">					out.print(&quot;\t&quot;);</span>
+<span class="nc" id="L797">					calendar.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L798">					date = calendar.getTime();</span>
+				}
+<span class="nc" id="L800">				out.println();</span>
+<span class="nc" id="L801">			} else {</span>
+				//header:name Scheduling Period	Before Overtime	After Overtime	Shift Assignment	Shift Event
+<span class="nc" id="L803">				out.println(&quot;Scheduling Period\t Before Overtime\t After Overtime\t Shift Assignment\t Shift Event&quot;);</span>
+			}
+			
+			//read current unpublished schedule
+<span class="nc" id="L807">			Collection listEvents =	filterEvents(workResourceIDs, m_ScheduleManager.getEventsForWorkResourcesByType(</span>
+					Event.EVENT_TYPE_SHIFT_ASSIGNMENT, workResourceIDs, dtFrom, dtTo));
+			
+<span class="nc" id="L810">			Collection listTimeOffEvents = null;</span>
+<span class="nc bnc" id="L811" title="All 2 branches missed.">			if (isStartEndOnly)</span>
+<span class="nc" id="L812">				listTimeOffEvents = filterEvents(workResourceIDs, m_ScheduleManager.getEventsForWorkResourcesByType(</span>
+					Event.EVENT_TYPE_TIME_OFF, workResourceIDs, dtFrom, dtTo));
+			else
+<span class="nc" id="L815">				listTimeOffEvents = filterEvents(workResourceIDs, m_ScheduleManager.getEventsForWorkResourcesByType(</span>
+					Event.EVENT_TYPE_ALL_CALENDAR_EVENTS, workResourceIDs, dtFrom, dtTo));
+			
+			
+<span class="nc" id="L819">			HashMap mapActivities = getActivityIDsForEvents(listEvents);</span>
+<span class="nc" id="L820">			mapActivities.putAll(getActivityIDsForEvents(listTimeOffEvents));</span>
+			
+<span class="nc" id="L822">			HashMap mapNames = m_WorkResourceManager.getWorkResourceNamesByIDs(workResourceIDs);</span>
+	
+			/* for each employee, print the events on that day */
+<span class="nc" id="L825">			Iterator it = workResourceIDs.iterator();</span>
+<span class="nc" id="L826">			Iterator itEvents = listEvents.iterator();</span>
+<span class="nc" id="L827">			Iterator itTimeOffs = listTimeOffEvents.iterator();</span>
+			
+<span class="nc" id="L829">			Collection listWrkEvents = null;</span>
+<span class="nc" id="L830">			Collection listTimeOffs = null;</span>
+<span class="nc" id="L831">			Collection listEventsOnDay = null;</span>
+<span class="nc" id="L832">			Collection listTimeOffsOnDay = null;</span>
+<span class="nc" id="L833">			Calendar cal = getCalendar();</span>
+			
+<span class="nc bnc" id="L835" title="All 2 branches missed.">			if (isStartEndOnly) {</span>
+<span class="nc bnc" id="L836" title="All 4 branches missed.">				while (it.hasNext() &amp;&amp; itEvents.hasNext()) {</span>
+<span class="nc" id="L837">					ID workResourceID = (ID)it.next();</span>
+<span class="nc" id="L838">					listWrkEvents = (Collection)itEvents.next();</span>
+<span class="nc" id="L839">					listTimeOffs = (Collection)itTimeOffs.next();</span>
+<span class="nc bnc" id="L840" title="All 2 branches missed.">					if (listWrkEvents != null)</span>
+<span class="nc" id="L841">						Collections.sort((ArrayList)listWrkEvents);</span>
+<span class="nc bnc" id="L842" title="All 2 branches missed.">					if (listTimeOffs != null)</span>
+<span class="nc" id="L843">						Collections.sort((ArrayList)listTimeOffs);</span>
+<span class="nc" id="L844">					EmployeeName name = (EmployeeName)mapNames.get(workResourceID);</span>
+<span class="nc" id="L845">					out.print('\&quot;');</span>
+<span class="nc" id="L846">					out.print(name.getDisplayName(locale));</span>
+<span class="nc" id="L847">					out.print('\&quot;');</span>
+<span class="nc" id="L848">					out.print(&quot;\t&quot;);</span>
+<span class="nc" id="L849">					cal.setTime(dtFrom);</span>
+<span class="nc bnc" id="L850" title="All 2 branches missed.">					while (cal.getTime().before(dtTo)){</span>
+<span class="nc" id="L851">						Date day = cal.getTime();</span>
+<span class="nc" id="L852">						listEventsOnDay = findEventsOccuringOnDate(day, listWrkEvents);</span>
+<span class="nc" id="L853">						listTimeOffsOnDay = findEventsOccuringOnDate(day, listTimeOffs);</span>
+<span class="nc bnc" id="L854" title="All 2 branches missed.">						if (isStartEndOnly)</span>
+<span class="nc" id="L855">							printStartEndTimesOnDay(out, day, listEventsOnDay, locale, mapActivities, listTimeOffsOnDay);</span>
+						else
+<span class="nc" id="L857">							printActivityAssignmentsOnDay(out, day, listEventsOnDay, locale, mapActivities, listTimeOffsOnDay);</span>
+<span class="nc" id="L858">						out.print('\t');</span>
+<span class="nc" id="L859">						cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L860">					}</span>
+<span class="nc" id="L861">					out.println();</span>
+<span class="nc" id="L862">				}</span>
+			} else {
+<span class="nc" id="L864">				cal.setTime(dtFrom);</span>
+<span class="nc bnc" id="L865" title="All 2 branches missed.">				while (cal.getTime().before(dtTo)){</span>
+<span class="nc" id="L866">					Date day = cal.getTime();</span>
+<span class="nc" id="L867">					printDate(out, day, locale);</span>
+<span class="nc" id="L868">					out.println();</span>
+<span class="nc" id="L869">					it = workResourceIDs.iterator();</span>
+<span class="nc" id="L870">					itEvents = listEvents.iterator();</span>
+<span class="nc" id="L871">					itTimeOffs = listTimeOffEvents.iterator();</span>
+<span class="nc bnc" id="L872" title="All 4 branches missed.">					while (it.hasNext() &amp;&amp; itEvents.hasNext()) {</span>
+<span class="nc" id="L873">						ID workResourceID = (ID)it.next();</span>
+<span class="nc" id="L874">						listWrkEvents = (Collection)itEvents.next();</span>
+<span class="nc" id="L875">						listTimeOffs = (Collection)itTimeOffs.next();</span>
+<span class="nc bnc" id="L876" title="All 2 branches missed.">						if (listWrkEvents != null)</span>
+<span class="nc" id="L877">							Collections.sort((ArrayList)listWrkEvents);</span>
+<span class="nc bnc" id="L878" title="All 2 branches missed.">						if (listTimeOffs != null)</span>
+<span class="nc" id="L879">							Collections.sort((ArrayList)listTimeOffs);</span>
+<span class="nc" id="L880">						EmployeeName name = (EmployeeName)mapNames.get(workResourceID);</span>
+<span class="nc" id="L881">						out.print('\&quot;');</span>
+<span class="nc" id="L882">						out.print(name.getDisplayName(locale));</span>
+<span class="nc" id="L883">						out.print('\&quot;');</span>
+<span class="nc" id="L884">						out.print(&quot;\t&quot;);</span>
+						//print sp name and time period
+<span class="nc bnc" id="L886" title="All 2 branches missed.">						if (campaignName != null) {</span>
+<span class="nc" id="L887">							out.print('\&quot;');</span>
+<span class="nc" id="L888">							out.print(campaignName);</span>
+<span class="nc" id="L889">							out.print(&quot;\&quot; &quot;);</span>
+						}
+<span class="nc" id="L891">						printDate(out, dtFrom, locale);</span>
+<span class="nc" id="L892">						out.print(&quot; to &quot;);</span>
+<span class="nc" id="L893">						printDate(out, dtTo, locale);</span>
+<span class="nc" id="L894">						out.print(&quot;\t&quot;);</span>
+						
+<span class="nc" id="L896">						listEventsOnDay = findEventsOccuringOnDate(day, listWrkEvents);</span>
+<span class="nc" id="L897">						listTimeOffsOnDay = findEventsOccuringOnDate(day, listTimeOffs);</span>
+<span class="nc" id="L898">						printActivityAssignmentsOnDay(out, day, listEventsOnDay, locale, mapActivities, listTimeOffsOnDay);</span>
+<span class="nc" id="L899">						out.println();</span>
+<span class="nc" id="L900">					}</span>
+<span class="nc" id="L901">					cal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L902">				}</span>
+<span class="nc" id="L903">				out.println();</span>
+			}
+<span class="nc" id="L905">		} catch (Exception ex) {</span>
+<span class="nc" id="L906">			throw new IOException(ex.getMessage());</span>
+<span class="nc" id="L907">		}</span>
+<span class="nc" id="L908">	}</span>
+	
+	private void printActivityAssignment(PrintWriter out,
+									Date day,
+									ShiftAssignment shiftAssignment,
+									Locale locale,
+									HashMap mapActivities,
+									Collection listOtherEvents) {
+<span class="nc bnc" id="L916" title="All 2 branches missed.">		if (shiftAssignment != null) {</span>
+			//print ot before
+<span class="nc" id="L918">			int ot = shiftAssignment.getExtensionBefore();</span>
+<span class="nc" id="L919">			Date eventStart = null;</span>
+<span class="nc" id="L920">			Date eventEnd = null;</span>
+<span class="nc" id="L921">			ID eventActivityID = shiftAssignment.getActivityID();</span>
+<span class="nc" id="L922">			Calendar calendar = getCalendar();</span>
+<span class="nc bnc" id="L923" title="All 2 branches missed.">			if (ot &gt; 0) {</span>
+<span class="nc" id="L924">				calendar.setTime(shiftAssignment.getStartTime());</span>
+<span class="nc" id="L925">				calendar.add(Calendar.MINUTE, ot);</span>
+<span class="nc" id="L926">				eventStart = shiftAssignment.getStartTime();</span>
+<span class="nc" id="L927">				eventEnd = calendar.getTime();</span>
+<span class="nc" id="L928">				eventActivityID = shiftAssignment.getOTExtensionBeforeActivityID();</span>
+			} 
+<span class="nc" id="L930">			printSingleEvent(out, day, eventActivityID, eventStart, eventEnd, locale, mapActivities);</span>
+			
+			//print ot after
+<span class="nc" id="L933">			ot = shiftAssignment.getExtensionAfter();</span>
+<span class="nc" id="L934">			eventStart = null;</span>
+<span class="nc" id="L935">			eventEnd = null;</span>
+<span class="nc" id="L936">			eventActivityID = shiftAssignment.getActivityID();</span>
+<span class="nc" id="L937">			calendar = getCalendar();</span>
+<span class="nc bnc" id="L938" title="All 2 branches missed.">			if (ot &gt; 0) {</span>
+<span class="nc" id="L939">				calendar.setTime(shiftAssignment.getEndTime());</span>
+<span class="nc" id="L940">				calendar.add(Calendar.MINUTE, -ot);</span>
+<span class="nc" id="L941">				eventStart = calendar.getTime();</span>
+<span class="nc" id="L942">				eventEnd = shiftAssignment.getEndTime();</span>
+<span class="nc" id="L943">				eventActivityID = shiftAssignment.getOTExtensionAfterActivityID();</span>
+			} 
+<span class="nc" id="L945">			printSingleEvent(out, day, eventActivityID, eventStart, eventEnd, locale, mapActivities);</span>
+			
+			//print shift 
+<span class="nc" id="L948">			printSingleEvent(out, day, shiftAssignment.getActivityID(), shiftAssignment.getStartTime(), shiftAssignment.getEndTime(), locale, mapActivities);</span>
+			
+			//print shift events
+<span class="nc" id="L951">			Collection shiftEvents = shiftAssignment.getChildren();</span>
+<span class="nc bnc" id="L952" title="All 4 branches missed.">			if (shiftEvents != null &amp;&amp; !shiftEvents.isEmpty()) {</span>
+<span class="nc" id="L953">				listOtherEvents.addAll(shiftEvents);</span>
+			}
+		}
+<span class="nc bnc" id="L956" title="All 2 branches missed.">		if (!listOtherEvents.isEmpty())</span>
+<span class="nc" id="L957">			Collections.sort((ArrayList)listOtherEvents, m_comparator);</span>
+<span class="nc" id="L958">		Event event = null;</span>
+<span class="nc bnc" id="L959" title="All 2 branches missed.">		for (Iterator i = listOtherEvents.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L960">			event = (Event)i.next();</span>
+<span class="nc" id="L961">			printSingleEvent(out, day, event.getActivityID(), event.getStartTime(), event.getEndTime(), locale, mapActivities);</span>
+		}
+<span class="nc" id="L963">		out.println();</span>
+<span class="nc" id="L964">	}</span>
+	
+	private Collection filterEvents(Collection workresourceIDs, Collection eventsFromDB) {
+<span class="nc" id="L967">		Iterator ikey = workresourceIDs.iterator();</span>
+<span class="nc" id="L968">		Iterator ivalue = eventsFromDB.iterator();</span>
+<span class="nc" id="L969">		HashMap eventMap = new HashMap(workresourceIDs.size());</span>
+<span class="nc" id="L970">		Collection events = null;</span>
+<span class="nc bnc" id="L971" title="All 2 branches missed.">		while (ikey.hasNext()) {</span>
+<span class="nc" id="L972">			events = (Collection)ivalue.next();</span>
+<span class="nc bnc" id="L973" title="All 2 branches missed.">			if (events == null)</span>
+<span class="nc" id="L974">				events = new ArrayList();</span>
+<span class="nc" id="L975">			eventMap.put(ikey.next(), events);</span>
+		}
+<span class="nc bnc" id="L977" title="All 4 branches missed.">		if (this.m_filterShiftIDs != null || this.m_filterActivityIDs != null)</span>
+<span class="nc" id="L978">			return ShiftsUtil.filterEvents(eventMap, m_filterShiftIDs, m_filterActivityIDs).values();</span>
+<span class="nc" id="L979">		return eventsFromDB;</span>
+	}
+	
+	private Calendar getCalendar() {
+<span class="nc bnc" id="L983" title="All 2 branches missed.">		if (viewTimeZone == null)</span>
+<span class="nc" id="L984">			return Calendar.getInstance();</span>
+<span class="nc" id="L985">		return Calendar.getInstance(viewTimeZone);</span>
+	}
+}
+
+/**
+ * Comparator that compares two events by their start times
+ */
+<span class="nc" id="L992">class EventStartTimeComparator implements Comparator</span>
+{
+	public int compare(Object o1, Object o2)
+	{
+<span class="nc bnc" id="L996" title="All 2 branches missed.">		if (!(o1 instanceof Event))</span>
+<span class="nc" id="L997">			throw new IllegalArgumentException();</span>
+<span class="nc bnc" id="L998" title="All 2 branches missed.">		if (!(o2 instanceof Event))</span>
+<span class="nc" id="L999">			throw new IllegalArgumentException();</span>
+
+<span class="nc" id="L1001">		return ((Event)o1).getStartTime().compareTo(((Event)o2).getStartTime());</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

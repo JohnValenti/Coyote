@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PSSShiftGapConditions.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.request.validation</a> &gt; <span class="el_source">PSSShiftGapConditions.java</span></div><h1>PSSShiftGapConditions.java</h1><pre class="source lang-java linenums">/*
+ * Created on Oct 26, 2005
+ */
+package com.bluepumpkin.ejb.rm.requests.swap.request.validation;
+
+import java.util.Iterator;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.RmManagerFactory;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.setup.validation.ejb.ValidationRuleManager;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.bluepumpkin.ejb.rm.util.ShiftSwapRequestUtil;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+/**
+ *
+ * &lt;b&gt;Soft Validation: applies only for partial shift swap requests&lt;/b&gt;
+ * &lt;p&gt;
+ *    Validates the gap activity conditions
+ *    - gap between RANGE_MIN_DURATION_VALUE and RANGE_MAX_DURATION_VALUE
+ *    or
+ *    - gap less than MIN_DURATION_VALUE
+ * &lt;p&gt;
+ *    Checks for both the shifts for a two way swap
+ */
+<span class="nc" id="L41">public class PSSShiftGapConditions  implements Validator</span>
+{
+<span class="nc" id="L43">    private static final String m_className = PSSShiftGapConditions.class.getName();</span>
+<span class="nc" id="L44">    private static final Category m_cat = Log.initCategory(m_className);</span>
+    
+    public static final String RANGE_MIN_DURATION_VALUE = &quot;RANGE_MIN_DURATION_VALUE&quot;;
+    public static final String RANGE_MAX_DURATION_VALUE = &quot;RANGE_MAX_DURATION_VALUE&quot;;
+    public static final String MIN_GAP_DURATION_VALUE = &quot;MIN_GAP_DURATION_VALUE&quot;;
+<span class="nc" id="L49">    public static final ID RULE_ID = new ID(-194036);</span>
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.validation.Validator#validate(com.bluepumpkin.ejb.rm.requests.common.validation.Validatable)
+     */
+    @Override
+	public ValidationResult validate(Validatable validatable) throws Exception
+    {
+<span class="nc" id="L57">        String methodName = &quot;validate&quot;;</span>
+<span class="nc bnc" id="L58" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
+
+<span class="nc" id="L60">        ShiftSwapRequest ssr = (ShiftSwapRequest) validatable;</span>
+<span class="nc" id="L61">        ShiftSwapValidationCache valCache = ssr.getCache();</span>
+        
+<span class="nc" id="L63">        ShiftSwapItem ssItem1 = (ShiftSwapItem) ssr.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L64">        ShiftSwapItem ssItem2 = (ShiftSwapItem) ssr.getShiftSwapItems().get(1);</span>
+<span class="nc bnc" id="L65" title="All 4 branches missed.">        if (ssItem1.getIsPartial() || ssItem2.getIsPartial()) {</span>
+//        	get the resulting shifts after the swap
+<span class="nc" id="L67">            ShiftAssignment[] saArray = null;</span>
+//        	get the sa array after the swap
+<span class="nc" id="L69">        	saArray = ShiftSwapRequestUtil.performPartialSwap((ShiftSwapRequest)validatable, false, </span>
+<span class="nc" id="L70">        			WfmManagerFactory.getScheduleAccessManager(), false, false);</span>
+        	
+        	//for each org, find out the validator- if beeded to run for both or not
+<span class="nc bnc" id="L73" title="All 2 branches missed.">        	for (Iterator it = ssr.getValidationCache().getOrgIDs().iterator(); it.hasNext();){</span>
+<span class="nc" id="L74">	        	ID orgID = (ID)it.next();</span>
+<span class="nc bnc" id="L75" title="All 2 branches missed.">	        	if (valCache.isValidationRequiredForOrg(orgID, &quot;shift-swap&quot;, m_className)){</span>
+		        	//get the rule params
+<span class="nc" id="L77">		        	ValidationRuleManager valMan = RmManagerFactory.getInstance().getValidationRuleManager();</span>
+<span class="nc" id="L78">					Map&lt;String, Integer&gt; ruleParams = valMan.getValidationRuleParams(orgID, RULE_ID);</span>
+<span class="nc" id="L79">		        	int minDuration = ruleParams.get(RANGE_MIN_DURATION_VALUE).intValue();</span>
+<span class="nc" id="L80">		        	int maxDuration = ruleParams.get(RANGE_MAX_DURATION_VALUE).intValue();</span>
+<span class="nc" id="L81">		        	int minGap = ruleParams.get(MIN_GAP_DURATION_VALUE).intValue();</span>
+		        	
+<span class="nc" id="L83">		        	ScheduleAccessManager sam = RequestUtil.getScheduleAccessManager();</span>
+		        	
+<span class="nc" id="L85">		        	return verifyGapCondition(ssr, saArray, minDuration, maxDuration, minGap, sam);</span>
+	        	}
+<span class="nc" id="L87">        	}</span>
+        }
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+<span class="nc" id="L90">        return null;</span>
+    }
+    
+    private ValidationResult verifyGapCondition(ShiftSwapRequest ssr, ShiftAssignment[] saArray,
+    		int minDuration, int maxDuration, int minGap, ScheduleAccessManager sam) throws Exception{
+    	
+<span class="nc" id="L96">    	ValidationResult result = null;</span>
+    	//validate for each shift
+<span class="nc bnc" id="L98" title="All 2 branches missed.">    	for (int i = 0; i&lt; saArray.length; i++){</span>
+<span class="nc" id="L99">    		ShiftAssignment sa = saArray[i];</span>
+    		//iterate thru shift activities to get gap activities
+<span class="nc bnc" id="L101" title="All 2 branches missed.">    		for (Iterator itr = sa.getChildren().iterator(); itr.hasNext(); ) {</span>
+<span class="nc" id="L102">        		ShiftEventAssignment shiftEventAssn = (ShiftEventAssignment) itr.next();</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        		if (shiftEventAssn.getActivityID().equals(Activity.ACTIVITY_SHIFT_OVERTIME_GAP)){</span>
+<span class="nc" id="L104">        			evaluateConditions(minDuration, maxDuration, shiftEventAssn.getDuration(), minGap, result, ssr, sa);</span>
+        		}
+<span class="nc" id="L106">    		}</span>
+    		
+    	}
+    	
+<span class="nc" id="L110">    	return result;</span>
+    }
+    
+    private void evaluateConditions(int minDuration, int maxDuration, int gap, int minGap, 
+    		ValidationResult result, ShiftSwapRequest ssr, ShiftAssignment sa) throws Exception{
+<span class="nc" id="L115">    	boolean failGapCondition = false;</span>
+<span class="nc" id="L116">    	boolean failMinCondition = false;</span>
+    	
+<span class="nc" id="L118">    	boolean addGapResult = false;</span>
+<span class="nc" id="L119">    	boolean addMinResult = false;</span>
+    	
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    	if (gap &gt; 0 ){</span>
+<span class="nc bnc" id="L122" title="All 4 branches missed.">    		if (minDuration != -1 &amp;&amp; maxDuration != -1){</span>
+<span class="nc bnc" id="L123" title="All 4 branches missed.">    			if (gap &lt; minDuration || gap &gt; maxDuration){</span>
+<span class="nc" id="L124">    				failGapCondition = true;</span>
+    			}
+<span class="nc bnc" id="L126" title="All 4 branches missed.">    			if (minGap == -1 &amp;&amp; failGapCondition){</span>
+<span class="nc" id="L127">    				addGapResult = true;</span>
+    			}
+    		}
+<span class="nc bnc" id="L130" title="All 2 branches missed.">    		if (minGap != -1){</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">    			if (gap &lt; minGap){</span>
+<span class="nc" id="L132">    				failMinCondition = true;</span>
+<span class="nc bnc" id="L133" title="All 6 branches missed.">    				if (minDuration == -1 &amp;&amp; maxDuration == -1 &amp;&amp; failMinCondition){</span>
+<span class="nc" id="L134">    					addMinResult = true;</span>
+    				}
+    			}
+    		}
+    		
+<span class="nc bnc" id="L139" title="All 10 branches missed.">    		if (minDuration != -1 &amp;&amp; maxDuration != -1 &amp;&amp;</span>
+    				minGap != -1 &amp;&amp;
+    				failGapCondition &amp;&amp; failMinCondition){
+    			//show both results
+<span class="nc" id="L143">    			addGapResult = true;</span>
+<span class="nc" id="L144">    			addMinResult = true;</span>
+    		}
+    	}
+<span class="nc bnc" id="L147" title="All 2 branches missed.">    	if (addGapResult)</span>
+<span class="nc" id="L148">    		result = ValidationUtil.setSoftValidationResult(ssr, </span>
+                    RmEjbBundleKey.PSS_SHIFT_GAP_RANGE, 
+<span class="nc" id="L150">                    String.valueOf(gap), </span>
+<span class="nc" id="L151">                    String.valueOf(minDuration), </span>
+<span class="nc" id="L152">                    String.valueOf(maxDuration), </span>
+<span class="nc" id="L153">                    ssr.getValidationCache().getEmployeeNameByID(sa.getWorkResourceIDs().iterator().next()),</span>
+                    m_className);
+<span class="nc bnc" id="L155" title="All 2 branches missed.">    	if (addMinResult)</span>
+<span class="nc" id="L156">    		result = ValidationUtil.setSoftValidationResult(ssr, </span>
+                    RmEjbBundleKey.PSS_SHIFT_GAP_MINIMUM, 
+<span class="nc" id="L158">                    String.valueOf(gap), </span>
+<span class="nc" id="L159">                    String.valueOf(minGap), </span>
+<span class="nc" id="L160">                    ssr.getValidationCache().getEmployeeNameByID(sa.getWorkResourceIDs().iterator().next()),</span>
+                    m_className);
+<span class="nc" id="L162">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

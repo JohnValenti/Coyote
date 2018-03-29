@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ScheduleUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.wfm.ws.entityImport.autoschedule</a> &gt; <span class="el_source">ScheduleUtil.java</span></div><h1>ScheduleUtil.java</h1><pre class="source lang-java linenums">package com.verint.wfm.ws.entityImport.autoschedule;
+
+import java.rmi.RemoteException;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.campaign.model.SPSchedulingParameters;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.bbm.config.ejb.DBConfigManager;
+import com.bluepumpkin.ejb.core.CoreEJBCreateException;
+import com.bluepumpkin.ejb.core.CoreManagerFactory;
+import com.bluepumpkin.ejb.core.Log;
+import com.verint.ejb.bbm.schedule.model.WSAutoScheduleRequest;
+import com.verint.ejb.bbm.schedule.model.WSAutoScheduleRequestFieldInfo;
+import com.verint.ejb.bbm.schedule.util.SchedulingRequestUtil;
+import com.verint.ejb.bbm.schedule.util.SchedulingRequestUtil.SchedulingMode;
+import com.verint.ejb.facade.scheduling.ScheduleRequestParameters;
+import com.verint.ejb.facade.scheduling.ScheduleRequestsMessage;
+import com.verint.wfm.ws.entityImport.schedulingPeriod.model.SchedulingPeriodDTO.SchedulingPeriodExternalNaturalKey;
+import com.witness.ejb.core.base.CoreFinderException;
+import com.witness.ejb.core.security.UserManager;
+import com.witness.ejb.core.security.model.User;
+
+public class ScheduleUtil {
+	private static final long serialVersionUID = 1L;
+
+	private static final int MAX_NO_OF_SCHEDULE_REQUESTS = 4;
+	private static final int MIN_NO_OF_REQUESTS_PER_MESSAGE = 10;
+
+	private static final String PROP_IGNORE_WARNINGS = &quot;true&quot;;
+	private static final String PROP_IGNORE_SECONDARY_WARNINGS = &quot;true&quot;;
+	private static final boolean PROP_IS_WHAT_IF_MODE = false;
+	private static final int PROP_ACTION_SCHEDULE = 2;
+
+	private static final boolean PROP_IS_ENABLE_LQF = false;
+	private static final boolean PROP_IS_RECALC_SUB_CAMPAIGNS = false;
+	
+	public static final int DEFAUlT_SCHEDULING_ALGO = 0;
+
+	// to get system user/and password : QC 97694
+<span class="nc" id="L50">	private UserManager m_userManager = null;</span>
+<span class="nc" id="L51">	private DBConfigManager m_dbConfigManager = null;</span>
+
+<span class="nc" id="L53">	private static final Category CAT = Log.initCategory(ScheduleUtil.class</span>
+<span class="nc" id="L54">			.getName());</span>
+
+<span class="nc" id="L56">	private static final ScheduleUtil _INSTANCE = new ScheduleUtil();</span>
+
+<span class="nc" id="L58">	private ScheduleUtil() {}</span>
+
+	public static ScheduleUtil getInstance() {
+<span class="nc" id="L61">		return _INSTANCE;</span>
+	}
+
+	/**
+	 * Triggers the scheduling of the requests asynchronously. This method does
+	 * not ensure that the scheduling is actually triggered. This depends on the
+	 * availability of Adapter, FS thick client etc.
+	 * 
+	 * @param requests
+	 * @param externalIds
+	 * @param messages
+	 */
+	public void scheduleRequests(List&lt;ID&gt; requests,
+			List&lt;SchedulingPeriodExternalNaturalKey&gt; externalIds, boolean overrideSchedules,
+			List&lt;SchedulingNotTriggeredInfo&gt; messages) {
+<span class="nc bnc" id="L76" title="All 2 branches missed.">		if (requests.size() &gt; 0) {</span>
+<span class="nc" id="L77">				String[] params = { &quot;en_US&quot;, null, &quot;en_US&quot;, null,</span>
+					PROP_IGNORE_WARNINGS, PROP_IGNORE_SECONDARY_WARNINGS };
+
+
+<span class="nc" id="L81">			int requestBatchSize = getRequestBatchSize(requests.size());</span>
+<span class="nc" id="L82">			int currentIndex = 0;</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">			while (currentIndex &lt;= requests.size()) {</span>
+<span class="nc" id="L84">				int start = currentIndex;</span>
+<span class="nc" id="L85">				int end = Math.min(currentIndex + requestBatchSize,</span>
+<span class="nc" id="L86">						requests.size());</span>
+<span class="nc bnc" id="L87" title="All 2 branches missed.">				if (start == end) {</span>
+<span class="nc" id="L88">					break;</span>
+				}
+				try {
+<span class="nc" id="L91">					ScheduleRequestParameters schedParameters = new ScheduleRequestParameters(</span>
+							PROP_IS_WHAT_IF_MODE, PROP_ACTION_SCHEDULE, params,
+							PROP_IS_RECALC_SUB_CAMPAIGNS, PROP_IS_ENABLE_LQF,
+							overrideSchedules, 0, true);
+<span class="nc" id="L95">					Map&lt;String, Object&gt; secondaryParameters = getSPSchedulerParams();</span>
+<span class="nc" id="L96">					schedParameters.setSecondarySchedParams(secondaryParameters);</span>
+<span class="nc" id="L97">					ScheduleRequestsMessage message = new ScheduleRequestsMessage(</span>
+<span class="nc" id="L98">							requests.subList(start, end), schedParameters, 0);</span>
+
+<span class="nc" id="L100">					message.sendMessage();</span>
+<span class="nc" id="L101">				} catch (Throwable t) {</span>
+<span class="nc" id="L102">					CAT.error(&quot;Unable to schedule requests &quot;, t);</span>
+					// in a loop create unabale to schedule messages for the
+					// failures only
+<span class="nc" id="L105">					createUnableToScheduleMessages(</span>
+<span class="nc" id="L106">							externalIds.subList(start, end), messages);</span>
+					// change the request status
+					// update status of the requests in request table
+					try {
+						SchedulingRequestUtil
+<span class="nc" id="L111">								.getInstance()</span>
+<span class="nc" id="L112">								.updateSchedulingRequests(</span>
+<span class="nc" id="L113">										requests.subList(start, end),</span>
+										WSAutoScheduleRequest.SCHEDULE_STATUS_ERROR,
+										&quot;Could not schedule request due to an infrastructure failure.&quot;);
+<span class="nc" id="L116">					} catch (JdmoException e) {</span>
+<span class="nc" id="L117">						CAT.error(</span>
+								&quot;Could not update error status for requests when there was a jms failure in sending mesage to schedule&quot;,
+								e);
+<span class="nc" id="L120">					}</span>
+<span class="nc" id="L121">				}</span>
+<span class="nc" id="L122">				currentIndex = end;</span>
+<span class="nc" id="L123">			}</span>
+		}
+<span class="nc" id="L125">	}</span>
+
+	private int getRequestBatchSize(int noOfRequests) {
+<span class="nc bnc" id="L128" title="All 2 branches missed.">		if (noOfRequests &lt; MIN_NO_OF_REQUESTS_PER_MESSAGE) {</span>
+<span class="nc" id="L129">			return noOfRequests;</span>
+		}
+
+<span class="nc bnc" id="L132" title="All 2 branches missed.">		int noOfMessages = Math.min(MAX_NO_OF_SCHEDULE_REQUESTS,</span>
+				((noOfRequests / MIN_NO_OF_REQUESTS_PER_MESSAGE) + ((noOfRequests % MIN_NO_OF_REQUESTS_PER_MESSAGE) &gt; 0 ? 1 : 0)));
+<span class="nc bnc" id="L134" title="All 2 branches missed.">		return Math.max(MIN_NO_OF_REQUESTS_PER_MESSAGE,</span>
+				((noOfRequests / noOfMessages) + ((noOfRequests % noOfMessages) &gt; 0 ? 1 : 0)));
+	}
+
+
+	/**
+	 * Creates one SchedulingNotTriggeredInfo per external Id and adds it to
+	 * messages list.
+	 * 
+	 * @param externalIds
+	 * @param messages
+	 */
+	private void createUnableToScheduleMessages(
+			List&lt;SchedulingPeriodExternalNaturalKey&gt; externalIds,
+			List&lt;SchedulingNotTriggeredInfo&gt; messages) {
+<span class="nc bnc" id="L149" title="All 2 branches missed.">		for (SchedulingPeriodExternalNaturalKey key : externalIds) {</span>
+<span class="nc" id="L150">			SchedulingNotTriggeredInfo message = new SchedulingNotTriggeredInfo(</span>
+					key);
+<span class="nc" id="L152">			message.addAutoSchedulingNotTriggeredMessage();</span>
+<span class="nc" id="L153">			messages.add(message);</span>
+<span class="nc" id="L154">		}</span>
+
+<span class="nc" id="L156">	}</span>
+
+	public Map&lt;ID, SchedulingPeriodExternalNaturalKey&gt; createSchedulingRequests(
+			Collection&lt;ID&gt; spIds,
+			Map&lt;ID, SchedulingPeriodExternalNaturalKey&gt; spIdVsExternalID,
+			List&lt;SchedulingNotTriggeredInfo&gt; messages) {
+<span class="nc" id="L162">		Map&lt;ID, SchedulingPeriodExternalNaturalKey&gt; requestIds = new HashMap&lt;ID, SchedulingPeriodExternalNaturalKey&gt;();</span>
+		// get the superuser
+<span class="nc" id="L164">		String wfoSuperUser = getSuperUser();</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">		for (Iterator&lt;ID&gt; it = spIds.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L166">			ID spID = it.next();</span>
+<span class="nc" id="L167">			SchedulingPeriodExternalNaturalKey externalID = spIdVsExternalID</span>
+<span class="nc" id="L168">			.get(spID);</span>
+			try {
+<span class="nc" id="L170">				WSAutoScheduleRequest request = new WSAutoScheduleRequest();</span>
+<span class="nc" id="L171">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.SPID,</span>
+<span class="nc" id="L172">						spID.toInt());</span>
+<span class="nc" id="L173">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.MODE, SchedulingMode.SCHEDULE.mode());</span>
+<span class="nc" id="L174">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
+						WSAutoScheduleRequest.SCHEDULE_STATUS_NEW);
+<span class="nc" id="L176">				ID requestID = SchedulingRequestUtil.getInstance().createSchedulingRequest(request, wfoSuperUser);</span>
+<span class="nc" id="L177">				requestIds.put(requestID, externalID);</span>
+<span class="nc" id="L178">			} catch (JdmoException e) {</span>
+<span class="nc" id="L179">				CAT.error(&quot;Error inserting the scheduling request for the scheduling Period &quot;</span>
+<span class="nc" id="L180">						+ spID.toInt() + &quot; to scheduling queue&quot;, e);</span>
+<span class="nc" id="L181">				SchedulingNotTriggeredInfo message = new SchedulingNotTriggeredInfo(externalID);</span>
+<span class="nc" id="L182">				message.addReqestNotCreatedMessage();</span>
+<span class="nc" id="L183">				messages.add(message);</span>
+<span class="nc" id="L184">			}</span>
+<span class="nc" id="L185">		}</span>
+<span class="nc" id="L186">		return requestIds;</span>
+	}
+
+	private UserManager getUserManager() {
+		try
+		{
+<span class="nc bnc" id="L192" title="All 2 branches missed.">			if(m_userManager == null)</span>
+<span class="nc" id="L193">				m_userManager = CoreManagerFactory.getUserManager(false);  // isInWhatIf = false // we don't care about WhatIf mode here</span>
+<span class="nc" id="L194">		}catch (CoreEJBCreateException e)</span>
+		{
+<span class="nc" id="L196">			CAT.error(&quot;Error gettting the UserManager&quot;, e);</span>
+<span class="nc" id="L197">		}</span>
+<span class="nc" id="L198">		return m_userManager;</span>
+	}
+	
+	private DBConfigManager getDBConfigManager() {
+		try {
+<span class="nc bnc" id="L203" title="All 2 branches missed.">			if (m_dbConfigManager == null)</span>
+<span class="nc" id="L204">				m_dbConfigManager = BbmManagerFactory.getDBConfigManager();</span>
+<span class="nc" id="L205">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L206">			CAT.error(&quot;Error getting the DB Config Manager&quot;, e);</span>
+<span class="nc" id="L207">		}</span>
+<span class="nc" id="L208">		return m_dbConfigManager;</span>
+
+	}
+
+	private String getSuperUser() {
+<span class="nc bnc" id="L213" title="All 2 branches missed.">		if (getUserManager() != null) {</span>
+			try {
+<span class="nc" id="L215">				User superuser = getUserManager().getUserByID(User.SUPER_USERID);</span>
+<span class="nc" id="L216">				String systemUser = superuser.getUserName();</span>
+<span class="nc" id="L217">				return systemUser;</span>
+<span class="nc" id="L218">			} catch (CoreFinderException e) {</span>
+<span class="nc" id="L219">				CAT.warn(&quot;Could not find the super user&quot;);</span>
+			} 
+<span class="nc" id="L221">			catch (RemoteException e) {</span>
+<span class="nc" id="L222">				CAT.error(&quot;Error getting the super user&quot;);</span>
+<span class="nc" id="L223">			}</span>
+		}
+<span class="nc" id="L225">		return null;</span>
+	}
+	
+	private Map&lt;String , Object&gt; getSPSchedulerParams(){
+<span class="nc" id="L229">		Map&lt;String, Object&gt; parameters = new HashMap&lt;String, Object&gt;();</span>
+
+<span class="nc" id="L231">		parameters.put(SPSchedulingParameters.DAYS_TO_SCHEDULE,new Integer(0));</span>
+<span class="nc" id="L232">		parameters.put(SPSchedulingParameters.ADD_SHIFT_ASSIGNMENTS,new Integer(1));</span>
+<span class="nc" id="L233">		parameters.put(SPSchedulingParameters.REMOVE_SHIFT_ASSIGNMENTS,new Integer(1));</span>
+<span class="nc" id="L234">		parameters.put(SPSchedulingParameters.ADJUST_SHIFT_ACTIVITIES_ONLY,new Integer(0));</span>
+<span class="nc" id="L235">		parameters.put(SPSchedulingParameters.PREFS_VS_SERVICE,new Integer(0));</span>
+<span class="nc" id="L236">		parameters.put(SPSchedulingParameters.UNDER_VS_OVER,new Integer(5));</span>
+<span class="nc" id="L237">		parameters.put(SPSchedulingParameters.SPIKES_VS_OVERALL,new Integer(2));</span>
+<span class="nc" id="L238">		parameters.put(SPSchedulingParameters.MIN_AGENTS, 0);</span>
+<span class="nc" id="L239">		parameters.put(SPSchedulingParameters.TIME_TO_SPEND, getSchedulingAlgoUsed());</span>
+<span class="nc" id="L240">		parameters.put(SPSchedulingParameters.SCHEDULE_CALENDAR_EVENTS_ONLY, new Integer(1));</span>
+<span class="nc" id="L241">		parameters.put(SPSchedulingParameters.OTVTO_MAXOTHOURS,new Integer(0));</span>
+<span class="nc" id="L242">		parameters.put(SPSchedulingParameters.OTVTO_MAXVTOHOURS,new Integer(0));</span>
+<span class="nc" id="L243">		parameters.put(SPSchedulingParameters.SCHEDULE_OTVTO_ONLY, 0);</span>
+<span class="nc" id="L244">		parameters.put(SPSchedulingParameters.SCHEDULE_SHIFT_ASSIGNMENTS, new Integer(1));</span>
+<span class="nc" id="L245">		parameters.put(SPSchedulingParameters.MIN_CLASS_OVERSL, new Integer(1));</span>
+<span class="nc" id="L246">		parameters.put(SPSchedulingParameters.OTVTO_ADDOTBEFORESHIFT,new Integer(0));</span>
+<span class="nc" id="L247">		parameters.put(SPSchedulingParameters.OTVTO_ADDOTAFTERSHIFT,new Integer(0));</span>
+<span class="nc" id="L248">		parameters.put(SPSchedulingParameters.OTVTO_ADDVTOBEFORESHIFT,new Integer(0));</span>
+<span class="nc" id="L249">		parameters.put(SPSchedulingParameters.OTVTO_ADDVTOAFTERSHIFT,new Integer(0));</span>
+
+		//Get now and convert to sql date
+<span class="nc" id="L252">		java.util.Date now = new java.util.Date();</span>
+<span class="nc" id="L253">		now = TimeZoneUtil.toGMT(now);</span>
+<span class="nc" id="L254">		java.sql.Date sqlNow = new java.sql.Date(now.getTime());</span>
+<span class="nc" id="L255">		parameters.put(&quot;CREATED&quot;, sqlNow);</span>
+
+<span class="nc" id="L257">		parameters.put(&quot;CREATEDBY&quot;, getSuperUser());</span>
+
+<span class="nc" id="L259">		return parameters;	</span>
+	}
+	
+	private Integer getSchedulingAlgoUsed()
+	{
+		try{
+<span class="nc" id="L265">			int algo = getDBConfigManager().getIntValue(ConfigKey.RETAIL_SCHEDULING_ALGO);</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">			if (algo &gt;= 0) {</span>
+<span class="nc" id="L267">				return algo;</span>
+			}
+<span class="nc" id="L269">		}catch(Exception e)</span>
+		{
+<span class="nc" id="L271">			CAT.warn(&quot;Error getting the scheduling algo to be used&quot;);</span>
+<span class="nc" id="L272">		}</span>
+<span class="nc" id="L273">		return DEFAUlT_SCHEDULING_ALGO;</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

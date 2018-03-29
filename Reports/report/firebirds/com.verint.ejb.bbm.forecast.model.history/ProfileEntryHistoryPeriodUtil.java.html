@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ProfileEntryHistoryPeriodUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.ejb.bbm.forecast.model.history</a> &gt; <span class="el_source">ProfileEntryHistoryPeriodUtil.java</span></div><h1>ProfileEntryHistoryPeriodUtil.java</h1><pre class="source lang-java linenums">package com.verint.ejb.bbm.forecast.model.history;
+
+import com.bluepumpkin.common.datatypes.Duration;
+import com.bluepumpkin.common.datatypes.TimeContext;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmTimeSeriesException;
+import com.bluepumpkin.ejb.bbm.time.TimeInterval;
+import com.bluepumpkin.ejb.bbm.time.TimeIntervalAtTime;
+import com.bluepumpkin.ejb.bbm.time.TimeIntervalFactory;
+import com.bluepumpkin.ejb.bbm.time.TimeUnits;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.util.DSTConversionUtil;
+import com.bluepumpkin.ejb.bbm.timeseries.util.TraceUtil;
+import com.verint.ejb.bbm.forecast.ProfileComponentUtil;
+import com.verint.ejb.bbm.forecast.model.history.provider.IHistoryProvider;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+/**
+ * Utility methods for use with ProfileEntryHistoryPeriods.
+ */
+public class ProfileEntryHistoryPeriodUtil {
+
+<span class="nc" id="L28">	private ProfileEntryHistoryPeriodUtil() {}</span>
+	
+	/**
+	 * Returns an ordered array of time intervals at time with a day duration that
+	 * represent the list of days that will be in a monthly history period given the
+	 * selected fullSpWeekInterval, month, and year.
+	 * 
+	 * If the SP week covers a period that transitions from one month to the other,
+	 * the list of days contained in the MonthlyHistoryPeriod will be the following:
+	 * If the first month in the SP week has more days in the month than the selected
+	 * month for the history period, then those days of history will not be present
+	 * in the history period.  For example, if the SP week was from 6/26/2011 - 7/2/2011,
+	 * and the selected month was Feb. 2011, the history days in the history period will
+	 * be: 2/26, 2/27, 2/28, NULL, NULL, 3/1, 3/2.
+	 * 
+	 * If the first month in the SP week has less days in the month than the selected
+	 * month for the history period, then the extra days in the selected month will not
+	 * be contained in the history period but the history period will still have 7 days worth
+	 * of data.  For example, if the SP week was from 6/26/2011 - 7/2/2011, and the selected
+	 * month was Jul. 2011, the history days in the history period will be:
+	 * 7/26, 7/27, 7/28, 7/29, 7/30, 8/1, 8/2 (note how July 31st was skipped).
+	 *
+	 * Note that this method will return 7 items always, even for partial weeks.  For partial weeks
+	 * that do not have history, the history days will still be returned to cover the full week
+	 * as defined by the start day of business week + 7 days.
+	 *
+	 * @param spWeekStartDate Date representing the start of the SP-week.  For partial SP-weeks, this date should
+	 *                        represent the actual start of the SP-week and not the full week with regards to the business
+	 *                        start of week.
+	 * @param targetMonth int representing month. 1 - January, 12 - December
+	 */
+	public static List&lt;TimeIntervalAtTime&gt; getDayIntervalsForMonthHistoryPeriod(Date spWeekStartDate,
+			int targetMonth, int targetYear, TimeContext timeContext) {
+
+<span class="nc" id="L62">		Date fullWeekStartDate =</span>
+<span class="nc" id="L63">				ProfileComponentUtil.findNearestStartOfWeekDateBehindSelectedDate(spWeekStartDate, timeContext);</span>
+
+
+<span class="nc" id="L66">		ArrayList&lt;TimeIntervalAtTime&gt; historyDayIntervals = new ArrayList&lt;TimeIntervalAtTime&gt;();</span>
+<span class="nc" id="L67">		TimeIntervalFactory timeIntervalFactory = new TimeIntervalFactory(timeContext);</span>
+<span class="nc" id="L68">		TimeIntervalAtTime fullSpWeekInterval = new TimeIntervalAtTime(fullWeekStartDate, timeIntervalFactory.getOneWeek());</span>
+		
+<span class="nc" id="L70">		Calendar startOfSP = Calendar.getInstance(timeContext.getTimeZone());</span>
+<span class="nc" id="L71">		startOfSP.setTime(spWeekStartDate);</span>
+<span class="nc" id="L72">		Integer monthAtStartOfSP = startOfSP.get(Calendar.MONTH);</span>
+		
+<span class="nc" id="L74">		List&lt;TimeIntervalAtTime&gt; spDayIntervals = fullSpWeekInterval.getIntervalSubdivisions(</span>
+<span class="nc" id="L75">				timeIntervalFactory.getOneDay());</span>
+
+<span class="nc bnc" id="L77" title="All 2 branches missed.">		for (TimeIntervalAtTime spDayInterval : spDayIntervals) {</span>
+<span class="nc" id="L78">			Calendar spDay = Calendar.getInstance(timeContext.getTimeZone());</span>
+<span class="nc" id="L79">			spDay.setTime(spDayInterval.getStartTime());</span>
+			
+<span class="nc" id="L81">			Calendar historyDay = Calendar.getInstance(timeContext.getTimeZone());</span>
+<span class="nc" id="L82">			historyDay.setTime(spDayInterval.getStartTime());</span>
+<span class="nc" id="L83">			historyDay.set(Calendar.DAY_OF_MONTH, 1);</span>
+<span class="nc" id="L84">			historyDay.set(Calendar.MONTH, targetMonth - 1);</span>
+<span class="nc" id="L85">			historyDay.set(Calendar.YEAR, targetYear);</span>
+<span class="nc" id="L86">			historyDay.set(Calendar.HOUR, 0);</span>
+<span class="nc" id="L87">			historyDay.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L88">			historyDay.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L89">			historyDay.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L90">			historyDay.add(Calendar.MINUTE, timeContext.getDayBoundary());</span>
+
+			//If this first condition is true, that means the SP-week is a partial week starting on a day
+			// other than the business start of week, and the days in the beginning of the week that are not
+			// in the SP-week also fall in a different month than the month where the SP-week begins.  For example,
+			// a partial SP-week from 9/1/2015 - 9/5/2015, with a business week start of sunday (the corresponding full week
+			// would be 8/30/2015 - 9/5/2015), so 8/30 and 8/31 are not in the SP-week.
+			// In that case, we need to decrement the historyDay by 1 month for those days not in the SP-week.
+<span class="nc bnc" id="L98" title="All 2 branches missed.">			if (monthAtStartOfSP &gt; spDay.get(Calendar.MONTH)) {</span>
+<span class="nc" id="L99">				historyDay.add(Calendar.MONTH, -1);</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">			} else if (monthAtStartOfSP &lt; spDay.get(Calendar.MONTH)) {</span>
+				//If this is true that means the SP week has transitioned into a new month
+				//Add 1 to the month of the history day to account for the month transition in the sp week
+<span class="nc" id="L103">				historyDay.add(Calendar.MONTH, 1);</span>
+			}
+
+			//If the selected month for history has less days than the month of the spweek and the spweek lies within
+			//those days in its month, then there will be no corresponding day of history for that day of the SP week.
+<span class="nc bnc" id="L108" title="All 2 branches missed.">			if (historyDay.getActualMaximum(Calendar.DAY_OF_MONTH) &lt; spDay.get(Calendar.DAY_OF_MONTH)) {</span>
+<span class="nc" id="L109">				historyDayIntervals.add(null);</span>
+			} else {
+<span class="nc" id="L111">				historyDay.set(Calendar.DAY_OF_MONTH, spDay.get(Calendar.DAY_OF_MONTH));</span>
+<span class="nc" id="L112">				historyDayIntervals.add(new TimeIntervalAtTime(historyDay.getTime(), timeIntervalFactory.getOneDay()));</span>
+			}
+<span class="nc" id="L114">		}</span>
+<span class="nc" id="L115">		return historyDayIntervals;</span>
+	}
+	
+	/**
+	 * Returns a trace cube of history data.  This tracecube is a concatenation of the daily history data for
+	 * each of the daily intervals in the ordered list dayIntervalsInPeriod.
+	 * 
+	 * @param historyProvider - mechanism for retrieving the history data
+	 * @param dayIntervalsInPeriod - An ordered list of daily time intervals representing the days in the history period
+	 * @param intervalRepresentingPeriod - The start and end time of this interval will be used for the date boundaries of the returned trace cube.
+	 * Note that for Monthly and Custom Week periods, this interval will be a &quot;fake&quot; week in December 2000 (chosen to not have DST transitions)
+	 * in order to render non-contiguous data in the chart.  This week will not actually correspond to the history data contained in the cube.
+	 * @param spWeekStartDate - Start date of the SP week containing the history period
+	 * @param timeContext - Time context of the history period
+	 * @param timeIntervalFactory - The history period's time interval factory
+	 * @return
+	 * @throws BbmTimeSeriesException
+	 */
+	static TraceCube getHistoryTraceCube(IHistoryProvider historyProvider, List&lt;TimeIntervalAtTime&gt; dayIntervalsInPeriod,
+			TimeIntervalAtTime intervalRepresentingPeriod, Date spWeekStartDate, TimeContext timeContext,
+			TimeIntervalFactory timeIntervalFactory) throws BbmException {
+
+<span class="nc" id="L137">		List&lt;TraceCube&gt; historyCubes = new ArrayList&lt;TraceCube&gt;();</span>
+
+<span class="nc" id="L139">		TraceCube dummyTraceCube = null;</span>
+
+
+<span class="nc" id="L142">		dayIntervalsInPeriod = filterDayIntervals(dayIntervalsInPeriod, spWeekStartDate, timeContext);</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">		for (TimeIntervalAtTime day : dayIntervalsInPeriod) {</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">			if (day == null) {</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">				if (dummyTraceCube == null) {</span>
+					//NOTE: there is an assumption here that the intervalRepresentingPeriod does not contain any days with DST transitions.
+					//The history periods that have null days should return a representative interval that meets this constraint.
+<span class="nc" id="L148">					dummyTraceCube = historyProvider.getHistory(new TimeIntervalAtTime(intervalRepresentingPeriod.getStartTime(),</span>
+<span class="nc" id="L149">							timeIntervalFactory.getOneDay()));</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">					for (short traceType : dummyTraceCube.getTraceTypes()) {</span>
+<span class="nc" id="L151">						dummyTraceCube.initTraceValue(traceType, Trace.TRACENA);</span>
+					}
+				}
+				//Add a clone of the dummy cube to the list of cube data
+<span class="nc" id="L155">				historyCubes.add(TraceUtil.convertTraceCube(dummyTraceCube, dummyTraceCube));</span>
+			} else {
+<span class="nc" id="L157">				historyCubes.add(historyProvider.getHistory(day));</span>
+			}
+<span class="nc" id="L159">		}</span>
+		
+<span class="nc" id="L161">		TraceCube concatenatedHistory = concatenateTraceCubes(historyCubes, dayIntervalsInPeriod,</span>
+				intervalRepresentingPeriod, timeContext);
+<span class="nc" id="L163">		return concatenatedHistory;</span>
+	}
+
+	private static List&lt;TimeIntervalAtTime&gt; filterDayIntervals(List&lt;TimeIntervalAtTime&gt; dayIntervalsInPeriod,
+			Date spWeekStartDate, TimeContext timeContext) {
+
+<span class="nc" id="L169">		int campaignStartOfWeek = timeContext.getStartDayOfWeek().getCalendarConstant();</span>
+<span class="nc" id="L170">		Calendar spWeekStartCal = Calendar.getInstance(timeContext.getTimeZone());</span>
+<span class="nc" id="L171">		spWeekStartCal.setTime(spWeekStartDate);</span>
+<span class="nc" id="L172">		int spWeekStartOfWeek = spWeekStartCal.get(Calendar.DAY_OF_WEEK);</span>
+
+<span class="nc bnc" id="L174" title="All 2 branches missed.">		if (campaignStartOfWeek == spWeekStartOfWeek) {</span>
+<span class="nc" id="L175">			return dayIntervalsInPeriod;</span>
+		}
+
+<span class="nc bnc" id="L178" title="All 2 branches missed.">		while (campaignStartOfWeek % 7 != spWeekStartOfWeek) {</span>
+<span class="nc" id="L179">			dayIntervalsInPeriod.remove(0);</span>
+<span class="nc" id="L180">			campaignStartOfWeek++;</span>
+		}
+
+<span class="nc" id="L183">		return dayIntervalsInPeriod;</span>
+	}
+
+	/**
+	 * In this concatenate method, we need to hack together a trace cube of the fake week.
+	 * We do this by converting all the daily histories into Ideal arrays so they each have a length of 96, then
+	 * we add them to our fake week that is guaranteed to not have a DST transition.
+	 *
+	 * @param traceCubesToConcatenate
+	 * @param dayIntervalsInPeriod
+	 * @param intervalRepresentingPeriod
+	 * @param timeContext
+	 * @return
+	 * @throws BbmTimeSeriesException
+	 */
+	private static TraceCube concatenateTraceCubes(List&lt;TraceCube&gt; traceCubesToConcatenate, List&lt;TimeIntervalAtTime&gt; dayIntervalsInPeriod,
+			TimeIntervalAtTime intervalRepresentingPeriod, TimeContext timeContext) throws BbmTimeSeriesException {
+<span class="nc" id="L200">		TraceCube retVal = null;</span>
+		
+<span class="nc" id="L202">		int currentOffsetIndex = 0;</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">		for (int i = 0; i &lt; dayIntervalsInPeriod.size(); i++) {</span>
+<span class="nc" id="L204">			TraceCube cube = traceCubesToConcatenate.get(i);</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">			if (cube != null) {</span>
+<span class="nc bnc" id="L206" title="All 2 branches missed.">				if (retVal == null) {</span>
+<span class="nc" id="L207">					retVal = cube.newInstance(cube.getQueueID(), intervalRepresentingPeriod.getStartTime(),</span>
+<span class="nc" id="L208">							new Date(intervalRepresentingPeriod.getEndTime().getTime() - 1), cube.getTraceTypes());</span>
+				}
+
+				// We rely on cube to have accurate information about its populated trace types.
+<span class="nc bnc" id="L212" title="All 2 branches missed.">				for (short traceType : cube.getTraceTypes()) {</span>
+<span class="nc bnc" id="L213" title="All 2 branches missed.">					if (cube.getTraceValueD(traceType) != null) {</span>
+<span class="nc" id="L214">						double[] values = cube.getTraceValueD(traceType);</span>
+
+<span class="nc bnc" id="L216" title="All 2 branches missed.">						if (dayIntervalsInPeriod.get(i) != null) {</span>
+							//Here we convert the daily trace value into an &quot;ideal&quot; time.  This drops off
+							//the extra hour in a 25-hour DST transition time or adds in an hour in a 23-hour day
+							//so that each array has exactly 24 hours worth of 15 minute intervals.
+<span class="nc" id="L220">							values = DSTConversionUtil.convertFromDSTAwareTimeToIdealTime(values, Trace.TRACENA,</span>
+<span class="nc" id="L221">									dayIntervalsInPeriod.get(i).getStartTime(), Duration.fromMinutes(Trace.INTERVAL),</span>
+									timeContext);
+						}	
+						
+<span class="nc" id="L225">						retVal.setTraceValue(traceType, values, currentOffsetIndex);</span>
+					}
+				}
+				
+<span class="nc" id="L229">				currentOffsetIndex += Trace.DAYPOINTS;</span>
+			}
+		}
+
+<span class="nc" id="L233">		return retVal;</span>
+	}
+
+	/**
+	 * The time interval representing a custom week history period is a &quot;fake&quot; week
+	 * interval in Decemeber 2000, with a week start matching the view's time
+	 * context.  This is done because custom week and monthly history periods can have &quot;missing&quot;
+	 * days, or days in the interval that are effectively null, which can cause
+	 * problems while rendering the history data for the period in a chart.  In
+	 * order to circumvent this issue, a fake week is constructed so that the chart
+	 * thinks this week is getting rendered but in reality the history data matching
+	 * the intervals in daysInPeriod is getting rendered.
+	 *
+	 * This week interval was chosen because it will not contain any DST transitions.
+	 */
+	static TimeIntervalAtTime getIntervalRepresentingPeriodForMonthlyAndCustomHistoryWeeks(Date spWeekStartDate,
+			TimeContext timeContext, TimeIntervalFactory timeIntervalFactory) {
+<span class="nc" id="L250">		Calendar cal = Calendar.getInstance(timeContext.getTimeZone());</span>
+<span class="nc" id="L251">		cal.set(Calendar.YEAR, 2000);</span>
+<span class="nc" id="L252">		cal.set(Calendar.MONTH, Calendar.DECEMBER);</span>
+		//Sunday
+<span class="nc" id="L254">		cal.set(Calendar.DATE, 10);</span>
+<span class="nc" id="L255">		cal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="nc" id="L256">		cal.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L257">		cal.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L258">		cal.set(Calendar.MILLISECOND, 0);</span>
+
+		//Adjust the calendar to match the SP week's start of week and day boundary
+<span class="nc" id="L261">		Calendar spWeekStartCal = Calendar.getInstance(timeContext.getTimeZone());</span>
+<span class="nc" id="L262">		spWeekStartCal.setTime(spWeekStartDate);</span>
+<span class="nc" id="L263">		cal.set(Calendar.DAY_OF_WEEK, spWeekStartCal.get(Calendar.DAY_OF_WEEK));</span>
+<span class="nc" id="L264">		cal.add(Calendar.MINUTE, timeContext.getDayBoundary());</span>
+
+		//If the current sp week is a partial week, adjust the interval representing the history
+		//period to start at the beginning of the partial week
+<span class="nc bnc" id="L268" title="All 2 branches missed.">		if (timeContext.getStartDayOfWeek().getCalendarConstant() != cal.get(Calendar.DAY_OF_WEEK)) {</span>
+<span class="nc" id="L269">			return new TimeIntervalAtTime(cal.getTime(), new TimeInterval(TimeUnits.Day,</span>
+<span class="nc" id="L270">					calculatePartialWeekLength(spWeekStartCal.get(Calendar.DAY_OF_WEEK),</span>
+<span class="nc" id="L271">							timeContext.getStartDayOfWeek().getCalendarConstant()), timeContext));</span>
+		} else {
+<span class="nc" id="L273">			return new TimeIntervalAtTime(cal.getTime(), timeIntervalFactory.getOneWeek());</span>
+		}
+	}
+
+	private static int calculatePartialWeekLength(int spWeekStartDay, int campaignWeekStartDay) {
+<span class="nc bnc" id="L278" title="All 2 branches missed.">		if (spWeekStartDay &gt; campaignWeekStartDay) {</span>
+<span class="nc" id="L279">			return 7 - (spWeekStartDay - campaignWeekStartDay);</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">		} else if (campaignWeekStartDay &gt; spWeekStartDay) {</span>
+<span class="nc" id="L281">			return campaignWeekStartDay - spWeekStartDay;</span>
+		} else {
+<span class="nc" id="L283">			return 7;</span>
+		}
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

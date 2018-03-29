@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AvoidCalendarEventsValidationRule.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.timeoff.validation</a> &gt; <span class="el_source">AvoidCalendarEventsValidationRule.java</span></div><h1>AvoidCalendarEventsValidationRule.java</h1><pre class="source lang-java linenums">/*
+ * AvoidCalendarEventsValidationRule.java
+ * Copyright (c) 2002, Blue Pumpkin Software, Inc.
+ * All rights reserved.
+ */
+
+package com.bluepumpkin.ejb.rm.requests.timeoff.validation;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.schedule.model.CalendarEvent;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.RmManagerFactory;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.setup.validation.ejb.ValidationRuleManager;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+
+/**
+ * Rule in UI: Request avoids scheduled calendar events.
+ * &lt;p/&gt;
+ * Check each TOChoice does not overlap a scheduled calendar event (An event
+ * in the CALENDAREVENTASSIGNMENT table with
+ * event type == {@link com.bluepumpkin.ejb.bbm.activity.model.Event#EVENT_TYPE_CALENDAR_EVENT_ASSIGNMENT EVENT_TYPE_CALENDAR_EVENT_ASSIGNMENT})
+ * &lt;p/&gt;
+ * &lt;p/&gt;
+ * Applies only for &quot;debit&quot; and &quot;debit-if&quot; requests.  Does not apply for &quot;don't debit&quot; requests
+ * as unavailability events cannot overlap shifts (rule not skipped as no shift will be found
+ * (enforced by hard validation)).
+ * &lt;p/&gt;
+ * &lt;p/&gt;
+ * Applies equally for tentative and non tentative requests (no unpublished calendar event assignments used).
+ */
+<span class="fc" id="L44">public class AvoidCalendarEventsValidationRule implements Validator {</span>
+
+<span class="fc" id="L46">	private static final String m_className = AvoidCalendarEventsValidationRule.class.getName();</span>
+
+<span class="fc" id="L48">	private static final Category m_cat = Log.initCategory(m_className);</span>
+	public static final String CALENDAR_EVENT_ACTIVITY = &quot;CALENDAR_EVENT_ACTIVITY&quot;;
+<span class="fc" id="L50">	public static final ID RULE_ID = new ID(-194006);</span>
+
+	/**
+	 * Validate a time off request.
+	 */
+	@Override
+	public ValidationResult validate(Validatable validatable) throws Exception {
+<span class="fc" id="L57">		ValidationResult result = null;</span>
+<span class="fc" id="L58">		TORequest tor = (TORequest) validatable;</span>
+
+<span class="fc" id="L60">		String methodName = &quot;validate&quot;;</span>
+<span class="pc bpc" id="L61" title="1 of 2 branches missed.">		if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
+		// Check for calendar events
+<span class="fc" id="L63">		Collection calEvents = tor.getCache().getCalEventsDuringPeriod(true, false, false);</span>
+		// Loop through the choices and check that each not overlap a calendar event
+<span class="fc" id="L65">		TOChoice toChoice = tor.getTOChoiceForValidation();</span>
+
+<span class="pc bpc" id="L67" title="1 of 2 branches missed.">		if (toChoice == null) {</span>
+<span class="fc" id="L68">			Iterator it = tor.getRequestChoiceList().iterator();</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">			while (it.hasNext()) {</span>
+<span class="fc" id="L70">				toChoice = (TOChoice) it.next();</span>
+
+<span class="fc" id="L72">				result = setValidationResultForAvoidCalendarEvents(calEvents, tor, toChoice,</span>
+<span class="fc" id="L73">				        getActivityCollFromMap(tor, toChoice));</span>
+				// if the TOChoice  overlaps with a calendar event.
+			} // end while (it.hasNext())
+<span class="fc" id="L76">		} else {    // validate one TO CHOICE ONLY</span>
+<span class="nc" id="L77">			result = setValidationResultForAvoidCalendarEvents(calEvents, tor, toChoice,</span>
+<span class="nc" id="L78">			        getActivityCollFromMap(tor, toChoice));</span>
+		}
+<span class="pc bpc" id="L80" title="1 of 2 branches missed.">		if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpExitMethod(methodName, result));</span>
+<span class="fc" id="L81">		return result;</span>
+	}
+
+	private Collection getActivityCollFromMap(TORequest tor, TOChoice toChoice) throws Exception {
+		//get activities to validate against from rule
+		//get the rule params
+<span class="fc" id="L87">		ID activityID = tor.getRequestSubType();</span>
+<span class="fc" id="L88">		ValidationRuleManager valMan = RmManagerFactory.getInstance().getValidationRuleManager();</span>
+<span class="fc" id="L89">		Map&lt;String, Integer&gt; ruleParams = valMan.getValidationRuleParams(</span>
+<span class="fc" id="L90">				tor.getValidationCache()</span>
+<span class="fc" id="L91"> 		        .getOrgIDForEmployeeDuringPeriod(tor.getEmployeeID(), toChoice.getStartDate(), toChoice.getEndDate()), RULE_ID, activityID);</span>
+
+<span class="fc" id="L93">		ArrayList activityColl = new ArrayList(ruleParams.size());</span>
+<span class="pc bpc" id="L94" title="2 of 4 branches missed.">		if (ruleParams != null &amp;&amp; ruleParams.isEmpty())</span>
+<span class="nc" id="L95">			return null;</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">		for (Iterator it = ruleParams.values().iterator(); it.hasNext();) {</span>
+<span class="fc" id="L97">			activityColl.add(new ID(((Integer) it.next()).intValue()));</span>
+		}
+<span class="fc" id="L99">		return activityColl;</span>
+	}
+
+	public ValidationResult setValidationResultForAvoidCalendarEvents(Collection calEvents,
+	                                                                  TORequest tor, TOChoice toChoice, Collection activityColl) throws Exception {
+<span class="fc" id="L104">		ValidationResult result = null;</span>
+
+<span class="fc bfc" id="L106" title="All 2 branches covered.">		for (Iterator it = calEvents.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L107">			CalendarEvent calEvent = (CalendarEvent) it.next();</span>
+			//set validation result for the TOCHOICE only if the calendar event falls in the choice date range
+<span class="pc bpc" id="L109" title="1 of 2 branches missed.">			if (intersect(toChoice, calEvent)) {</span>
+<span class="pc bpc" id="L110" title="2 of 4 branches missed.">				if (activityColl == null || activityColl.contains(calEvent.getActivityID()) ||</span>
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">				        activityColl.contains(new ID(-2))) {</span>
+<span class="fc" id="L112">					result = ValidationUtil.setSoftValidationResult(toChoice,</span>
+<span class="fc" id="L113">					        RmEjbBundleKey.TO_CONTAINED_IN_CALEVT, tor.getCache().getEmployeeNameByID(),</span>
+<span class="fc" id="L114">					        toChoice.getStartDate(), toChoice.getEndDate(), m_className);</span>
+				}
+			}
+<span class="fc" id="L117">		}</span>
+<span class="fc" id="L118">		return result;</span>
+	}
+
+	protected static boolean intersect(TOChoice toChoice, CalendarEvent calEvent) {
+<span class="pc bpc" id="L122" title="2 of 4 branches missed.">		return calEvent.getEndTime().after(toChoice.getStartDate()) &amp;&amp; calEvent.getStartTime().before(toChoice.getEndDate());</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

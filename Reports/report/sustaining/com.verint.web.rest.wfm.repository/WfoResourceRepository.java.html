@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>WfoResourceRepository.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.rest.wfm.repository</a> &gt; <span class="el_source">WfoResourceRepository.java</span></div><h1>WfoResourceRepository.java</h1><pre class="source lang-java linenums">package com.verint.web.rest.wfm.repository;
+
+
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.ejb.bbm.base.*;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.verint.web.rest.wfm.SessionConstants;
+import com.verint.web.rest.wfm.entity.Entity;
+import com.verint.web.rest.wfm.exception.*;
+import com.verint.web.rest.wfm.exception.params.InvalidFilterParamException;
+import com.verint.web.rest.wfm.util.IdUtil;
+import com.witness.ejb.core.security.model.User;
+import io.katharsis.queryParams.QueryParams;
+import io.katharsis.queryParams.params.FilterParams;
+import io.katharsis.queryParams.params.TypedParams;
+import io.katharsis.repository.annotations.*;
+import io.katharsis.resource.exception.ResourceNotFoundException;
+import org.slf4j.Logger;
+
+import javax.ws.rs.container.ContainerRequestContext;
+import java.io.Serializable;
+import java.rmi.RemoteException;
+import java.text.ParseException;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+import java.util.TimeZone;
+
+
+/**
+ * This class represents a JSON-API rest service endpoint.  Each resource repository will return one ore more
+ * instances of an Entity, optionally including one or more properties of that entity (potentially including related child
+ * entities).
+ *
+ * @param &lt;T&gt;        - The type of Entity handled by this repository.
+ * @param &lt;EntityId&gt; - The type of the primary ID of the entity handled by this repository.
+ */
+<span class="fc" id="L38">public abstract class WfoResourceRepository&lt;EntityId extends Serializable, T extends Entity&lt;EntityId&gt;&gt; {</span>
+
+	protected final static String ALL_IDS = &quot;All IDs&quot;;
+
+	protected abstract Logger logger();
+
+<span class="fc" id="L44">	protected FilterParams filterParams = new FilterParams(Collections.emptyMap());</span>
+
+	/**
+	 * Search one resource with a given ID. If a resource cannot be found, a {@link ResourceNotFoundException}
+	 * exception should be thrown.
+	 *
+	 * @param id          an identifier of the resource
+	 * @param queryParams parameters sent along with the request
+	 * @return an instance of the resource
+	 */
+	@JsonApiFindOne
+	public abstract T findOne(EntityId id, QueryParams queryParams, ContainerRequestContext requestContext);
+
+	/**
+	 * Search for all of the resources. An instance of {@link QueryParams} can be used if necessary. If no
+	 * resources can be found, an empty {@link Iterable} or &lt;i&gt;null&lt;/i&gt; must be returned.
+	 *
+	 * @param queryParams parameters send with the request
+	 * @param requestContext
+	 * @return a list of found resources
+	 */
+	@JsonApiFindAll
+	public abstract Iterable&lt;T&gt; findAll(QueryParams queryParams, ContainerRequestContext requestContext);
+
+	/**
+	 * Search for resources constrained by a list of identifiers. An instance of {@link QueryParams} can be used if
+	 * necessary. If no resources can be found, an empty {@link Iterable} or &lt;i&gt;null&lt;/i&gt; must be returned.
+	 *
+	 *
+	 * @param ids         an {@link Iterable} of passed resource identifiers
+	 * @param queryParams parameters send with the request
+	 * @param requestContext
+	 * @return a list of found resources
+	 */
+	@JsonApiFindAllWithIds
+	public abstract Iterable&lt;T&gt; findAll(Iterable&lt;EntityId&gt; ids, QueryParams queryParams,
+			ContainerRequestContext requestContext);
+
+	/**
+	 * Saves a resource. A Returning resource must include assigned identifier created for the instance of resource.
+	 *
+	 * @param &lt;S&gt;    type of the resource
+	 * @param entity resource to be saved
+	 * @return saved resource. Must include set identifier.
+	 */
+	@JsonApiSave
+	public abstract &lt;S extends T&gt; S save(S entity, ContainerRequestContext requestContext);
+
+	/**
+	 * Removes a resource identified by id parameter.
+	 *
+	 * @param id identified of the resource to be removed
+	 */
+	@JsonApiDelete
+	public abstract void delete(EntityId id, ContainerRequestContext requestContext);
+
+	/**
+	 * Checks the filter params on the current request and, if present, sets {@link this#filterParams} with the value of the
+	 * FilterParams object that is linked to this repository's resource.  It also validates that the given filter param names
+	 * included with the request are valid for this resource.
+	 *
+	 * Note: This method will be invoked before the repository method is invoked, but only if the repository method contains
+	 * the {@link ValidateJsonApiFilterParams} method annotation.
+	 *
+	 * @throws EntityResourceTypeMismatchException if the type linked to the filter param is not valid for the current request
+	 * @throws InvalidFilterParamException if the param name is not valid for the type it is linked to
+	 */
+	public void collectFilterParamsForResource(TypedParams&lt;FilterParams&gt; filters)
+			throws EntityResourceTypeMismatchException, InvalidFilterParamException {
+
+<span class="fc" id="L114">		Map&lt;String, FilterParams&gt; resourceFilterParams = filters.getParams();</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">		for (Map.Entry&lt;String, FilterParams&gt; entry : resourceFilterParams.entrySet()) {</span>
+<span class="pc bpc" id="L116" title="1 of 2 branches missed.">			if (!(entry.getKey().equals(getResourceName()))) {</span>
+<span class="nc" id="L117">				throw new EntityResourceTypeMismatchException(getResourceName());</span>
+			}
+<span class="fc" id="L119">			filterParams = entry.getValue();</span>
+<span class="fc" id="L120">		}</span>
+
+<span class="fc" id="L122">		filterParams.getParams().keySet().forEach(filterKey -&gt; {</span>
+<span class="pc bpc" id="L123" title="1 of 2 branches missed.">			if (!getValidFilterParamKeys().contains(filterKey)) {</span>
+<span class="nc" id="L124">				throw new InvalidFilterParamException(getResourceName(), filterKey, getValidFilterParamKeys());</span>
+			}
+<span class="fc" id="L126">		});</span>
+<span class="fc" id="L127">	}</span>
+
+	protected EntityCreateException handleBbmCreateException(T entity, BbmCreateException e) {
+<span class="nc" id="L130">		logger().error(&quot;BbmCreateException occurred for entity: &quot; + entity.toString(), e);</span>
+<span class="nc" id="L131">		return new EntityCreateException(entity);</span>
+	}
+
+	protected EntityNotFoundException handleBbmObjectNotFoundException(String entityName, String id,
+			BbmObjectNotFoundException e) {
+<span class="nc" id="L136">		logger().error(&quot;RemoteException occurred for entity name &quot; + entityName + &quot; with ID &quot; + id, e);</span>
+<span class="nc" id="L137">		throw new EntityNotFoundException(entityName, id);</span>
+	}
+
+	protected EntityRemoteException handleRemoteException(String entityName, String id, RemoteException e) {
+<span class="nc" id="L141">		logger().error(&quot;RemoteException occurred for entity name &quot; + entityName + &quot; with ID &quot; + id, e);</span>
+<span class="nc" id="L142">		throw new EntityRemoteException(entityName, id);</span>
+	}
+
+	protected EntityUpdateException handleBbmUpdateException(T entity, BbmUpdateException e) {
+<span class="nc" id="L146">		logger().error(&quot;BbmUpdateException occurred for entity: &quot; + entity.toString(), e);</span>
+<span class="nc" id="L147">		throw new EntityUpdateException(entity);</span>
+	}
+
+	protected EntityFinderException handleBbmFinderException(String entityName, String id, BbmFinderException e) {
+<span class="nc" id="L151">		logger().error(&quot;BbmFinderException occurred for entity name &quot; + entityName + &quot; with ID &quot; + id, e);</span>
+<span class="nc" id="L152">		throw new EntityFinderException(entityName, id);</span>
+	}
+
+	protected EntityRemoveException handleBbmRemoveException(String entityName, String id, BbmRemoveException e) {
+<span class="nc" id="L156">		logger().error(&quot;BbmRemoveException occurred for entity name &quot; + entityName + &quot; with ID &quot; + id, e);</span>
+<span class="nc" id="L157">		throw new EntityRemoveException(entityName, id);</span>
+	}
+
+	protected EntityMultiUserException handleMultiUserException(String entityName, String id, MultiUserException e) {
+<span class="nc" id="L161">		logger().error(&quot;MultiUserException occurred for entity name &quot; + entityName + &quot; with ID &quot; + id, e);</span>
+<span class="nc" id="L162">		throw new EntityMultiUserException(entityName, id);</span>
+	}
+
+	protected EntityCreateDuplicateKeyException handleBbmCreateDuplicateKeyException(T entity,
+			BbmCreateDuplicateKeyException e) {
+<span class="nc" id="L167">		logger().error(&quot;BbmCreateDuplicateKeyException occurred for entity name &quot; + entity.getClass().getSimpleName() +</span>
+<span class="nc" id="L168">				&quot; with ID &quot; + IdUtil.toString(entity.getID()), e);</span>
+<span class="nc" id="L169">		throw new EntityCreateDuplicateKeyException(entity.getClass().getSimpleName(), IdUtil.toString(entity.getID()));</span>
+	}
+
+	protected EntityParseException handleParseExeption(String entityName, ParseException e) {
+<span class="nc" id="L173">		logger().error(&quot;ParseException occurred for entity name &quot; + entityName + &quot;. Input date&quot; +</span>
+				&quot;format may be incorrect.&quot;);
+<span class="nc" id="L175">		throw new EntityParseException(entityName, null);</span>
+	}
+
+	protected abstract String getResourceName();
+
+	/**
+	 * If the subclassed Repository supports JSON-API filtering, it should override this method to supply
+	 * the list of filter param names that are supported for that repository.  These can then be validated
+	 * before the repository methods are called.
+	 */
+	protected Set&lt;String&gt; getValidFilterParamKeys() {
+<span class="nc" id="L186">		return Collections.emptySet();</span>
+	}
+
+	/**
+	 * Returns the validated filterParams object, containing the filter parameters that were included in the
+	 * current request.
+	 */
+	protected Map&lt;String, Set&lt;String&gt;&gt; getFilterParams() {
+<span class="fc" id="L194">		return filterParams.getParams();</span>
+	}
+
+	protected Set&lt;String&gt; getFilterParam(String paramName) {
+<span class="fc" id="L198">		return getFilterParams().get(paramName);</span>
+	}
+
+	protected Localizer getLocalizer(ContainerRequestContext context) {
+<span class="nc" id="L202">		return (Localizer)context.getProperty(SessionConstants.WFM_LOCALIZER_KEY);</span>
+	}
+
+	protected TimeZone getUserTimeZone(ContainerRequestContext context) {
+<span class="nc" id="L206">		return (TimeZone)context.getProperty(SessionConstants.WFM_USER_TIME_ZONE);</span>
+	}
+
+	protected User getCurrentUser(ContainerRequestContext context) {
+<span class="nc" id="L210">		return (User)context.getProperty(SessionConstants.WFM_API_USER_KEY);</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

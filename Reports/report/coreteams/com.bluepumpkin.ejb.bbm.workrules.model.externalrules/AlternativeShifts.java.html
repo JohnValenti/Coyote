@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AlternativeShifts.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.workrules.model.externalrules</a> &gt; <span class="el_source">AlternativeShifts.java</span></div><h1>AlternativeShifts.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.workrules.model.externalrules;
+
+/**
+ * Title:        Blue Pumpkin Software BBM
+ * Description:
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, Inc
+ * @author
+ * @version 1.0
+ */
+
+import java.rmi.RemoteException;
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.Locale;
+import java.util.TimeZone;
+import java.util.TreeSet;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workrules.model.CommonConflict;
+import com.bluepumpkin.ejb.bbm.workrules.model.ExternalWorkRule;
+import com.bluepumpkin.ejb.bbm.workrules.model.WorkRule;
+import com.bluepumpkin.ejb.bbm.workrules.model.WorkRuleException;
+import com.bluepumpkin.ejb.bbm.workrules.model.WorkRuleParameter;
+import com.bluepumpkin.ejb.bbm.workrules.model.WorkRuleUtil;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+<span class="nc" id="L39">public class AlternativeShifts implements ExternalWorkRule,java.io.Serializable{</span>
+
+  /**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+	HashMap m_hEmployeeImportedEvents;
+
+  public void initialize(LocalDate dtStartDate, LocalDate dtEndDate, Collection pOrganizations, Collection cWorkResourceIDs)
+						throws WorkRuleException {
+<span class="nc" id="L49">	m_hEmployeeImportedEvents = new HashMap();</span>
+<span class="nc" id="L50">	ScheduleAccessManager pScheduleManager = null;</span>
+
+	try {
+<span class="nc" id="L53">		pScheduleManager = WfmManagerFactory.getScheduleAccessManager();</span>
+	}
+<span class="nc" id="L55">	catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L56">	  e.printStackTrace();</span>
+<span class="nc" id="L57">	  throw new WorkRuleException(&quot;Failed to get Schedule Manager&quot;);</span>
+<span class="nc" id="L58">	}</span>
+<span class="nc" id="L59">	Date dtEarlyStart = new Date(dtStartDate.getTime().getTime() - 24*60*60*1000);</span>
+<span class="nc" id="L60">	Date dtLateEnd = new Date(dtEndDate.getTime().getTime() + 24*60*60*1000);</span>
+
+	//get the imported events
+	try {
+<span class="nc" id="L64">		Collection cEvents = pScheduleManager.getEventsForWorkResources(cWorkResourceIDs,dtEarlyStart,dtLateEnd);</span>
+<span class="nc bnc" id="L65" title="All 2 branches missed.">		if (cEvents != null) {</span>
+<span class="nc" id="L66">			Iterator j = cEvents.iterator();</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">			for (Iterator i = cWorkResourceIDs.iterator();i.hasNext();) {</span>
+<span class="nc" id="L68">				m_hEmployeeImportedEvents.put(i.next(),j.next());</span>
+			}
+		}
+	}
+<span class="nc" id="L72">	catch (BbmFinderException e) {</span>
+<span class="nc" id="L73">	  e.printStackTrace();</span>
+<span class="nc" id="L74">	  throw new WorkRuleException(&quot;Failed to get Schedules&quot;);</span>
+	}
+<span class="nc" id="L76">	catch (RemoteException e) {</span>
+<span class="nc" id="L77">	  e.printStackTrace();</span>
+<span class="nc" id="L78">	  throw new WorkRuleException(&quot;Failed to get Schedules&quot;);</span>
+<span class="nc" id="L79">	}</span>
+<span class="nc" id="L80">  }</span>
+
+  public Collection getWorkRuleConflicts(Collection pWorkRuleParameters,int nPriority,
+											 Organization pOrganization, int eOverlap,
+											 Date dtStartDate, Date dtEndDate, Collection pEvents,
+											 Collection pConflicts)
+											 throws WorkRuleException{
+	  //Employees who are work between X and Y hours and are schedule to work between X and Y hours
+	  //each 1 Workday are paid OT1
+
+<span class="nc" id="L90">	LinkedList pNewConflicts = new LinkedList();</span>
+<span class="nc" id="L91">	Iterator w = pWorkRuleParameters.iterator();</span>
+<span class="nc" id="L92">	int nMax  = (int)(60.0 * ((WorkRuleParameter)w.next()).getDoubleValue());</span>
+<span class="nc" id="L93">	int nUpperBound  = (int)(60.0 * ((WorkRuleParameter)w.next()).getDoubleValue()) ;</span>
+<span class="nc" id="L94">	int nMinScheduled = (int)(60.0 * ((WorkRuleParameter)w.next()).getDoubleValue());</span>
+<span class="nc" id="L95">	int nMaxScheduled = (int)(60.0 * ((WorkRuleParameter)w.next()).getDoubleValue());</span>
+
+	//iterate over the scheduled events
+<span class="nc" id="L98">	int nScheduledTime = 0;</span>
+	//find the employee id
+<span class="nc" id="L100">	Iterator i = pEvents.iterator();</span>
+<span class="nc" id="L101">	ID idEmployee = null;</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">	if (i.hasNext()) {</span>
+<span class="nc" id="L103">		Event pEvent = (Event)i.next();</span>
+<span class="nc" id="L104">		idEmployee = (ID) pEvent.getWorkResourceIDs().iterator().next();</span>
+<span class="nc" id="L105">	}</span>
+	else
+<span class="nc" id="L107">		return pNewConflicts;</span>
+
+	//get the imported events for this employee
+<span class="nc" id="L110">	Collection cImportedEvents = (Collection)m_hEmployeeImportedEvents.get(idEmployee);</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">	if (cImportedEvents == null)</span>
+<span class="nc" id="L112">		return pNewConflicts;</span>
+
+<span class="nc bnc" id="L114" title="All 2 branches missed.">	for(i = cImportedEvents.iterator(); i.hasNext(); ) {</span>
+<span class="nc" id="L115">	  Event pEvent = (Event)i.next();</span>
+<span class="nc bnc" id="L116" title="All 4 branches missed.">	  if (pEvent.getPaid() &amp;&amp; pEvent.getOverlayPrecedence() == 1 &amp;&amp;</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">	  WorkRuleUtil.isInPeriod(pEvent.getStartTime(),pEvent.getEndTime(),dtStartDate,dtEndDate,eOverlap))</span>
+<span class="nc" id="L118">		nScheduledTime += pEvent.getDuration(); //what about unpaid Events...</span>
+<span class="nc" id="L119">	}</span>
+
+<span class="nc bnc" id="L121" title="All 4 branches missed.">	if (nScheduledTime &lt; nMinScheduled || nScheduledTime &gt; nMaxScheduled)</span>
+<span class="nc" id="L122">		return pNewConflicts; //the rule does not apply</span>
+
+<span class="nc" id="L124">	int nOldCount = 0;</span>
+<span class="nc" id="L125">	int nTotalCount = 0;</span>
+	//iterate over the event collection
+<span class="nc bnc" id="L127" title="All 2 branches missed.">	for( i = pEvents.iterator(); i.hasNext(); ) {</span>
+<span class="nc" id="L128">	  Event pEvent = (Event)i.next();</span>
+
+<span class="nc bnc" id="L130" title="All 2 branches missed.">	  if (nOldCount &gt; nUpperBound)</span>
+<span class="nc" id="L131">		break;</span>
+	  //if the event is in the period, increment the hours count
+<span class="nc bnc" id="L133" title="All 2 branches missed.">	  if (WorkRuleUtil.isInPeriodAndApproved(pEvent,dtStartDate,dtEndDate,eOverlap)) {</span>
+<span class="nc" id="L134">		int nDuration = pEvent.getDuration() - WorkRuleUtil.GetUnpaidDuration(pEvent,pConflicts,nPriority);</span>
+
+<span class="nc" id="L136">		nTotalCount = nOldCount + nDuration;</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">		if (nTotalCount &gt; nMax) {</span>
+		  //there is an exception here
+<span class="nc" id="L139">		  int nExceptionStart = nMax;</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">		  if (nOldCount &gt; nMax)</span>
+<span class="nc" id="L141">			nExceptionStart = nOldCount;</span>
+<span class="nc" id="L142">		  int nExceptionEnd = nTotalCount;</span>
+<span class="nc" id="L143">		  int nExceptionOffset = 0;</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">		  if (nTotalCount &gt; nUpperBound) {</span>
+<span class="nc" id="L145">			nExceptionOffset = nExceptionEnd - nUpperBound;</span>
+<span class="nc" id="L146">			nExceptionEnd = nUpperBound;</span>
+		  }
+		  //we need to create a new exception to the end of the event or to nUpperBound
+<span class="nc" id="L149">		  int nExceptionDuration = nExceptionEnd - nExceptionStart;</span>
+
+<span class="nc" id="L151">		  Date dtViolationStart = new Date(pEvent.getEndTime().getTime() - ((nExceptionDuration + nExceptionOffset)* 60 * 1000));</span>
+<span class="nc" id="L152">		  Date dtViolationEnd = new Date(pEvent.getEndTime().getTime() - (nExceptionOffset * 60 * 1000));</span>
+
+<span class="nc" id="L154">		  Collection pSplitConflicts =</span>
+<span class="nc" id="L155">		  WorkRuleUtil.SplitConflicts(pEvent,pConflicts,nPriority,dtViolationStart,dtViolationEnd,true);</span>
+<span class="nc" id="L156">		  pNewConflicts.addAll(pSplitConflicts);</span>
+		}
+	  }
+<span class="nc" id="L159">	nOldCount = nTotalCount;</span>
+<span class="nc" id="L160">	}</span>
+<span class="nc" id="L161">	return pNewConflicts;</span>
+  }
+
+  public int getLookBack(Collection pWorkRuleParameters) {
+<span class="nc" id="L165">	return 0;</span>
+  }
+
+  public int getLookForward(Collection pWorkRuleParameters) {
+<span class="nc" id="L169">	return 0;</span>
+  }
+
+  public boolean isValid(Collection pWorkRuleParameters, int ePeriodType, int nPeriodLength,
+	Locale locale, StringBuffer sMessage)
+		throws WorkRuleException {
+<span class="nc bnc" id="L175" title="All 2 branches missed.">	if (pWorkRuleParameters.size() != 4)</span>
+<span class="nc" id="L176">	  throw new WorkRuleException(&quot;Incorrect number of parameters&quot;);</span>
+
+<span class="nc" id="L178">	Iterator w = pWorkRuleParameters.iterator();</span>
+<span class="nc" id="L179">	double dMax = ((WorkRuleParameter)w.next()).getDoubleValue() ;</span>
+<span class="nc" id="L180">	double dUpperBound  = ((WorkRuleParameter)w.next()).getDoubleValue() ;</span>
+<span class="nc" id="L181">	double dMinScheduled = ((WorkRuleParameter)w.next()).getDoubleValue();</span>
+<span class="nc" id="L182">	double dMaxScheduled = ((WorkRuleParameter)w.next()).getDoubleValue();</span>
+
+<span class="nc" id="L184">	int nPeriodDays = WorkRuleUtil.getPeriodInDays(ePeriodType,nPeriodLength);</span>
+
+<span class="nc bnc" id="L186" title="All 2 branches missed.">	if (dMax &gt; nPeriodDays * 24.0) {</span>
+<span class="nc" id="L187">		Object[] aArgs = {new Double(dMax), new Integer(nPeriodDays)};</span>
+<span class="nc" id="L188">		sMessage.append(</span>
+<span class="nc" id="L189">		  MessageFormat.format(&quot;It is not possible to work more than {0} hours in {1} day period.&quot;,aArgs));</span>
+<span class="nc" id="L190">		return false;</span>
+	}
+
+<span class="nc bnc" id="L193" title="All 4 branches missed.">	if (dUpperBound &lt;= dMax || dMaxScheduled &lt;= dMinScheduled) {</span>
+<span class="nc" id="L194">	  sMessage.append(&quot;The \'more than\' value must be greater than the \'fewer than\' value.&quot;);</span>
+<span class="nc" id="L195">	  return false;</span>
+	}
+
+<span class="nc bnc" id="L198" title="All 8 branches missed.">	if (dUpperBound &lt; 0.0 || dMax &lt; 0.0 || dMaxScheduled &lt; 0.0 || dMinScheduled &lt; 0.0) {</span>
+<span class="nc" id="L199">	  sMessage.append(&quot;All values must be greater than 0.&quot;);</span>
+<span class="nc" id="L200">	  return false;</span>
+	}
+
+
+
+
+<span class="nc" id="L206">	return true;</span>
+  }
+
+  public static void main(String[] args) {
+	try {
+
+<span class="nc" id="L212">	ID idOrganization = new ID(-3002);</span>
+<span class="nc" id="L213">	ID idEarningType = new ID(1);</span>
+<span class="nc" id="L214">	LocalDate dtStartDate = new LocalDate(1910,1,1,0,0);</span>
+<span class="nc" id="L215">	LocalDate dtEndDate = new LocalDate(1960,1,1,0,0);</span>
+
+<span class="nc" id="L217">	StringBuffer sMessage = new StringBuffer();</span>
+
+<span class="nc" id="L219">	ID idWorkResource = new ID(100);</span>
+<span class="nc" id="L220">	Organization pOrganization = new Organization();</span>
+<span class="nc" id="L221">	pOrganization.setID(idOrganization);</span>
+<span class="nc" id="L222">	pOrganization.setTimeZone(TimeZone.getTimeZone(&quot;PST&quot;));</span>
+//	HashMap pActivites = new HashMap();
+<span class="nc" id="L224">	Collection cOrganizations = new ArrayList();</span>
+<span class="nc" id="L225">	cOrganizations.add(pOrganization);</span>
+
+//	ID idActivity = new ID(1);
+//	ID idActivity1 = new ID(2);
+
+<span class="nc" id="L230">	Collection cWorkResources = new ArrayList();</span>
+<span class="nc" id="L231">	cWorkResources.add(idWorkResource);</span>
+
+//	Calendar cCalendar = Calendar.getInstance();
+
+<span class="nc" id="L235">	LocalDate dtStart = new LocalDate(1950,7,11,0,0);</span>
+<span class="nc" id="L236">	LocalDate dtEnd = new LocalDate(1950,7,20,0,0);</span>
+
+<span class="nc" id="L238">	ArrayList pEvents = new ArrayList();</span>
+<span class="nc" id="L239">	ArrayList pConflicts = new ArrayList();</span>
+
+
+/*
+	pEvents.add(new TestEvent(new Date(50,7,13,9,0),new Date(50,7,13,20,30))) ;
+	pEvents.add(new TestEvent(new Date(50,7,14,9,0),new Date(50,7,14,19,30))) ;
+
+	TimeRecord pTimeInterval1 = new TimeRecord(idWorkResource,idWorkResource,TimeRecord.EVENT_TYPE_TIME_INTERVAL);
+	pTimeInterval1.addChild(new TimeInterval(idActivity,new Date(50,7,11,9,0),new Date(50,7,11,19,30),400,1,true,&quot;&quot;));
+	pEvents.add(pTimeInterval1);
+
+	TimeRecord pTimeInterval2 = new TimeRecord(idWorkResource,idWorkResource,TimeRecord.EVENT_TYPE_TIME_INTERVAL);
+	pTimeInterval2.addChild(new TimeInterval(idActivity1,new Date(50,7,18,9,0),new Date(50,7,18,19,30),400,1,true,&quot;&quot;));
+	pEvents.add(pTimeInterval2);
+
+	TimeRecord pTimeInterval4 = new TimeRecord(idWorkResource,idWorkResource,TimeRecord.EVENT_TYPE_TIME_INTERVAL);
+	pTimeInterval4.setID(new ID(10));
+	pTimeInterval4.addChild(new TimeInterval(idActivity1,new Date(50,7,18,9,0),new Date(50,7,18,19,30),400,1,true,&quot;&quot;));
+	pEvents.add(pTimeInterval4);
+
+	TimeRecord pTimeInterval3 = new TimeRecord(idWorkResource,idWorkResource,TimeRecord.EVENT_TYPE_TIME_INTERVAL);
+	pTimeInterval3.addChild(new TimeInterval(idActivity,new Date(50,7,11,9,0),new Date(50,7,11,19,30),400,1,true,&quot;&quot;));
+	pEvents.add(pTimeInterval3);
+
+
+
+	pEvents.add(new TestEvent(new Date(50,7,19,9,0),new Date(50,7,19,19,30))) ;
+*/
+	//create Test WorkRule
+
+<span class="nc" id="L269">	TreeSet pWorkRuleParameters5 = new TreeSet();</span>
+<span class="nc" id="L270">	pWorkRuleParameters5.add(new WorkRuleParameter(0,WorkRuleParameter.DOUBLE,8.0));</span>
+<span class="nc" id="L271">	pWorkRuleParameters5.add(new WorkRuleParameter(1,WorkRuleParameter.DOUBLE,99.0));</span>
+<span class="nc" id="L272">	pWorkRuleParameters5.add(new WorkRuleParameter(2,WorkRuleParameter.DOUBLE,0.0));</span>
+<span class="nc" id="L273">	pWorkRuleParameters5.add(new WorkRuleParameter(3,WorkRuleParameter.DOUBLE,8.0));</span>
+
+<span class="nc" id="L275">	WorkRule pWorkRule5 = new WorkRule(null,null,&quot;holiday adjacent to sick&quot;,</span>
+							  idOrganization,dtStartDate,dtEndDate,WorkRule.WORKDAY,1,idEarningType,0,
+							  pWorkRuleParameters5,0);
+<span class="nc" id="L278">	pWorkRule5.setExternalFunction(&quot;com.bluepumpkin.ejb.bbm.workrules.model.externalrules.AlternativeShifts&quot;);</span>
+
+<span class="nc" id="L280">	System.out.println(&quot;******Validity &quot; + pWorkRule5.isValid(sMessage) +&quot; &quot;+ sMessage);</span>
+
+<span class="nc" id="L282">	pWorkRule5.initialize(dtStart,dtEnd,cOrganizations,cWorkResources,WorkRule.STARTSIN);</span>
+
+<span class="nc" id="L284">	Collection pNewConflicts = pWorkRule5.getConflicts(idWorkResource,pOrganization,</span>
+								dtStart,dtEnd,pEvents,pConflicts);
+
+<span class="nc" id="L287">	System.out.println(&quot;**********Got exceptions&quot;);</span>
+
+<span class="nc bnc" id="L289" title="All 2 branches missed.">	for(Iterator i = pNewConflicts.iterator(); i.hasNext(); ) {</span>
+<span class="nc" id="L290">	  CommonConflict pException = (CommonConflict)i.next();</span>
+<span class="nc" id="L291">	  System.out.println(&quot;************************&quot; + pException);</span>
+<span class="nc" id="L292">	}</span>
+
+
+
+
+	}
+<span class="nc" id="L298">	catch (Exception e) {</span>
+<span class="nc" id="L299">	  e.printStackTrace(System.out);</span>
+<span class="nc" id="L300">	}</span>
+
+<span class="nc" id="L302">  }</span>
+
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,798 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>StaffingProfilesFormPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.bbm.people.staffingprofiles</a> &gt; <span class="el_source">StaffingProfilesFormPM.java</span></div><h1>StaffingProfilesFormPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.bbm.people.staffingprofiles;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.ResourceBundle;
+import java.util.Set;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.skill.model.Skill;
+import com.bluepumpkin.ejb.bbm.skill.model.SkillAssignment;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectIDListComparator;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeTemplate;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workrules.ejb.WorkRuleManager;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftPattern;
+import com.bluepumpkin.ejb.bbm.workrules.model.VTOEvent;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.data.vo.BasicVOComparator;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.PageComponent;
+import com.witness.web.uif.pagecomponent.form.FormInputPC;
+import com.witness.web.uif.pagecomponent.form.FormTwoColumnPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarTextButton;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.validator.InRangeFieldValidator;
+
+/**
+ * This is the Staffing Profiles Form under User Management -&gt; Staffing Profiles -&gt; Staffing Profiles.  There is another
+ * StaffingProfilesFormPM in the com.verint.web.fs.staffingprofiles package but I'm not sure what it is used for.
+ *
+ */
+public class StaffingProfilesFormPM extends WorkRulesFormPM {
+	private static final long serialVersionUID = 1L;
+	public final static String SELECTION_CLASSIFICATION_FN = &quot;selectionClassification&quot;;
+
+<span class="fc" id="L54">	private ArrayList&lt;EmployeeTemplate&gt; empTemplates = new ArrayList&lt;EmployeeTemplate&gt;();</span>
+
+<span class="fc" id="L56">	private HashMap&lt;ID, HashSet&lt;SkillAssignment&gt; &gt; empTemplateShiftAssignments = new HashMap&lt;ID, HashSet&lt;SkillAssignment&gt; &gt;();</span>
+<span class="fc" id="L57">	private HashMap&lt;ID, HashSet&lt;ID&gt; &gt; empTemplateAssignments = new HashMap&lt;ID, HashSet&lt;ID&gt; &gt;();</span>
+
+	// Field Names
+	public static final String WAGEAMOUNT_FN = &quot;wageAmount&quot;;
+	private static final String FN_NAME=&quot;staffingProfileName&quot;;
+	private static final String FN_ORGANIZATION=&quot;staffingProfileOrg&quot;;
+	private static final String FN_WORKPATTERN=&quot;staffingProfileWP&quot;;
+	public static final String PROFICIENCY_FN = &quot;proficienty&quot;;
+	public static final String CHATSESSIONS_FN = &quot;chatsessions&quot;;
+
+	// Page Components 
+	private FormTwoColumnPC pc_form;
+	private FormInputPC pc_name; 
+	private FormInputPC pc_wage;
+	private FormInputPC pc_proficiency;
+	private FormInputPC pc_chatSessions;
+	private AssignmentRulesInlineEditPC pc_assignmentRuels;
+	private SkillsInlineEditPC pc_skills;
+	private ResourceBundle m_bundle;
+	private boolean isTemplatesUsedInExistingSchedule;
+
+	// JS confirmation
+	private static final String CONFIRM_EDIT_STAFFING_PROFILE = &quot;CONFIRM_EDIT_STAFFING_PROFILE&quot;;
+
+	public  StaffingProfilesFormPM(RequestContext context) {
+<span class="fc" id="L82">		super(context);</span>
+
+<span class="fc" id="L84">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="fc" id="L85">		m_bundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+<span class="fc" id="L86">	}</span>
+
+	@Override
+	protected void initContentTitle() {
+<span class="fc" id="L90">		super.initContentTitle();</span>
+<span class="fc" id="L91">		m_contentTitlePC.setPageTitle(m_localizer.i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES));</span>
+<span class="pc bpc" id="L92" title="1 of 2 branches missed.">		if (isMultiEdit()) {</span>
+<span class="nc" id="L93">			m_contentTitlePC.setItemName(m_localizer.i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES));</span>
+<span class="fc bfc" id="L94" title="All 2 branches covered.">		} else if (empTemplates.size() &gt; 0){</span>
+<span class="fc" id="L95">			m_contentTitlePC.setItemName(empTemplates.iterator().next().getName());</span>
+		}
+<span class="fc" id="L97">	}</span>
+
+	/**
+	 * Initialize JavaScript Variables
+	 */
+	@Override
+	protected void initJSVariables() {
+<span class="fc" id="L104">		super.initJSVariables();</span>
+<span class="fc" id="L105">		Object[] listIndexString = new Object[1];</span>
+<span class="pc bpc" id="L106" title="1 of 4 branches missed.">		if (empTemplates != null &amp;&amp; empTemplates.size() == 1) { </span>
+<span class="fc" id="L107">			EmployeeTemplate et = empTemplates.iterator().next();</span>
+<span class="fc" id="L108">			listIndexString[0] = et.getName();</span>
+		}
+<span class="fc" id="L110">		String msg = m_localizer.i18n(m_bundle, BbmWebBundleKey.FS_SPS_IDS_SCHEDULE_EXIST, listIndexString);</span>
+<span class="fc" id="L111">		addJSVariableAsString(CONFIRM_EDIT_STAFFING_PROFILE, msg);</span>
+<span class="fc" id="L112">	}</span>
+
+
+	protected boolean isMultiEdit() {
+<span class="pc bpc" id="L116" title="1 of 2 branches missed.">		return getPerformActionOnIDSize() &gt; 1;</span>
+	}
+
+	@Override
+	protected void loadData() throws Exception {
+<span class="fc" id="L121">		super.loadData();</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">		if (getPerformActionOnIDSize() &gt; 0) {</span>
+<span class="fc" id="L123">			List&lt;ID&gt; paoIDs = Arrays.asList(getPerformActionOnIDs());</span>
+<span class="fc" id="L124">			ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager(m_context.isInWhatIfMode());</span>
+<span class="fc" id="L125">			empTemplates = new ArrayList&lt;EmployeeTemplate&gt;(sam.getEmployeeTemplatesByIDs(paoIDs));</span>
+<span class="fc" id="L126">			Collections.sort(empTemplates, new ValueObjectIDListComparator(paoIDs));</span>
+<span class="fc" id="L127">			ArrayList empTemplateIds = new ArrayList();</span>
+<span class="fc" id="L128">			Iterator it = empTemplates.iterator();</span>
+<span class="fc bfc" id="L129" title="All 2 branches covered.">			while (it.hasNext()) {</span>
+<span class="fc" id="L130">				empTemplateIds.add(((EmployeeTemplate)it.next()).getID());</span>
+			}
+<span class="fc" id="L132">			isTemplatesUsedInExistingSchedule = sam.isTemplatesUsedInExistingSchedule(empTemplateIds);</span>
+		}
+<span class="fc" id="L134">	}</span>
+	
+	@Override
+	protected void initForm(){
+<span class="fc" id="L138">		pc_form = new FormTwoColumnPC(m_context);</span>
+<span class="fc" id="L139">		setForm(pc_form);</span>
+
+<span class="fc" id="L141">		EmployeeTemplate et = null;</span>
+
+<span class="fc" id="L143">		HashMap&lt;ID, String&gt; WPs = null;</span>
+		try  {
+<span class="fc" id="L145">			WorkRuleManager wrm = WfmManagerFactory.getWorkRuleManager(m_context.isInWhatIfMode());</span>
+<span class="fc" id="L146">			WPs = wrm.getShiftPatternsIDNameByOrgHierarchyOrderByName(getSelectedIDObject());</span>
+<span class="nc" id="L147">		} catch(Exception e) {</span>
+<span class="nc" id="L148">			handleUnableToLoadDataError(log, e);</span>
+<span class="fc" id="L149">		}</span>
+
+<span class="fc bfc" id="L151" title="All 2 branches covered.">		if (empTemplates.size() &gt;0) { </span>
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">			if (empTemplates.size() &gt; 1) setIsMultiObjEditEnabled(true);</span>
+<span class="fc" id="L153">			et = empTemplates.iterator().next();</span>
+		}
+		else {
+			//set default value for new employee template.
+<span class="fc" id="L157">			et = new EmployeeTemplate();</span>
+<span class="fc" id="L158">			et.setProficiency(1.0);</span>
+<span class="fc" id="L159">			et.setChatSessions(1);</span>
+<span class="pc bpc" id="L160" title="1 of 2 branches missed.">			if (WPs.size() &gt; 0) {</span>
+<span class="fc" id="L161">				ArrayList shiftPatternIDs = new ArrayList&lt;ID&gt; ();</span>
+<span class="fc" id="L162">				shiftPatternIDs.add(WPs.keySet().iterator().next());</span>
+<span class="fc" id="L163">				et.setShiftPatterns(shiftPatternIDs);</span>
+			}
+		}
+		//profile name 
+<span class="fc" id="L167">		pc_name = new FormInputPC(m_context);</span>
+<span class="fc" id="L168">		pc_name.reset(FN_NAME, et.getName(),</span>
+				FormInputPC.TYPE_STRING, true);
+<span class="fc" id="L170">		pc_name.setAutoExtractParamEnabled(true);</span>
+<span class="fc" id="L171">		pc_name.setMaxLength(50);</span>
+<span class="fc" id="L172">		pc_name.setInputFieldDesc(UIFWebBundleKey.NAME, UIFWebBundleKey.BUNDLE_NAME);</span>
+<span class="fc" id="L173">		pc_name.setIsRequired(true);</span>
+<span class="pc bpc" id="L174" title="1 of 2 branches missed.">		if (isMultiEdit() == false)</span>
+<span class="fc" id="L175">			pc_name.setInputValue(et.getName());</span>
+		else
+		{
+<span class="nc" id="L178">			pc_name.setInputValue(MULTI_VALUE_DATA);</span>
+<span class="nc" id="L179">			pc_name.setIsReadOnly(true);</span>
+		}
+
+<span class="fc" id="L182">		addRow(i18n(m_common_bundle, UIFWebBundleKey.NAME), pc_name);</span>
+
+<span class="fc" id="L184">		List&lt;ID&gt; colWP = et.getShiftPatterns();</span>
+<span class="fc" id="L185">		ArrayList&lt;StringsPair&gt; colWPs = null;</span>
+
+<span class="fc" id="L187">		colWPs = new ArrayList&lt;StringsPair&gt; (WPs.size());</span>
+<span class="fc bfc" id="L188" title="All 2 branches covered.">		for (Map.Entry&lt;ID, String&gt; WP : WPs.entrySet()) {</span>
+<span class="fc" id="L189">			colWPs.add(new StringsPair(</span>
+<span class="fc" id="L190">					WP.getKey().toString(), WP.getValue()));</span>
+<span class="fc" id="L191">		}		</span>
+
+<span class="pc bpc" id="L193" title="1 of 2 branches missed.">		if (colWP.size()&gt;0) {	</span>
+<span class="fc" id="L194">			ID wpID = new ID(-1);</span>
+<span class="pc bpc" id="L195" title="3 of 4 branches missed.">			if (isMultiEdit() &amp;&amp; isWPMultiValue())</span>
+			{
+<span class="nc" id="L197">				colWPs.add(new StringsPair(</span>
+<span class="nc" id="L198">						wpID.toString(),MULTI_VALUE_DATA));</span>
+			}
+			else
+			{					
+<span class="fc" id="L202">				wpID = colWP.iterator().next();</span>
+			}
+<span class="fc" id="L204">			pc_form.addRow(i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_WP) , HtmlUtil.makeSelectInput(FN_WORKPATTERN,</span>
+<span class="fc" id="L205">					wpID.toString(), null,</span>
+					colWPs));				
+
+<span class="fc" id="L208">		} else {</span>
+<span class="nc" id="L209">			pc_form.addRow(i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_WP), HtmlUtil.makeSelectInput(FN_WORKPATTERN,</span>
+					&quot;&quot;, null,
+					colWPs));
+		}
+
+<span class="fc" id="L214">		pc_wage = new FormInputPC(m_context);</span>
+<span class="fc" id="L215">		pc_wage.setInputFN(WAGEAMOUNT_FN);</span>
+<span class="fc" id="L216">		pc_wage.setAutoExtractParamEnabled(true);</span>
+<span class="fc" id="L217">		pc_wage.setMaxLength(50);</span>
+<span class="fc" id="L218">		pc_wage.setIsRequired(true);</span>
+<span class="pc bpc" id="L219" title="3 of 4 branches missed.">		if (isMultiEdit() == false || isWageMultiValue()== false)</span>
+<span class="fc" id="L220">			pc_wage.setInputValue(  m_localizer.formatNumber(et.getWage(), 2));</span>
+		else
+		{
+<span class="nc" id="L223">			pc_wage.setInputValue(MULTI_VALUE_DATA);</span>
+		}
+		
+<span class="fc" id="L226">		InRangeFieldValidator wageValidator = new InRangeFieldValidator(this, WAGEAMOUNT_FN,</span>
+				BbmWebBundleKey.FS_STAFFING_PROFILES_WAGE, BbmWebBundleKey.BUNDLE_NAME, 0.00, 999.99);
+<span class="fc" id="L228">		wageValidator.setValidateClientSideOnly(true);</span>
+<span class="fc" id="L229">		addValidator(wageValidator);</span>
+
+<span class="fc" id="L231">		addRow(i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_WAGE), pc_wage);</span>
+
+		try  {
+<span class="fc" id="L234">			ArrayList&lt;StringsPair&gt; colOrg = null;</span>
+			
+<span class="fc" id="L236">			ArrayList&lt;Organization&gt; orgs =</span>
+<span class="fc" id="L237">					new ArrayList&lt;Organization&gt;(OrganizationModelHandler.getAllOrgsInUserScope(m_context, m_context.getUser()));</span>
+<span class="fc" id="L238">			Collections.sort(orgs, new BasicVOComparator(m_localizer));</span>
+			
+<span class="fc" id="L240">			colOrg = new ArrayList&lt;StringsPair&gt; (orgs.size());</span>
+<span class="fc" id="L241">			ID systemID = new ID(-3001);</span>
+<span class="fc bfc" id="L242" title="All 2 branches covered.">			for (Organization org : orgs) {</span>
+<span class="pc bpc" id="L243" title="1 of 2 branches missed.">				if (!org.getID().equals(systemID))</span>
+<span class="fc" id="L244">					colOrg.add(new StringsPair(</span>
+<span class="fc" id="L245">							org.getID().toString(), org.getName()));</span>
+<span class="fc" id="L246">			}	</span>
+
+<span class="fc" id="L248">			ID orgID = et.getOrganizationID();</span>
+<span class="fc bfc" id="L249" title="All 2 branches covered.">			if (orgID == null) {</span>
+<span class="fc" id="L250">				orgID = getSelectedIDObject();</span>
+			}
+
+<span class="pc bpc" id="L253" title="3 of 4 branches missed.">			if (isMultiEdit() &amp;&amp; isOrgMultiValue())</span>
+			{
+<span class="nc" id="L255">				orgID = new ID(-1);</span>
+<span class="nc" id="L256">				colOrg.add(new StringsPair(</span>
+<span class="nc" id="L257">						orgID.toString(),MULTI_VALUE_DATA));</span>
+			}
+
+<span class="fc" id="L260">			pc_form.addRow(i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_Org), HtmlUtil.makeSelectInput(FN_ORGANIZATION,</span>
+<span class="fc" id="L261">					orgID.toString(), null,</span>
+					colOrg));
+		}
+<span class="nc" id="L264">		catch(Exception e) {</span>
+<span class="fc" id="L265">		}</span>
+
+<span class="fc" id="L267">		pc_proficiency = new FormInputPC(m_context);</span>
+<span class="fc" id="L268">		pc_proficiency.setInputFN(PROFICIENCY_FN);</span>
+<span class="fc" id="L269">		pc_proficiency.setAutoExtractParamEnabled(true);</span>
+<span class="fc" id="L270">		pc_proficiency.setMaxLength(50);</span>
+<span class="fc" id="L271">		pc_proficiency.setIsRequired(true);</span>
+<span class="fc" id="L272">		pc_proficiency.setInputValue( String.valueOf(et.getProficiency()));</span>
+<span class="pc bpc" id="L273" title="3 of 4 branches missed.">		if (isMultiEdit() == false || isProficiencyMultiValue()== false)</span>
+<span class="fc" id="L274">			pc_proficiency.setInputValue( m_localizer.formatNumber(et.getProficiency(), 1));</span>
+		else
+		{
+<span class="nc" id="L277">			pc_proficiency.setInputValue(MULTI_VALUE_DATA);</span>
+		}
+		
+<span class="fc" id="L280">		InRangeFieldValidator proficiencyValidator = new InRangeFieldValidator(this, PROFICIENCY_FN,</span>
+				BbmWebBundleKey.FS_STAFFING_PROFILES_PROFICIENCY, BbmWebBundleKey.BUNDLE_NAME, 0.1, 9.9);
+<span class="fc" id="L282">		proficiencyValidator.setValidateClientSideOnly(true);</span>
+<span class="fc" id="L283">		addValidator(proficiencyValidator);</span>
+
+<span class="fc" id="L285">		addRow(i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_PROFICIENCY), pc_proficiency);</span>
+
+<span class="fc" id="L287">		pc_chatSessions = new FormInputPC(m_context);</span>
+<span class="fc" id="L288">		pc_chatSessions.setInputFN(CHATSESSIONS_FN);</span>
+<span class="fc" id="L289">		pc_chatSessions.setAutoExtractParamEnabled(true);</span>
+<span class="fc" id="L290">		pc_chatSessions.setMaxLength(50);</span>
+<span class="fc" id="L291">		pc_chatSessions.setIsRequired(true);</span>
+<span class="fc" id="L292">		pc_chatSessions.setInputValue( String.valueOf(et.getChatSessions()));</span>
+<span class="pc bpc" id="L293" title="3 of 4 branches missed.">		if (isMultiEdit() == false || isChatMultiValue()== false)</span>
+<span class="fc" id="L294">			pc_chatSessions.setInputValue( String.valueOf(et.getChatSessions()));</span>
+		else
+		{
+<span class="nc" id="L297">			pc_chatSessions.setInputValue(MULTI_VALUE_DATA);</span>
+		}
+		
+<span class="fc" id="L300">		InRangeFieldValidator chatValidator = new InRangeFieldValidator(this, CHATSESSIONS_FN,</span>
+				BbmWebBundleKey.FS_STAFFING_PROFILES_CHAT_SESSION, BbmWebBundleKey.BUNDLE_NAME, 1, 99);
+<span class="fc" id="L302">		chatValidator.setValidateClientSideOnly(true);</span>
+<span class="fc" id="L303">		addValidator(chatValidator);</span>
+
+<span class="fc" id="L305">		addRow(i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_CHAT_SESSION), pc_chatSessions);</span>
+
+		ID ownerID;
+<span class="pc bpc" id="L308" title="1 of 2 branches missed.">		if (isByOrg) ownerID = selectedOrg.getID();</span>
+<span class="nc" id="L309">		else ownerID = selectedSchedulingPeriod.getID();</span>
+<span class="fc" id="L310">		HashMap&lt;ID, HashSet&lt;EmployeeTemplate&gt;&gt; complexWorkRules = getAssignmentRules();</span>
+<span class="fc" id="L311">		pc_assignmentRuels =  new AssignmentRulesInlineEditPC(m_context, &quot;assignmentRuleTable&quot;,  empTemplates, complexWorkRules, isByOrg, ownerID);</span>
+<span class="fc" id="L312">		addRow(i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_ASSIGNMENT_RULES), pc_assignmentRuels);</span>
+
+<span class="fc" id="L314">		HashMap&lt;Skill, HashSet&lt;SkillAssignment&gt; &gt; skillAssignments = getSkillAssignments();</span>
+<span class="fc" id="L315">		pc_skills =  new SkillsInlineEditPC(m_context, &quot;skillsTable&quot;, skillAssignments, isByOrg, ownerID, this);</span>
+<span class="fc" id="L316">		pc_skills.setPreRowRemoveJS(getPreSkillRemovedJS());</span>
+<span class="fc" id="L317">		addRow(i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_SKILLS), pc_skills);</span>
+
+
+		// Set page component state from submitted values
+<span class="pc bpc" id="L321" title="1 of 6 branches missed.">		if ( null != getPageAction() &amp;&amp; ! (PageAction.EDIT.equals(getPageAction()) || PageAction.ADD.equals(getPageAction()))) {  // Is postback</span>
+<span class="fc" id="L322">			this.extractParameters(m_context.getRequest());	</span>
+
+<span class="fc" id="L324">			Collection&lt;ID&gt; origAssignIDs = pc_assignmentRuels.getRowIDCollection();</span>
+<span class="fc" id="L325">			Collection&lt;ID&gt; addAssignIDs = pc_assignmentRuels.getAddedRowIDCollection();</span>
+<span class="fc" id="L326">			Collection&lt;ID&gt; removeAssignIDs = pc_assignmentRuels.getRemovedRowIDCollection();</span>
+<span class="fc" id="L327">			HashSet&lt;ID&gt; idAssigns = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L328">			idAssigns.addAll(origAssignIDs);</span>
+<span class="fc" id="L329">			idAssigns.addAll(addAssignIDs);</span>
+<span class="fc" id="L330">			idAssigns.removeAll(removeAssignIDs);</span>
+<span class="pc bpc" id="L331" title="1 of 4 branches missed.">			if (empTemplates == null || empTemplates.size()==0) { //add</span>
+<span class="fc" id="L332">				ID empID = new ID(-1);</span>
+<span class="fc" id="L333">				empTemplateAssignments.put(empID, idAssigns);</span>
+<span class="fc" id="L334">			}</span>
+			else {
+<span class="fc bfc" id="L336" title="All 2 branches covered.">				for (EmployeeTemplate empTemplate: empTemplates){</span>
+<span class="fc" id="L337">					ID empID = empTemplate.getID();</span>
+<span class="fc" id="L338">					HashSet&lt;ID&gt; skillAssigns = new HashSet&lt;ID&gt;();</span>
+<span class="fc bfc" id="L339" title="All 2 branches covered.">					for (ID id: idAssigns) {</span>
+<span class="fc" id="L340">						boolean bShouldAddThisSkill = false;</span>
+
+<span class="fc bfc" id="L342" title="All 2 branches covered.">						if (addAssignIDs.contains(id)) {</span>
+<span class="fc" id="L343">							bShouldAddThisSkill = true;</span>
+						}
+						else {
+<span class="fc" id="L346">							List&lt;ID&gt; empAssignments = empTemplate.getAssignmentRuleIDs();	</span>
+<span class="pc bpc" id="L347" title="1 of 2 branches missed.">							if(empAssignments.contains(id) ){</span>
+<span class="fc" id="L348">								bShouldAddThisSkill = true;</span>
+							}						
+						}
+<span class="pc bpc" id="L351" title="1 of 2 branches missed.">						if (bShouldAddThisSkill == true) {</span>
+<span class="fc" id="L352">							skillAssigns.add(id);</span>
+						}
+<span class="fc" id="L354">					}</span>
+<span class="fc" id="L355">					empTemplateAssignments.put(empID, skillAssigns);</span>
+<span class="fc" id="L356">				}</span>
+			}
+
+
+<span class="fc" id="L360">			Collection&lt;ID&gt; origSkillIDs = pc_skills.getRowIDCollection();</span>
+<span class="fc" id="L361">			Collection&lt;ID&gt; addSkillIDs = pc_skills.getAddedRowIDCollection();</span>
+<span class="fc" id="L362">			Collection&lt;ID&gt; removeSkillIDs = pc_skills.getRemovedRowIDCollection();</span>
+<span class="fc" id="L363">			HashSet&lt;ID&gt; ids = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L364">			ids.addAll(origSkillIDs);</span>
+<span class="fc" id="L365">			ids.addAll(addSkillIDs);</span>
+<span class="fc" id="L366">			ids.removeAll(removeSkillIDs);</span>
+
+<span class="fc" id="L368">			ID[] skillIDs = new ID[ids.size() ];</span>
+<span class="fc" id="L369">			skillIDs = ids.toArray(skillIDs);</span>
+
+<span class="pc bpc" id="L371" title="1 of 4 branches missed.">			if (empTemplates == null || empTemplates.size()==0) { //add</span>
+<span class="fc" id="L372">				HashSet&lt;SkillAssignment&gt; skillAssigns = new HashSet&lt;SkillAssignment&gt;();</span>
+<span class="fc" id="L373">				ID empID = new ID(-1);</span>
+<span class="pc bpc" id="L374" title="1 of 2 branches missed.">				for (int i =0; i&lt; skillIDs.length; i++) {</span>
+<span class="nc" id="L375">					ID id = skillIDs[i];</span>
+<span class="nc" id="L376">					SkillAssignment skillAssignment = new SkillAssignment();</span>
+<span class="nc" id="L377">					skillAssignment.setSkillID(id);</span>
+<span class="nc" id="L378">					skillAssignment.setWorkResourceID(empID);</span>
+
+					//Proficiency
+<span class="nc" id="L381">					FormInputPC proficiencyPC = new FormInputPC(getRequestContext());</span>
+<span class="nc" id="L382">					proficiencyPC.reset(pc_skills.getName() + &quot;_&quot; + id +  &quot;_proficiencyPC&quot;,</span>
+							&quot;0.0&quot;, FormInputPC.TYPE_NUMERIC, true);
+<span class="nc" id="L384">					proficiencyPC.setAutoExtractParamEnabled(true);</span>
+<span class="nc" id="L385">					proficiencyPC.extractParameters(getRequestContext().getRequest());</span>
+<span class="nc bnc" id="L386" title="All 2 branches missed.">					if (proficiencyPC.getInputValue() == null) {</span>
+<span class="nc" id="L387">						skillAssignment.setProficiency(0.0);</span>
+					}else {
+<span class="nc" id="L389">						double val = Double.parseDouble(proficiencyPC.getInputValue());</span>
+<span class="nc" id="L390">						skillAssignment.setProficiency(val);</span>
+					}
+
+					//Priority
+<span class="nc" id="L394">					FormInputPC priorityPC = new FormInputPC(getRequestContext());</span>
+<span class="nc" id="L395">					priorityPC.reset(pc_skills.getName() + &quot;_&quot; + id + &quot;_priorityPC&quot;,</span>
+							&quot;0&quot;, FormInputPC.TYPE_INTEGER, true);
+<span class="nc" id="L397">					priorityPC.setAutoExtractParamEnabled(true);</span>
+<span class="nc" id="L398">					priorityPC.extractParameters(getRequestContext().getRequest());</span>
+<span class="nc bnc" id="L399" title="All 2 branches missed.">					if (priorityPC.getInputValue() == null) {</span>
+<span class="nc" id="L400">						skillAssignment.setPriority(0);</span>
+					}else {
+<span class="nc" id="L402">						int val = Integer.parseInt(priorityPC.getInputValue());</span>
+<span class="nc" id="L403">						skillAssignment.setPriority(val);</span>
+					}
+
+<span class="nc" id="L406">					String dropdownName = SELECTION_CLASSIFICATION_FN + &quot;_&quot; + id.toString();</span>
+<span class="nc" id="L407">					String dropdownVal =  getRequestContext().getRequest().getParameter(dropdownName);</span>
+<span class="nc" id="L408">					skillAssignment.setClassification(Integer.parseInt(dropdownVal));</span>
+
+<span class="nc" id="L410">					skillAssigns.add(skillAssignment);</span>
+				}
+
+<span class="fc" id="L413">				empTemplateShiftAssignments.put(empID, skillAssigns);</span>
+<span class="fc" id="L414">			}</span>
+			else {//update
+<span class="fc bfc" id="L416" title="All 2 branches covered.">				for (EmployeeTemplate empTemplate: empTemplates){   </span>
+<span class="fc" id="L417">					ID empID = empTemplate.getID();</span>
+<span class="fc" id="L418">					HashSet&lt;SkillAssignment&gt; skillAssigns = new HashSet&lt;SkillAssignment&gt;();</span>
+<span class="fc bfc" id="L419" title="All 2 branches covered.">					for (int i =0; i&lt; skillIDs.length; i++) {</span>
+<span class="fc" id="L420">						ID id = skillIDs[i];</span>
+<span class="fc" id="L421">						boolean bShouldAddThisSkill = false;</span>
+
+<span class="fc" id="L423">						SkillAssignment curSkillAssignment = null;</span>
+<span class="fc bfc" id="L424" title="All 2 branches covered.">						if (addSkillIDs.contains(id)) {</span>
+<span class="fc" id="L425">							bShouldAddThisSkill = true;</span>
+						}
+						else {
+<span class="fc" id="L428">							List&lt;SkillAssignment&gt; empSkillAssignments = empTemplate.getSkillAssignments();</span>
+<span class="pc bpc" id="L429" title="1 of 2 branches missed.">							for (SkillAssignment sa : empSkillAssignments) {		</span>
+<span class="fc bfc" id="L430" title="All 2 branches covered.">								if(id.equals(sa.getSkillID())) {</span>
+<span class="fc" id="L431">									curSkillAssignment = sa;</span>
+<span class="fc" id="L432">									bShouldAddThisSkill = true;</span>
+<span class="fc" id="L433">									break;</span>
+								}						
+<span class="fc" id="L435">							}</span>
+						}
+<span class="pc bpc" id="L437" title="1 of 2 branches missed.">						if (bShouldAddThisSkill == true) {</span>
+<span class="fc" id="L438">							SkillAssignment skillAssignment = new SkillAssignment();</span>
+<span class="fc" id="L439">							skillAssignment.setSkillID(id);</span>
+<span class="fc" id="L440">							skillAssignment.setWorkResourceID(empID);</span>
+
+
+							//Proficiency
+<span class="fc" id="L444">							FormInputPC proficiencyPC = new FormInputPC(getRequestContext());</span>
+<span class="fc" id="L445">							proficiencyPC.reset(pc_skills.getName() + &quot;_&quot; + id +  &quot;_proficiencyPC&quot;,</span>
+									&quot;0.0&quot;, FormInputPC.TYPE_NUMERIC, true);
+<span class="fc" id="L447">							proficiencyPC.setAutoExtractParamEnabled(true);</span>
+<span class="fc" id="L448">							proficiencyPC.extractParameters(getRequestContext().getRequest());</span>
+<span class="pc bpc" id="L449" title="1 of 2 branches missed.">							if (proficiencyPC.getInputValue() == null) {</span>
+<span class="nc" id="L450">								skillAssignment.setProficiency(0.0);</span>
+<span class="pc bpc" id="L451" title="1 of 2 branches missed.">							}else if (proficiencyPC.getInputValue().equals( MULTI_VALUE_DATA )) {</span>
+<span class="nc" id="L452">								skillAssignment.setProficiency(curSkillAssignment.getProficiency());</span>
+							}
+							else {
+<span class="fc" id="L455">								double val = Double.parseDouble(proficiencyPC.getInputValue());</span>
+<span class="fc" id="L456">								skillAssignment.setProficiency(val);</span>
+							}
+
+							//Priority
+<span class="fc" id="L460">							FormInputPC priorityPC = new FormInputPC(getRequestContext());</span>
+<span class="fc" id="L461">							priorityPC.reset(pc_skills.getName() + &quot;_&quot; + id + &quot;_priorityPC&quot;,</span>
+									&quot;0&quot;, FormInputPC.TYPE_INTEGER, true);
+<span class="fc" id="L463">							priorityPC.setAutoExtractParamEnabled(true);</span>
+<span class="fc" id="L464">							priorityPC.extractParameters(getRequestContext().getRequest());</span>
+<span class="pc bpc" id="L465" title="1 of 2 branches missed.">							if (priorityPC.getInputValue() == null) {</span>
+<span class="nc" id="L466">								skillAssignment.setPriority(0);</span>
+<span class="pc bpc" id="L467" title="1 of 2 branches missed.">							} else if (priorityPC.getInputValue().equals( MULTI_VALUE_DATA )) {</span>
+<span class="nc" id="L468">								skillAssignment.setPriority(curSkillAssignment.getPriority());</span>
+							}else {
+<span class="fc" id="L470">								int val = Integer.parseInt(priorityPC.getInputValue());</span>
+<span class="fc" id="L471">								skillAssignment.setPriority(val);</span>
+							}
+
+<span class="fc" id="L474">							String dropdownName = SELECTION_CLASSIFICATION_FN + &quot;_&quot; + id.toString();</span>
+<span class="fc" id="L475">							String dropdownVal =  getRequestContext().getRequest().getParameter(dropdownName);</span>
+<span class="pc bpc" id="L476" title="1 of 2 branches missed.">							if (dropdownVal.equals( MULTI_VALUE_DATA )){</span>
+<span class="nc" id="L477">								skillAssignment.setClassification(curSkillAssignment.getClassification());</span>
+							}
+							else
+<span class="fc" id="L480">								skillAssignment.setClassification(Integer.parseInt(dropdownVal));</span>
+
+<span class="fc" id="L482">							skillAssigns.add(skillAssignment);</span>
+						}
+
+					} 
+<span class="fc" id="L486">					empTemplateShiftAssignments.put(empID, skillAssigns);</span>
+<span class="fc" id="L487">				}</span>
+			}
+		} 
+<span class="fc" id="L490">	}</span>
+
+	public static StaffingProfilesFormPM getInstance(RequestContext context) {
+<span class="fc" id="L493">		return (StaffingProfilesFormPM) PageModel.getInstance(context, StaffingProfilesFormPM.class);</span>
+	}
+
+	private void addRow(String label, PageComponent pc) {
+<span class="fc" id="L497">		this.addChildComponent(pc);</span>
+<span class="fc" id="L498">		pc_form.addRow(label, pc);</span>
+<span class="fc" id="L499">	}</span>
+
+	private HashMap&lt;Skill, HashSet&lt;SkillAssignment&gt; &gt; getSkillAssignments(){
+<span class="fc" id="L502">		HashMap&lt;Skill, HashSet&lt;SkillAssignment&gt; &gt; skills = new HashMap&lt;Skill, HashSet&lt;SkillAssignment&gt;&gt;();</span>
+
+<span class="fc bfc" id="L504" title="All 2 branches covered.">		for (EmployeeTemplate sp : empTemplates) {</span>
+<span class="fc" id="L505">			List&lt;SkillAssignment&gt; skillAssignments = sp.getSkillAssignments();</span>
+<span class="fc bfc" id="L506" title="All 2 branches covered.">			for (SkillAssignment sa : skillAssignments) {		</span>
+<span class="fc" id="L507">				ID id = sa.getSkillID();</span>
+				try  {
+<span class="fc" id="L509">					Skill skill = WfmManagerFactory.getSkillManager(m_context.isInWhatIfMode()).getSkillByID(id);</span>
+<span class="fc" id="L510">					HashSet&lt;SkillAssignment&gt; set = skills.get(skill);</span>
+<span class="pc bpc" id="L511" title="1 of 2 branches missed.">					if (set == null)</span>
+					{
+<span class="fc" id="L513">						set = new HashSet&lt;SkillAssignment&gt;();</span>
+<span class="fc" id="L514">						skills.put(skill, set);</span>
+					}
+<span class="fc" id="L516">					set.add(sa); </span>
+				}
+<span class="nc" id="L518">				catch (Exception e){</span>
+
+<span class="fc" id="L520">				}</span>
+<span class="fc" id="L521">			}</span>
+<span class="fc" id="L522">		}</span>
+<span class="fc bfc" id="L523" title="All 2 branches covered.">		for (Skill skill : skills.keySet()) {</span>
+<span class="fc" id="L524">			HashSet&lt;SkillAssignment&gt; set = skills.get(skill);</span>
+<span class="pc bpc" id="L525" title="1 of 2 branches missed.">			skill.setMultiEditCommon(set.size()== empTemplates.size());</span>
+<span class="fc" id="L526">		} </span>
+
+<span class="fc" id="L528">		return skills;</span>
+	}
+
+	private HashMap&lt;ID, HashSet&lt;EmployeeTemplate&gt; &gt; getAssignmentRules(){
+<span class="fc" id="L532">		HashMap&lt;ID, HashSet&lt;EmployeeTemplate&gt; &gt; skills = new HashMap&lt;ID, HashSet&lt;EmployeeTemplate&gt;&gt;();</span>
+<span class="fc bfc" id="L533" title="All 2 branches covered.">		for (EmployeeTemplate sp : empTemplates) {</span>
+<span class="fc" id="L534">			List&lt;ID&gt; assignmentRuleIDs = sp.getAssignmentRuleIDs();</span>
+<span class="fc bfc" id="L535" title="All 2 branches covered.">			for (ID id: assignmentRuleIDs) {				</span>
+<span class="fc" id="L536">				HashSet&lt;EmployeeTemplate&gt; set = skills.get(id);</span>
+<span class="pc bpc" id="L537" title="1 of 2 branches missed.">				if (set == null)</span>
+				{
+<span class="fc" id="L539">					set = new HashSet&lt;EmployeeTemplate&gt;();</span>
+<span class="fc" id="L540">					skills.put(id, set);</span>
+				}
+<span class="fc" id="L542">				set.add(sp); </span>
+<span class="fc" id="L543">			}</span>
+<span class="fc" id="L544">		}</span>
+
+<span class="fc" id="L546">		return skills;</span>
+	}
+
+	private HashMap&lt;VTOEvent, Set&lt;ShiftPattern.StartTime&gt;&gt; getVTOEvents() {
+<span class="nc" id="L550">		HashMap&lt;VTOEvent, Set&lt;ShiftPattern.StartTime&gt;&gt; retVal = new HashMap&lt;VTOEvent, Set&lt;ShiftPattern.StartTime&gt;&gt;();</span>
+<span class="nc" id="L551">		HashMap&lt;VTOEvent, HashSet&lt;ShiftPattern&gt;&gt; vtoEventAssignments = new HashMap&lt;VTOEvent, HashSet&lt;ShiftPattern&gt;&gt;();</span>
+<span class="nc" id="L552">		return retVal;</span>
+	} 
+
+	public Collection&lt;EmployeeTemplate&gt; getEmployeeTemplates(RequestContext context) throws BbmFinderException {
+<span class="fc" id="L556">		Collection&lt;EmployeeTemplate&gt; ret = new ArrayList&lt;EmployeeTemplate&gt;(empTemplates);</span>
+<span class="fc bfc" id="L557" title="All 2 branches covered.">		if (ret.isEmpty()) ret.add(new EmployeeTemplate());</span>
+
+<span class="fc bfc" id="L559" title="All 2 branches covered.">		for (EmployeeTemplate et : ret) {</span>
+			//Name/desc
+<span class="fc" id="L561">			String name = pc_name.getInputValue();</span>
+<span class="pc bpc" id="L562" title="2 of 4 branches missed.">			if (name!= null &amp;&amp; !name.equals(MULTI_VALUE_DATA))</span>
+<span class="fc" id="L563">				et.setName(pc_name.getInputValue());</span>
+<span class="fc" id="L564">			String wage = pc_wage.getInputValue();</span>
+<span class="pc bpc" id="L565" title="2 of 4 branches missed.">			if (wage != null &amp;&amp; !wage.equals(MULTI_VALUE_DATA)){</span>
+<span class="fc" id="L566">				String dbTempStr = FormInputPC.convertLocalizedRealNumberAsString(wage, context.getLocalizer());</span>
+<span class="fc" id="L567">				et.setWage(Double.parseDouble(dbTempStr));</span>
+			}
+<span class="fc" id="L569">			String strOrgID = context.getParameter(FN_ORGANIZATION);</span>
+<span class="pc bpc" id="L570" title="2 of 4 branches missed.">			if (strOrgID != null &amp;&amp; strOrgID != MULTI_VALUE_DATA)</span>
+<span class="fc" id="L571">				et.setOrganizationID(new ID(strOrgID));</span>
+
+<span class="fc" id="L573">			String strWPID = context.getParameter(FN_WORKPATTERN);</span>
+<span class="pc bpc" id="L574" title="2 of 4 branches missed.">			if (strWPID != null &amp;&amp; strWPID.compareTo(&quot;-1&quot;) != 0) {</span>
+<span class="fc" id="L575">				ArrayList&lt;ID&gt; wpIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="fc" id="L576">				wpIDs.add(new ID(strWPID));</span>
+<span class="fc" id="L577">				et.setShiftPatterns(wpIDs);</span>
+			}
+
+<span class="fc" id="L580">			String proficiency = FormInputPC.convertLocalizedRealNumberAsString(pc_proficiency.getInputValue(), context.getLocalizer());</span>
+<span class="pc bpc" id="L581" title="2 of 4 branches missed.">			if (proficiency!= null &amp;&amp; !proficiency.equals(MULTI_VALUE_DATA))</span>
+<span class="fc" id="L582">				et.setProficiency(Double.parseDouble(proficiency));</span>
+
+<span class="fc" id="L584">			String chatsessions = pc_chatSessions.getInputValue();</span>
+<span class="pc bpc" id="L585" title="2 of 4 branches missed.">			if (chatsessions!= null &amp;&amp; !chatsessions.equals(MULTI_VALUE_DATA))</span>
+<span class="fc" id="L586">				et.setChatSessions(Integer.parseInt(chatsessions));</span>
+<span class="fc" id="L587">			HashSet&lt;SkillAssignment&gt; assigns = null;</span>
+<span class="fc bfc" id="L588" title="All 2 branches covered.">			if (et.getID() == null) </span>
+<span class="fc" id="L589">				assigns = empTemplateShiftAssignments.get(new ID(-1));</span>
+			else 
+<span class="fc" id="L591">				assigns = empTemplateShiftAssignments.get(et.getID());</span>
+<span class="pc bpc" id="L592" title="1 of 2 branches missed.">			if (assigns != null)</span>
+<span class="fc" id="L593">				et.setSkillAssignments(assigns);</span>
+
+<span class="fc" id="L595">			HashSet&lt;ID&gt; assignmentRules = null;</span>
+<span class="fc bfc" id="L596" title="All 2 branches covered.">			if (et.getID() == null) </span>
+<span class="fc" id="L597">				assignmentRules = empTemplateAssignments.get(new ID(-1));</span>
+			else 
+<span class="fc" id="L599">				assignmentRules = empTemplateAssignments.get(et.getID());				</span>
+<span class="pc bpc" id="L600" title="1 of 2 branches missed.">			if ((assignmentRules != null))</span>
+<span class="fc" id="L601">				et.setAssignmentRuleIDs(assignmentRules);</span>
+<span class="fc" id="L602">		}</span>
+<span class="fc" id="L603">		return ret;</span>
+	}
+
+	private boolean isWageMultiValue() {
+<span class="nc" id="L607">		boolean ret = false;</span>
+<span class="nc bnc" id="L608" title="All 2 branches missed.">		if (empTemplates.size() &gt;0) {</span>
+<span class="nc" id="L609">			EmployeeTemplate et = empTemplates.iterator().next();</span>
+<span class="nc" id="L610">			double wage = et.getWage();</span>
+<span class="nc bnc" id="L611" title="All 2 branches missed.">			for(EmployeeTemplate et2 : empTemplates){</span>
+<span class="nc bnc" id="L612" title="All 2 branches missed.">				if(et2.getWage() != wage) {</span>
+<span class="nc" id="L613">					ret = true;</span>
+<span class="nc" id="L614">					break;</span>
+				}
+<span class="nc" id="L616">			}</span>
+		}
+<span class="nc" id="L618">		return ret;</span>
+	}
+
+	private boolean isOrgMultiValue() {
+<span class="nc" id="L622">		boolean ret = false;</span>
+<span class="nc bnc" id="L623" title="All 2 branches missed.">		if (empTemplates.size() &gt;0) {</span>
+<span class="nc" id="L624">			EmployeeTemplate et = empTemplates.iterator().next();</span>
+<span class="nc" id="L625">			ID orgID = et.getOrganizationID();</span>
+<span class="nc bnc" id="L626" title="All 2 branches missed.">			for(EmployeeTemplate et2 : empTemplates){</span>
+<span class="nc bnc" id="L627" title="All 2 branches missed.">				if(!et2.getOrganizationID().equals(orgID)) {</span>
+<span class="nc" id="L628">					ret = true;</span>
+<span class="nc" id="L629">					break;</span>
+				}
+<span class="nc" id="L631">			}</span>
+		}
+<span class="nc" id="L633">		return ret;</span>
+	}
+
+	private boolean isWPMultiValue() {
+<span class="nc" id="L637">		boolean ret = false;</span>
+<span class="nc bnc" id="L638" title="All 2 branches missed.">		if (empTemplates.size() &gt;0) {</span>
+<span class="nc" id="L639">			EmployeeTemplate et = empTemplates.iterator().next();</span>
+<span class="nc" id="L640">			List&lt;ID&gt; spIDs = et.getShiftPatterns();</span>
+<span class="nc" id="L641">			ID spID = spIDs.iterator().next();</span>
+<span class="nc bnc" id="L642" title="All 2 branches missed.">			for(EmployeeTemplate et2 : empTemplates){</span>
+<span class="nc" id="L643">				List&lt;ID&gt; shiftPatternIDs = et2.getShiftPatterns();</span>
+<span class="nc" id="L644">				ID spID2 = shiftPatternIDs.iterator().next();</span>
+<span class="nc bnc" id="L645" title="All 2 branches missed.">				if(!spID2.equals(spID)) {</span>
+<span class="nc" id="L646">					ret = true;</span>
+<span class="nc" id="L647">					break;</span>
+				}
+<span class="nc" id="L649">			}</span>
+		}
+<span class="nc" id="L651">		return ret;</span>
+	}
+
+	private boolean isProficiencyMultiValue() {
+<span class="nc" id="L655">		boolean ret = false;</span>
+<span class="nc bnc" id="L656" title="All 2 branches missed.">		if (empTemplates.size() &gt;0) {</span>
+<span class="nc" id="L657">			EmployeeTemplate et = empTemplates.iterator().next();</span>
+<span class="nc" id="L658">			double proficiency = et.getProficiency();</span>
+<span class="nc bnc" id="L659" title="All 2 branches missed.">			for(EmployeeTemplate et2 : empTemplates){</span>
+<span class="nc bnc" id="L660" title="All 2 branches missed.">				if(et2.getProficiency() != proficiency) {</span>
+<span class="nc" id="L661">					ret = true;</span>
+<span class="nc" id="L662">					break;</span>
+				}
+<span class="nc" id="L664">			}</span>
+		}
+<span class="nc" id="L666">		return ret;</span>
+	}
+
+	private boolean isChatMultiValue() {
+<span class="nc" id="L670">		boolean ret = false;</span>
+<span class="nc bnc" id="L671" title="All 2 branches missed.">		if (empTemplates.size() &gt;0) {</span>
+<span class="nc" id="L672">			EmployeeTemplate et = empTemplates.iterator().next();</span>
+<span class="nc" id="L673">			int chat = et.getChatSessions();</span>
+<span class="nc bnc" id="L674" title="All 2 branches missed.">			for(EmployeeTemplate et2 : empTemplates){</span>
+<span class="nc bnc" id="L675" title="All 2 branches missed.">				if(et2.getChatSessions() != chat) {</span>
+<span class="nc" id="L676">					ret = true;</span>
+<span class="nc" id="L677">					break;</span>
+				}
+<span class="nc" id="L679">			}</span>
+		}
+<span class="nc" id="L681">		return ret;</span>
+	}
+
+	public double getWageAmount() {
+<span class="nc" id="L685">		double amount  = 0.0;</span>
+<span class="nc bnc" id="L686" title="All 2 branches missed.">		if (pc_wage != null) {</span>
+<span class="nc" id="L687">			amount  = Double.parseDouble(pc_wage.getInputValue());</span>
+		}
+<span class="nc" id="L689">		return amount;</span>
+	}
+
+	/**
+	 * Initialize Toolbar
+	 */
+	@Override
+	protected void initToolbar() {
+<span class="pc bpc" id="L697" title="1 of 2 branches missed.">		if (m_isFormEditable) {</span>
+<span class="fc bfc" id="L698" title="All 2 branches covered.">			if (isNew()) {</span>
+<span class="fc" id="L699">				m_toolbar.addValidateSubmitTextButton(PageAction.CREATE_NEW,</span>
+<span class="pc bpc" id="L700" title="1 of 2 branches missed.">						i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_SAVE), !m_initFailure);</span>
+			}	else {
+<span class="pc bpc" id="L702" title="1 of 2 branches missed.">				if (isTemplatesUsedInExistingSchedule) {</span>
+<span class="nc bnc" id="L703" title="All 2 branches missed.">					ToolbarTextButton saveButton = m_toolbar.createJSButton(&quot;&quot;, i18n(m_common_bundle, </span>
+							UIFWebBundleKey.TOOLBAR_SAVE), !m_initFailure, &quot;showIsPageDirtyConfirmSaveMessage()&quot;);
+<span class="nc" id="L705">					m_toolbar.addToolbarElement(saveButton);</span>
+<span class="nc" id="L706">				} else {</span>
+<span class="fc" id="L707">					m_toolbar.addValidateSubmitTextButton(PageAction.SAVE,</span>
+<span class="pc bpc" id="L708" title="1 of 2 branches missed.">							i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_SAVE), !m_initFailure);	</span>
+				}
+			}
+<span class="pc bpc" id="L711" title="1 of 2 branches missed.">			if (m_isCancelBtnShown) {</span>
+<span class="fc" id="L712">				m_toolbar.addConfirmSubmitTextButton(PageAction.CANCEL,</span>
+<span class="fc" id="L713">						i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_CANCEL), true);</span>
+			}
+
+<span class="fc" id="L716">			m_toolbar.addResetTextButton(PageAction.RESET,</span>
+<span class="fc" id="L717">					i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_RESET), true);</span>
+		} else {
+<span class="nc" id="L719">			m_toolbar.addConfirmSubmitTextButton(PageAction.CANCEL,</span>
+<span class="nc" id="L720">					i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_DONE), true);</span>
+		}
+<span class="fc" id="L722">	}</span>
+
+	public String getCustomJavaScript()  {
+<span class="fc" id="L725">		String str = &quot;function showIsPageDirtyConfirmSaveMessage() {&quot;;</span>
+<span class="fc" id="L726">		str += &quot;\n if (pageMediator.isPageDirty()){&quot;;</span>
+<span class="fc" id="L727">		str += &quot;\n var isConfirm = window.confirm(CONFIRM_EDIT_STAFFING_PROFILE);&quot;;</span>
+<span class="fc" id="L728">		str += &quot;\n if (isConfirm){&quot;;</span>
+<span class="fc" id="L729">		str += &quot;\n pageMediator.resetPageDirty(false)&quot;;</span>
+<span class="fc" id="L730">		str += &quot;\n pageMediator.refreshPageWithAction('&quot; + PageAction.SAVE + &quot;',true);&quot;;</span>
+<span class="fc" id="L731">		str += &quot;\n }&quot;; </span>
+<span class="fc" id="L732">		str += &quot;\n } else document.oFormMain.submit();&quot;;</span>
+<span class="fc" id="L733">		str += &quot;\n }&quot;;</span>
+<span class="fc" id="L734">		return super.getCustomJavaScript() + &quot; &quot; + str;</span>
+	}
+
+	public boolean validate(RequestContext context)
+	{
+<span class="fc" id="L739">		boolean retVal = super.validate();</span>
+
+<span class="fc" id="L741">		double dProficiency = 1.0;</span>
+<span class="fc" id="L742">		int nChat = 1;</span>
+
+<span class="pc bpc" id="L744" title="2 of 4 branches missed.">		if(pc_proficiency != null &amp;&amp; !(pc_proficiency.getInputValue().equals(&quot;*&quot;)))</span>
+		{
+<span class="fc" id="L746">			String dbTempStr = FormInputPC.convertLocalizedRealNumberAsString(pc_proficiency.getInputValue(), context.getLocalizer());</span>
+<span class="fc" id="L747">			dProficiency =  Double.parseDouble(dbTempStr);</span>
+			
+<span class="pc bpc" id="L749" title="2 of 4 branches missed.">			if(!(dProficiency &gt;=0.0 &amp;&amp; dProficiency &lt;= 9.9))</span>
+			{
+<span class="nc" id="L751">				addPageMessage(Message.ERROR_TYPE,m_localizer.i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_PROFICIENCY_NOT_IN_RANGE)  );</span>
+<span class="nc" id="L752">				retVal = false;</span>
+			}
+
+<span class="fc" id="L755">			int nProficiency = (int)(dProficiency * 10);</span>
+<span class="fc" id="L756">			double checkDecimal = (dProficiency * 10.0) - nProficiency;</span>
+<span class="pc bpc" id="L757" title="1 of 2 branches missed.">			if(checkDecimal &gt; 0)</span>
+			{
+<span class="nc" id="L759">				addPageMessage(Message.ERROR_TYPE,m_localizer.i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_PROFICIENCY_TOO_MANY_DECIMAL_POINTS));</span>
+<span class="nc" id="L760">				retVal = false;</span>
+			}
+
+		}
+
+<span class="pc bpc" id="L765" title="2 of 4 branches missed.">		if(pc_chatSessions !=null &amp;&amp; !(pc_chatSessions.getInputValue().equals(&quot;*&quot;)))</span>
+		{
+<span class="fc" id="L767">			nChat = Integer.parseInt(pc_chatSessions.getInputValue());</span>
+
+
+<span class="pc bpc" id="L770" title="2 of 4 branches missed.">			if(!(nChat &gt;= 1 &amp;&amp; nChat&lt;100))</span>
+			{
+<span class="nc" id="L772">				addPageMessage(Message.ERROR_TYPE,m_localizer.i18n(m_bundle, BbmWebBundleKey.FS_STAFFING_PROFILES_CHAT_NOT_IN_RANGE)  );</span>
+<span class="nc" id="L773">				retVal = false;</span>
+			}
+		}
+
+<span class="fc" id="L777">		return retVal;</span>
+	}
+	
+	private static String getPreSkillRemovedJS() {
+<span class="fc" id="L781">		StringBuffer js = new StringBuffer();</span>
+<span class="fc" id="L782">		js.append(&quot;var rowToRemove = skillsTable.getRowByUID(id);&quot;);</span>
+<span class="fc" id="L783">		js.append(&quot;removeValidators(skillsTable.getRowAttribute(rowToRemove, 'priorityFN'));&quot;);</span>
+<span class="fc" id="L784">		js.append(&quot;removeValidators(skillsTable.getRowAttribute(rowToRemove, 'proficiencyFN'));&quot;);</span>
+<span class="fc" id="L785">		return js.toString();</span>
+	}
+	
+<span class="nc" id="L788">	private class WorkPatternNameComparator implements Comparator&lt;ShiftPattern&gt; {</span>
+		@Override
+		public int compare(ShiftPattern arg0, ShiftPattern arg1) {
+<span class="nc bnc" id="L791" title="All 4 branches missed.">			if (arg0 == null &amp;&amp; arg1 == null) return 0;</span>
+<span class="nc bnc" id="L792" title="All 4 branches missed.">			if (arg0 == null &amp;&amp; arg1 != null) return -1;</span>
+<span class="nc bnc" id="L793" title="All 4 branches missed.">			if (arg1 == null &amp;&amp; arg0 != null) return 1;</span>
+<span class="nc" id="L794">			return m_localizer.getCollator().compare(arg0.getName(), arg1.getName());</span>
+		}
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

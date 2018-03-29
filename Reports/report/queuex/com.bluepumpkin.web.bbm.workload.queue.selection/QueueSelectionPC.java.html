@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>QueueSelectionPC.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.bbm.workload.queue.selection</a> &gt; <span class="el_source">QueueSelectionPC.java</span></div><h1>QueueSelectionPC.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.bbm.workload.queue.selection;
+
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.ejb.bbm.workload.model.queueattribute.QueueAttributeFilter;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.bbm.workload.WorkloadModelHandler;
+import com.bluepumpkin.web.bbm.workload.queue.QueueUtil;
+import com.bluepumpkin.web.bbm.workload.queue.selection.queueattribute.filter.QueueAttributeFilterModelHandler;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.pagecomponent.tree.MultiColInputTreePC;
+import com.witness.web.uif.pagecomponent.tree.util.TreeNodeHelper;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.system.manager.impl.DefaultVerticalizationManager;
+
+/**
+ * Title:       QueueSelectionPC
+ * Description: Component to Select Queues
+ * Copyright:   Copyright (c) 2004
+ * Company:     Blue Pumpkin Software, Inc
+ *
+ * @author David Su, dsu
+ * @version 1.0
+ *          Created on Oct 15, 2004, 12:25:00 PM
+ */
+public class QueueSelectionPC extends MultiColInputTreePC {
+	public static final String CHECKED_ID_FN = &quot;checkedQueueID&quot;;
+
+<span class="nc" id="L39">	private boolean m_isCombinedIDs = false;</span>
+<span class="nc" id="L40">	private boolean m_isShowSubQueues = false;</span>
+<span class="nc" id="L41">	private boolean m_isCampaignMode = false;</span>
+<span class="nc" id="L42">	private boolean m_isNodeDisplayEnabled = false;</span>
+<span class="nc" id="L43">	private Map m_mediaFilter = Collections.emptyMap();</span>
+<span class="nc" id="L44">	private boolean m_isOrgPickerSelected = false;</span>
+	private ID m_campaignID;
+	private ID m_organizationID;
+	private ID m_queueAttribFilterID;
+	private Date m_startDate;
+	private Date m_endDate;
+<span class="nc" id="L50">	private boolean m_checkAllQueuesPrivilege = true;</span>
+
+	/**
+	 * Constructor
+	 */
+	public QueueSelectionPC(RequestContext context) {
+<span class="nc" id="L56">		super(context, CHECKED_ID_FN, BbmWebBundleKey.BUNDLE_NAME);</span>
+
+        // verticalise header
+<span class="nc" id="L59">        Object[] args = new Object[1];</span>
+<span class="nc" id="L60">        args[0] = m_context.getSystemManagerFactory().getVerticalizationManager().getVerticalizedString(m_context, DefaultVerticalizationManager.QUEUE);</span>
+<span class="nc" id="L61">        setHeaderTitle( MessageFormat.format( i18n(m_bundle, BbmWebBundleKey.QUEUE_NAME), args) );</span>
+    
+<span class="nc" id="L63">        setHasRowHeaders(false); //508</span>
+        
+<span class="nc" id="L65">		setName(&quot;queueTree&quot;);</span>
+<span class="nc" id="L66">	}</span>
+    
+    protected Collection retrieveTreeObjects() throws Exception {
+<span class="nc" id="L69">        Collection queues = Collections.emptyList();</span>
+
+<span class="nc bnc" id="L71" title="All 4 branches missed.">        if(m_queueAttribFilterID != null &amp;&amp; !QueueAttributeFilter.BLANK_ID.equals(m_queueAttribFilterID)) {</span>
+<span class="nc" id="L72">        	queues = QueueAttributeFilterModelHandler.getQueuesAssociatedToFilter(m_context, m_queueAttribFilterID, m_campaignID, null, m_isShowSubQueues, m_startDate, m_endDate);</span>
+        	
+<span class="nc" id="L74">        	return queues;</span>
+        }
+        
+<span class="nc bnc" id="L77" title="All 2 branches missed.">        if (m_isCampaignMode) </span>
+        {
+<span class="nc bnc" id="L79" title="All 2 branches missed.">            if (m_campaignID != null) </span>
+            {
+<span class="nc" id="L81">                queues = CampaignModelHandler.getQueuesAssignedToCampaign(m_context, m_campaignID, m_startDate, m_endDate,</span>
+                        m_isShowSubQueues);
+            } 
+<span class="nc bnc" id="L84" title="All 2 branches missed.">            else if (m_organizationID != null) {</span>
+            	/**
+            	 * Sankar - Displays all queues assigned to the current organization and all its parent
+            	 * organizations which the user has permission on
+            	 */
+<span class="nc" id="L89">            	Collection orgIDs = OrganizationModelHandler.getSelfAndParentsOrganizationIDWithInUserScope(m_context, m_context.getUser(), m_organizationID);</span>
+<span class="nc" id="L90">            	Iterator iter = orgIDs.iterator();</span>
+<span class="nc" id="L91">            	ID orgID = null;</span>
+<span class="nc" id="L92">            	ArrayList queueCollection = new ArrayList();</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">            	while(iter.hasNext()) {</span>
+<span class="nc" id="L94">            		orgID = (ID)iter.next();</span>
+<span class="nc" id="L95">            		Collection result = WorkloadModelHandler.getQueuesByOrgID(m_context, orgID);</span>
+<span class="nc" id="L96">            		queueCollection.addAll(result);</span>
+<span class="nc" id="L97">            	}</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">            	if (m_mediaFilter!=null) </span>
+<span class="nc" id="L99">            		return QueueUtil.filterQueuesByMediaMap(queueCollection, m_mediaFilter);</span>
+            	
+<span class="nc" id="L101">            	return queueCollection;</span>
+<span class="nc bnc" id="L102" title="All 4 branches missed.">            }else if(m_organizationID == null &amp;&amp; m_isOrgPickerSelected) {</span>
+            	//This condition will be saitisfied if the user selects the Organization radio button
+            	// and the &quot;All Queues&quot; in the Organization picker. 
+            	//In this event, rather than showing all the queues available with the system we are only showing the queues which 
+            	//are assigned to the organizations which the user has privilege on. 
+            	//Only these queues will have organization association.
+<span class="nc" id="L108">            	Collection orgIDs = OrganizationModelHandler.getAllOrgsInUserScope(m_context, m_context.getUser());</span>
+<span class="nc" id="L109">            	Iterator iter = orgIDs.iterator();</span>
+<span class="nc" id="L110">            	Organization orgID = null;</span>
+<span class="nc" id="L111">            	ArrayList queueCollection = new ArrayList();</span>
+<span class="nc bnc" id="L112" title="All 2 branches missed.">            	while(iter.hasNext()) {</span>
+<span class="nc" id="L113">            		orgID = (Organization)iter.next();</span>
+<span class="nc" id="L114">            		Collection result = WorkloadModelHandler.getQueuesByOrgID(m_context, orgID.getID());</span>
+<span class="nc" id="L115">            		queueCollection.addAll(result);</span>
+<span class="nc" id="L116">            	}</span>
+            	
+<span class="nc bnc" id="L118" title="All 2 branches missed.">            	if (m_mediaFilter!=null) </span>
+<span class="nc" id="L119">            		return QueueUtil.filterQueuesByMediaMap(queueCollection, m_mediaFilter);</span>
+            	
+            	
+<span class="nc" id="L122">            	return queueCollection;</span>
+            }           
+<span class="nc bnc" id="L124" title="All 2 branches missed.">            else if (m_checkAllQueuesPrivilege)</span>
+            {
+                //This means you're either in &quot;All Queues&quot; mode (Ex: Pulse), or &quot;no campaign selected&quot; mode (Ex: Reports)                
+<span class="nc bnc" id="L127" title="All 2 branches missed.">                if (m_context.getUser().isAuthorized(PrivilegeKeys.FS_VIEWALLQUEUEHISTORY_ID))</span>
+                {
+<span class="nc" id="L129">                    queues = WorkloadModelHandler.getAllQueues(m_context);</span>
+                }
+                else
+                {
+                    //we only get the queues belonging to campaigns which the user has the scope for 
+<span class="nc" id="L134">                    queues = CampaignModelHandler.getQueuesAssignedToCampaignsForUser(m_context, m_context.getUser(), </span>
+                            m_startDate, m_endDate);
+                }
+            }
+            else
+            {
+                //We want to show all queues regardless of the user's privilege
+<span class="nc" id="L141">                queues = WorkloadModelHandler.getAllQueues(m_context);</span>
+            }
+
+            //Always filter by media, if one is selected
+<span class="nc bnc" id="L145" title="All 2 branches missed.">            if (m_mediaFilter!=null) </span>
+<span class="nc" id="L146">                queues = QueueUtil.filterQueuesByMediaMap(queues, m_mediaFilter);</span>
+        } 
+        else 
+        {
+            //We want to show all queues regardless of the user's privilege (Ex: Queue Settings page)
+<span class="nc" id="L151">            queues = WorkloadModelHandler.getAllQueues(m_context);</span>
+        }
+
+<span class="nc" id="L154">        return queues;</span>
+    }
+
+
+	/**
+	 * Indicate to use Campaign mode and specify campaign data
+	 *
+	 * @param isCombinedIDs - Indicate the the IDs in the list is a combination of CampaingID_MediaID_QueueID;
+	 * 		otherwise just QueueID
+	 * @param isShowSubQueues - Indicate whether SubQueues are shown
+	 * @param checkAllQueuesPrivilege - If true, the 'FS_VIEWALLQUEUEHISTORY_ID' privilege is required for all queues to be listed.
+	 */
+	public void setCampaignModeData(ID campaignID, Date startDate, Date endData, Map mediaFilter,
+			boolean isCombinedIDs, boolean isShowSubQueues, boolean checkAllQueuesPrivilege) {
+<span class="nc" id="L168">		m_isCampaignMode=true;</span>
+<span class="nc" id="L169">		m_campaignID = campaignID;</span>
+<span class="nc" id="L170">		m_startDate = startDate;</span>
+<span class="nc" id="L171">		m_endDate = endData;</span>
+<span class="nc" id="L172">		m_mediaFilter = mediaFilter;</span>
+<span class="nc" id="L173">		m_isCombinedIDs = isCombinedIDs;</span>
+<span class="nc" id="L174">		m_isShowSubQueues = isShowSubQueues;</span>
+<span class="nc" id="L175">		m_checkAllQueuesPrivilege = checkAllQueuesPrivilege;</span>
+		//System.out.println(&quot;\n\t camID=&quot; + m_campaignID + &quot;\t m_mediaID=&quot; + m_mediaID + &quot;\t sDate=&quot; + m_startDate + &quot;\t eDate=&quot; + m_endDate);
+<span class="nc" id="L177">	}</span>
+	
+	
+	/**
+	 * Overloading the function to accept organization details also
+	 *
+	 * @param isCombinedIDs - Indicate the the IDs in the list is a combination of CampaingID_MediaID_QueueID;
+	 * 		otherwise just QueueID
+	 * @param isShowSubQueues - Indicate whether SubQueues are shown
+	 * @param checkAllQueuesPrivilege - If true, the 'FS_VIEWALLQUEUEHISTORY_ID' privilege is required for all queues to be listed.
+	 */
+	public void setCampaignModeData(ID campaignID, Date startDate, Date endData, Map mediaFilter, ID queueAttributeID, boolean isCombinedIDs, boolean isShowSubQueues, boolean checkAllQueuesPrivilege) {
+<span class="nc" id="L189">		m_isCampaignMode=true;</span>
+<span class="nc" id="L190">		m_campaignID = campaignID;</span>
+<span class="nc" id="L191">		m_organizationID = null;</span>
+<span class="nc" id="L192">		m_queueAttribFilterID = queueAttributeID;</span>
+<span class="nc" id="L193">		m_isOrgPickerSelected = false;</span>
+<span class="nc" id="L194">		m_startDate = startDate;</span>
+<span class="nc" id="L195">		m_endDate = endData;</span>
+<span class="nc" id="L196">		m_mediaFilter = mediaFilter;</span>
+<span class="nc" id="L197">		m_isCombinedIDs = isCombinedIDs;</span>
+<span class="nc" id="L198">		m_isShowSubQueues = isShowSubQueues;</span>
+<span class="nc" id="L199">		m_checkAllQueuesPrivilege = checkAllQueuesPrivilege;</span>
+<span class="nc" id="L200">	}</span>
+	
+	
+	/**
+	 * Overloading the function to accept organization details also
+	 *
+	 * @param isCombinedIDs - Indicate the the IDs in the list is a combination of CampaingID_MediaID_QueueID;
+	 * 		otherwise just QueueID
+	 * @param isShowSubQueues - Indicate whether SubQueues are shown
+	 * @param checkAllQueuesPrivilege - If true, the 'FS_VIEWALLQUEUEHISTORY_ID' privilege is required for all queues to be listed.
+	 */
+	public void setCampaignModeData(ID campaignID, ID organizationID, boolean is_org_picker_selected, Date startDate, Date endData, Map mediaFilter,
+			boolean isCombinedIDs, boolean isShowSubQueues, boolean checkAllQueuesPrivilege) {
+<span class="nc" id="L213">		m_isCampaignMode=true;</span>
+<span class="nc" id="L214">		m_campaignID = campaignID;</span>
+<span class="nc" id="L215">		m_organizationID = organizationID;</span>
+<span class="nc" id="L216">		m_isOrgPickerSelected = is_org_picker_selected;</span>
+<span class="nc" id="L217">		m_startDate = startDate;</span>
+<span class="nc" id="L218">		m_endDate = endData;</span>
+<span class="nc" id="L219">		m_mediaFilter = mediaFilter;</span>
+<span class="nc" id="L220">		m_isCombinedIDs = isCombinedIDs;</span>
+<span class="nc" id="L221">		m_isShowSubQueues = isShowSubQueues;</span>
+<span class="nc" id="L222">		m_checkAllQueuesPrivilege = checkAllQueuesPrivilege;</span>
+<span class="nc" id="L223">	}</span>
+	
+	
+	
+
+	public void setIsNodeDisplayEnabled(boolean bValue) {
+<span class="nc" id="L229">		m_isNodeDisplayEnabled = bValue;</span>
+<span class="nc" id="L230">	}</span>
+
+	/**
+	 * Sets selected ID. It invokes setCheckedID internally and it is meant
+	 * mainly for auto extract parameters
+	 */
+	public void setCheckedQueueID(ID[] checkedID) {
+<span class="nc" id="L237">		setCheckedID(checkedID);</span>
+<span class="nc" id="L238">	}</span>
+
+	protected Object getTreeRootData() {
+<span class="nc" id="L241">		return QueueUtil.ROOT_OBJ;</span>
+	}
+
+	protected TreeNodeHelper getTreeNodeHelper(Collection treeObjects) {
+<span class="nc bnc" id="L245" title="All 2 branches missed.">		if (m_isCampaignMode) {</span>
+<span class="nc" id="L246">			QueueUtil.QueueTreeInCampaignModeNodeHelper nodeHelper = new QueueUtil</span>
+					.QueueTreeInCampaignModeNodeHelper(treeObjects,	m_mediaFilter, m_campaignID,
+							m_localizer, m_isNodeDisplayEnabled, false, m_isCombinedIDs, m_queueAttribFilterID);
+<span class="nc bnc" id="L249" title="All 2 branches missed.">			setIsTreeRootShown(!nodeHelper.isEmptyRoot());</span>
+<span class="nc" id="L250">			return nodeHelper;</span>
+		}
+<span class="nc" id="L252">		return super.getTreeNodeHelper(treeObjects);</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

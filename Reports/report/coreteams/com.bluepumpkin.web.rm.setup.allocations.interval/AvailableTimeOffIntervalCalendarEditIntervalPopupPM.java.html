@@ -1,0 +1,403 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AvailableTimeOffIntervalCalendarEditIntervalPopupPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.setup.allocations.interval</a> &gt; <span class="el_source">AvailableTimeOffIntervalCalendarEditIntervalPopupPM.java</span></div><h1>AvailableTimeOffIntervalCalendarEditIntervalPopupPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.setup.allocations.interval;
+
+import java.text.NumberFormat;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.ResourceBundle;
+import java.util.TimeZone;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.rm.util.DateUtil;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.core.l10n.CoreWebBundleKey;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.keys.RmJavaScriptFileID;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.witness.web.uif.jsp.HtmlInput;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.form.FormInputPC;
+import com.witness.web.uif.pagecomponent.form.FormTwoColumnPC;
+import com.witness.web.uif.pagecomponent.picker.date.DatePickerPC;
+import com.witness.web.uif.pagecomponent.picker.time.TimePickerPC;
+import com.witness.web.uif.pagecomponent.picker.time.TimeRangePickerPC;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.pagemodel.PopupWindowPM;
+import com.witness.web.uif.pagemodel.WorkpaneFieldNames;
+import com.witness.web.uif.system.RequestContext;
+
+/**
+ * The popup dialog that is used
+ */
+public class AvailableTimeOffIntervalCalendarEditIntervalPopupPM extends PopupWindowPM {
+
+<span class="fc" id="L44">	private static final Category LOG = Log.initCategory(AvailableTimeOffIntervalCalendarEditIntervalPopupPM.class.getName());</span>
+	private static final long serialVersionUID = 1L;
+
+	public static final String FORM_ACTION = &quot;rm_toic_edit_interval_popup&quot;;
+	// The popup command needs to start with &quot;POPUP_&quot;
+	public static final String POPUP_COMMAND = &quot;POPUP_TOIC_EDIT_INTERVAL&quot;;
+
+	private static final String ALLOCATED_HOURS_FN = &quot;intervalAllocationHours&quot;;
+	private static final String DATE_FN = &quot;intervalAllocationDate&quot;;
+	private static final String EDIT_INFO_FN = &quot;editInfo&quot;;
+
+	// functions are defined in AvailableTimeOffIntervalCalendarEditInterval.js
+	private static final String CUSTOM_ON_SET_JS = &quot;availableTimeOffIntervalCalendarEditIntervalPopup.setInterval()&quot;;
+	private static final String CUSTOM_ON_DELETE_JS = &quot;availableTimeOffIntervalCalendarEditIntervalPopup.removeInterval()&quot;;
+
+	private final transient ResourceBundle coreWebBundle;
+	private final transient ResourceBundle fsWebBundle;
+	private final transient ResourceBundle rmBundle;
+
+	// Create / Edit interval fields
+	private String intervalAllocationEndTime;
+	private String intervalAllocationHours;
+	private String intervalAllocationIntervalCount;
+	private String intervalAllocationMode;
+	private String intervalAllocationMonth;
+	private String intervalAllocationStartTime;
+	private String selectedID;
+	private ID organizationID;
+
+	private Organization org;
+	private Date startOfMonth;
+
+	private final FormTwoColumnPC formTwoColumnPC;
+	private final DatePickerPC datePC;
+	private FormInputPC allocatedHoursPC;
+	private final TimeRangePickerPC timeRangePickerPC;
+
+	// ================================================================================
+	// CONSTRUCTION
+	// ================================================================================
+
+	public AvailableTimeOffIntervalCalendarEditIntervalPopupPM(RequestContext context) {
+<span class="nc" id="L86">		super(context);</span>
+
+<span class="nc" id="L88">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="nc" id="L89">		addRequiredJavaScriptFile(RmJavaScriptFileID.AVAILABLETIMEOFFINTERVALCALENDAREDITINTERVAL);</span>
+<span class="nc" id="L90">		coreWebBundle = m_localizer.getBundle(CoreWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L91">		fsWebBundle = m_localizer.getBundle(FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L92">		rmBundle = m_localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+
+<span class="nc" id="L94">		formTwoColumnPC = new FormTwoColumnPC(context);</span>
+<span class="nc" id="L95">		addChildComponent(formTwoColumnPC);</span>
+<span class="nc" id="L96">		formTwoColumnPC.setShowTitle(false);</span>
+
+<span class="nc" id="L98">		datePC = new DatePickerPC(context, DATE_FN, TimeZoneUtil.GMT_TIMEZONE, false);</span>
+<span class="nc" id="L99">		addChildComponent(datePC);</span>
+
+<span class="nc" id="L101">		timeRangePickerPC = new TimeRangePickerPC(context, &quot;timeRangePickerPC&quot;);</span>
+<span class="nc" id="L102">		addChildComponent(timeRangePickerPC);</span>
+<span class="nc" id="L103">		timeRangePickerPC.setTimeInterval(DateUtil.TIME_INTERVAL);</span>
+
+		// add vars so the name can be used in js.
+<span class="nc" id="L106">		addJSVariableAsString(&quot;EDIT_INFO_FN&quot;, EDIT_INFO_FN);</span>
+<span class="nc" id="L107">		addJSVariableAsString(&quot;INTERVAL_ALLOCATION_HOURS_FN&quot;, ALLOCATED_HOURS_FN);</span>
+<span class="nc" id="L108">		addJSVariableAsString(&quot;INTERVAL_ALLOCATION_DATE_FN&quot;, DATE_FN);</span>
+<span class="nc" id="L109">		addJSVariableAsString(&quot;INTERVAL_ALLOCATION_START_FN&quot;, timeRangePickerPC.getStartTimePickerPC().getInputFieldName());</span>
+<span class="nc" id="L110">		addJSVariableAsString(&quot;INTERVAL_ALLOCATION_END_FN&quot;, timeRangePickerPC.getEndTimePickerPC().getInputFieldName());</span>
+
+<span class="nc" id="L112">		createAllocatedHoursPC();</span>
+<span class="nc" id="L113">		setIsContentItemNameRequired(false);</span>
+<span class="nc" id="L114">	}</span>
+
+	// ================================================================================
+	// CLASS INTERFACE
+	// ================================================================================
+
+	public static PageModel getInstance(RequestContext context) {
+<span class="nc" id="L121">		return getInstance(context, AvailableTimeOffIntervalCalendarEditIntervalPopupPM.class);</span>
+	}
+
+	// ================================================================================
+	// PROPERTIES: Create / Edit Interval
+	// ================================================================================
+
+	public String getIntervalAllocationEndTime() {
+<span class="nc" id="L129">		return intervalAllocationEndTime;</span>
+	}
+
+	public void setIntervalAllocationEndTime(String intervalAllocationEndTime) {
+<span class="nc" id="L133">		this.intervalAllocationEndTime = intervalAllocationEndTime;</span>
+<span class="nc" id="L134">	}</span>
+
+	public String getIntervalAllocationHours() {
+<span class="nc" id="L137">		return intervalAllocationHours;</span>
+	}
+
+	public void setIntervalAllocationHours(String intervalAllocationHours) {
+<span class="nc" id="L141">		this.intervalAllocationHours = intervalAllocationHours;</span>
+<span class="nc" id="L142">	}</span>
+
+	public String getIntervalAllocationIntervalCount() {
+<span class="nc" id="L145">		return intervalAllocationIntervalCount;</span>
+	}
+
+	public void setIntervalAllocationIntervalCount(String intervalAllocationIntervalCount) {
+<span class="nc" id="L149">		this.intervalAllocationIntervalCount = intervalAllocationIntervalCount;</span>
+<span class="nc" id="L150">	}</span>
+
+	public String getIntervalAllocationMode() {
+<span class="nc" id="L153">		return intervalAllocationMode;</span>
+	}
+
+	public void setIntervalAllocationMode(String intervalAllocationMode) {
+<span class="nc" id="L157">		this.intervalAllocationMode = intervalAllocationMode;</span>
+<span class="nc" id="L158">	}</span>
+
+	public String getIntervalAllocationMonth() {
+<span class="nc" id="L161">		return intervalAllocationMonth;</span>
+	}
+
+	public void setIntervalAllocationMonth(String intervalAllocationMonth) {
+<span class="nc" id="L165">		this.intervalAllocationMonth = intervalAllocationMonth;</span>
+<span class="nc" id="L166">	}</span>
+
+	public String getIntervalAllocationStartTime() {
+<span class="nc" id="L169">		return intervalAllocationStartTime;</span>
+	}
+
+	public void setIntervalAllocationStartTime(String intervalAllocationStartTime) {
+<span class="nc" id="L173">		this.intervalAllocationStartTime = intervalAllocationStartTime;</span>
+<span class="nc" id="L174">	}</span>
+
+	/**
+	 * Gets the selected organziation's ID.
+	 *
+	 * @return
+	 */
+	public String getSelectedID() {
+<span class="nc" id="L182">		return selectedID;</span>
+	}
+
+	/**
+	 * Sets the selected organization's ID.
+	 */
+	@Override
+	public void setSelectedID(String selectedID) {
+<span class="nc" id="L190">		this.selectedID = selectedID;</span>
+<span class="nc bnc" id="L191" title="All 2 branches missed.">		if (!StringUtil.isEmptyOrWhiteSpace(selectedID)) {</span>
+<span class="nc" id="L192">			organizationID = ID.fromInt(Integer.parseInt(selectedID));</span>
+		}
+<span class="nc" id="L194">	}</span>
+
+	// ================================================================================
+	// INTERFACE
+	// ================================================================================
+
+	@Override
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="nc" id="L202">		boolean success = super.extractParameters(request);</span>
+
+		// selected ID seems to be cached in the session, it ignores the one from the request.
+<span class="nc" id="L205">		setSelectedID(request.getParameter(WorkpaneFieldNames.SELECTED_ID_FN));</span>
+
+<span class="nc" id="L207">		return success;</span>
+	}
+
+	/**
+	 * Gets the date from the date PC.
+	 */
+	public Date getDate() {
+<span class="nc" id="L214">		return datePC.getDate();</span>
+	}
+
+	public Pair&lt;Date, Date&gt; getTimes(TimeZone timeZone, int orgDayBoundaryOffset, String startTimeInputFN, String endTimeInputFN) {
+<span class="nc" id="L218">		int startTimeInMinutes = timeRangePickerPC.getStartTimePickerPC().extractTime(startTimeInputFN) / 60;</span>
+<span class="nc" id="L219">		int endTimeInMinutes = timeRangePickerPC.getEndTimePickerPC().extractTime(endTimeInputFN) / 60;</span>
+<span class="nc" id="L220">		Date date = datePC.getDate();</span>
+<span class="nc" id="L221">		return DateUtil.getTimes(timeZone, orgDayBoundaryOffset, date, startTimeInMinutes, endTimeInMinutes);</span>
+	}
+
+	/**
+	 * Return the Html code to render the display of the component
+	 */
+	@Override
+	public String getHtmlDisplay() {
+<span class="nc" id="L229">		StringBuilder sb = new StringBuilder(super.getHtmlDisplay());</span>
+
+<span class="nc" id="L231">		sb.append(this.formTwoColumnPC.getHtmlDisplay());</span>
+
+<span class="nc" id="L233">		sb.append(new HtmlInput(AvailableTimeOffIntervalCalendarPC.Fields.MODE_FN, intervalAllocationMode, HtmlInput.HTML_INPUT_TYPE_HIDDEN));</span>
+<span class="nc" id="L234">		sb.append(new HtmlInput(AvailableTimeOffIntervalCalendarPC.Fields.STARTTIME_FN, intervalAllocationStartTime,</span>
+				HtmlInput.HTML_INPUT_TYPE_HIDDEN));
+
+<span class="nc" id="L237">		appendEditInfo(sb);</span>
+
+<span class="nc" id="L239">		return sb.toString();</span>
+	}
+
+	@Override
+	protected void initializeModel() {
+<span class="nc bnc" id="L244" title="All 2 branches missed.">		if (m_isInitialized) {</span>
+<span class="nc" id="L245">			return;</span>
+		}
+<span class="nc" id="L247">		m_isInitialized = true;</span>
+
+		try {
+<span class="nc" id="L250">			writeInitializeModelDebugInfo();</span>
+<span class="nc" id="L251">			initContentTitle();</span>
+<span class="nc" id="L252">			initToolbar();</span>
+
+<span class="nc bnc" id="L254" title="All 2 branches missed.">			if (organizationID == null) {</span>
+				// if there is no org ID, nothing should be enabled.
+<span class="nc" id="L256">				return;</span>
+			}
+
+<span class="nc" id="L259">			org = OrganizationModelHandler.getOrganization(m_context, organizationID);</span>
+<span class="nc" id="L260">			SimpleDateFormat dateTimeFormatGmt = AvailableTimeOffIntervalCalendarPC.getDateTimeFormatGmt();</span>
+
+<span class="nc" id="L262">			startOfMonth = dateTimeFormatGmt.parse(intervalAllocationMonth);</span>
+<span class="nc" id="L263">			datePC.setTimeZone(org.getTimeZone());</span>
+<span class="nc" id="L264">			datePC.setLowerLimit(startOfMonth);</span>
+			// re-extract the date because it was parsed using the wrong time zone
+<span class="nc" id="L266">			datePC.setDate(datePC.extractDate(datePC.getDateInputFieldName()));</span>
+
+<span class="nc" id="L268">			Calendar cal = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L269">			cal.setTime(startOfMonth);</span>
+<span class="nc" id="L270">			Date startTime = cal.getTime();</span>
+<span class="nc" id="L271">			Date endTime = cal.getTime();</span>
+
+<span class="nc" id="L273">			cal.add(Calendar.MONTH, 1);</span>
+<span class="nc" id="L274">			cal.add(Calendar.MILLISECOND, -1);</span>
+<span class="nc" id="L275">			datePC.setUpperLimit(cal.getTime());</span>
+
+			// edit and click &amp; drag will pre-populate date, start, and end
+<span class="nc bnc" id="L278" title="All 2 branches missed.">			if (!StringUtil.isEmptyOrWhiteSpace(intervalAllocationStartTime)) {</span>
+<span class="nc" id="L279">				startTime = dateTimeFormatGmt.parse(intervalAllocationStartTime);</span>
+			}
+<span class="nc bnc" id="L281" title="All 2 branches missed.">			if (!StringUtil.isEmptyOrWhiteSpace(intervalAllocationEndTime)) {</span>
+<span class="nc" id="L282">				endTime = dateTimeFormatGmt.parse(intervalAllocationEndTime);</span>
+			}
+
+<span class="nc bnc" id="L285" title="All 2 branches missed.">			if (isInEditMode()) {</span>
+<span class="nc" id="L286">				datePC.setInputType(DatePickerPC.INPUT_TYPE_READONLY);</span>
+<span class="nc" id="L287">				datePC.setIsPickerEnabled(false);</span>
+<span class="nc" id="L288">				datePC.setIsPickerHidden(false);</span>
+<span class="nc" id="L289">				datePC.setEnabled(false);</span>
+			} else {
+<span class="nc" id="L291">				intervalAllocationHours = &quot;0&quot;;</span>
+<span class="nc" id="L292">				datePC.setDate(startTime);</span>
+			}
+
+<span class="nc" id="L295">			setTime(timeRangePickerPC.getStartTimePickerPC(), cal, startTime);</span>
+<span class="nc" id="L296">			setTime(timeRangePickerPC.getEndTimePickerPC(), cal, endTime);</span>
+
+<span class="nc" id="L298">			formTwoColumnPC.addRow(i18n(coreWebBundle, CoreWebBundleKey.DATE), datePC);</span>
+
+<span class="nc" id="L300">			formTwoColumnPC.addRow(i18n(fsWebBundle, FsWebBundleKey.INTERVAL), timeRangePickerPC);</span>
+
+			// Allocated Hours
+<span class="nc" id="L303">			allocatedHoursPC.setInputValue(intervalAllocationHours);</span>
+<span class="nc" id="L304">			formTwoColumnPC.addRow(i18n(coreWebBundle, CoreWebBundleKey.HOURS), allocatedHoursPC);</span>
+<span class="nc" id="L305">		} catch (Exception e) {</span>
+<span class="nc" id="L306">			handleUnableToLoadDataError(LOG, e);</span>
+<span class="nc" id="L307">		}</span>
+<span class="nc" id="L308">	}</span>
+
+	@Override
+	protected void initUtilityPane() {
+<span class="nc" id="L312">		getUtilityPane().setIsHelpEnabled(false);</span>
+<span class="nc" id="L313">	}</span>
+
+	@Override
+	public String getRequiredHTML() {
+<span class="nc" id="L317">		StringBuilder sb = new StringBuilder(super.getRequiredHTML());</span>
+<span class="nc" id="L318">		return sb.toString();</span>
+	}
+
+	@Override
+	public String getFormAction() {
+<span class="nc" id="L323">		return FORM_ACTION;</span>
+	}
+
+	public void setTimeZone(TimeZone timeZone) {
+<span class="nc" id="L327">		datePC.setTimeZone(timeZone);</span>
+<span class="nc" id="L328">	}</span>
+
+	// ================================================================================
+	// IMPLEMENTATION
+	// ================================================================================
+
+	private void appendEditInfo(StringBuilder sb) {
+<span class="nc bnc" id="L335" title="All 2 branches missed.">		if (org == null) {</span>
+<span class="nc" id="L336">			return;</span>
+		}
+<span class="nc" id="L338">		int offsetInSeconds = org.getDayBoundaryOffset() * 60;</span>
+
+<span class="nc" id="L340">		sb.append(&quot;&lt;span name=\&quot;&quot;).append(EDIT_INFO_FN).append(&quot;\&quot; style=\&quot;display:none;\&quot;&quot;);</span>
+<span class="nc" id="L341">		sb.append(&quot;data-org_offset=\&quot;&quot;).append(offsetInSeconds).append(&quot;\&quot;&quot;);</span>
+<span class="nc" id="L342">		sb.append(&quot;&lt;/span&gt;&quot;);</span>
+<span class="nc" id="L343">	}</span>
+
+	private void createAllocatedHoursPC() {
+<span class="nc" id="L346">		allocatedHoursPC = AvailableTimeOffIntervalCalendarPC.getAllocatedHoursFormInputPC(m_context);</span>
+<span class="nc" id="L347">		allocatedHoursPC.setInputFN(ALLOCATED_HOURS_FN);</span>
+<span class="nc" id="L348">		addChildComponent(allocatedHoursPC);</span>
+
+<span class="nc" id="L350">		NumberFormat numberFormat = AvailableTimeOffIntervalCalendarPC.getNumberFormat(m_localizer);</span>
+<span class="nc" id="L351">		intervalAllocationHours = numberFormat.format(0);</span>
+<span class="nc" id="L352">	}</span>
+
+	private void initContentTitle() {
+<span class="nc bnc" id="L355" title="All 2 branches missed.">		if (isInEditMode()) {</span>
+<span class="nc" id="L356">			m_contentTitlePC.setPageTitle(i18n(rmBundle, RmWebBundleKey.TIMEOFF_POOL_EDIT_INTERVAL));</span>
+		} else {
+<span class="nc" id="L358">			m_contentTitlePC.setPageTitle(i18n(rmBundle, RmWebBundleKey.TIMEOFF_POOL_CREATE_INTERVAL));</span>
+		}
+<span class="nc" id="L360">	}</span>
+
+	/**
+	 * Prepare toolbar, which should come from the parent class
+	 */
+	@Override
+	protected void initToolbar() {
+<span class="nc bnc" id="L367" title="All 2 branches missed.">		boolean allowSet = organizationID != null;</span>
+<span class="nc" id="L368">		m_toolbar.addJSTextButton(&quot;POPUP_JSFUNCTION&quot;, i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_SET), allowSet, CUSTOM_ON_SET_JS);</span>
+<span class="nc bnc" id="L369" title="All 4 branches missed.">		boolean allowDelete = allowSet &amp;&amp; !StringUtil.isEmptyOrWhiteSpace(intervalAllocationIntervalCount);</span>
+<span class="nc bnc" id="L370" title="All 4 branches missed.">		if (isInEditMode() &amp;&amp; allowDelete) {</span>
+<span class="nc" id="L371">			m_toolbar.addJSTextButton(&quot;POPUP_JSFUNCTION&quot;, i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_DELETE), true, CUSTOM_ON_DELETE_JS);</span>
+		}
+<span class="nc" id="L373">		m_toolbar.addCloseWindowTextButton(&quot;DONE_ACTION&quot;, i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_CANCEL), true);</span>
+<span class="nc" id="L374">	}</span>
+
+	private boolean isInEditMode() {
+<span class="nc" id="L377">		return PageAction.EDIT.equals(intervalAllocationMode);</span>
+	}
+
+	private void setTime(TimePickerPC timePickerPC, Calendar cal, Date time) {
+<span class="nc" id="L381">		cal.setTime(time);</span>
+<span class="nc" id="L382">		int hours = cal.get(Calendar.HOUR_OF_DAY);</span>
+<span class="nc" id="L383">		int minutes = cal.get(Calendar.MINUTE);</span>
+<span class="nc" id="L384">		timePickerPC.setTime(hours, minutes, 0);</span>
+<span class="nc" id="L385">	}</span>
+
+	private void writeInitializeModelDebugInfo() {
+<span class="nc bnc" id="L388" title="All 2 branches missed.">		if (!LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L389">			return;</span>
+		}
+<span class="nc" id="L391">		StringBuilder sb = new StringBuilder();</span>
+<span class="nc" id="L392">		sb.append(&quot;initializeModel state:&quot;);</span>
+<span class="nc" id="L393">		sb.append(&quot;\n  intervalAllocationEndTime = &quot;).append(intervalAllocationEndTime);</span>
+<span class="nc" id="L394">		sb.append(&quot;\n  intervalAllocationHours = &quot;).append(intervalAllocationHours);</span>
+<span class="nc" id="L395">		sb.append(&quot;\n  intervalAllocationIntervalCount = &quot;).append(intervalAllocationIntervalCount);</span>
+<span class="nc" id="L396">		sb.append(&quot;\n  intervalAllocationMode = &quot;).append(intervalAllocationMode);</span>
+<span class="nc" id="L397">		sb.append(&quot;\n  intervalAllocationMonth = &quot;).append(intervalAllocationMonth);</span>
+<span class="nc" id="L398">		sb.append(&quot;\n  intervalAllocationStartTime = &quot;).append(intervalAllocationStartTime);</span>
+<span class="nc" id="L399">		sb.append(&quot;\n  selectedID(orgID) = &quot;).append(selectedID);</span>
+<span class="nc" id="L400">		LOG.debug(sb.toString());</span>
+<span class="nc" id="L401">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

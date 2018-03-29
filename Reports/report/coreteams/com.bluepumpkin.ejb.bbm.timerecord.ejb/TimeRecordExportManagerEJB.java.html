@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TimeRecordExportManagerEJB.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.timerecord.ejb</a> &gt; <span class="el_source">TimeRecordExportManagerEJB.java</span></div><h1>TimeRecordExportManagerEJB.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.timerecord.ejb;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoParam;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.Log;
+import com.bluepumpkin.ejb.bbm.base.BbmTimePeriodOverlapException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.config.ejb.DBConfigManager;
+import com.bluepumpkin.ejb.bbm.paypolicy.ejb.PayPeriodTypeManager;
+import com.bluepumpkin.ejb.bbm.paypolicy.ejb.PayPolicyManager;
+import com.bluepumpkin.ejb.bbm.paypolicy.model.PayPeriod;
+import com.bluepumpkin.ejb.bbm.paypolicy.model.PayPolicy;
+import com.bluepumpkin.ejb.bbm.payroll.util.RulesTimeSpan;
+import com.bluepumpkin.ejb.bbm.payroll.util.TimeSpanNarrower;
+import com.bluepumpkin.ejb.bbm.timerecord.model.TimeRecord;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
+import com.bluepumpkin.ejb.bbm.workresource.model.WorkResourcePayPolicy;
+import com.bluepumpkin.ejb.bbm.workrules.model.WorkRuleUtil;
+import com.bluepumpkin.ejb.core.base.SessionEJBBase;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  TimeRecordManager EJB implementation
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, inc
+ * @author       Sheng Song
+ * @version 1.0
+ */
+
+<span class="nc" id="L42">public class TimeRecordExportManagerEJB extends SessionEJBBase</span>
+{
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+<span class="nc" id="L48">	private static Category m_cat = Log.initCategory( TimeRecordExportManagerEJB.class.getName());</span>
+	private PayPeriodTypeManager m_PayPeriodTypeManager;
+	private WorkResourceManager m_WorkResourceManager;
+	private TimeRecordManager m_TimeRecordManager;
+	private PayPolicyManager m_PayPolicyManager;
+<span class="nc" id="L53">	private static TimeZone m_gmtTZ = TimeZone.getTimeZone(&quot;GMT&quot;);</span>
+	private int m_Overlap;
+	// override the base class to provide the appropriate logging category
+<span class="nc" id="L56">	protected Category getCategory() { return m_cat; }</span>
+
+	{
+<span class="nc" id="L59">		super.init(TimeRecordExportManagerEJB.class.getName());</span>
+<span class="nc" id="L60">	}</span>
+	public void ejbCreate() {
+		try {
+<span class="nc" id="L63">			m_PayPeriodTypeManager = BbmManagerFactory.getPayPeriodTypeManager();</span>
+<span class="nc" id="L64">			m_WorkResourceManager = BbmManagerFactory.getWorkResourceManager();</span>
+<span class="nc" id="L65">			m_TimeRecordManager = WfmManagerFactory.getTimeRecordManager();</span>
+<span class="nc" id="L66">			m_PayPolicyManager = BbmManagerFactory.getPayPolicyManager();</span>
+<span class="nc" id="L67">			DBConfigManager dbcm = BbmManagerFactory.getDBConfigManager();</span>
+<span class="nc" id="L68">			m_Overlap = dbcm.getPeriodOverlap();</span>
+<span class="nc" id="L69">		} catch (Exception e) {</span>
+<span class="nc" id="L70">			handleException(&quot;ejbCreate&quot;, e);</span>
+<span class="nc" id="L71">		}</span>
+
+<span class="nc" id="L73">	}</span>
+	/**
+	 * Lock(IsPosted = 1) for a collection of TimeRecord
+	 * @param Collection
+	 * @param boolean, lock/unlock
+	 */
+	public void handleTimeRecord(Collection timeRecordID, boolean lock)
+							   throws BbmUpdateException
+	{
+<span class="nc" id="L82">		methodStart(&quot;handleTimeRecord&quot;, timeRecordID, JdmoParam.getObject(lock));</span>
+		try {
+<span class="nc" id="L84">			Jdmo jdmo = new Jdmo();</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">			StringBuffer pStmt = new StringBuffer(</span>
+		&quot;update TIMERECORD set ISPOSTED=&quot;+(lock?1:0)+&quot; where ID in &quot;);
+<span class="nc" id="L87">			pStmt.append(jdmo.createInClause(timeRecordID));</span>
+<span class="nc" id="L88">			jdmo.executeCommand(pStmt.toString());</span>
+<span class="nc" id="L89">		} catch (Exception e) {</span>
+<span class="nc" id="L90">			handleException(e);</span>
+<span class="nc" id="L91">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L93">			methodFinish();</span>
+<span class="nc" id="L94">		}</span>
+<span class="nc" id="L95">	}</span>
+	/**
+	 * Lock(IsPosted = 1) for a workresource for a given period
+	 * @param Collection
+	 * @param ID
+	 */
+	public void lockTimeRecord(Collection workResourceID,
+							   ID payPeriodID)
+							   throws BbmUpdateException
+	{
+<span class="nc" id="L105">		methodStart(&quot;lockTimeRecord&quot;, workResourceID, payPeriodID);</span>
+		try {
+<span class="nc" id="L107">			PayPeriod pp = m_PayPeriodTypeManager.getPayPeriod(payPeriodID);</span>
+<span class="nc" id="L108">			updateTimeRecordForLock(workResourceID, pp, true);</span>
+<span class="nc" id="L109">		} catch (Exception e) {</span>
+<span class="nc" id="L110">			handleException(e);</span>
+<span class="nc" id="L111">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L113">			methodFinish();</span>
+<span class="nc" id="L114">		}</span>
+<span class="nc" id="L115">	}</span>
+	/**
+	 * Unlock(IsPosted = 0) for a workresource for a given period
+	 * @param Collection
+	 * @param ID
+	 */
+	public void unLockTimeRecord(Collection workResourceID,
+							   ID payPeriodID)
+							   throws BbmUpdateException
+	{
+<span class="nc" id="L125">		methodStart(&quot;unLockTimeRecord&quot;, workResourceID, payPeriodID);</span>
+		try {
+<span class="nc" id="L127">			PayPeriod pp = m_PayPeriodTypeManager.getPayPeriod(payPeriodID);</span>
+<span class="nc" id="L128">			updateTimeRecordForLock(workResourceID, pp, false);</span>
+<span class="nc" id="L129">		} catch (Exception e) {</span>
+<span class="nc" id="L130">			handleException(e);</span>
+<span class="nc" id="L131">			throw new BbmUpdateException(e);</span>
+		} finally {
+<span class="nc" id="L133">			methodFinish();</span>
+<span class="nc" id="L134">		}</span>
+<span class="nc" id="L135">	}</span>
+	/**
+	 * internal function to lock/unlock timerecords
+	 * @Collection
+	 * @Date start
+	 * @Date end
+	 */
+	private void updateTimeRecordForLock(Collection workResourceID,
+								  PayPeriod pp,
+								  boolean lock)
+								  throws BbmUpdateException
+	{
+		try {
+<span class="nc" id="L148">			LocalDate start = pp.getStartDate();</span>
+<span class="nc" id="L149">			LocalDate end = pp.getEndDate();</span>
+<span class="nc" id="L150">			start.add(Calendar.DATE, -1);</span>
+<span class="nc" id="L151">			end.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L152">			HashMap map = null;</span>
+			try {
+<span class="nc" id="L154">				map = m_TimeRecordManager.getValidEventsForWorkResource(</span>
+										  workResourceID,
+<span class="nc" id="L156">										  start.getTime(m_gmtTZ),</span>
+<span class="nc" id="L157">										  end.getTime(m_gmtTZ));</span>
+<span class="nc" id="L158">			} catch (BbmTimePeriodOverlapException e) {</span>
+<span class="nc" id="L159">				map = (HashMap)e.getContent();</span>
+<span class="nc" id="L160">			}</span>
+<span class="nc bnc" id="L161" title="All 4 branches missed.">			if (map == null || map.isEmpty())</span>
+<span class="nc" id="L162">				return;</span>
+<span class="nc" id="L163">			start.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L164">			end.add(Calendar.DATE, -1);</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">			for (Iterator it = workResourceID.iterator(); it.hasNext(); )</span>
+			{
+<span class="nc" id="L167">				ID wrID = (ID)it.next();</span>
+<span class="nc" id="L168">				Collection wra = m_WorkResourceManager.</span>
+<span class="nc" id="L169">								 getValidWorkResourceAssignments(wrID,</span>
+																 start,
+																 end);
+<span class="nc" id="L172">				Collection ppa = m_WorkResourceManager.</span>
+<span class="nc" id="L173">								 getValidWorkResourcePayPolicies(wrID,</span>
+																 start,
+																 end);
+				// Cache the PayPolicies for all employees in m_PayPolicy
+<span class="nc" id="L177">				HashMap payPolicy = new HashMap(1);</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">				for (Iterator itWRP = ppa.iterator(); itWRP.hasNext();) {</span>
+<span class="nc" id="L179">					WorkResourcePayPolicy wrpp = (WorkResourcePayPolicy)</span>
+<span class="nc" id="L180">												 itWRP.next();</span>
+<span class="nc" id="L181">					ID policyID = wrpp.getPayPolicyID();</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">					if (!payPolicy.containsKey(policyID)) {</span>
+<span class="nc" id="L183">						PayPolicy policy = m_PayPolicyManager.getPayPolicyByID(policyID);</span>
+<span class="nc" id="L184">						payPolicy.put(policyID, policy);</span>
+					}
+<span class="nc" id="L186">				}</span>
+<span class="nc" id="L187">				Collection ts = TimeSpanNarrower.payrollNarrower(</span>
+												 wra,
+												 ppa,
+												 payPolicy,
+												 null,
+												 null,
+<span class="nc" id="L193">												 pp.getPayPeriodTypeID());</span>
+<span class="nc bnc" id="L194" title="All 4 branches missed.">				if (ts == null || ts.isEmpty())</span>
+<span class="nc" id="L195">					continue;</span>
+<span class="nc" id="L196">				ArrayList timeRecords = (ArrayList)map.get(wrID);</span>
+<span class="nc bnc" id="L197" title="All 4 branches missed.">				if (timeRecords == null || timeRecords.isEmpty())</span>
+<span class="nc" id="L198">					continue;</span>
+<span class="nc" id="L199">				ArrayList trID = new ArrayList(timeRecords.size());</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">				for (Iterator itTR = timeRecords.iterator(); itTR.hasNext(); )</span>
+				{
+<span class="nc" id="L202">					TimeRecord tr = (TimeRecord)itTR.next();</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">					for (Iterator itTS = ts.iterator(); itTS.hasNext(); )</span>
+					{
+<span class="nc" id="L205">						RulesTimeSpan rts = (RulesTimeSpan)itTS.next();</span>
+<span class="nc bnc" id="L206" title="All 2 branches missed.">						if (WorkRuleUtil.isInPeriod(tr.getStartTime(),</span>
+<span class="nc" id="L207">													tr.getEndTime(),</span>
+<span class="nc" id="L208">													rts.getStartDate(),</span>
+<span class="nc" id="L209">													rts.getEndDate(),</span>
+													m_Overlap))
+<span class="nc" id="L211">							trID.add(tr.getID());</span>
+<span class="nc" id="L212">					}</span>
+<span class="nc" id="L213">				}</span>
+<span class="nc bnc" id="L214" title="All 2 branches missed.">				if (!trID.isEmpty())</span>
+<span class="nc" id="L215">					handleTimeRecord(trID, lock);</span>
+<span class="nc" id="L216">			}</span>
+<span class="nc" id="L217">		} catch (Exception e) {</span>
+<span class="nc" id="L218">			handleException(&quot;updateTimeRecordForLock&quot;, e);</span>
+<span class="nc" id="L219">			throw new BbmUpdateException(e);</span>
+<span class="nc" id="L220">		}</span>
+<span class="nc" id="L221">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,792 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AvailableTimeOffIntervalCalendarPC.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.setup.allocations.interval</a> &gt; <span class="el_source">AvailableTimeOffIntervalCalendarPC.java</span></div><h1>AvailableTimeOffIntervalCalendarPC.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.setup.allocations.interval;
+
+import java.text.DateFormat;
+import java.text.NumberFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.ResourceBundle;
+import java.util.TimeZone;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.l10n.RegionalFormatBundleKey;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.HtmlEncoder;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TOCalcUtil;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.rm.DSTTransitionMode;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOIntervalCalendar;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOIntervalCalendarDay;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOIntervalCalendarIncrement;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOIntervalCalendarInterval;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.ejb.MonthRange;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.BlackoutDay;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOIntervalAllocation;
+import com.bluepumpkin.ejb.rm.util.DateUtil;
+import com.bluepumpkin.ejb.rm.util.RmMath;
+import com.bluepumpkin.ejb.rm.util.TOIntervalCalendarUtil;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.core.l10n.CoreWebBundleKey;
+import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.keys.RmJavaScriptFileID;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.l10n.RmWebLogBundleKey;
+import com.bluepumpkin.web.rm.requests.timeoff.TimeOffCalendarPC;
+import com.google.gson.Gson;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.jsp.HtmlInput;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.CompositePC;
+import com.witness.web.uif.pagecomponent.calendar.DropDownCalendarHeader;
+import com.witness.web.uif.pagecomponent.form.FormInputPC;
+import com.witness.web.uif.pagecomponent.picker.date.DatePickerPC;
+import com.witness.web.uif.pagemodel.WorkpaneFieldNames;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.TimeZoneHelper;
+import com.witness.web.uif.util.html.HtmlChoiceInput;
+
+public class AvailableTimeOffIntervalCalendarPC extends CompositePC {
+	public static final int NUMBER_OF_DECIMALS = 2;
+	private static final int MAX_NUMBER_OF_DAYS_IN_MONTH = 31;
+<span class="fc" id="L61">	private static final Category LOG = Log.initCategory(AvailableTimeOffIntervalCalendarPC.class.getName());</span>
+
+	/**
+	 *
+	 */
+	private static final long serialVersionUID = -9045964370032875870L;
+	private static final int INCREMENT_MINS = DateUtil.TIME_INTERVAL;
+	private static final int INCREMENTS_IN_HOUR = DateUtil.INTERVALS_IN_HOUR;
+
+	private final ResourceBundle bbmWebBundle;
+	private BlackoutDay[] blackoutDays;
+	private DropDownCalendarHeader calHeader;
+	private final SimpleDateFormat dateTimeFormatGmt;
+	private DateFormat timeFormat;
+	private FormInputPC inputPC;
+<span class="fc" id="L76">	private boolean isEditable = false; // NOSONAR</span>
+	// keep in mind monthRange is midnight GMT not in org
+	private MonthRange monthRange;
+	private final NumberFormat numberFormat;
+	private TOIntervalCalendar timeOffIntervalCalendar;
+	private AvailableTimeOffIntervalCalendarViewModel intervalAllocationViewModel;
+<span class="fc" id="L82">	private int intervalNumber = 0;</span>
+	private Calendar calOrg;
+
+	// Create / Edit interval fields
+	private String intervalAllocationDate;
+	private String intervalAllocationEditIntervalStartTime;
+	private String intervalAllocationEndTime;
+	private String intervalAllocationHours;
+	private String intervalAllocationMode;
+	private String intervalAllocationStartTime;
+
+	// HTML field names
+	static class Fields {
+		// field for each interval input text
+		private static final String ALLOCATED_HOURS_FN = &quot;intervalAllocatedHours&quot;;
+		private static final String VIEW_MODEL_FN = &quot;intervalAllocationViewModel&quot;;
+
+		// popup fields
+		private static final String DATE_FN = &quot;intervalAllocationDate&quot;;
+		private static final String EDIT_INTERVAL_STARTTIME_FN = &quot;intervalAllocationEditIntervalStartTime&quot;;
+		private static final String ENDTIME_FN = &quot;intervalAllocationEndTime&quot;;
+		private static final String HOURS_FN = &quot;intervalAllocationHours&quot;;
+		private static final String INTERVAL_COUNT_FN = &quot;intervalAllocationIntervalCount&quot;;
+		static final String MODE_FN = &quot;intervalAllocationMode&quot;;
+		private static final String MONTH_FN = &quot;intervalAllocationMonth&quot;;
+		static final String STARTTIME_FN = &quot;intervalAllocationStartTime&quot;;
+
+		// Names of form fields whose values are passed to the AvailableTimeOffIntervalCalendarEditIntervalPopupPM dialog
+<span class="fc" id="L110">		private static final String FORM_FIELDS = String.format(&quot;%s,%s,%s,%s,%s,%s,%s,%s&quot;,</span>
+				WorkpaneFieldNames.SELECTED_ID_FN,
+				DATE_FN,
+				ENDTIME_FN,
+				MODE_FN,
+				MONTH_FN,
+				STARTTIME_FN,
+				HOURS_FN,
+				INTERVAL_COUNT_FN);
+
+		private static final String BUTTON_ATTRIBUTE_FIELDS = &quot;&quot;;
+
+<span class="nc" id="L122">		private Fields() {</span>
+
+<span class="nc" id="L124">		}</span>
+	}
+
+	/**
+	 * Constructor
+	 *
+	 * @param context
+	 *            The RequestContext
+	 */
+	public AvailableTimeOffIntervalCalendarPC(RequestContext context, String name) {
+<span class="fc" id="L134">		super(context);</span>
+
+<span class="fc" id="L136">		setName(name);</span>
+<span class="fc" id="L137">		bbmWebBundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+<span class="fc" id="L138">		dateTimeFormatGmt = getDateTimeFormatGmt();</span>
+<span class="fc" id="L139">		numberFormat = getNumberFormat();</span>
+
+<span class="fc" id="L141">		initInput();</span>
+<span class="fc" id="L142">		initCalendarHeader();</span>
+
+<span class="fc" id="L144">		addRequiredJavaScriptFile(RmJavaScriptFileID.RM);</span>
+<span class="fc" id="L145">		setJSMediator(RmJavaScriptFileID.AVAILABLETIMEOFFINTERVALCALENDAR);</span>
+
+<span class="fc" id="L147">		initEditIntervalPopup();</span>
+<span class="fc" id="L148">	}</span>
+
+	// ================================================================================
+	// CLASS INTERFACE
+	// ================================================================================
+
+	/**
+	 * Gets a FormInputPC for allocated Hours.
+	 */
+	public static FormInputPC getAllocatedHoursFormInputPC(RequestContext context) {
+<span class="fc" id="L158">		FormInputPC inputPC = new FormInputPC(context);</span>
+<span class="fc" id="L159">		inputPC.setInputFN(Fields.ALLOCATED_HOURS_FN);</span>
+<span class="fc" id="L160">		inputPC.setInputType(FormInputPC.TYPE_NUMERIC);</span>
+<span class="fc" id="L161">		inputPC.setSize(NUMBER_OF_DECIMALS);</span>
+<span class="fc" id="L162">		inputPC.setLowerLimit(0);</span>
+<span class="fc" id="L163">		return inputPC;</span>
+	}
+
+	/**
+	 * Gets a SimpleDateFormat for attributes in GMT.
+	 *
+	 * @return
+	 */
+	public static SimpleDateFormat getDateTimeFormatGmt() {
+<span class="fc" id="L172">		SimpleDateFormat sdf = new SimpleDateFormat(&quot;yyyy-MM-dd_HH-mm&quot;, Locale.US);</span>
+<span class="fc" id="L173">		sdf.setTimeZone(TimeZoneUtil.GMT_TIMEZONE);</span>
+<span class="fc" id="L174">		return sdf;</span>
+	}
+
+	/**
+	 * Gets the number formatter used for the interval's allocated hours.
+	 */
+	public static NumberFormat getNumberFormat(Localizer localizer) {
+<span class="fc" id="L181">		NumberFormat format = localizer.getNumberFormatter(NUMBER_OF_DECIMALS);</span>
+<span class="fc" id="L182">		format.setMinimumFractionDigits(0);</span>
+<span class="fc" id="L183">		format.setMaximumFractionDigits(NUMBER_OF_DECIMALS);</span>
+<span class="fc" id="L184">		return format;</span>
+	}
+
+	// ================================================================================
+	// PROPERTIES
+	// ================================================================================
+
+	public BlackoutDay[] getBlackoutDays() {
+<span class="nc" id="L192">		return blackoutDays;</span>
+	}
+
+	public AvailableTimeOffIntervalCalendarViewModel getIntervalAllocationViewModel() {
+<span class="nc" id="L196">		return intervalAllocationViewModel;</span>
+	}
+
+	/**
+	 * Gets the month range that was used to initialize the header.
+	 */
+	public MonthRange getMonthRange() {
+<span class="nc" id="L203">		return monthRange;</span>
+	}
+
+	public void isEditable(boolean isEditable) {
+<span class="nc" id="L207">		this.isEditable = isEditable;</span>
+<span class="nc" id="L208">	}</span>
+
+	public TOIntervalCalendar getTimeOffIntervalCalendar() {
+<span class="nc" id="L211">		return timeOffIntervalCalendar;</span>
+	}
+
+	public void setTimeOffIntervalCalendar(TOIntervalCalendar timeOffIntervalCalendar) {
+<span class="nc" id="L215">		this.timeOffIntervalCalendar = timeOffIntervalCalendar;</span>
+<span class="nc" id="L216">		intervalAllocationViewModel = new AvailableTimeOffIntervalCalendarViewModel(timeOffIntervalCalendar, dateTimeFormatGmt,</span>
+				numberFormat);
+<span class="nc" id="L218">	}</span>
+
+	// ================================================================================
+	// INTERFACE: Create / Edit Interval
+	// ================================================================================
+
+	public String getIntervalAllocationDate() {
+<span class="nc" id="L225">		return intervalAllocationDate;</span>
+	}
+
+	public void setIntervalAllocationDate(String intervalAllocationDate) {
+<span class="nc" id="L229">		this.intervalAllocationDate = intervalAllocationDate;</span>
+<span class="nc" id="L230">	}</span>
+
+	public String getIntervalAllocationEditIntervalStartTime() {
+<span class="nc" id="L233">		return intervalAllocationEditIntervalStartTime;</span>
+	}
+
+	public void setIntervalAllocationEditIntervalStartTime(String intervalAllocationEditIntervalStartTime) {
+<span class="nc" id="L237">		this.intervalAllocationEditIntervalStartTime = intervalAllocationEditIntervalStartTime;</span>
+<span class="nc" id="L238">	}</span>
+
+	public String getIntervalAllocationEndTime() {
+<span class="nc" id="L241">		return intervalAllocationEndTime;</span>
+	}
+
+	public void setIntervalAllocationEndTime(String intervalAllocationEndTime) {
+<span class="nc" id="L245">		this.intervalAllocationEndTime = intervalAllocationEndTime;</span>
+<span class="nc" id="L246">	}</span>
+
+	public String getIntervalAllocationHours() {
+<span class="nc" id="L249">		return intervalAllocationHours;</span>
+	}
+
+	public void setIntervalAllocationHours(String intervalAllocationHours) {
+<span class="nc" id="L253">		this.intervalAllocationHours = intervalAllocationHours;</span>
+<span class="nc" id="L254">	}</span>
+
+	public String getIntervalAllocationMode() {
+<span class="nc" id="L257">		return intervalAllocationMode;</span>
+	}
+
+	public void setIntervalAllocationMode(String intervalAllocationMode) {
+<span class="nc" id="L261">		this.intervalAllocationMode = intervalAllocationMode;</span>
+<span class="nc" id="L262">	}</span>
+
+	public String getIntervalAllocationStartTime() {
+<span class="nc" id="L265">		return intervalAllocationStartTime;</span>
+	}
+
+	public void setIntervalAllocationStartTime(String intervalAllocationStartTime) {
+<span class="nc" id="L269">		this.intervalAllocationStartTime = intervalAllocationStartTime;</span>
+<span class="nc" id="L270">	}</span>
+
+	/**
+	 * Gets an interval from the Interval Action dialog's fields. Null is returned if the interval is invalid.
+	 *
+	 * @param org
+	 * @param poolID
+	 * @return
+	 * @throws ParseException
+	 */
+	public TOIntervalAllocation getIntervalForAction(Organization org, ID poolID) throws ParseException {
+<span class="nc" id="L281">		writeGetIntervalActionDebugInfo();</span>
+
+<span class="nc" id="L283">		AvailableTimeOffIntervalCalendarEditIntervalPopupPM popup = new AvailableTimeOffIntervalCalendarEditIntervalPopupPM(m_context);</span>
+<span class="nc" id="L284">		popup.setTimeZone(org.getTimeZone());</span>
+<span class="nc" id="L285">		popup.extractParameters(m_context.getRequest());</span>
+<span class="nc" id="L286">		Pair&lt;Date, Date&gt; times = popup.getTimes(org.getTimeZone(), org.getDayBoundaryOffset(), Fields.STARTTIME_FN, Fields.ENDTIME_FN);</span>
+<span class="nc" id="L287">		Date startTime = times.getFirst();</span>
+<span class="nc" id="L288">		Date endTime = times.getSecond();</span>
+
+<span class="nc bnc" id="L290" title="All 2 branches missed.">		if (validateIntervalActionParams()) {</span>
+<span class="nc" id="L291">			TOIntervalAllocation interval = new TOIntervalAllocation(startTime, endTime);</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">			if (StringUtil.isEmptyOrWhiteSpace(intervalAllocationHours)) {</span>
+<span class="nc" id="L293">				interval.setAllocatedHours(0);</span>
+			} else {
+<span class="nc" id="L295">				float hours = numberFormat.parse(intervalAllocationHours).floatValue();</span>
+<span class="nc" id="L296">				interval.setAllocatedHours(RmMath.roundToDecimalPlace(hours, AvailableTimeOffIntervalCalendarPC.NUMBER_OF_DECIMALS));</span>
+			}
+<span class="nc" id="L298">			interval.setTOPoolID(poolID);</span>
+
+<span class="nc" id="L300">			TimeRange monthTimeRange = TOCalcUtil.getMonthTimeRange(popup.getDate(), org.getTimeZone(), org.getDayBoundaryOffset());</span>
+<span class="nc bnc" id="L301" title="All 2 branches missed.">			if (validateInterval(interval, org, monthTimeRange)) {</span>
+<span class="nc" id="L302">				return interval;</span>
+			}
+		}
+<span class="nc" id="L305">		return null;</span>
+	}
+
+	// ================================================================================
+	// INTERFACE
+	// ================================================================================
+
+	@Override
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="nc" id="L314">		boolean success = super.extractParameters(request);</span>
+		// this calendar is in the user's time zone (not sure if this matters).
+<span class="nc" id="L316">		Calendar cal = calHeader.extractNavDate();</span>
+<span class="nc bnc" id="L317" title="All 2 branches missed.">		if (cal != null) {</span>
+<span class="nc" id="L318">			initHeader(cal);</span>
+<span class="nc" id="L319">			extractBlackoutDays(request, cal);</span>
+		}
+<span class="nc" id="L321">		extractIntervalAllocationViewModel(request);</span>
+
+<span class="nc" id="L323">		return success;</span>
+	}
+
+	/**
+	 * Gets the Calendar Picker Header and Org Time Zone label.
+	 *
+	 * @return
+	 */
+	public String getHeader() {
+<span class="nc" id="L332">		StringBuilder sb = new StringBuilder();</span>
+<span class="nc" id="L333">		sb.append(&quot;&lt;div style=\&quot;display:inline-block;\&quot;&gt;&quot;).append(calHeader.getHtmlDisplay());</span>
+
+<span class="nc bnc" id="L335" title="All 2 branches missed.">		if (timeOffIntervalCalendar != null) {</span>
+<span class="nc" id="L336">			sb.append(i18n(m_common_bundle, UIFWebBundleKey.TIMEZONE_ORGANIZATION)).append(&quot;: &quot;);</span>
+<span class="nc" id="L337">			sb.append(TimeZoneHelper.getDisplayTimeZone(timeOffIntervalCalendar.getTimeZone().getID(), m_localizer));</span>
+		}
+<span class="nc" id="L339">		sb.append(&quot;&lt;/div&gt;&quot;);</span>
+<span class="nc" id="L340">		return sb.toString();</span>
+	}
+
+	@Override
+	public String getJavaScriptInitCode() {
+<span class="nc" id="L345">		StringBuilder js = new StringBuilder(super.getJavaScriptInitCode());</span>
+		// add any settings that are not needed in the ctor
+<span class="nc" id="L347">		js.append(getName()).append(&quot;.isEditable = &quot;).append(Boolean.toString(isEditable)).append(&quot;;&quot;);</span>
+<span class="nc" id="L348">		String viewModel = getViewModelJS();</span>
+<span class="nc" id="L349">		js.append(getName()).append(&quot;.setViewModel(&quot;).append(viewModel).append(&quot;);&quot;);</span>
+<span class="nc" id="L350">		js.append(&quot;\n\n&quot;);</span>
+<span class="nc" id="L351">		return js.toString();</span>
+	}
+
+	/**
+	 * Initialize For Display
+	 */
+	@Override
+	public void initForDisplay() {
+<span class="nc bnc" id="L359" title="All 2 branches missed.">		if (m_isInitializedForDisplay) {</span>
+<span class="nc" id="L360">			return;</span>
+		}
+<span class="nc" id="L362">		super.initForDisplay();</span>
+
+<span class="nc bnc" id="L364" title="All 2 branches missed.">		inputPC.setIsReadOnly(!isEditable);</span>
+<span class="nc" id="L365">	}</span>
+
+	/**
+	 * Return HTML Display
+	 */
+	@Override
+	public String getHtmlDisplay() {
+<span class="nc" id="L372">		StringBuilder sb = new StringBuilder();</span>
+
+<span class="nc bnc" id="L374" title="All 2 branches missed.">		if (isVisible()) {</span>
+<span class="nc" id="L375">			sb.append(&quot;&lt;div id=\&quot;&quot;).append(getName()).append(&quot;Container\&quot; style=\&quot;\&quot;&gt;\n&quot;);</span>
+<span class="nc" id="L376">			appendHiddenField(sb, Fields.DATE_FN);</span>
+<span class="nc" id="L377">			appendHiddenField(sb, Fields.EDIT_INTERVAL_STARTTIME_FN);</span>
+<span class="nc" id="L378">			appendHiddenField(sb, Fields.ENDTIME_FN);</span>
+<span class="nc" id="L379">			appendHiddenField(sb, Fields.HOURS_FN);</span>
+<span class="nc" id="L380">			appendHiddenField(sb, Fields.MODE_FN);</span>
+<span class="nc" id="L381">			appendHiddenField(sb, Fields.STARTTIME_FN);</span>
+<span class="nc" id="L382">			appendHiddenField(sb, Fields.INTERVAL_COUNT_FN);</span>
+<span class="nc" id="L383">			sb.append(&quot;\n&quot;);</span>
+<span class="nc bnc" id="L384" title="All 2 branches missed.">			if (timeOffIntervalCalendar != null) {</span>
+<span class="nc" id="L385">				appendHiddenField(sb, Fields.MONTH_FN, getDateTimeAttributeValue(timeOffIntervalCalendar.getStartTime()));</span>
+<span class="nc" id="L386">				appendHiddenField(sb, Fields.VIEW_MODEL_FN);</span>
+
+<span class="nc" id="L388">				appendStyles(sb);</span>
+<span class="nc" id="L389">				buildIntervalGrid(sb);</span>
+			}
+		}
+<span class="nc" id="L392">		return sb.toString();</span>
+	}
+
+	/**
+	 * Gets the number formatter used for the interval's allocated hours.
+	 */
+	public NumberFormat getNumberFormat() {
+<span class="fc" id="L399">		return getNumberFormat(m_localizer);</span>
+	}
+
+	// ================================================================================
+	// IMPLEMENTATION
+	// ================================================================================
+
+	private void addPageErrorMessage(String rmWebBundleKey, String... args) {
+<span class="nc" id="L407">		addPageMessage(Message.ERROR_TYPE, rmWebBundleKey, RmWebBundleKey.BUNDLE_NAME, args);</span>
+<span class="nc" id="L408">	}</span>
+
+	private void appendHiddenField(StringBuilder sb, String name) {
+<span class="nc" id="L411">		sb.append(new HtmlInput(name, &quot;&quot;, HtmlInput.HTML_INPUT_TYPE_HIDDEN));</span>
+<span class="nc" id="L412">	}</span>
+
+	private void appendHiddenField(StringBuilder sb, String name, String value) {
+<span class="nc" id="L415">		sb.append(new HtmlInput(name, value, HtmlInput.HTML_INPUT_TYPE_HIDDEN));</span>
+<span class="nc" id="L416">	}</span>
+
+	private void appendDate(StringBuilder sb, TOIntervalCalendarDay day, Calendar cal) {
+<span class="nc" id="L419">		cal.setTime(day.getStartTime());</span>
+<span class="nc" id="L420">		String name = getBlackoutDayInputPrefix() + cal.get(Calendar.DATE);</span>
+<span class="nc" id="L421">		String label = i18n(bbmWebBundle, BbmWebBundleKey.ORG_HOLIDAY_DAY_TYPE_BLACKOUT_DAY);</span>
+
+<span class="nc" id="L423">		sb.append(&quot;&lt;label title=\&quot;&quot;).append(label).append(&quot;\&quot;&gt;&lt;span class=\&quot;date-label\&quot;&gt;&quot;);</span>
+<span class="nc" id="L424">		sb.append(m_localizer.formatDate(day.getStartTime(), cal.getTimeZone(), RegionalFormatBundleKey.FULL_DATE_FORMAT));</span>
+<span class="nc" id="L425">		sb.append(&quot;&lt;/span&gt;&quot;);</span>
+
+<span class="nc" id="L427">		String onClickJS = getName() + &quot;.onBlackoutDayChange(this);&quot;;</span>
+<span class="nc bnc" id="L428" title="All 2 branches missed.">		sb.append(HtmlChoiceInput.createChkBoxInput(name, &quot;true&quot;, label, day.isBlackoutDay(), !isEditable, onClickJS, true));</span>
+
+<span class="nc" id="L430">		sb.append(&quot;&lt;/label&gt;&quot;);</span>
+<span class="nc" id="L431">	}</span>
+
+	private void appendExtraStartHour(StringBuilder sb) {
+<span class="nc bnc" id="L434" title="All 2 branches missed.">		if (timeOffIntervalCalendar.getDstTransitionMode() != DSTTransitionMode.SPRINGFORWARD) {</span>
+<span class="nc" id="L435">			return;</span>
+		}
+<span class="nc" id="L437">		TOIntervalCalendarDay day = timeOffIntervalCalendar.getDSTTransitionDay();</span>
+<span class="nc bnc" id="L438" title="All 2 branches missed.">		if (day == null) {</span>
+<span class="nc" id="L439">			return;</span>
+		}
+<span class="nc bnc" id="L441" title="All 2 branches missed.">		if (TOIntervalCalendarUtil.isSpringForwardInPreviousHourWithNonZeroMinutes(day.getEndTime(),</span>
+<span class="nc" id="L442">				timeOffIntervalCalendar.getTimeZone())) {</span>
+<span class="nc" id="L443">			TimeZone tz = timeOffIntervalCalendar.getTimeZone();</span>
+<span class="nc" id="L444">			String time = m_localizer.formatDate(day.getStartTime(), tz, RegionalFormatBundleKey.TIME_FORMAT);</span>
+<span class="nc" id="L445">			sb.append(&quot;&lt;span class=\&quot;hour\&quot;&gt;&quot;).append(time).append(&quot;&lt;/span&gt;&quot;);</span>
+		}
+<span class="nc" id="L447">	}</span>
+
+	private void appendSpacer(StringBuilder sb) {
+<span class="nc" id="L450">		sb.append(&quot;&lt;span class=\&quot;spacer\&quot; style=\&quot;\&quot;&gt; &lt;/span&gt;&quot;);</span>
+<span class="nc" id="L451">	}</span>
+
+	private void appendStyles(StringBuilder sb) {
+<span class="nc" id="L454">		sb.append(&quot;&lt;style type=\&quot;text/css\&quot;&gt;&quot;);</span>
+<span class="nc" id="L455">		sb.append(&quot;.toicIntervalGrid { box-sizing: border-box; margin: 0px 1em 0px 0px; padding: 0px; }&quot;);</span>
+<span class="nc" id="L456">		sb.append(&quot;.toicIntervalGrid thead tr, .toicIntervalGrid tr.toicIntervalGrid-IntervalRow { height: 22px; }&quot;);</span>
+<span class="nc" id="L457">		sb.append(&quot;.toicIntervalGrid tr.toicIntervalGrid-SelectionRow { height: 11px; }&quot;);</span>
+<span class="nc" id="L458">		sb.append(&quot;.toicIntervalGrid td, .toicIntervalGrid th { white-space: nowrap; }&quot;);</span>
+<span class="nc" id="L459">		sb.append(&quot;.toicIntervalGrid th span.hour { height: 23px; box-sizing: border-box; width: 60px;  }&quot;);</span>
+<span class="nc" id="L460">		sb.append(&quot;.toicIntervalGrid th.date { white-space: nowrap; text-align: right; }&quot;);</span>
+		// remove cell line height to fix spacing in IE
+<span class="nc" id="L462">		sb.append(&quot;.toicIntervalGrid td { line-height: 0px; }&quot;);</span>
+<span class="nc" id="L463">		sb.append(&quot;.toicIntervalGrid .date-label { vertical-align: middle; }&quot;);</span>
+
+<span class="nc" id="L465">		sb.append(&quot;.toicIntervalGrid tr.toicIntervalGrid-IntervalRow td &gt; span { display:inline-block; overflow: hidden; text-overflow: ellipsis; text-align: center; box-sizing: border-box; }&quot;);</span>
+		// colors from inputText
+<span class="nc" id="L467">		sb.append(&quot;.toicIntervalGrid tr.toicIntervalGrid-IntervalRow td &gt; span { padding: 0px; border: 1px solid #D8D8D8; background-color: #FBFBFB; }&quot;);</span>
+		// colors from inputTextReadOnly
+<span class="nc" id="L469">		sb.append(&quot;.toicIntervalGrid tr.rm-blackout-day td &gt; span { border: 1px solid #D9D9D9; background-color: #EBEAEA;  }&quot;);</span>
+
+<span class="nc" id="L471">		sb.append(&quot;.toicIntervalGrid td &gt; span .inputText, .toicIntervalGrid td &gt; span .inputTextReadOnly &quot;);</span>
+<span class="nc" id="L472">		sb.append(&quot;{ width: 100%; text-align: center; padding: 0px 1px 0px 1px; margin: 0px; box-sizing: border-box; height: 20px; &quot;);</span>
+<span class="nc" id="L473">		sb.append(&quot; border: none; background-color: transparent; }&quot;);</span>
+<span class="nc" id="L474">		sb.append(&quot;.toicIntervalGrid.editable td &gt; span .inputText, .toicIntervalGrid.editable td &gt; span .inputTextReadOnly&quot;);</span>
+<span class="nc" id="L475">		sb.append(&quot;{ cursor: pointer; }&quot;);</span>
+
+<span class="nc" id="L477">		sb.append(&quot;.toicIntervalGrid tr.toicIntervalGrid-SelectionRow td { position: relative; }&quot;);</span>
+<span class="nc" id="L478">		sb.append(&quot;.toicIntervalGrid span.increment { position: absolute; top: 0px; bottom: 0px; width: 15px; height: 11px; }&quot;);</span>
+<span class="nc" id="L479">		sb.append(&quot;.toicIntervalGrid tr:hover span.increment { background-color: #EFF0F0; cursor: pointer; }&quot;);</span>
+<span class="nc" id="L480">		sb.append(&quot;.toicIntervalGrid tr span.increment:hover { background-color: #999999; }&quot;);</span>
+<span class="nc" id="L481">		sb.append(&quot;.toicIntervalGrid span.increment.selected, .toicIntervalGrid tr:hover span.increment.selected &quot;);</span>
+<span class="nc" id="L482">		sb.append(&quot;{ background-color: #B2E9FC; }&quot;);</span>
+
+<span class="nc" id="L484">		sb.append(&quot;.toicIntervalGrid td span.spacer { border: none !important; width:60px; max-width:60px; }&quot;);</span>
+
+<span class="nc" id="L486">		sb.append(&quot;&lt;/style&gt;&quot;);</span>
+<span class="nc" id="L487">	}</span>
+
+	private void buildIntervalGrid(StringBuilder sb) {
+<span class="nc" id="L490">		TOIntervalCalendarDay longestDay = timeOffIntervalCalendar.getLongestDay();</span>
+		// if there is no longest day, that means something prevented split into days from being successful
+		// draw nothing because the model doesn't know how to draw itself
+<span class="nc bnc" id="L493" title="All 2 branches missed.">		if (longestDay == null) {</span>
+<span class="nc" id="L494">			return;</span>
+		}
+<span class="nc" id="L496">		TimeZone tz = timeOffIntervalCalendar.getTimeZone();</span>
+<span class="nc" id="L497">		calOrg = Calendar.getInstance(tz);</span>
+<span class="nc" id="L498">		timeFormat = m_localizer.getDateFormat(tz, RegionalFormatBundleKey.TIME_FORMAT);</span>
+<span class="nc" id="L499">		int index = timeOffIntervalCalendar.getIndex(longestDay.getStartTime());</span>
+<span class="nc" id="L500">		int endIndexExclusive = timeOffIntervalCalendar.getIndex(longestDay.getEndTime());</span>
+<span class="nc" id="L501">		List&lt;TOIntervalCalendarIncrement&gt; increments = timeOffIntervalCalendar.getIncrements();</span>
+
+<span class="nc" id="L503">		sb.append(&quot;&lt;table cellspacing=\&quot;0\&quot; cellpadding=\&quot;0\&quot; class=\&quot;toicIntervalGrid&quot;);</span>
+<span class="nc bnc" id="L504" title="All 2 branches missed.">		if (isEditable) {</span>
+<span class="nc" id="L505">			sb.append(&quot; editable &quot;);</span>
+		}
+<span class="nc" id="L507">		sb.append(&quot;\&quot; style=\&quot;\&quot;&gt;&lt;thead&gt;&lt;tr class=\&quot;toicIntervalGrid-HeaderRow\&quot;&gt;&quot;);</span>
+<span class="nc" id="L508">		sb.append(&quot;&lt;th class=\&quot;tableHeaderLightLeft\&quot;&gt;&quot;);</span>
+<span class="nc" id="L509">		sb.append(i18n(m_common_bundle, UIFWebBundleKey.DATE));</span>
+<span class="nc" id="L510">		sb.append(&quot;&lt;/th&gt;&quot;);</span>
+
+<span class="nc" id="L512">		sb.append(&quot;&lt;th class=\&quot;\&quot;&gt;&quot;);</span>
+<span class="nc bnc" id="L513" title="All 2 branches missed.">		for (; index &lt; endIndexExclusive; index += INCREMENTS_IN_HOUR) {</span>
+<span class="nc" id="L514">			TOIntervalCalendarIncrement increment = increments.get(index);</span>
+<span class="nc" id="L515">			String time = m_localizer.formatDate(increment.getDate(), tz, RegionalFormatBundleKey.TIME_FORMAT);</span>
+<span class="nc" id="L516">			sb.append(&quot;&lt;span class=\&quot;hour\&quot;&gt;&quot;).append(time).append(&quot;&lt;/span&gt;&quot;);</span>
+		}
+<span class="nc" id="L518">		appendExtraStartHour(sb);</span>
+<span class="nc" id="L519">		sb.append(&quot;&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;&lt;tbody&gt;&quot;);</span>
+<span class="nc" id="L520">		buildIntervals(sb);</span>
+<span class="nc" id="L521">		sb.append(&quot;&lt;/tbody&gt;&lt;/table&gt;&quot;);</span>
+<span class="nc" id="L522">	}</span>
+
+	private void buildIntervals(StringBuilder sb) {
+<span class="nc" id="L525">		List&lt;TOIntervalCalendarDay&gt; days = timeOffIntervalCalendar.getDays();</span>
+<span class="nc" id="L526">		TimeZone tz = timeOffIntervalCalendar.getTimeZone();</span>
+<span class="nc" id="L527">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L528">		SimpleDateFormat dateFormat = getDateFormat(tz);</span>
+<span class="nc bnc" id="L529" title="All 2 branches missed.">		for (int dayIndex = 0; dayIndex &lt; days.size(); dayIndex++) {</span>
+<span class="nc" id="L530">			TOIntervalCalendarDay day = days.get(dayIndex);</span>
+<span class="nc" id="L531">			List&lt;TOIntervalCalendarInterval&gt; intervals = day.getIntervals();</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">			sb.append(&quot;&lt;tr class=\&quot;toicIntervalGrid-IntervalRow &quot;).append(day.isBlackoutDay() ? &quot;rm-blackout-day&quot; : &quot;&quot;).append(&quot;\&quot;&quot;);</span>
+<span class="nc" id="L533">			sb.append(&quot;data-date=\&quot;&quot;).append(dateFormat.format(day.getStartTime())).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L534">			sb.append(&quot;data-intervalcount=&quot;).append(intervals.size()).append(&quot;&gt;&lt;th class=\&quot;date\&quot;&gt;&quot;);</span>
+<span class="nc" id="L535">			appendDate(sb, day, cal);</span>
+<span class="nc" id="L536">			sb.append(&quot;&lt;/th&gt;&quot;);</span>
+<span class="nc" id="L537">			sb.append(&quot;&lt;td&gt;&quot;);</span>
+<span class="nc bnc" id="L538" title="All 2 branches missed.">			for (TOIntervalCalendarInterval interval : intervals) {</span>
+<span class="nc" id="L539">				int index = timeOffIntervalCalendar.getIndex(interval.getStartTime());</span>
+<span class="nc" id="L540">				int endIndexExclusive = timeOffIntervalCalendar.getIndex(interval.getEndTime());</span>
+<span class="nc" id="L541">				int colspan = endIndexExclusive - index;</span>
+				// Add a spacer cell if necessary
+<span class="nc bnc" id="L543" title="All 2 branches missed.">				if (timeOffIntervalCalendar.hasDstTransitionGapBefore(interval, day)) {</span>
+<span class="nc" id="L544">					appendSpacer(sb);</span>
+<span class="nc bnc" id="L545" title="All 2 branches missed.">				} else if (timeOffIntervalCalendar.hasDstTransitionGapWithin(interval)) {</span>
+					// Add spacer columns to the interval.
+<span class="nc" id="L547">					colspan += INCREMENTS_IN_HOUR;</span>
+				}
+<span class="nc" id="L549">				buildIntervalCell(sb, day, interval, colspan);</span>
+<span class="nc" id="L550">			}</span>
+<span class="nc" id="L551">			sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+
+<span class="nc bnc" id="L553" title="All 2 branches missed.">			if (isEditable) {</span>
+<span class="nc" id="L554">				buildSelectionRow(sb, day);</span>
+			}
+		}
+<span class="nc" id="L557">	}</span>
+
+	private void buildIntervalCell(StringBuilder sb, TOIntervalCalendarDay day, TOIntervalCalendarInterval interval, int colspan) {
+<span class="nc" id="L560">		Float allocatedHours = interval.getAllocatedHours();</span>
+<span class="nc bnc" id="L561" title="All 2 branches missed.">		if (allocatedHours == null) {</span>
+<span class="nc" id="L562">			allocatedHours = 0f;</span>
+		}
+
+<span class="nc" id="L565">		String tooltip = getDateRangeText(interval) + &quot;\n&quot; + numberFormat.format(allocatedHours);</span>
+
+<span class="nc" id="L567">		sb.append(&quot;&lt;span id=\&quot;interval_&quot;).append(getDateTimeAttributeValue(interval.getStartTime())).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L568">		sb.append(&quot;data-startTime=\&quot;&quot;).append(getDateTimeAttributeValue(interval.getStartTime())).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L569">		sb.append(&quot;data-endTime=\&quot;&quot;).append(getDateTimeAttributeValue(interval.getEndTime())).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L570">		sb.append(&quot;data-columns=\&quot;&quot;).append(colspan).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L571">		sb.append(&quot;style=\&quot;width: &quot;).append(colspan * INCREMENT_MINS).append(&quot;px;&quot;);</span>
+<span class="nc" id="L572">		sb.append(&quot;max-width: &quot;).append(colspan * INCREMENT_MINS).append(&quot;px;&quot;);</span>
+<span class="nc" id="L573">		sb.append(&quot;min-width: &quot;).append(colspan * INCREMENT_MINS).append(&quot;px;\&quot; &quot;);</span>
+<span class="nc" id="L574">		sb.append(&quot;title=\&quot;&quot;).append(HtmlEncoder.encode(tooltip)).append(&quot;\&quot; &gt;&quot;);</span>
+
+<span class="nc" id="L576">		inputPC.setInputFN(Fields.ALLOCATED_HOURS_FN + &quot;_&quot; + intervalNumber);</span>
+<span class="nc" id="L577">		intervalNumber++;</span>
+<span class="nc" id="L578">		inputPC.setInputValue(numberFormat.format(allocatedHours));</span>
+<span class="nc bnc" id="L579" title="All 4 branches missed.">		inputPC.setEnabled(isEditable &amp;&amp; !day.isBlackoutDay());</span>
+<span class="nc" id="L580">		sb.append(inputPC.getHtmlDisplay());</span>
+
+<span class="nc" id="L582">		sb.append(&quot;&lt;/span&gt;&quot;);</span>
+<span class="nc" id="L583">	}</span>
+
+	private void buildSelectionRow(StringBuilder sb, TOIntervalCalendarDay day) {
+<span class="nc" id="L586">		calOrg.setTime(day.getStartTime());</span>
+<span class="nc" id="L587">		sb.append(&quot;&lt;tr class=\&quot;toicIntervalGrid-SelectionRow\&quot;&quot;);</span>
+<span class="nc" id="L588">		sb.append(&quot; data-day=\&quot;&quot;).append(calOrg.get(Calendar.DATE)).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L589">		sb.append(&quot; data-endtime=\&quot;&quot;).append(dateTimeFormatGmt.format(day.getEndTime())).append(&quot;\&quot;&gt;&lt;td&gt;&lt;/td&gt;&quot;);</span>
+<span class="nc" id="L590">		sb.append(&quot;&lt;td&gt;&quot;);</span>
+
+<span class="nc" id="L592">		Date startTime = day.getStartTime();</span>
+<span class="nc" id="L593">		int startIndex = timeOffIntervalCalendar.getIndex(startTime);</span>
+<span class="nc" id="L594">		int endIndexExclusive = timeOffIntervalCalendar.getIndex(day.getEndTime());</span>
+<span class="nc" id="L595">		List&lt;TOIntervalCalendarIncrement&gt; increments = timeOffIntervalCalendar.getIncrements();</span>
+<span class="nc" id="L596">		int dstOffset = 0;</span>
+<span class="nc bnc" id="L597" title="All 2 branches missed.">		for (int index = startIndex; index &lt; endIndexExclusive; index++) {</span>
+<span class="nc" id="L598">			TOIntervalCalendarIncrement increment = increments.get(index);</span>
+<span class="nc" id="L599">			boolean sameStartTime = startTime.equals(increment.getDate());</span>
+<span class="nc bnc" id="L600" title="All 4 branches missed.">			if (!sameStartTime &amp;&amp; timeOffIntervalCalendar.hasDstTransitionGapBefore(increment)) {</span>
+<span class="nc" id="L601">				dstOffset = DateUtil.INTERVALS_IN_HOUR;</span>
+			}
+<span class="nc" id="L603">			String cssClass = &quot;&quot;;</span>
+<span class="nc" id="L604">			sb.append(&quot;&lt;span class=\&quot;increment &quot;).append(cssClass).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L605">			sb.append(&quot; data-date=\&quot;&quot;).append(dateTimeFormatGmt.format(increment.getDate())).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L606">			sb.append(&quot; data-index=\&quot;&quot;).append(index - startIndex).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L607">			sb.append(&quot; title=\&quot;&quot;).append(getTimeRangeText(increment)).append(&quot;\&quot; &quot;);</span>
+<span class="nc" id="L608">			sb.append(&quot; style=\&quot;left:&quot;).append((index - startIndex + dstOffset) * DateUtil.TIME_INTERVAL).append(&quot;px;&quot;);</span>
+<span class="nc" id="L609">			sb.append(&quot;\&quot;&gt;&lt;/span&gt;&quot;);</span>
+		}
+
+<span class="nc" id="L612">		sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L613">	}</span>
+
+	private void extractBlackoutDays(HttpServletRequest request, Calendar cal) {
+<span class="nc" id="L616">		blackoutDays = new BlackoutDay[MAX_NUMBER_OF_DAYS_IN_MONTH];</span>
+<span class="nc" id="L617">		String prefix = getBlackoutDayInputPrefix();</span>
+<span class="nc" id="L618">		Calendar gmt = Calendar.getInstance(TimeZoneUtil.GMT_TIMEZONE);</span>
+<span class="nc" id="L619">		gmt.set(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), 1, 0, 0, 0);</span>
+<span class="nc" id="L620">		gmt.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc bnc" id="L621" title="All 2 branches missed.">		for (int dayNumber = 1; dayNumber &lt;= MAX_NUMBER_OF_DAYS_IN_MONTH; dayNumber++) {</span>
+<span class="nc" id="L622">			String sValue = request.getParameter(prefix + dayNumber);</span>
+<span class="nc bnc" id="L623" title="All 2 branches missed.">			if (&quot;true&quot;.equals(sValue)) {</span>
+<span class="nc" id="L624">				BlackoutDay blackout = new BlackoutDay();</span>
+<span class="nc" id="L625">				gmt.set(Calendar.DATE, dayNumber);</span>
+<span class="nc" id="L626">				blackout.setBlackoutDate(gmt.getTime());</span>
+<span class="nc" id="L627">				blackoutDays[dayNumber - 1] = blackout;</span>
+			}
+		}
+<span class="nc" id="L630">	}</span>
+
+	private void extractIntervalAllocationViewModel(HttpServletRequest request) {
+<span class="nc" id="L633">		String vmJson = request.getParameter(Fields.VIEW_MODEL_FN);</span>
+<span class="nc" id="L634">		Gson gson = new Gson();</span>
+<span class="nc" id="L635">		intervalAllocationViewModel = gson.fromJson(vmJson, AvailableTimeOffIntervalCalendarViewModel.class);</span>
+<span class="nc" id="L636">	}</span>
+
+	private String getBlackoutDayInputPrefix() {
+<span class="nc" id="L639">		return getName() + &quot;_BlackoutDay&quot;;</span>
+	}
+
+	/**
+	 * Gets the date format used for passing the day's date to the edit interval popup.
+	 */
+	private SimpleDateFormat getDateFormat(TimeZone timeZone) {
+<span class="nc" id="L646">		SimpleDateFormat sdf = new DatePickerPC(m_context, &quot;&quot;).getDateFormat();</span>
+<span class="nc" id="L647">		sdf.setTimeZone(timeZone);</span>
+<span class="nc" id="L648">		return sdf;</span>
+	}
+
+	private String getDateRangeText(TOIntervalCalendarInterval interval) {
+<span class="nc" id="L652">		TimeZone tz = timeOffIntervalCalendar.getTimeZone();</span>
+<span class="nc" id="L653">		TOIntervalAllocation allocationInterval = interval.getInterval();</span>
+<span class="nc" id="L654">		return m_localizer.i18n(CoreWebBundleKey.BUNDLE_NAME, CoreWebBundleKey.RANGE_SEPARATOR,</span>
+<span class="nc" id="L655">				m_localizer.formatDateTime(allocationInterval.getStartTime(), tz),</span>
+<span class="nc" id="L656">				m_localizer.formatDateTime(allocationInterval.getEndTime(), tz));</span>
+	}
+
+	private String getDateTimeAttributeValue(Date dateTime) {
+<span class="nc" id="L660">		return dateTimeFormatGmt.format(dateTime);</span>
+	}
+
+	private String getTimeRangeText(TOIntervalCalendarIncrement increment) {
+<span class="nc" id="L664">		calOrg.setTime(increment.getDate());</span>
+<span class="nc" id="L665">		calOrg.add(Calendar.MINUTE, DateUtil.TIME_INTERVAL);</span>
+<span class="nc" id="L666">		return m_localizer.i18n(CoreWebBundleKey.BUNDLE_NAME, CoreWebBundleKey.RANGE_SEPARATOR,</span>
+<span class="nc" id="L667">				timeFormat.format(increment.getDate()), timeFormat.format(calOrg.getTime()));</span>
+	}
+
+	private String getViewModelJS() {
+<span class="nc" id="L671">		Gson gson = new Gson();</span>
+<span class="nc" id="L672">		return gson.toJson(intervalAllocationViewModel);</span>
+	}
+
+	private void initCalendarHeader() {
+<span class="fc" id="L676">		String previousMonthAlt = i18n(m_common_bundle, UIFWebBundleKey.CAL_PREV_MONTH);</span>
+<span class="fc" id="L677">		String nextMonthAlt = i18n(m_common_bundle, UIFWebBundleKey.CAL_NEXT_MONTH);</span>
+		// match the daily calendar name so we can share the state &amp; mediator
+<span class="fc" id="L679">		calHeader = new DropDownCalendarHeader(m_context, &quot;timeOffCalendarPC&quot;, previousMonthAlt, nextMonthAlt);</span>
+<span class="fc" id="L680">		initHeader(newCalendar());</span>
+<span class="fc" id="L681">	}</span>
+
+	private void initEditIntervalPopup() {
+<span class="fc" id="L684">		addPopupArgs(</span>
+				// sCmd The unique name associated with the Popup Argument
+				AvailableTimeOffIntervalCalendarEditIntervalPopupPM.POPUP_COMMAND,
+				// URL
+				AvailableTimeOffIntervalCalendarEditIntervalPopupPM.FORM_ACTION,
+				// Name of this form's fields whose values are passed to the dialog
+<span class="fc" id="L690">				Fields.FORM_FIELDS,</span>
+				// Attribute names that are on the popup show (edit) button. The value of these attributes are passed to the dialog
+				Fields.BUTTON_ATTRIBUTE_FIELDS,
+				// arguments
+				&quot;450,270,ctr,ctr&quot;,
+				// show as modal dialog
+				true,
+				// the number of popup windows allowed
+				1);
+<span class="fc" id="L699">	}</span>
+
+	/**
+	 * Initializes the Calendar picker's header to the specified date.
+	 */
+	private void initHeader(Calendar cal) {
+<span class="fc" id="L705">		int iMonth = cal.get(Calendar.MONTH);</span>
+<span class="fc" id="L706">		int iYear = cal.get(Calendar.YEAR);</span>
+<span class="fc" id="L707">		calHeader.setMonthYear(iMonth, iYear);</span>
+<span class="fc" id="L708">		monthRange = new MonthRange(iMonth, iYear);</span>
+<span class="fc" id="L709">	}</span>
+
+	private void initInput() {
+<span class="fc" id="L712">		inputPC = getAllocatedHoursFormInputPC(m_context);</span>
+<span class="fc" id="L713">		addChildComponent(inputPC);</span>
+<span class="pc bpc" id="L714" title="1 of 2 branches missed.">		inputPC.setIsReadOnly(!isEditable);</span>
+<span class="fc" id="L715">		inputPC.setOnChangeJS(&quot;&quot;);</span>
+<span class="fc" id="L716">	}</span>
+
+	private Calendar newCalendar() {
+<span class="fc" id="L719">		return TimeOffCalendarPC.newCalendar(m_context.getViewingTimeZone(), m_locale);</span>
+	}
+
+	/**
+	 * Validates the POST'd Interval Action parameters.
+	 *
+	 * @return
+	 */
+	private boolean validateIntervalActionParams() {
+<span class="nc bnc" id="L728" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(intervalAllocationDate)) {</span>
+<span class="nc" id="L729">			addPageErrorMessage(UIFWebBundleKey.FV_GENERIC_INVALID_DATE_MF);</span>
+<span class="nc" id="L730">			LOG.error(m_localizer.i18n(RmWebLogBundleKey.BUNDLE_NAME, RmWebLogBundleKey.INVALID_DATE, intervalAllocationDate));</span>
+<span class="nc" id="L731">			return false;</span>
+		}
+<span class="nc bnc" id="L733" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(intervalAllocationStartTime)) {</span>
+<span class="nc" id="L734">			addPageErrorMessage(RmWebBundleKey.INVALID_START_TIME);</span>
+<span class="nc" id="L735">			LOG.error(m_localizer.i18n(RmWebLogBundleKey.BUNDLE_NAME, RmWebLogBundleKey.INVALID_START_TIME, intervalAllocationStartTime));</span>
+<span class="nc" id="L736">			return false;</span>
+		}
+<span class="nc bnc" id="L738" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(intervalAllocationEndTime)) {</span>
+<span class="nc" id="L739">			addPageErrorMessage(RmWebBundleKey.INVALID_END_TIME);</span>
+<span class="nc" id="L740">			LOG.error(m_localizer.i18n(RmWebLogBundleKey.BUNDLE_NAME, RmWebLogBundleKey.INVALID_END_TIME, intervalAllocationEndTime));</span>
+<span class="nc" id="L741">			return false;</span>
+		}
+<span class="nc" id="L743">		return true;</span>
+	}
+
+	private boolean validateInterval(TOIntervalAllocation interval, Organization org, TimeRange monthTimeRange) throws ParseException {
+<span class="nc bnc" id="L747" title="All 2 branches missed.">		if (!interval.getStartTime().before(interval.getEndTime())) {</span>
+<span class="nc" id="L748">			addPageErrorMessage(RmWebBundleKey.TIMEOFF_POOL_INVALID_INTERVAL_START_BEFORE_END,</span>
+<span class="nc" id="L749">					m_localizer.formatDateTime(interval.getStartTime(), org.getTimeZone()),</span>
+<span class="nc" id="L750">					m_localizer.formatDateTime(interval.getEndTime(), org.getTimeZone()));</span>
+<span class="nc" id="L751">			return false;</span>
+		}
+
+<span class="nc bnc" id="L754" title="All 2 branches missed.">		if (!monthTimeRange.includes(interval.getStartTime())) {</span>
+<span class="nc" id="L755">			addPageErrorMessage(RmWebBundleKey.TIMEOFF_POOL_INVALID_INTERVAL_START_IN_RANGE,</span>
+<span class="nc" id="L756">					m_localizer.formatDateTime(interval.getStartTime(), org.getTimeZone()));</span>
+<span class="nc" id="L757">			return false;</span>
+		}
+<span class="nc bnc" id="L759" title="All 2 branches missed.">		if (!monthTimeRange.includes(interval.getEndTime())) {</span>
+<span class="nc" id="L760">			addPageErrorMessage(RmWebBundleKey.TIMEOFF_POOL_INVALID_INTERVAL_END_IN_RANGE,</span>
+<span class="nc" id="L761">					m_localizer.formatDateTime(interval.getEndTime(), org.getTimeZone()));</span>
+<span class="nc" id="L762">			return false;</span>
+		}
+
+<span class="nc" id="L765">		Date startOfDayForStart = TOCalcUtil.getDateForOrgDayStart(org, interval.getStartTime());</span>
+<span class="nc" id="L766">		Date startOfDayForEnd = TOCalcUtil.getDateForOrgDayStart(org, interval.getEndTime());</span>
+<span class="nc bnc" id="L767" title="All 4 branches missed.">		if (!startOfDayForStart.equals(startOfDayForEnd) &amp;&amp; !startOfDayForEnd.equals(interval.getEndTime())) {</span>
+<span class="nc" id="L768">			addPageErrorMessage(RmWebBundleKey.TIMEOFF_POOL_INVALID_INTERVAL_SAME_DAY,</span>
+<span class="nc" id="L769">					m_localizer.formatDateTime(interval.getStartTime(), org.getTimeZone()),</span>
+<span class="nc" id="L770">					m_localizer.formatDateTime(interval.getEndTime(), org.getTimeZone()));</span>
+<span class="nc" id="L771">			return false;</span>
+		}
+<span class="nc" id="L773">		return true;</span>
+	}
+
+	private void writeGetIntervalActionDebugInfo() {
+<span class="nc bnc" id="L777" title="All 2 branches missed.">		if (!LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L778">			return;</span>
+		}
+<span class="nc" id="L780">		StringBuilder sb = new StringBuilder();</span>
+<span class="nc" id="L781">		sb.append(&quot;initializeModel state:&quot;);</span>
+<span class="nc" id="L782">		sb.append(&quot;\n  intervalAllocationDate = &quot;).append(intervalAllocationDate);</span>
+<span class="nc" id="L783">		sb.append(&quot;\n  intervalAllocationEditIntervalStartTime = &quot;).append(intervalAllocationEditIntervalStartTime);</span>
+<span class="nc" id="L784">		sb.append(&quot;\n  intervalAllocationEndTime = &quot;).append(intervalAllocationEndTime);</span>
+<span class="nc" id="L785">		sb.append(&quot;\n  intervalAllocationHours = &quot;).append(intervalAllocationHours);</span>
+<span class="nc" id="L786">		sb.append(&quot;\n  intervalAllocationMode = &quot;).append(intervalAllocationMode);</span>
+<span class="nc" id="L787">		sb.append(&quot;\n  intervalAllocationStartTime = &quot;).append(intervalAllocationStartTime);</span>
+<span class="nc" id="L788">		sb.append(&quot;\n  intervalAllocationViewModel = &quot;).append(intervalAllocationViewModel);</span>
+<span class="nc" id="L789">		LOG.debug(sb.toString());</span>
+<span class="nc" id="L790">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

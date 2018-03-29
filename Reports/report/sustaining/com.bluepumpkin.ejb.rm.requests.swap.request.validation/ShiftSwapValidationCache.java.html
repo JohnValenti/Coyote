@@ -1,0 +1,556 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftSwapValidationCache.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.request.validation</a> &gt; <span class="el_source">ShiftSwapValidationCache.java</span></div><h1>ShiftSwapValidationCache.java</h1><pre class="source lang-java linenums">/*
+ * ValIDationCache.java
+ * Copyright (c) 2002, Blue Pumpkin Software, Inc
+ * All rights reserved.
+ */
+package com.bluepumpkin.ejb.rm.requests.swap.request.validation;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignWorkResource;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.common.validation.FilingRuleChecker;
+import com.bluepumpkin.ejb.rm.requests.common.validation.FilingRuleCheckerHelper;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.requests.swap.withdraw.model.ShiftSwapWithdraw;
+import com.bluepumpkin.ejb.rm.requests.swap.withdraw.validation.FilingRuleComplianceValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameCallCenterValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameCampaignValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameSkillsValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.AtLeastSameSkillsValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameProficienciesValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.MinMaxHoursValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameCallCenterPeriodValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SamePaidHoursValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.CalendarEventsValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.CalendarEventsMustOverlapValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSMinShiftSwapDuration;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSMinRemainingShiftDuration;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSMaxSwapDurationPerDay;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSNonSwappableActivites;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSShiftGapConditions;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSMaxAllowableOverlap;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.MaxConsecutiveWorkingDaysRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.MinTimeBetweenShiftAssignmentsRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.MaxHoursAndMaxAlternateHoursPerDayValidationRule;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.bluepumpkin.ejb.rm.util.ShiftSwapRequestUtil;
+import com.verint.ejb.wfm.WfmManagerFactory;
+
+public class ShiftSwapValidationCache extends ValidationCache
+{
+    private static final String EMP_TO_SKILLS = &quot;EMP2SKILLS:&quot;;
+    /**
+     * Map of request's Employee ID to their organization ID during the request's time range.
+     */
+    private static final String EMPID_TO_ORGID_MAP_FOR_PERIOD = &quot;EMPID_TO_ORGID_MAP_FOR_PERIOD&quot;;
+    private static final String EMPIDS = &quot;EMPIDS:&quot;;
+    private static final String FILING_RULE_CHECKER = &quot;FILING_RULE_CHECKER&quot;;
+    private static final String CALEVENT_ASSIGNS_FOR_SSITEM = &quot;CALEVENT_ASSIGNS_FOR_SSITEM&quot;;
+    private static final String SWAPPED_SHIFTS_FORSSREQ = &quot;SWAPPED_SHIFTS_FORSSREQ&quot;;
+    private static final String SWAPPED_SHIFTS_FORSSREQ_SAMEORGDAY = &quot;SWAPPED_SHIFTS_FORSSREQ_SAMEORGDAY&quot;;
+    private static final String SHIFTS_ON_SAME_ORGDAY_SSREQ = &quot; SHIFTS_ON_SAME_ORGDAY_SSREQ&quot;;
+	private static final String SHIFTS_ALIGNED_FOR_SSREQ = &quot;SHIFTS_ALIGNED_FOR_SSREQ&quot;;
+    private static final String SHIFT_FOR_SSITEM_ALIGNED = &quot;SHIFT_FOR_SSITEM_ALIGNED&quot;;
+    private static final String SHIFT_FOR_SSITEM = &quot;SHIFT_FOR_SSITEM&quot;;
+    private static final String SHIFT_FOR_SSITEM_SHIFT_TIMEOFF = &quot;SHIFT_FOR_SSITEM_SHIFT_TIMEOFF&quot;;
+    private static final String CAMPAIGNS_FOR_SSITEM = &quot;CAMPAIGNS_FOR_SSITEM&quot;;
+    private static final String SWAPPED_SHIFTS_FORSSREQ_STARTINGON_SAMEORGDAY = &quot;SWAPPED_SHIFTS_FORSSREQ_STARTINGON_SAMEORGDAY&quot;;
+
+<span class="nc" id="L81">    private static final Category m_cat = Log.initCategory(ShiftSwapValidationCache.class.getName());</span>
+
+    private ShiftSwapRequest m_ssr;
+
+    /**
+     * Create a new validation cache for a shift swap request.
+     */
+    public ShiftSwapValidationCache(ShiftSwapRequest ssr) {
+<span class="nc" id="L89">        super(ssr);</span>
+<span class="nc" id="L90">        m_ssr = ssr;</span>
+<span class="nc" id="L91">        m_cat.debug(&quot;Created ShiftSwapValidationCache: &quot; + ssr);</span>
+<span class="nc" id="L92">    }</span>
+
+    /**
+     * return a collection of orgIDs for agents assocaited with this request.
+     *
+     * @throws Exception
+     */
+    @Override
+	public Map getEmpIDToOrgIDMap() throws Exception {
+<span class="nc" id="L101">        Map empIDToOrgIDMap = (Map) get(EMPID_TO_ORGID_MAP_FOR_PERIOD);</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">        if (empIDToOrgIDMap != null) {</span>
+<span class="nc" id="L103">			return empIDToOrgIDMap;</span>
+		}
+
+<span class="nc" id="L106">        List items = m_ssr.getShiftSwapItems();</span>
+
+<span class="nc" id="L108">        empIDToOrgIDMap = new HashMap(2);</span>
+
+<span class="nc bnc" id="L110" title="All 2 branches missed.">        for (Iterator itr = items.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L111">            ShiftSwapItem item = (ShiftSwapItem) itr.next();</span>
+
+<span class="nc" id="L113">            ID empID = item.getEmployeeID();</span>
+<span class="nc" id="L114">            ID orgID = ValidationUtil.getOrgIDForEmployeeDuringPeriod(empID,</span>
+<span class="nc" id="L115">                    item.getStartDate(), item.getEndDate());</span>
+
+<span class="nc bnc" id="L117" title="All 2 branches missed.">            if (!empIDToOrgIDMap.containsKey(empID)) {</span>
+<span class="nc" id="L118">                empIDToOrgIDMap.put(empID, orgID);</span>
+            }
+<span class="nc" id="L120">        }</span>
+
+<span class="nc" id="L122">        put(EMPID_TO_ORGID_MAP_FOR_PERIOD, empIDToOrgIDMap);</span>
+
+<span class="nc bnc" id="L124" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L125">			m_cat.debug(&quot;getEmpIDToOrgIDMap: &quot; + RmUtil.dumpMap(empIDToOrgIDMap));</span>
+		}
+<span class="nc" id="L127">        return empIDToOrgIDMap;</span>
+    }
+
+    /**
+     * Get the skills for an employee during a period.
+     * @param empID - an Employee ID
+     * @param start - the starting time for the period
+     * @param end - the ending time for the period
+     * @return the Collection of skills
+     * @throws Exception
+     */
+    public Collection getSkillsForEmployeeDuringPeriod(ID empID, Date start, Date end)
+        throws Exception {
+<span class="nc" id="L140">        String key = RequestUtil.makeCacheKey(EMP_TO_SKILLS, empID, start, end);</span>
+
+<span class="nc" id="L142">        Collection cSkills = (Collection) get(key);</span>
+
+<span class="nc bnc" id="L144" title="All 2 branches missed.">        if (cSkills == null) {</span>
+<span class="nc" id="L145">            cSkills = ValidationUtil.getSkillsForEmployeeDuringPeriod(empID, start, end);</span>
+<span class="nc" id="L146">            put(key, cSkills);</span>
+        }
+
+<span class="nc bnc" id="L149" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L150">			m_cat.debug(&quot;getSkillsForEmployeeDuringPeriod(&quot; + empID + ',' + start + ',' + end + &quot;): &quot; + RmUtil.dumpCollection(cSkills));</span>
+		}
+<span class="nc" id="L152">        return cSkills;</span>
+    }
+    
+    public Collection&lt;ID&gt; getRelevantSkillsForSchedulingPeriod(Collection&lt;ShiftSwapItem&gt; items) throws Exception {
+<span class="nc" id="L156">		Collection&lt;ID&gt; spIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L157">		ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">		for (ShiftSwapItem item: items) {</span>
+<span class="nc" id="L159">			ShiftAssignment sa = getShiftAssignForSSItem(item, true, true, sam);</span>
+<span class="nc bnc" id="L160" title="All 4 branches missed.">			if (sa!= null &amp;&amp; sa.getCampaignID() != null){</span>
+<span class="nc" id="L161">				spIDs.add(sa.getCampaignID());</span>
+			}else{
+<span class="nc" id="L163">				Collection&lt;CampaignWorkResource&gt; cwColl = getCampWorkResAssnsForSSItem(item);</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">				if(cwColl != null ){</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">					for(CampaignWorkResource cw : cwColl){</span>
+<span class="nc" id="L166">						spIDs.add(cw.getCampaignID());</span>
+<span class="nc" id="L167">					}</span>
+				}
+			}
+				
+<span class="nc" id="L171">		}</span>
+<span class="nc" id="L172">		return ValidationUtil.getSkillsForSchedulingPeriod(spIDs);</span>
+	}
+
+    /**
+     * Retrieve the IDs of Employees who have items in this Request
+     */
+    public List&lt;ID&gt; getEmployeeIDsForRequest() {
+<span class="nc" id="L179">        String key = EMPIDS;</span>
+
+<span class="nc" id="L181">        List&lt;ID&gt; empIDs = (List&lt;ID&gt;) get(key);</span>
+
+<span class="nc bnc" id="L183" title="All 2 branches missed.">        if (empIDs == null) {</span>
+<span class="nc" id="L184">            List items = m_ssr.getShiftSwapItems();</span>
+
+<span class="nc" id="L186">            empIDs = new ArrayList&lt;ID&gt;(items.size());</span>
+
+<span class="nc bnc" id="L188" title="All 2 branches missed.">            for (Iterator itr = items.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L189">                ShiftSwapItem item = (ShiftSwapItem) itr.next();</span>
+<span class="nc" id="L190">                empIDs.add(item.getEmployeeID());</span>
+<span class="nc" id="L191">            }</span>
+
+<span class="nc" id="L193">            put(key, empIDs);</span>
+        }
+
+<span class="nc bnc" id="L196" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L197">			m_cat.debug(&quot;getSSEmployeeIDs: &quot; + RmUtil.dumpCollection(empIDs));</span>
+		}
+<span class="nc" id="L199">        return empIDs;</span>
+    }
+
+    /* Get the collection of soft validations for this request
+    */
+    @Override
+	public Collection&lt;String&gt; getValidators() throws Exception {
+        // get the organization ids for this request
+<span class="nc" id="L207">        Collection orgIDs = getOrgIDs();</span>
+
+        // because there may be more than one organization, we don't want duplicates
+<span class="nc" id="L210">        Set&lt;String&gt; uniqueValidators = new HashSet&lt;String&gt;(11);</span>
+
+<span class="nc bnc" id="L212" title="All 2 branches missed.">        for (Iterator itr = orgIDs.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L213">            ID orgID = (ID) itr.next();</span>
+
+<span class="nc" id="L215">            Collection&lt;String&gt; orgValidators = getValidators(orgID, getRequestType(m_ssr), null);</span>
+
+            // add all new validators for this organization to the Set
+<span class="nc" id="L218">            uniqueValidators.addAll(orgValidators);</span>
+<span class="nc" id="L219">        }</span>
+
+<span class="nc bnc" id="L221" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L222">			m_cat.debug(&quot;getValidators: &quot; + RmUtil.dumpCollection(uniqueValidators));</span>
+		}
+<span class="nc" id="L224">        return uniqueValidators;</span>
+    }
+    
+	/**
+	 * Determine if a request is a shift swap withdrawl request.
+	 */
+	public String getRequestType(RequestAggregate reqAgg) {
+<span class="nc" id="L231">		ShiftSwapRequest ssr = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">		if (ssr.isApprovedWithdrawStatusInProgress()) {</span>
+<span class="nc" id="L233">			return Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW;</span>
+		}
+<span class="nc" id="L235">		return Request.REQUESTTYPE_SHIFTSWAP;</span>
+	}
+
+	@Override
+	public Collection&lt;String&gt; getValidators(ID orgID, String reqType, ID activityID) throws Exception {
+
+<span class="nc bnc" id="L241" title="All 2 branches missed.">		if (!reqType.equals(Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW)) {</span>
+<span class="nc" id="L242">			return super.getValidators(orgID, reqType, activityID);</span>
+		}
+
+<span class="nc" id="L245">		Collection&lt;String&gt; allConfiguredValidators = new ArrayList&lt;String&gt;();</span>
+
+		// Add all enabled and applicable Shift Swap validators
+<span class="nc" id="L248">		allConfiguredValidators.addAll(filterUnapplicableShiftSwapWithdrawValidators(super.getValidators(orgID,</span>
+				Request.REQUESTTYPE_SHIFTSWAP, null)));
+
+		// Add all enabled Shift Swap Withdraw validators
+<span class="nc" id="L252">		allConfiguredValidators.addAll(super.getValidators(orgID, Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW, null));</span>
+
+<span class="nc" id="L254">		return allConfiguredValidators;</span>
+	}
+
+	/**
+	 * Remove any Shift Swap validator that does not apply to Shift Swap Withdraw requests.
+	 */
+	protected Collection&lt;String&gt; filterUnapplicableShiftSwapWithdrawValidators(Collection&lt;String&gt; shiftSwapValsEnabled) {
+
+<span class="nc" id="L262">		Collection&lt;String&gt; applicableShiftSwapValidatorsOnWithdrawRequest =	getApplicableShiftSwapValidatorsOnWithdrawRequest();</span>
+<span class="nc" id="L263">		Collection&lt;String&gt; filteredValidators = new ArrayList&lt;String&gt;(shiftSwapValsEnabled);</span>
+<span class="nc" id="L264">		filteredValidators.retainAll(applicableShiftSwapValidatorsOnWithdrawRequest);</span>
+<span class="nc" id="L265">		return filteredValidators;</span>
+	}
+
+	protected Collection&lt;String&gt; getApplicableShiftSwapValidatorsOnWithdrawRequest() {
+<span class="nc" id="L269">		Collection&lt;String&gt; timeOffValidatorOnFlexRequest =</span>
+<span class="nc" id="L270">				Arrays.asList(FilingRuleComplianceValidationRule.class.getName(),</span>
+<span class="nc" id="L271">						SameCallCenterValidationRule.class.getName(), </span>
+<span class="nc" id="L272">						SameCampaignValidationRule.class.getName(),</span>
+<span class="nc" id="L273">						SameSkillsValidationRule.class.getName(), </span>
+<span class="nc" id="L274">						AtLeastSameSkillsValidationRule.class.getName(),</span>
+<span class="nc" id="L275">						SameProficienciesValidationRule.class.getName(), </span>
+<span class="nc" id="L276">						MinMaxHoursValidationRule.class.getName(),</span>
+<span class="nc" id="L277">						SameCallCenterPeriodValidationRule.class.getName(), </span>
+<span class="nc" id="L278">						SamePaidHoursValidationRule.class.getName(),</span>
+<span class="nc" id="L279">						CalendarEventsValidationRule.class.getName(),</span>
+<span class="nc" id="L280">						CalendarEventsMustOverlapValidationRule.class.getName(), </span>
+<span class="nc" id="L281">						PSSMinShiftSwapDuration.class.getName(),</span>
+<span class="nc" id="L282">						PSSMinRemainingShiftDuration.class.getName(), </span>
+<span class="nc" id="L283">						PSSMaxSwapDurationPerDay.class.getName(),</span>
+<span class="nc" id="L284">						PSSNonSwappableActivites.class.getName(), </span>
+<span class="nc" id="L285">						PSSShiftGapConditions.class.getName(),</span>
+<span class="nc" id="L286">						PSSMaxAllowableOverlap.class.getName(), </span>
+<span class="nc" id="L287">						MaxConsecutiveWorkingDaysRule.class.getName(),</span>
+<span class="nc" id="L288">						MinTimeBetweenShiftAssignmentsRule.class.getName(),</span>
+<span class="nc" id="L289">						MaxHoursAndMaxAlternateHoursPerDayValidationRule.class.getName());</span>
+
+<span class="nc" id="L291">		return timeOffValidatorOnFlexRequest;</span>
+	}
+
+    /**
+     * Get a filing rules checker for this request.
+     */
+    @Override
+	public FilingRuleChecker getFilingRuleChecker(Object obj)
+        throws Exception
+    {
+<span class="nc" id="L301">        ShiftSwapItem item = (ShiftSwapItem) obj;</span>
+
+        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
+<span class="nc" id="L304">        String key = RequestUtil.makeCacheKey(FILING_RULE_CHECKER, item.getEmployeeID());</span>
+        // Check to see if the checker is already in the cache
+<span class="nc" id="L306">        FilingRuleChecker result = (FilingRuleChecker) get(key);</span>
+
+        // If map was in the cache, use it
+<span class="nc bnc" id="L309" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L310">            m_cat.debug(&quot;getFilingRuleChecker(&quot; + item + &quot;): &quot; + result);</span>
+<span class="nc" id="L311">            return result;</span>
+        }
+
+<span class="nc" id="L314">        ID idOrg = getOrgIDForEmployeeDuringPeriod(item.getEmployeeID(), item.getStartDate(),</span>
+<span class="nc" id="L315">                item.getEndDate());</span>
+<span class="nc" id="L316">        TimeRange itemRange = new TimeRange(item.getStartDate(), item.getEndDate());</span>
+
+//        try {
+<span class="nc" id="L319">            result = FilingRuleCheckerHelper.getChecker(idOrg, m_ssr.getRequestType(), itemRange);</span>
+//        } c_atch (ValidationException e) {
+//            m_cat.error(e);
+//            t_hrow e;
+//        }
+
+        // Save in cache
+<span class="nc" id="L326">        put(key, result);</span>
+
+<span class="nc" id="L328">        m_cat.debug(&quot;getFilingRuleChecker(&quot; + item + &quot;): &quot; + result);</span>
+<span class="nc" id="L329">        return result;</span>
+    }
+
+    public Collection getCalEventAssignsForSSItem(ShiftSwapItem ssItem, int eventType, boolean published,
+        ScheduleAccessManager sam) throws Exception
+    {
+        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
+<span class="nc" id="L336">        String key = RequestUtil.makeCacheKey(CALEVENT_ASSIGNS_FOR_SSITEM,</span>
+<span class="nc" id="L337">            ssItem.getEmployeeID(), new Integer(eventType), new Boolean(published));</span>
+
+<span class="nc" id="L339">        Collection events = null;</span>
+<span class="nc bnc" id="L340" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L341">            events = RequestUtil.getEventsDuringPeriod(ssItem.getEmployeeID(), eventType, published,</span>
+<span class="nc" id="L342">             ssItem.getStartDate(), ssItem.getEndDate(), sam);</span>
+<span class="nc" id="L343">            put(key, events);</span>
+        } else {
+<span class="nc" id="L345">            events = (Collection) get(key);</span>
+<span class="nc" id="L346">            RmUtil.dumpExitMethod(&quot;getCalEventAssignsForSSItem&quot;, events);</span>
+        }
+
+<span class="nc" id="L349">        return events;</span>
+    }
+
+    public ShiftAssignment[] getSwappedShiftAssignsForReqAligned(boolean published, ScheduleAccessManager sam)
+        throws Exception
+    {
+<span class="nc" id="L355">        String key = RequestUtil.makeCacheKey(SWAPPED_SHIFTS_FORSSREQ, new Boolean(published));</span>
+
+<span class="nc" id="L357">        ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L359">            shifts = ShiftSwapRequestUtil.getSwappedShiftAssignsForReqAligned(m_ssr, published, sam);</span>
+<span class="nc" id="L360">            put(key, shifts);</span>
+        } else {
+<span class="nc" id="L362">            shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L363">            RmUtil.dumpExitMethod(&quot;getSwappedShiftAssignsForReqAligned&quot;, shifts);</span>
+        }
+
+<span class="nc" id="L366">        return shifts;</span>
+    }
+
+    public ShiftAssignment[] getSwappedShiftAssignsForReqSameOrgDay(boolean published, ScheduleAccessManager sam)
+        throws Exception
+    {
+<span class="nc" id="L372">        String key = RequestUtil.makeCacheKey(SWAPPED_SHIFTS_FORSSREQ_SAMEORGDAY, new Boolean(published));</span>
+
+<span class="nc" id="L374">        ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L375" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L376">            shifts = ShiftSwapRequestUtil.getSwappedShiftAssignsForReqSameOrgDay(m_ssr, published, sam);</span>
+<span class="nc" id="L377">            put(key, shifts);</span>
+        } else {
+<span class="nc" id="L379">            shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L380">            RmUtil.dumpExitMethod(&quot;getSwappedShiftAssignsForReqSameOrgDay&quot;, shifts);</span>
+        }
+
+<span class="nc" id="L383">        return shifts;</span>
+    }
+    
+    //Silk 80581
+    // QA46082 - To consider only the shifts that start on the org day for comparision
+    // No change in this method, other than to invoke different Util method
+    public ShiftAssignment[] getSwappedSAForReqWithStartDateOnSameOrgDay(boolean published, ScheduleAccessManager sam)
+        throws Exception
+    {
+<span class="nc" id="L392">        String key = RequestUtil.makeCacheKey(SWAPPED_SHIFTS_FORSSREQ_STARTINGON_SAMEORGDAY, new Boolean(published));</span>
+
+<span class="nc" id="L394">        ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L395" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L396">            shifts = ShiftSwapRequestUtil.getSwappedSAForReqWithStartDateOnSameOrgDay(m_ssr, published, sam);</span>
+<span class="nc" id="L397">            put(key, shifts);</span>
+        } else {
+<span class="nc" id="L399">            shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L400">            RmUtil.dumpExitMethod(&quot;getSwappedSAForReqWithStartDateOnSameOrgDay&quot;, shifts);</span>
+        }
+
+<span class="nc" id="L403">        return shifts;</span>
+    }
+
+    public ShiftAssignment[] getShiftAssignsForReqSameOrgDay(boolean published, ScheduleAccessManager sam)
+        throws Exception
+    {
+<span class="nc" id="L409">        String key = RequestUtil.makeCacheKey(SHIFTS_ON_SAME_ORGDAY_SSREQ, new Boolean(published));</span>
+
+<span class="nc" id="L411">        ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L412" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L413">            shifts = ShiftSwapRequestUtil.getShiftAssignsForReqSameOrgDay(m_ssr, published, sam);</span>
+<span class="nc" id="L414">            put(key, shifts);</span>
+        } else {
+<span class="nc" id="L416">            shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L417">            RmUtil.dumpExitMethod(&quot;getShiftAssignsForReqSameOrgDay&quot;, shifts);</span>
+        }
+
+<span class="nc" id="L420">        return shifts;</span>
+    }
+
+	public ShiftAssignment[] getShiftAssignsForReqAligned(boolean published, ScheduleAccessManager sam) 
+		throws Exception {
+		
+<span class="nc" id="L426">		String key = RequestUtil.makeCacheKey(SHIFTS_ALIGNED_FOR_SSREQ, new Boolean(published));</span>
+
+<span class="nc" id="L428">		ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L429" title="All 2 branches missed.">		if (!containsKey(key)) {</span>
+<span class="nc" id="L430">			shifts = ShiftSwapRequestUtil.getShiftAssignsForReqAligned(m_ssr, published, sam);</span>
+<span class="nc" id="L431">			put(key, shifts);</span>
+		} else {
+<span class="nc" id="L433">			shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L434">			RmUtil.dumpExitMethod(&quot;getShiftAssignsForReqAligned&quot;, shifts);</span>
+		}
+
+<span class="nc" id="L437">		return shifts;</span>
+	}
+	
+	/**
+	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache)
+	 */
+	public ShiftAssignment getShiftAssignForShiftSwapItem(ShiftSwapItem ssItem, boolean published,
+		ScheduleAccessManager sam) throws Exception {
+
+<span class="nc bnc" id="L446" title="All 2 branches missed.">		if (ssItem.getIsPartial()){</span>
+<span class="nc" id="L447">			return 	getShiftAssignForSSItem(ssItem, published, false, sam);</span>
+		} else {
+<span class="nc" id="L449">			return 	getShiftAssignForSSItemAligned(ssItem, published, sam);</span>
+		}
+    }
+
+	/**
+	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache) 
+	 */
+    public ShiftAssignment getShiftAssignForSSItemAligned(ShiftSwapItem ssItem, boolean published,
+        ScheduleAccessManager sam) throws Exception {
+        
+        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
+<span class="nc" id="L460">        String key = RequestUtil.makeCacheKey(SHIFT_FOR_SSITEM_ALIGNED, ssItem.getEmployeeID(),</span>
+            new Boolean(published));
+
+<span class="nc" id="L463">        ShiftAssignment shift = null;</span>
+<span class="nc bnc" id="L464" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L465">            shift = ShiftSwapRequestUtil.getShiftAssignForSSItemAligned(ssItem, published, sam, m_ssr.getCache());</span>
+<span class="nc" id="L466">            put(key, shift);</span>
+        } else {
+<span class="nc" id="L468">            shift = (ShiftAssignment) get(key);</span>
+<span class="nc" id="L469">            RmUtil.dumpExitMethod(&quot;getShiftAssignForSSItemAligned&quot;, shift);</span>
+        }
+
+<span class="nc" id="L472">        return shift;</span>
+    }
+    
+    /**
+	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache) 
+	 */
+    public ShiftAssignment getShiftAssignForSSItem(ShiftSwapItem ssItem, boolean published, boolean aligned,
+        ScheduleAccessManager sam) throws Exception {
+        
+        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.	
+    	//Fix QC 179526 ( or QC163589-15.1.1)
+<span class="nc" id="L483">        String key = RequestUtil.makeCacheKey(SHIFT_FOR_SSITEM, ssItem.getEmployeeID(),</span>
+                new Boolean(published), new Boolean(aligned)); 
+
+<span class="nc" id="L486">        ShiftAssignment shift = null;</span>
+<span class="nc bnc" id="L487" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L488">            shift = ShiftSwapRequestUtil.getShiftAssignForSSItem(ssItem, published, aligned, sam, m_ssr.getCache());</span>
+<span class="nc" id="L489">            put(key, shift);</span>
+        } else {
+<span class="nc" id="L491">            shift = (ShiftAssignment) get(key);</span>
+<span class="nc" id="L492">            RmUtil.dumpExitMethod(&quot;getShiftAssignForSSItemAligned&quot;, shift);</span>
+        }
+
+<span class="nc" id="L495">        return shift;</span>
+    }
+
+
+    /**
+	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache) 
+	 */
+    public ShiftAssignment getShiftAssignForSSItem(ShiftSwapItem ssItem, ScheduleAccessManager sam, boolean published,
+    		                                       boolean aligned) throws Exception {
+        
+        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.	
+    	//Fix QC 179526 ( or QC163589-15.1.1)
+<span class="nc" id="L507">        String key = RequestUtil.makeCacheKey(SHIFT_FOR_SSITEM_SHIFT_TIMEOFF, ssItem.getEmployeeID(),</span>
+                new Boolean(published), new Boolean(aligned)); 
+
+<span class="nc" id="L510">        ShiftAssignment shift = null;</span>
+<span class="nc bnc" id="L511" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L512">            shift = ShiftSwapRequestUtil.getShiftAssignForSSItem(ssItem, sam, m_ssr.getCache(), published, aligned);</span>
+<span class="nc" id="L513">            put(key, shift);</span>
+        } else {
+<span class="nc" id="L515">            shift = (ShiftAssignment) get(key);</span>
+<span class="nc" id="L516">            RmUtil.dumpExitMethod(&quot;getShiftAssignForSSItemAligned&quot;, shift);</span>
+        }
+
+<span class="nc" id="L519">        return shift;</span>
+    }
+
+    public Collection getCampWorkResAssnsForSSItem(ShiftSwapItem ssItem) throws Exception {
+        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
+<span class="nc" id="L524">        String key = RequestUtil.makeCacheKey(CAMPAIGNS_FOR_SSITEM, ssItem.getEmployeeID());</span>
+
+<span class="nc" id="L526">        Collection campaigns = null;</span>
+<span class="nc bnc" id="L527" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L528">            campaigns = ShiftSwapRequestUtil.getCampWorkResAssnsForSSItem(ssItem);</span>
+<span class="nc" id="L529">            put(key, campaigns);</span>
+        } else {
+<span class="nc" id="L531">            campaigns = (Collection) get(key);</span>
+<span class="nc" id="L532">            RmUtil.dumpExitMethod(&quot;getCampaignsForSSItem&quot;, campaigns);</span>
+        }
+
+<span class="nc" id="L535">        return campaigns;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache#getEmployeeID()
+     */
+    //TODO: validationCache must declare abstract method getEmployeeIDs() instead of getEmployeeID().
+    @Override
+	public ID getEmployeeID() {
+<span class="nc" id="L544">        throw new UnsupportedOperationException(&quot;method not implemented&quot;);</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache#getDateRange()
+     */
+    //  TODO: validationCache must declare abstract method getDateRanges() instead of getDateRange().
+    @Override
+	public TimeRange getDateRange() throws Exception {
+<span class="nc" id="L553">        throw new UnsupportedOperationException(&quot;method not implemented&quot;);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

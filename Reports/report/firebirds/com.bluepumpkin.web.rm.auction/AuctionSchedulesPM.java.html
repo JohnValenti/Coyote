@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AuctionSchedulesPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.auction</a> &gt; <span class="el_source">AuctionSchedulesPM.java</span></div><h1>AuctionSchedulesPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.auction;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.ResourceBundle;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.bbm.workresource.model.Phantom;
+import com.bluepumpkin.ejb.rm.base.RmException;
+import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.BiddableSchedule;
+import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.fs.shift.ShiftDetailsPopupPM;
+import com.bluepumpkin.web.rm.keys.RmJavaScriptFileID;
+import com.bluepumpkin.web.rm.keys.RmKeys;
+import com.bluepumpkin.web.rm.keys.RmPageAction;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.setup.settings.SettingsModelHandler;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.data.wrapper.BasicWrapper;
+import com.witness.web.uif.data.wrapper.NumberWrapper;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.html.CSSUtil;
+import com.witness.web.uif.util.html.HtmlLinkUtil;
+import com.witness.ejb.core.security.model.User;
+
+
+/**
+ * File:         AuctionSchedulesPM
+ * Description:  Page model for the Schedules list in shift bidding auctions
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, inc
+ * @author       pbosin, David Su
+ * @version      1.0
+ * Created on July 29, 2002, 1:04 PM
+ */
+public class AuctionSchedulesPM extends AuctionBonusDescriptionListPM {
+<span class="fc" id="L54">	private static String FORM_ACTION = &quot;rm_sa_schedules&quot;;</span>
+
+	private final ResourceBundle m_bbm_bundle;
+	private SchedulingPeriod m_schedPeriod;
+	private HashMap&lt;ID, String&gt; m_empTemplateNameMap;
+	private Map&lt;ID, Boolean&gt; orgDescSettings;
+	private TimeZone m_campaignTz;
+<span class="nc" id="L61">	private Collection&lt;ID&gt; spOrgList = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L62">	private Collection&lt;ID&gt; viewUserScopeOrgIDs = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L63">	private boolean displayDescColumn = false;</span>
+<span class="nc" id="L64">	private User viewingUser = null;</span>
+
+	/**
+	 * Constructor
+	 */
+	public AuctionSchedulesPM(RequestContext context) {
+<span class="nc" id="L70">		super(context, FORM_ACTION, RmWebBundleKey.RM_SA_SCHEDULES);</span>
+
+<span class="nc" id="L72">		m_bbm_bundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L73">		setJSMediator(RmJavaScriptFileID.MEDIATOR_SCHEDULES);</span>
+		
+<span class="nc" id="L75">		viewingUser = context.getUser();</span>
+
+<span class="nc" id="L77">		setDefaultPageIDSize(10);</span>
+<span class="nc" id="L78">		setIsPaginatingSelectedIDs(false);</span>
+<span class="nc" id="L79">	}</span>
+
+	/**
+	 * Return an instance of the model that is ready for rendering
+	 */
+	public static PageModel getInstance(RequestContext context) throws Exception {
+<span class="nc" id="L85">		return getInstance(context, AuctionSchedulesPM.class);</span>
+	}
+
+	/**
+	 * Load Data
+	 * @throws Exception
+	 */
+	@Override
+	protected void loadData() throws Exception {
+		try {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">			if (hasSelectedID()) {</span>
+<span class="nc" id="L96">				ID auctionID = getSelectedIDObject();</span>
+<span class="nc" id="L97">				auction = AuctionUtil.getAuctionAndValidate(auctionID, m_context, this);</span>
+<span class="nc" id="L98">				m_schedPeriod = auction.getOptMethods().getSP();</span>
+<span class="nc" id="L99">				m_campaignTz = CampaignModelHandler.getCampaign(m_context, m_schedPeriod.getCampaignID()).getTimeZone();</span>
+<span class="nc" id="L100">				orgList = AuctionBonusDescriptionListPM.getOrgList(m_context, auction);</span>
+<span class="nc" id="L101">				spOrgList = CampaignModelHandler.getLinkedOrgsforSP(m_context, m_schedPeriod.getID());</span>
+<span class="nc" id="L102">				orgDescSettings = (Map&lt;ID, Boolean&gt;) AuctionUtil.setOrgDisplayDecription(spOrgList);</span>
+
+				// Get User's Scoped OrgIDs
+<span class="nc bnc" id="L105" title="All 2 branches missed.">				if (viewUserScopeOrgIDs.isEmpty()) {</span>
+<span class="nc" id="L106">					viewUserScopeOrgIDs = OrganizationModelHandler.getAllOrgIdsInUserScope(m_context, viewingUser);</span>
+				}
+				
+<span class="nc bnc" id="L109" title="All 2 branches missed.">				if (isPaginationNavPressed()) {</span>
+					//get next chunk
+<span class="nc" id="L111">					listData = AuctionMH.getBiddableSchedules(auction.getID(), orgID, getPageIDs());</span>
+				} else {
+<span class="nc" id="L113">                    Pair biddableSchedPair = AuctionMH.getBiddableSchedulesForAuction(auctionID, orgID, null, null, false,</span>
+<span class="nc" id="L114">                                getSortColumn(),</span>
+<span class="nc" id="L115">                                isSortAscending(),</span>
+<span class="nc" id="L116">                                getPageIDSize(),</span>
+<span class="nc" id="L117">                                AuctionUtil.getWeekRanges(m_schedPeriod, auction.getOptMethods().getCampaign().getTimeZone()));</span>
+<span class="nc" id="L118">					listData = (Collection) biddableSchedPair.getSecond();</span>
+
+<span class="nc" id="L120">					initPaginationIDs((Collection) biddableSchedPair.getFirst());</span>
+				}
+<span class="nc" id="L122">				addPopupArgs(RmPageAction.POPUP_AGENT_SKILLS_ACTION, RmKeys.RH_AGENT_SKILLS,</span>
+						null, &quot;employeeID,empTemplateID&quot;, &quot;450,350,ctr,ctr&quot;, true, 1);
+<span class="nc" id="L124">				ShiftDetailsPopupPM.addPopupArgs(this, RmPageAction.POPUP_SHIFT_DETAILS_ACTION);</span>
+<span class="nc" id="L125">			} else {</span>
+<span class="nc" id="L126">				addSelectAuctionMsg();</span>
+			}
+<span class="nc" id="L128">		} catch (RmHardValidationException ex) {</span>
+<span class="nc" id="L129">			Message msg = handleUnableToLoadDataErrorAndLogAsDebug(log, ex);</span>
+<span class="nc" id="L130">			msg.setAssociatedMessage(ex.getLocalizedMessage(m_localizer, m_context.getViewingTimeZone()));</span>
+<span class="nc" id="L131">		} catch (RmException ex) {</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">			if (!StringUtil.isEmpty(ex.getLocalizedMessage())) {</span>
+<span class="nc" id="L133">				addPageMessage(Message.ERROR_TYPE, ex.getLocalizedMessage());			</span>
+			} else {
+<span class="nc" id="L135">				Message msg = handleUnableToLoadDataErrorAndLogAsDebug(log, ex);</span>
+<span class="nc" id="L136">				msg.setAssociatedMessage(ex.getLocalizedMessage(m_localeContext.getLanguageLocale()));</span>
+			}
+<span class="nc" id="L138">		}</span>
+<span class="nc" id="L139">	}</span>
+
+	/**
+	 * Initialize Header
+	 */
+	@Override
+	protected void initHeader() {
+<span class="nc" id="L146">		TableHeaderPC header = m_list.getHeader();</span>
+
+<span class="nc" id="L148">		displayDescColumn = AuctionUtil.getDisplayDescriptionColumn(spOrgList, viewUserScopeOrgIDs, orgDescSettings);</span>
+
+<span class="nc" id="L150">		header.setDefaultSortColumn(String.valueOf(BiddableSchedule.SORTBY_NONE));</span>
+
+<span class="nc" id="L152">		header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_PHANTOMNAME),</span>
+<span class="nc" id="L153">				i18n(m_bbm_bundle, BbmWebBundleKey.TEMPLATE_NAME));</span>
+
+<span class="nc bnc" id="L155" title="All 4 branches missed.">		if (hasRMAdvanceLicense &amp;&amp; displayDescColumn) {</span>
+<span class="nc" id="L156">			header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_DESCRIPTION),</span>
+<span class="nc" id="L157">					i18n(m_common_bundle, UIFWebBundleKey.DESCRIPTION));</span>
+		}
+
+<span class="nc" id="L160">		header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_NUMBER_AVAIALBLE),</span>
+<span class="nc" id="L161">				i18n(m_common_bundle, UIFWebBundleKey.AVAILABLE)); //.setIsForNumeric(true);</span>
+
+<span class="nc" id="L163">		header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_BONUSASSIGNED),</span>
+<span class="nc" id="L164">				i18n(m_common_bundle, UIFWebBundleKey.BONUS));</span>
+
+<span class="nc" id="L166">		header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_HOURS),</span>
+<span class="nc" id="L167">				i18n(m_common_bundle, UIFWebBundleKey.HOURS)); //.setIsForNumeric(true);</span>
+
+<span class="nc" id="L169">		AuctionUtil.addShiftDatesToHeader(m_schedPeriod, m_localizer, m_campaignTz, header, false);</span>
+<span class="nc" id="L170">	}</span>
+
+	/**
+	 * Initialize List
+	 */
+	@Override
+	protected void initSelectableItems() {
+<span class="nc bnc" id="L177" title="All 4 branches missed.">		if (listData.isEmpty() || !isPageEnabled) {</span>
+<span class="nc" id="L178">			return;</span>
+		}
+
+<span class="nc" id="L181">		ArrayList listModel = new ArrayList(listData.size());</span>
+
+<span class="nc" id="L183">		m_empTemplateNameMap = AuctionUtil.getEmpTemplateNameMap(listData, m_context);</span>
+<span class="nc" id="L184">		boolean isEditable = isEditActionEnabled();</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">		for (Iterator it = listData.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L186">			BiddableSchedule schedule = (BiddableSchedule) it.next();</span>
+<span class="nc" id="L187">			String rowID = schedule.getID().toString();</span>
+<span class="nc" id="L188">			int avail = schedule.getNumOfAvailableInstances();</span>
+<span class="nc" id="L189">			int bonus = schedule.getBonusPoints();</span>
+<span class="nc" id="L190">			String description = schedule.getDescription();</span>
+
+<span class="nc" id="L192">			Collection shifts = schedule.getOptMethods().getShiftAssignments();</span>
+
+<span class="nc" id="L194">			DefaultMultiColumnNodeData node = new DefaultMultiColumnNodeData(rowID);</span>
+<span class="nc" id="L195">			node.add(getTemplateUI(schedule), CSSUtil.STYLE_NORMAL_LEFT); //508</span>
+
+<span class="nc bnc" id="L197" title="All 4 branches missed.">			if (hasRMAdvanceLicense &amp;&amp; displayDescColumn) {</span>
+<span class="nc" id="L198">				node.add(getDescriptionUI(rowID, description, isEditable));</span>
+			}
+
+<span class="nc" id="L201">			node.add(new NumberWrapper(avail, m_localizer), CSSUtil.STYLE_NUMERIC);</span>
+<span class="nc" id="L202">			node.add(getBonusUI(rowID, bonus, isEditable));</span>
+<span class="nc" id="L203">			node.add(AuctionUtil.getScheduleHourWrapper(shifts, m_localizer), CSSUtil.STYLE_NUMERIC);</span>
+
+<span class="nc" id="L205">			AuctionUtil.addShiftsData(m_schedPeriod, shifts, m_localizer, tz, m_campaignTz, node);</span>
+
+<span class="nc" id="L207">			node.setSelectable(false);</span>
+<span class="nc" id="L208">			listModel.add(node);</span>
+<span class="nc" id="L209">		}</span>
+
+<span class="nc" id="L211">		m_list.setListModel(listModel);</span>
+<span class="nc" id="L212">	}</span>
+
+	@Override
+	protected boolean hasEditableField() {
+<span class="nc" id="L216">		return true;</span>
+	}
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Helper Code
+	//////////////////////////////////////////////////////////////////////////////
+	private BasicWrapper getTemplateUI(BiddableSchedule schedule) {
+<span class="nc" id="L223">		Phantom phantomEmp = schedule.getOptMethods().getEmployee();</span>
+<span class="nc" id="L224">		ID etID = phantomEmp.getEmployeeTemplateID();</span>
+
+<span class="nc" id="L226">		EmployeeName name = new EmployeeName();</span>
+<span class="nc" id="L227">		name.setFirstName(phantomEmp.getName());</span>
+<span class="nc" id="L228">		name.setLastName(m_empTemplateNameMap.get(etID));</span>
+
+<span class="nc" id="L230">		String eNameDisplay = m_localizer.formatName(name);</span>
+
+<span class="nc" id="L232">		String alt = i18n(m_bbm_bundle, BbmWebBundleKey.BBM_PEOPLE_SKILLS);</span>
+<span class="nc" id="L233">		String onClickJS = &quot;pageMediator.popupAgentsSkills('','&quot; + etID + &quot;');&quot;;</span>
+<span class="nc" id="L234">		String display = HtmlLinkUtil.createActiveLink(eNameDisplay, alt, &quot;&quot;, onClickJS);</span>
+<span class="nc" id="L235">		return new BasicWrapper(eNameDisplay, display);</span>
+	}
+
+	/**
+	 * Determines if a biddeable schedule description text box and whether
+	 * it is editable based on the Schedule Period Organization associations.
+	 * 
+	 * @param schedule Schedule that can be bided on.
+	 * @return True if the Organization Setting Display Description is checked, false otherwise.
+	 */
+	private boolean displayDescriptionEditBox(BiddableSchedule schedule) {
+		Boolean displayDecription;
+
+<span class="nc" id="L248">		displayDecription = orgDescSettings.get(schedule.getOrgID());</span>
+<span class="nc" id="L249">		return displayDecription.booleanValue();</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

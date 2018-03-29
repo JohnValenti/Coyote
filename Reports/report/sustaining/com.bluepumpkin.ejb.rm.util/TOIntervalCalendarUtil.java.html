@@ -1,0 +1,780 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TOIntervalCalendarUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.util</a> &gt; <span class="el_source">TOIntervalCalendarUtil.java</span></div><h1>TOIntervalCalendarUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.util;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriod;
+import com.bluepumpkin.ejb.bbm.holiday.model.Holiday;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TOCalcUtil;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workresource.model.OrganizationHOOPeriod;
+import com.bluepumpkin.ejb.bbm.workresource.model.WorkResourceAssignment;
+import com.bluepumpkin.ejb.rm.DSTTransitionMode;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.RmManagerFactory;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOCalendarDayData;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOIntervalCalendar;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOIntervalCalendarInterval;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.ejb.CalendarTimeOffDayFacade;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.BlackoutDay;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.ITOIntervalAllocationFactory;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOIntervalAllocation;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOIntervalAllocationFactory;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOIntervalApprovedAndPending;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOIntervalApprovedAndPendingFactory;
+
+/**
+ * Time Off Calendar utility for intervals.
+ */
+public final class TOIntervalCalendarUtil {
+<span class="nc" id="L47">	private static final Category LOG = Log.initCategory(TOCalendarUtil.class.getName());</span>
+
+<span class="nc" id="L49">	private TOIntervalCalendarUtil() {</span>
+<span class="nc" id="L50">	}</span>
+
+	// ================================================================================
+	// Add, Edit, Remove Interval from List&lt;TOIntervalAllocation&gt;
+	// ================================================================================
+
+	/**
+	 * Adds the interval into the collection adjusting start/ends times and removing intervals when necessary.
+	 * The intervals must already be sorted by start time and should not have any overlap. The intervals should already be valid.
+	 *
+	 * @param intervals
+	 * @param interval
+	 * @throws CloneNotSupportedException
+	 */
+	public static void addInterval(List&lt;TOIntervalAllocation&gt; intervals, TOIntervalAllocation interval) throws CloneNotSupportedException {
+		Date intersectStartOriginalEndTime;
+<span class="nc" id="L66">		TOIntervalAllocation existing = null;</span>
+		int index;
+		// find the first interval that intersects the start time
+<span class="nc bnc" id="L69" title="All 2 branches missed.">		for (index = 0; index &lt; intervals.size(); index++) {</span>
+<span class="nc" id="L70">			existing = intervals.get(index);</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">			if (existing.getEndTime().after(interval.getStartTime())) {</span>
+<span class="nc" id="L72">				break;</span>
+			}
+		}
+
+		// if we didn't find anything, then this should be at the end
+<span class="nc bnc" id="L77" title="All 2 branches missed.">		if (existing == null) {</span>
+<span class="nc" id="L78">			intervals.add(interval);</span>
+<span class="nc" id="L79">			return;</span>
+		}
+
+		// if we intersect the interval
+<span class="nc bnc" id="L83" title="All 2 branches missed.">		if (interval.getStartTime().after(existing.getStartTime())) {</span>
+			// end the existing interval at the new start time
+<span class="nc" id="L85">			intersectStartOriginalEndTime = existing.getEndTime();</span>
+<span class="nc" id="L86">			existing.setEndTime(interval.getStartTime());</span>
+
+			// add the new interval
+<span class="nc" id="L89">			intervals.add(index + 1, interval);</span>
+
+			// if the new interval is within the existing interval
+<span class="nc bnc" id="L92" title="All 2 branches missed.">			if (interval.getEndTime().before(intersectStartOriginalEndTime)) {</span>
+				// clone it and adjust the start time
+<span class="nc" id="L94">				TOIntervalAllocation existingEndInterval = (TOIntervalAllocation) existing.clone();</span>
+<span class="nc" id="L95">				existingEndInterval.setStartTime(interval.getEndTime());</span>
+<span class="nc" id="L96">				existingEndInterval.setEndTime(intersectStartOriginalEndTime);</span>
+<span class="nc" id="L97">				intervals.add(index + 2, existingEndInterval); // NOSONAR</span>
+<span class="nc" id="L98">				return;</span>
+			}
+			// increment the index so it starts after the new interval
+<span class="nc" id="L101">			index += 2; // NOSONAR</span>
+		} else {
+			// insert the new interval
+<span class="nc" id="L104">			intervals.add(index, interval);</span>
+<span class="nc" id="L105">			index++;</span>
+		}
+
+		// remove intervals that are covered by the new one
+<span class="nc" id="L109">		removeIntervalsBefore(intervals, index, interval.getEndTime());</span>
+
+		// trim the start of the last interval if it intersects with the new one
+<span class="nc" id="L112">		trimIntervalStartIfBefore(intervals, index, interval.getEndTime());</span>
+<span class="nc" id="L113">	}</span>
+
+	/**
+	 * Edits an interval by removing it from the list and then adding it.
+	 *
+	 * @throws CloneNotSupportedException
+	 */
+	public static void editInterval(List&lt;TOIntervalAllocation&gt; intervals, TOIntervalAllocation newInterval, Date startTime,
+			TimeZone timeZone, int orgDayBoundaryOffset)
+			throws CloneNotSupportedException {
+<span class="nc" id="L123">		int index = getIndexForStartTime(intervals, startTime);</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">		if (index &lt; 0) {</span>
+<span class="nc" id="L125">			return;</span>
+		}
+<span class="nc" id="L127">		TOIntervalAllocation existingInterval = intervals.get(index);</span>
+		// if the interval doesn't intersect the new one, just remove and add it.
+<span class="nc bnc" id="L129" title="All 2 branches missed.">		if (!DateUtil.intersectsInclusive(existingInterval.getStartTime(), existingInterval.getEndTime(),</span>
+<span class="nc" id="L130">				newInterval.getStartTime(), newInterval.getEndTime())) {</span>
+<span class="nc" id="L131">			removeInterval(intervals, startTime, timeZone, orgDayBoundaryOffset);</span>
+<span class="nc" id="L132">			addInterval(intervals, newInterval);</span>
+<span class="nc" id="L133">			return;</span>
+		}
+
+		// the new interval intersects the old one
+		// only need to fix start and end times, remove covered intervals, add gaps
+<span class="nc" id="L138">		index = editIntervalHandleBefore(intervals, newInterval, existingInterval, index, timeZone, orgDayBoundaryOffset);</span>
+
+<span class="nc" id="L140">		intervals.set(index, newInterval);</span>
+<span class="nc" id="L141">		index++;</span>
+
+<span class="nc" id="L143">		editIntervalHandleAfter(intervals, newInterval, existingInterval, index, timeZone, orgDayBoundaryOffset);</span>
+<span class="nc" id="L144">	}</span>
+
+	/**
+	 * EditInterval implementation that handles intervals after the new interval.
+	 *
+	 * @param intervals
+	 * @param newInterval
+	 * @param existingInterval
+	 * @param index
+	 * @return index
+	 */
+	private static void editIntervalHandleAfter(List&lt;TOIntervalAllocation&gt; intervals, TOIntervalAllocation newInterval,
+			TOIntervalAllocation existingInterval, int index, TimeZone timeZone, int orgDayBoundaryOffset) {
+
+<span class="nc" id="L158">		Date startOfDay = TOCalcUtil.getDateForOrgDayStart(timeZone, orgDayBoundaryOffset, existingInterval.getStartTime());</span>
+<span class="nc" id="L159">		Date nextDay = TOCalcUtil.getDateForOrgDayEndExclusive(timeZone, orgDayBoundaryOffset, existingInterval.getStartTime());</span>
+
+<span class="nc bnc" id="L161" title="All 2 branches missed.">		if (newInterval.getEndTime().after(existingInterval.getEndTime())) {</span>
+<span class="nc" id="L162">			removeIntervalsAfter(intervals, index, newInterval.getEndTime());</span>
+		}
+<span class="nc bnc" id="L164" title="All 2 branches missed.">		if (index &lt; intervals.size()) {</span>
+<span class="nc" id="L165">			TOIntervalAllocation nextInterval = intervals.get(index);</span>
+<span class="nc" id="L166">			Date nextStartDate = TOCalcUtil.getDateForOrgDayStart(timeZone, orgDayBoundaryOffset, nextInterval.getStartTime());</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">			if (nextStartDate.equals(startOfDay)) {</span>
+<span class="nc" id="L168">				nextInterval.setStartTime(newInterval.getEndTime());</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">			} else if (newInterval.getEndTime().before(nextDay)) {</span>
+				// the next interval is not on this day, fill in the gap
+<span class="nc" id="L171">				TOIntervalAllocation gap = new TOIntervalAllocation(newInterval.getEndTime(), nextDay);</span>
+<span class="nc" id="L172">				gap.setTOPoolID(existingInterval.getTOPoolID());</span>
+<span class="nc" id="L173">				intervals.add(index, gap);</span>
+			}
+<span class="nc bnc" id="L175" title="All 2 branches missed.">		} else if (existingInterval.getEndTime().after(newInterval.getEndTime())) {</span>
+			// Replacing the last interval with an earlier end time will cause a gap, add an interval
+<span class="nc" id="L177">			TOIntervalAllocation gap = new TOIntervalAllocation(newInterval.getEndTime(), existingInterval.getEndTime());</span>
+<span class="nc" id="L178">			gap.setTOPoolID(existingInterval.getTOPoolID());</span>
+<span class="nc" id="L179">			intervals.add(gap);</span>
+		}
+<span class="nc" id="L181">	}</span>
+
+	/**
+	 * EditInterval implementation that handles intervals before the new interval. Returns the index for the existing interval.
+	 *
+	 * @param intervals
+	 * @param newInterval
+	 * @param existingInterval
+	 * @param index
+	 * @return The new index value.
+	 */
+	private static int editIntervalHandleBefore(List&lt;TOIntervalAllocation&gt; intervals, TOIntervalAllocation newInterval,
+			TOIntervalAllocation existingInterval, int existingIntervalIndex, TimeZone timeZone, int orgDayBoundaryOffset) {
+
+<span class="nc" id="L195">		int index = existingIntervalIndex;</span>
+<span class="nc" id="L196">		Date startOfDay = TOCalcUtil.getDateForOrgDayStart(timeZone, orgDayBoundaryOffset, existingInterval.getStartTime());</span>
+<span class="nc bnc" id="L197" title="All 2 branches missed.">		if (newInterval.getStartTime().before(existingInterval.getStartTime())) {</span>
+<span class="nc" id="L198">			int prevIndex = removeIntervalsBetween(intervals, index - 1, newInterval.getStartTime());</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">			if (prevIndex &gt; -1) {</span>
+<span class="nc" id="L200">				prevIndex = editPreviousInterval(intervals, startOfDay, newInterval.getStartTime(), prevIndex, timeZone,</span>
+						orgDayBoundaryOffset);
+			}
+<span class="nc" id="L203">			index = prevIndex + 1;</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">		} else if (index &gt; 0) {</span>
+<span class="nc" id="L205">			int prevIndex = editPreviousInterval(intervals, startOfDay, newInterval.getStartTime(), index - 1, timeZone,</span>
+					orgDayBoundaryOffset);
+<span class="nc" id="L207">			index = prevIndex + 1;</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">		} else if (!existingInterval.getStartTime().equals(newInterval.getStartTime())) {</span>
+			// Replacing index 0 with an interval with a later start time will cause a gap, add an interval
+<span class="nc" id="L210">			TOIntervalAllocation gap = new TOIntervalAllocation(existingInterval.getStartTime(), newInterval.getStartTime());</span>
+<span class="nc" id="L211">			gap.setTOPoolID(existingInterval.getTOPoolID());</span>
+<span class="nc" id="L212">			intervals.add(0, gap);</span>
+<span class="nc" id="L213">			index++;</span>
+		}
+<span class="nc" id="L215">		return index;</span>
+	}
+
+	/**
+	 * Edits the previous interval if it is on the specified date. Otherwise, a gap interval will be created if necessary.
+	 *
+	 * @return Returns the index for the previous interval.
+	 */
+	private static int editPreviousInterval(List&lt;TOIntervalAllocation&gt; intervals, Date startOfDay, Date newStartTime, int prevIndex,
+			TimeZone timeZone, int orgDayBoundaryOffset) {
+
+<span class="nc" id="L226">		int resultIndex = prevIndex;</span>
+<span class="nc" id="L227">		TOIntervalAllocation prevInterval = intervals.get(prevIndex);</span>
+<span class="nc" id="L228">		Calendar cal = TOCalcUtil.getCalendarForOrgDayStart(timeZone, orgDayBoundaryOffset, prevInterval.getStartTime());</span>
+<span class="nc" id="L229">		Date prevStartDate = cal.getTime();</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">		if (prevStartDate.equals(startOfDay)) {</span>
+			// previous interval is on the same day, extend it
+<span class="nc" id="L232">			prevInterval.setEndTime(newStartTime);</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">		} else if (startOfDay.before(newStartTime)) {</span>
+			// fill in the gap.
+<span class="nc" id="L235">			TOIntervalAllocation gap = new TOIntervalAllocation(startOfDay, newStartTime);</span>
+<span class="nc" id="L236">			gap.setTOPoolID(prevInterval.getTOPoolID());</span>
+<span class="nc" id="L237">			resultIndex++;</span>
+<span class="nc" id="L238">			intervals.add(resultIndex, gap);</span>
+		}
+<span class="nc" id="L240">		return resultIndex;</span>
+	}
+
+	/**
+	 * Gets the index of the interval with the specified startTime. -1 if it was not found.
+	 */
+	private static int getIndexForStartTime(List&lt;TOIntervalAllocation&gt; intervals, Date startTime) {
+<span class="nc bnc" id="L247" title="All 2 branches missed.">		for (int index = 0; index &lt; intervals.size(); index++) {</span>
+<span class="nc" id="L248">			TOIntervalAllocation interval = intervals.get(index);</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">			if (interval.getStartTime().equals(startTime)) {</span>
+<span class="nc" id="L250">				return index;</span>
+			}
+		}
+<span class="nc" id="L253">		return -1;</span>
+	}
+
+	/**
+	 * ingStart at the index (inclusive), removes the intervals that do not start before the specified date.
+	 * Returns the final index or -1.
+	 */
+	public static void removeIntervalsAfter(List&lt;TOIntervalAllocation&gt; intervals, int index, Date date) {
+<span class="nc bnc" id="L261" title="All 4 branches missed.">		while (index &lt; intervals.size() &amp;&amp; DateUtil.isBeforeOrEqual(intervals.get(index).getEndTime(), date)) {</span>
+<span class="nc" id="L262">			intervals.remove(index);</span>
+		}
+<span class="nc" id="L264">	}</span>
+
+	/**
+	 * Start at the index (inclusive), removes the intervals that do not start before the specified date.
+	 * Returns the final index or -1.
+	 */
+	public static int removeIntervalsBetween(List&lt;TOIntervalAllocation&gt; intervals, int startIndex, Date date) {
+<span class="nc" id="L271">		int index = startIndex;</span>
+<span class="nc bnc" id="L272" title="All 4 branches missed.">		while (index &gt;= 0 &amp;&amp; !date.after(intervals.get(index).getStartTime())) {</span>
+<span class="nc" id="L273">			intervals.remove(index);</span>
+<span class="nc" id="L274">			index--;</span>
+		}
+<span class="nc" id="L276">		return index;</span>
+	}
+
+	/**
+	 * Removes the first interval with the specified start time. If there is a previous interval on the same date, its end time
+	 * will be set to the end of the matching interval. If there is no previous interval on the same date and there is an interval after it,
+	 * then that interval's start time will be set to the matching interval's start time.
+	 *
+	 * If there are no previous or next intervals, the interval will not be removed, it will just have its allocated hours set to 0.
+	 * This is done to keep a continuous set of intervals.
+	 */
+	public static void removeInterval(List&lt;TOIntervalAllocation&gt; intervals, Date startTime, TimeZone timeZone, int orgDayBoundaryOffset) {
+<span class="nc" id="L288">		Date startOfDay = TOCalcUtil.getDateForOrgDayStart(timeZone, orgDayBoundaryOffset, startTime);</span>
+<span class="nc bnc" id="L289" title="All 2 branches missed.">		for (int index = 0; index &lt; intervals.size(); index++) {</span>
+<span class="nc" id="L290">			TOIntervalAllocation interval = intervals.get(index);</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">			if (interval.getStartTime().equals(startTime)) {</span>
+				// Do not adjust intervals on other days
+				// if there is a previous interval on this date, adjust its end time
+<span class="nc bnc" id="L294" title="All 2 branches missed.">				if (index &gt; 0) {</span>
+<span class="nc" id="L295">					TOIntervalAllocation prevInterval = intervals.get(index - 1);</span>
+<span class="nc" id="L296">					Date intervalDate = TOCalcUtil.getDateForOrgDayStart(timeZone, orgDayBoundaryOffset, prevInterval.getStartTime());</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">					if (startOfDay.equals(intervalDate)) { // NOSONAR</span>
+<span class="nc" id="L298">						prevInterval.setEndTime(interval.getEndTime());</span>
+<span class="nc" id="L299">						intervals.remove(index);</span>
+<span class="nc" id="L300">						return;</span>
+					}
+				}
+				// if there is an interval after this on the same date, adjust its start time
+<span class="nc bnc" id="L304" title="All 2 branches missed.">				if (index + 1 &lt; intervals.size()) {</span>
+<span class="nc" id="L305">					TOIntervalAllocation nextInterval = intervals.get(index + 1);</span>
+<span class="nc" id="L306">					Date intervalDate = TOCalcUtil.getDateForOrgDayStart(timeZone, orgDayBoundaryOffset, nextInterval.getStartTime());</span>
+<span class="nc bnc" id="L307" title="All 2 branches missed.">					if (startOfDay.equals(intervalDate)) { // NOSONAR</span>
+<span class="nc" id="L308">						nextInterval.setStartTime(startTime);</span>
+<span class="nc" id="L309">						intervals.remove(index);</span>
+<span class="nc" id="L310">						return;</span>
+					}
+				}
+				// there are no other intervals on this date, just reset allocated hours
+<span class="nc" id="L314">				interval.setAllocatedHours(0);</span>
+<span class="nc" id="L315">				return;</span>
+			}
+		}
+<span class="nc" id="L318">	}</span>
+
+	/**
+	 * Removes intervals that end before the date at the specified index.
+	 */
+	private static void removeIntervalsBefore(List&lt;TOIntervalAllocation&gt; intervals, int index, Date date) {
+<span class="nc bnc" id="L324" title="All 4 branches missed.">		while (index &lt; intervals.size() &amp;&amp; !intervals.get(index).getEndTime().after(date)) {</span>
+<span class="nc" id="L325">			intervals.remove(index);</span>
+		}
+<span class="nc" id="L327">	}</span>
+
+	/**
+	 * Trims the start of the interval at index if it is before the specified date.
+	 */
+	private static void trimIntervalStartIfBefore(List&lt;TOIntervalAllocation&gt; intervals, int index, Date date) {
+<span class="nc bnc" id="L333" title="All 2 branches missed.">		if (index &lt; intervals.size()) {</span>
+<span class="nc" id="L334">			TOIntervalAllocation existing = intervals.get(index);</span>
+
+			// if intersects existing, adjust start time
+<span class="nc bnc" id="L337" title="All 2 branches missed.">			if (existing.getStartTime().before(date)) {</span>
+<span class="nc" id="L338">				existing.setStartTime(date);</span>
+			}
+		}
+<span class="nc" id="L341">	}</span>
+
+	// ================================================================================
+	// Time Off Interval Calendar
+	// ================================================================================
+
+	/**
+	 * Gets the Time-off Calendar for intervals. Fills in the missing intervals between the startTime, each interval, and the endTime.
+	 */
+	public static &lt;T extends TOIntervalAllocation&gt; List&lt;T&gt; getIntervals(Date startTime, Date endTime, Collection&lt;T&gt; intervals,
+			TimeZone timeZone, int orgDayBoundaryOffset, ITOIntervalAllocationFactory&lt;T&gt; factory) {
+
+<span class="nc bnc" id="L353" title="All 2 branches missed.">		if (endTime.compareTo(startTime) &lt;= 0) {</span>
+<span class="nc" id="L354">			return Collections.emptyList();</span>
+		}
+<span class="nc" id="L356">		List&lt;T&gt; results = new ArrayList&lt;T&gt;();</span>
+<span class="nc" id="L357">		Calendar cal = DateUtil.getCalendar(timeZone, startTime);</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">		for (T interval : intervals) {</span>
+			// create missing intervals before the interval
+<span class="nc bnc" id="L360" title="All 2 branches missed.">			if (cal.getTime().compareTo(interval.getStartTime()) &lt; 0) {</span>
+<span class="nc" id="L361">				createIntervals(results, timeZone, orgDayBoundaryOffset, cal, interval.getStartTime(), factory);</span>
+<span class="nc" id="L362">				cal.setTime(interval.getStartTime());</span>
+			}
+
+			// add the interval
+<span class="nc" id="L366">			results.add(interval);</span>
+<span class="nc" id="L367">			cal.setTime(interval.getEndTime());</span>
+<span class="nc" id="L368">		}</span>
+		// create missing intervals before the endTime
+<span class="nc" id="L370">		createIntervals(results, timeZone, orgDayBoundaryOffset, cal, endTime, factory);</span>
+
+<span class="nc" id="L372">		return results;</span>
+	}
+
+	/**
+	 * Create the necessary intervals from the calendar's time to the endTime.
+	 */
+	private static &lt;T extends TOIntervalAllocation&gt; void createIntervals(List&lt;T&gt; results, TimeZone timeZone, int orgDayBoundaryOffset,
+			Calendar cal, Date endTime, ITOIntervalAllocationFactory&lt;T&gt; factory) {
+
+<span class="nc bnc" id="L381" title="All 2 branches missed.">		while (cal.getTime().compareTo(endTime) &lt; 0) {</span>
+<span class="nc" id="L382">			Date startTime = cal.getTime();</span>
+			Date newIntervalEndTime;
+<span class="nc" id="L384">			Calendar endOfDay = TOCalcUtil.getCalendarForOrgDayEnd(timeZone, orgDayBoundaryOffset, cal.getTime());</span>
+<span class="nc" id="L385">			endOfDay.add(Calendar.MILLISECOND, 1);</span>
+
+<span class="nc" id="L387">			int compareResult = endOfDay.getTime().compareTo(endTime);</span>
+<span class="nc bnc" id="L388" title="All 2 branches missed.">			if (compareResult &lt;= 0) {</span>
+				// fill in the rest of the day
+<span class="nc" id="L390">				newIntervalEndTime = endOfDay.getTime();</span>
+			} else {
+				// finish the segment
+<span class="nc" id="L393">				newIntervalEndTime = endTime;</span>
+			}
+<span class="nc bnc" id="L395" title="All 2 branches missed.">			if (newIntervalEndTime != null) {</span>
+<span class="nc" id="L396">				results.add(factory.newInstance(startTime, newIntervalEndTime));</span>
+<span class="nc" id="L397">				cal.setTime(newIntervalEndTime);</span>
+			}
+<span class="nc" id="L399">		}</span>
+<span class="nc" id="L400">	}</span>
+
+	/**
+	 * Gets a map where the key is start's midnight and the value is a collection of TOIntervalAllocations for that day (12 AM to 12 AM).
+	 * Offsets are not used for this. See TOIntervalAllocationDAO.saveTimeOffIntervals.
+	 *
+	 * @param intervals
+	 */
+	public static &lt;T extends TOIntervalAllocation&gt; Map&lt;LocalDate, List&lt;T&gt;&gt; toLocalDateMap(List&lt;T&gt; intervals, TimeZone timeZone) {
+<span class="nc" id="L409">		Map&lt;LocalDate, List&lt;T&gt;&gt; map = new HashMap&lt;LocalDate, List&lt;T&gt;&gt;();</span>
+<span class="nc bnc" id="L410" title="All 2 branches missed.">		for (T interval : intervals) {</span>
+<span class="nc" id="L411">			Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L412">			cal.setTime(interval.getStartTime());</span>
+<span class="nc" id="L413">			DateUtil.toMidnight(cal);</span>
+<span class="nc" id="L414">			LocalDate localDate = new LocalDate(cal.getTime(), timeZone);</span>
+<span class="nc" id="L415">			List&lt;T&gt; dateIntervals = map.get(localDate);</span>
+<span class="nc bnc" id="L416" title="All 2 branches missed.">			if (dateIntervals == null) {</span>
+<span class="nc" id="L417">				dateIntervals = new ArrayList&lt;T&gt;();</span>
+<span class="nc" id="L418">				map.put(localDate, dateIntervals);</span>
+			}
+<span class="nc" id="L420">			dateIntervals.add(interval);</span>
+<span class="nc" id="L421">		}</span>
+<span class="nc" id="L422">		return map;</span>
+	}
+
+	public static &lt;T extends TOIntervalAllocation&gt; List&lt;TOIntervalCalendarInterval&gt; wrapIntervals(Collection&lt;T&gt; intervals,
+			TimeRange toCalRange, ID toPoolID) {
+<span class="nc" id="L427">		Date startTime = toCalRange.getStartDate();</span>
+<span class="nc" id="L428">		Date endTime = toCalRange.getEndDate();</span>
+		// Make sure the wrapped interval stay without the given time range
+<span class="nc" id="L430">		List&lt;TOIntervalCalendarInterval&gt; results = new ArrayList&lt;TOIntervalCalendarInterval&gt;(intervals.size());</span>
+<span class="nc bnc" id="L431" title="All 2 branches missed.">		for (T interval : intervals) {</span>
+			TOIntervalCalendarInterval wrapped;
+<span class="nc bnc" id="L433" title="All 2 branches missed.">			if (interval instanceof TOIntervalApprovedAndPending) {</span>
+<span class="nc" id="L434">				wrapped = new TOIntervalCalendarInterval((TOIntervalApprovedAndPending) interval, toPoolID);</span>
+			} else {
+<span class="nc" id="L436">				wrapped = new TOIntervalCalendarInterval(interval, toPoolID);</span>
+			}
+
+<span class="nc bnc" id="L439" title="All 2 branches missed.">			if (interval.getStartTime().before(startTime)) {</span>
+<span class="nc" id="L440">				wrapped.setStartTime(startTime);</span>
+			}
+<span class="nc bnc" id="L442" title="All 2 branches missed.">			if (interval.getEndTime().after(endTime)) {</span>
+<span class="nc" id="L443">				wrapped.setEndTime(endTime);</span>
+			}
+<span class="nc" id="L445">			results.add(wrapped);</span>
+<span class="nc" id="L446">		}</span>
+<span class="nc" id="L447">		return results;</span>
+	}
+
+	/**
+	 * Gets the Time Off Interval Calendar for an administrator.
+	 */
+	public static TOIntervalCalendar getTOIntervalCalendarForAdmin(Organization org, ID toPoolID, int year, int month)
+			throws BbmFinderException {
+
+		try {
+<span class="nc" id="L457">			Calendar cal = DateUtil.getCalendar(org.getTimeZone(), year, month, 1);</span>
+<span class="nc" id="L458">			TOCalcUtil.setCalMinsOffsetFromMidnight(cal, org.getDayBoundaryOffset());</span>
+<span class="nc" id="L459">			Date startTime = cal.getTime();</span>
+<span class="nc" id="L460">			cal.add(Calendar.MONTH, 1);</span>
+<span class="nc" id="L461">			Date endTime = cal.getTime();</span>
+
+<span class="nc" id="L463">			TOIntervalCalendar intervalCalendar = new TOIntervalCalendar(startTime, endTime, org.getTimeZone());</span>
+<span class="nc" id="L464">			CalendarTimeOffDayFacade toCalFacade = RmManagerFactory.getInstance().getTimeOffDayFacade();</span>
+
+<span class="nc" id="L466">			Collection&lt;TOIntervalAllocation&gt; dbIntervals = Collections.emptyList();</span>
+<span class="nc bnc" id="L467" title="All 2 branches missed.">			if (toPoolID != null) {</span>
+<span class="nc" id="L468">				dbIntervals = toCalFacade.getTimeOffIntervals(toPoolID, startTime, endTime);</span>
+			}
+
+			// Fill in the Gaps.
+<span class="nc" id="L472">			dbIntervals = getIntervals(startTime, endTime, dbIntervals, org.getTimeZone(), org.getDayBoundaryOffset(),</span>
+					new TOIntervalAllocationFactory());
+
+			// Wrap the value object in our model.
+<span class="nc" id="L476">			TimeRange toCalRange = new TimeRange(startTime, endTime);</span>
+<span class="nc" id="L477">			List&lt;TOIntervalCalendarInterval&gt; intervals = wrapIntervals(dbIntervals, toCalRange, toPoolID);</span>
+<span class="nc" id="L478">			intervalCalendar.addIntervals(intervals);</span>
+
+<span class="nc" id="L480">			intervalCalendar.splitIntoDays();</span>
+
+<span class="nc" id="L482">			Collection&lt;BlackoutDay&gt; blackoutDays = Collections.emptyList();</span>
+<span class="nc bnc" id="L483" title="All 2 branches missed.">			if (toPoolID != null) {</span>
+<span class="nc" id="L484">				blackoutDays = getBlackoutDays(toCalFacade, toPoolID, startTime, endTime, org.getTimeZone());</span>
+			}
+<span class="nc" id="L486">			intervalCalendar.addBlackoutDays(blackoutDays, org.getTimeZone(), org.getDayBoundaryOffset());</span>
+
+<span class="nc" id="L488">			return intervalCalendar;</span>
+<span class="nc" id="L489">		} catch (Exception e) {</span>
+<span class="nc" id="L490">			throw RequestUtil.createBbmFinderExceptionWrapper(e, LOG);</span>
+		}
+	}
+
+	/**
+	 * Gets the time off interval calendar for the employee. See getTOCalendarForEmp.
+	 *
+	 * @param empID
+	 *            The employee's ID.
+	 * @param startDate
+	 *            The start of the range.
+	 * @param endDate
+	 *            The exclusive end of the range.
+	 * @param timeZone
+	 *            The viewing time zone.
+	 * @param isTOPoolView
+	 *            True if we are viewing the time off pool. Otherwise, only the employee's
+	 *            data will be returned
+	 * @return
+	 * @throws BbmFinderException
+	 */
+	public static TOIntervalCalendar getTOIntervalCalendarForEmp(ID empID, Date startDate, Date endDate, TimeZone timeZone,
+			boolean isTOPoolView) throws BbmFinderException {
+<span class="nc" id="L513">		long currentime = new Date().getTime();</span>
+		try {
+<span class="nc" id="L515">			TOIntervalCalendar intervalCalendar = new TOIntervalCalendar(startDate, endDate, timeZone);</span>
+<span class="nc" id="L516">			Organization org = ValidationUtil.getOrganizationByID(TOCalcUtil.getOrgIDForEmployeeID(empID, startDate));</span>
+<span class="nc" id="L517">			TimeRange toCalRange = new TimeRange(startDate, endDate);</span>
+
+<span class="nc bnc" id="L519" title="All 2 branches missed.">			populateTOIntervalCalendar(intervalCalendar, empID, null, org, toCalRange, !isTOPoolView);</span>
+
+<span class="nc" id="L521">			return intervalCalendar;</span>
+<span class="nc" id="L522">		} catch (Exception e) {</span>
+<span class="nc" id="L523">			LOG.error(e);</span>
+<span class="nc" id="L524">			throw RequestUtil.createBbmFinderExceptionWrapper(e, LOG);</span>
+		} finally {
+<span class="nc bnc" id="L526" title="All 4 branches missed.">			if (RequestUtil.isRMDebugEnabled()) {</span>
+<span class="nc" id="L527">				LOG.debug(&quot;TOTAL TIME FOR CAL=&quot; + (new Date().getTime() - currentime));</span>
+			}
+		}
+	}
+
+	/**
+	 * Gets the Time Off Interval Calendar for a manager. See getTOCalendarForManager for the daily implementation.
+	 *
+	 * @param orgID
+	 *            The Organization's ID.
+	 * @param pTOPoolID
+	 *            The TOP's ID to get the TOIC for a pool. Otherwise data will be retrieved for the organization.
+	 * @param orgEmpIDs
+	 *            The organization's employees that will be used to populate scheduled and pending hours.
+	 * @param startDate
+	 *            The start of the range.
+	 * @param endDate
+	 *            The exclusive end of the range.
+	 * @return
+	 * @throws BbmFinderException
+	 */
+	public static TOIntervalCalendar getTOIntervalCalendarForManager(ID orgID, ID pTOPoolID, Date startDate, Date endDate)
+			throws BbmFinderException {
+<span class="nc" id="L550">		long currentime = new Date().getTime();</span>
+<span class="nc" id="L551">		long empSize = 0;</span>
+		try {
+<span class="nc" id="L553">			Organization org = ValidationUtil.getOrganizationByID(orgID);</span>
+<span class="nc" id="L554">			TimeRange range = new TimeRange(startDate, endDate);</span>
+<span class="nc" id="L555">			TOIntervalCalendar intervalCalendar = new TOIntervalCalendar(startDate, endDate, org.getTimeZone());</span>
+
+<span class="nc" id="L557">			populateTOIntervalCalendar(intervalCalendar, null, pTOPoolID, org, range, false);</span>
+
+<span class="nc" id="L559">			return intervalCalendar;</span>
+<span class="nc" id="L560">		} catch (Exception e) {</span>
+<span class="nc" id="L561">			throw RequestUtil.createBbmFinderExceptionWrapper(e, LOG);</span>
+		} finally {
+<span class="nc bnc" id="L563" title="All 4 branches missed.">			if (RequestUtil.isRMDebugEnabled()) {</span>
+<span class="nc" id="L564">				LOG.debug(&quot;TOTAL TIME FOR INTERVAL CAL=&quot; + (new Date().getTime() - currentime) + &quot; : TOTAL EMPS=&quot; + empSize);</span>
+			}
+		}
+	}
+
+	/**
+	 * Gets the TOP blackout days for the specified range. The Blackout days are returned at midnight GMT.
+	 */
+	private static Collection&lt;BlackoutDay&gt; getBlackoutDays(CalendarTimeOffDayFacade toCalFacade, ID toPoolID, Date startTime, Date endTime,
+			TimeZone timeZone) throws BbmFinderException, RemoteException {
+<span class="nc" id="L574">		Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L575">		cal.setTime(startTime);</span>
+<span class="nc" id="L576">		DateUtil.toMidnight(cal);</span>
+<span class="nc" id="L577">		LocalDate localStartTime = new LocalDate(cal.getTime(), timeZone);</span>
+
+<span class="nc" id="L579">		cal.setTime(endTime);</span>
+<span class="nc" id="L580">		DateUtil.toMidnight(cal);</span>
+		// make inclusive
+<span class="nc" id="L582">		cal.add(Calendar.MILLISECOND, -1);</span>
+<span class="nc" id="L583">		LocalDate localEndTimeInclusive = new LocalDate(cal.getTime(), timeZone);</span>
+
+<span class="nc" id="L585">		return toCalFacade.getBlackoutDays(toPoolID, localStartTime, localEndTimeInclusive);</span>
+	}
+
+	/**
+	 * Gets whether the Spring Forward DST transition within the previous hour and the date's minutes value is not zero.
+	 */
+	public static boolean isSpringForwardInPreviousHourWithNonZeroMinutes(Date date, TimeZone timeZone) {
+<span class="nc" id="L592">		Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L593">		cal.setTime(date);</span>
+<span class="nc" id="L594">		cal.add(Calendar.HOUR_OF_DAY, -1);</span>
+<span class="nc" id="L595">		DSTTransitionMode dst = DateUtil.getDSTTransitionMode(cal.getTime(), date, timeZone);</span>
+<span class="nc bnc" id="L596" title="All 4 branches missed.">		return dst == DSTTransitionMode.SPRINGFORWARD &amp;&amp; cal.get(Calendar.MINUTE) != 0;</span>
+	}
+
+	/**
+	 * Populates the TimeOffIntervalCalendar using the specified arguments. This is shared between the manager and
+	 * employee views. This implementation was originally based on the daily TOC in getTOCalendar, but has been altered
+	 * because we can load up the entire range for an employee.
+	 *
+	 * @param intervalCalendar
+	 *            The instance in which to populate.
+	 * @param employeeID
+	 *            If specified, this populates the TOIC for the employee over the range.
+	 * @param toPoolID
+	 *            If specified, this populates the TOIC for the TOP over the range.
+	 * @param org
+	 *            If specified, this populates the TOIC for the organization over the range.
+	 * @param toCalRange
+	 *            The range in which to populate.
+	 * @param isTOPoolView
+	 *            True if we are viewing the TOP hours (not employee).
+	 * @throws Exception
+	 */
+	private static void populateTOIntervalCalendar(TOIntervalCalendar intervalCalendar, ID employeeID, ID toPoolID, Organization org,
+			TimeRange toCalRange, boolean forEmployee) throws Exception { // NOSONAR
+
+<span class="nc" id="L621">		long methodStartTime = Calendar.getInstance().getTime().getTime();</span>
+
+<span class="nc" id="L623">		CalendarTimeOffDayFacade toCalFacade = RmManagerFactory.getInstance().getTimeOffDayFacade();</span>
+<span class="nc" id="L624">		Date startDate = toCalRange.getStartDate();</span>
+<span class="nc" id="L625">		Date endDate = toCalRange.getEndDate();</span>
+<span class="nc" id="L626">		TimeRange toCalRangeInclusive = DateUtil.getInclusiveEnd(toCalRange);</span>
+		List&lt;TOIntervalApprovedAndPending&gt; dbIntervals;
+		// if no employee or pool, load the org's data.
+<span class="nc bnc" id="L629" title="All 4 branches missed.">		if (employeeID == null &amp;&amp; toPoolID == null) {</span>
+<span class="nc" id="L630">			dbIntervals = toCalFacade.getApprovedAndPendingByIntervalForOrg(org.getID(), startDate, endDate);</span>
+		} else {
+<span class="nc" id="L632">			dbIntervals = toCalFacade.getApprovedAndPendingByInterval(employeeID, toPoolID, startDate, endDate);</span>
+		}
+		// Fill in the Gaps
+<span class="nc" id="L635">		dbIntervals = getIntervals(startDate, endDate, dbIntervals, org.getTimeZone(), org.getDayBoundaryOffset(),</span>
+				new TOIntervalApprovedAndPendingFactory());
+		// Wrap the value object in our model that will contain the rest of the 'special' interval values.
+<span class="nc" id="L638">		List&lt;TOIntervalCalendarInterval&gt; intervals = wrapIntervals(dbIntervals, toCalRange, toPoolID);</span>
+<span class="nc" id="L639">		intervalCalendar.addIntervals(intervals);</span>
+<span class="nc bnc" id="L640" title="All 2 branches missed.">		markIncrementHours(intervalCalendar, intervals, employeeID != null, forEmployee);</span>
+<span class="nc" id="L641">		markIncrementHolidays(intervalCalendar, org, toCalRangeInclusive);</span>
+		//QC 179110: Employee can be assigned to different organizations which have different non-working days
+		//Therefore, we should separate this case for employee
+<span class="nc bnc" id="L644" title="All 2 branches missed.">		if(forEmployee){</span>
+<span class="nc" id="L645">			markIncrementHoosForEmp(employeeID,intervalCalendar,toCalRange,org);</span>
+		} else {
+			
+<span class="nc" id="L648">			markIncrementHoos(intervalCalendar, org, toCalRange);</span>
+		}
+
+		// Blackout Days
+<span class="nc" id="L652">		Collection&lt;BlackoutDay&gt; blackoutDays = Collections.emptyList();</span>
+<span class="nc bnc" id="L653" title="All 2 branches missed.">		if (toPoolID != null) {</span>
+<span class="nc" id="L654">			blackoutDays = getBlackoutDays(toCalFacade, toPoolID, startDate, endDate, org.getTimeZone());</span>
+<span class="nc bnc" id="L655" title="All 2 branches missed.">		} else if (employeeID != null) {</span>
+<span class="nc" id="L656">			blackoutDays = toCalFacade.getEffectiveBlackoutDaysForEmployee(employeeID, startDate, endDate);</span>
+		}
+<span class="nc" id="L658">		List&lt;TimeRange&gt; blackoutPairs = getBlackoutDates(blackoutDays, org);</span>
+<span class="nc" id="L659">		intervalCalendar.markIncrements(blackoutPairs, TOCalendarDayData.BLACKOUT_DAY_TYPE);</span>
+
+<span class="nc" id="L661">		LOG.debug(&quot;Time taken for loading interval calendar is &quot; + (methodStartTime - Calendar.getInstance().getTime().getTime()));</span>
+<span class="nc" id="L662">	}</span>
+
+	/**
+	 * Gets a list of pairs of start and end times for the blackout day in the org's local time.
+	 */
+	private static List&lt;TimeRange&gt; getBlackoutDates(Collection&lt;BlackoutDay&gt; blackoutDays, Organization org) {
+		// blackout days are stored at 12:00 am GMT
+<span class="nc" id="L669">		List&lt;TimeRange&gt; results = new ArrayList&lt;TimeRange&gt;(blackoutDays.size());</span>
+<span class="nc" id="L670">		TimeZone timeZone = org.getTimeZone();</span>
+<span class="nc" id="L671">		Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc bnc" id="L672" title="All 2 branches missed.">		for (BlackoutDay blackoutDay : blackoutDays) {</span>
+<span class="nc" id="L673">			LocalDate local = blackoutDay.getBlackoutLocalDate();</span>
+<span class="nc" id="L674">			cal.setTime(local.getTime(timeZone));</span>
+<span class="nc" id="L675">			TOCalcUtil.setCalMinsOffsetFromMidnight(cal, org.getDayBoundaryOffset());</span>
+<span class="nc" id="L676">			Date startTime = cal.getTime();</span>
+<span class="nc" id="L677">			DateUtil.addDays(cal, 1, org.getDayBoundaryOffset());</span>
+<span class="nc" id="L678">			results.add(new TimeRange(startTime, cal.getTime()));</span>
+<span class="nc" id="L679">		}</span>
+<span class="nc" id="L680">		return results;</span>
+	}
+
+	private static void markIncrementHolidays(TOIntervalCalendar intervalCalendar, Organization org, TimeRange toCalRangeInclusive)
+			throws Exception { // NOSONAR
+<span class="nc" id="L685">		List&lt;TimeRange&gt; unpaid = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="nc" id="L686">		List&lt;TimeRange&gt; paid = new ArrayList&lt;TimeRange&gt;();</span>
+
+		@SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L689">		Collection&lt;Holiday&gt; holidays = RequestUtil.getHolidaysDuringPeriod(org, toCalRangeInclusive);</span>
+<span class="nc bnc" id="L690" title="All 2 branches missed.">		for (Holiday holiday : holidays) {</span>
+<span class="nc" id="L691">			Date startTime = DateUtil.roundDownToInterval(holiday.getStartDate().getTime(org.getTimeZone()));</span>
+<span class="nc" id="L692">			Date endTime = DateUtil.roundUpToInterval(holiday.getEndDate().getTime(org.getTimeZone()));</span>
+<span class="nc" id="L693">			TimeRange dates = new TimeRange(startTime, endTime);</span>
+
+<span class="nc bnc" id="L695" title="All 2 branches missed.">			if (holiday.isPaidHoliday()) {</span>
+<span class="nc" id="L696">				paid.add(dates);</span>
+			} else {
+<span class="nc" id="L698">				unpaid.add(dates);</span>
+			}
+<span class="nc" id="L700">		}</span>
+<span class="nc" id="L701">		intervalCalendar.markIncrements(unpaid, TOCalendarDayData.UNPAID_HOLIDAY_DAY_TYPE);</span>
+<span class="nc" id="L702">		intervalCalendar.markIncrements(paid, TOCalendarDayData.PAID_HOLIDAY_DAY_TYPE);</span>
+<span class="nc" id="L703">	}</span>
+
+	/**
+	 * Marks the increments with non-operating periods.
+	 */
+	private static void markIncrementHoos(TOIntervalCalendar intervalCalendar, Organization org, TimeRange range)
+			throws BbmFinderException, BbmEJBCreateException, RemoteException {
+<span class="nc" id="L710">		Date start = range.getStartDate();</span>
+<span class="nc" id="L711">		Date end = range.getEndDate();</span>
+<span class="nc" id="L712">		OrganizationHOOPeriod hooPeriod = RequestUtil.getHOOPeriod(org.getID(), start, end);</span>
+
+<span class="nc" id="L714">		Collection&lt;TimePeriod&gt; periods = hooPeriod.getClosePeriods(start, end);</span>
+<span class="nc" id="L715">		List&lt;TimeRange&gt; dates = new ArrayList&lt;TimeRange&gt;(periods.size());</span>
+<span class="nc bnc" id="L716" title="All 2 branches missed.">		for (TimePeriod period : periods) {</span>
+<span class="nc" id="L717">			dates.add(new TimeRange(period.getStartTime(), period.getEndTime()));</span>
+<span class="nc" id="L718">		}</span>
+<span class="nc" id="L719">		intervalCalendar.markIncrements(dates, TOCalendarDayData.NON_OPERATION_DAY_TYPE);</span>
+<span class="nc" id="L720">	}</span>
+	/**
+	 * Marks the increments with non-operating periods for employees
+	 * Employee can be assigned to different organizations which have different non-working days
+	 * Therefore, we should iterate for each period of work assignment instead of getting full period from date navigation as before (QC 179110)
+	 * @throws Exception 
+	 */
+	private static void markIncrementHoosForEmp(ID empID,TOIntervalCalendar intervalCalendar, TimeRange range,Organization currentTimeZoneEmpOrg)
+			throws Exception {
+<span class="nc" id="L729">		Date startDateRange = range.getStartDate();</span>
+<span class="nc" id="L730">		Date endDateRange = range.getEndDate();</span>
+<span class="nc" id="L731">		List&lt;TimeRange&gt; dates = new ArrayList&lt;TimeRange&gt;();</span>
+
+<span class="nc" id="L733">		boolean firstWrkAssn = true;		</span>
+<span class="nc" id="L734">		Collection&lt;WorkResourceAssignment&gt; orgAssignsForEmp= RequestUtil.geOrgAssnsForWorkResDuringPeriod(empID,startDateRange,endDateRange);</span>
+<span class="nc bnc" id="L735" title="All 2 branches missed.">		for(WorkResourceAssignment wrkAssign:orgAssignsForEmp){</span>
+<span class="nc" id="L736">			Organization wrkOrg = BbmManagerFactory.getWorkResourceManager().getOrganizationByID(wrkAssign.getOrganizationID());</span>
+<span class="nc" id="L737">			Date start =TOCalendarUtil.getStartDateForWorkResourceOnCalendar(startDateRange,wrkAssign.getStartTime(),wrkOrg,currentTimeZoneEmpOrg,firstWrkAssn);</span>
+<span class="nc" id="L738">			Date end = TOCalendarUtil.getEndDateForWorkResourceOnCalendar(endDateRange,wrkAssign.getEndTime(),wrkOrg,currentTimeZoneEmpOrg);</span>
+<span class="nc" id="L739">			OrganizationHOOPeriod hooPeriod = RequestUtil.getHOOPeriod(wrkAssign.getOrganizationID(), start, end);</span>
+			
+<span class="nc" id="L741">			Collection&lt;TimePeriod&gt; periods = hooPeriod.getClosePeriods(start, end);</span>
+<span class="nc bnc" id="L742" title="All 2 branches missed.">			for (TimePeriod period : periods) {</span>
+<span class="nc" id="L743">				dates.add(new TimeRange(period.getStartTime(), period.getEndTime()));</span>
+<span class="nc" id="L744">			} </span>
+<span class="nc" id="L745">			firstWrkAssn = false;</span>
+<span class="nc" id="L746">		}</span>
+<span class="nc" id="L747">		intervalCalendar.markIncrements(dates, TOCalendarDayData.NON_OPERATION_DAY_TYPE);</span>
+<span class="nc" id="L748">	}</span>
+
+	/**
+	 * Marks the Available, Approved, and Pending increments for the list of intervals.
+	 *
+	 * @param intervalCalendar
+	 * @param intervals
+	 * @param isEmployee
+	 *            True if viewing an employee's TOIC.
+	 * @param forEmployee
+	 *            True to use the employee's hours not the TOPs.
+	 */
+	private static void markIncrementHours(TOIntervalCalendar intervalCalendar, List&lt;TOIntervalCalendarInterval&gt; intervals,
+			boolean isEmployee, boolean forEmployee) {
+<span class="nc bnc" id="L762" title="All 2 branches missed.">		for (TOIntervalCalendarInterval interval : intervals) {</span>
+<span class="nc bnc" id="L763" title="All 6 branches missed.">			if (interval.getAvailableHours(isEmployee &amp;&amp; forEmployee) &gt; 0) {</span>
+<span class="nc" id="L764">				intervalCalendar.markIncrements(interval.getStartTime(), interval.getEndTime(),</span>
+						TOCalendarDayData.TO_HOURS_AVAILABLE_DAY_TYPE);
+			}
+<span class="nc bnc" id="L767" title="All 2 branches missed.">			if (isEmployee) {</span>
+<span class="nc bnc" id="L768" title="All 2 branches missed.">				if (interval.getPendingHours(forEmployee) &gt; 0) {</span>
+<span class="nc" id="L769">					intervalCalendar.markIncrements(interval.getStartTime(), interval.getEndTime(),</span>
+							TOCalendarDayData.PENDING_DAY_TYPE);
+				}
+<span class="nc bnc" id="L772" title="All 2 branches missed.">				if (interval.getApprovedHours(forEmployee) &gt; 0) {</span>
+<span class="nc" id="L773">					intervalCalendar.markIncrements(interval.getStartTime(), interval.getEndTime(),</span>
+							TOCalendarDayData.SCHEDULED_DAY_TYPE);
+				}
+			}
+<span class="nc" id="L777">		}</span>
+<span class="nc" id="L778">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ProjectRulesDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.workrules.ejb</a> &gt; <span class="el_source">ProjectRulesDAO.java</span></div><h1>ProjectRulesDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.workrules.ejb;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.PaginationPair;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.common.localization.LocaleContext;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityFieldInfo;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignFieldInfo;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.dao.DAOUtil;
+import com.bluepumpkin.ejb.bbm.dao.OneToManyRelationship;
+import com.bluepumpkin.ejb.bbm.dao.RichObjectDAO;
+import com.bluepumpkin.ejb.bbm.vo.DBSortField;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.workresource.model.OrganizationFieldInfo;
+import com.bluepumpkin.ejb.bbm.workrules.model.ProjectRules;
+import com.bluepumpkin.ejb.bbm.workrules.model.ProjectRulesFieldInfo;
+import com.bluepumpkin.ejb.bbm.workrules.model.ProjectRulesSortField;
+import com.bluepumpkin.ejb.bbm.workrules.model.ProjectStart;
+import com.bluepumpkin.ejb.bbm.workrules.model.ProjectStartFieldInfo;
+import com.bluepumpkin.ejb.bbm.workrules.model.WorkRuleUtil;
+import com.witness.ejb.bbm.copy.ejb.CopyDAO;
+
+public class ProjectRulesDAO
+	extends RichObjectDAO&lt;ProjectRules&gt;
+{
+	// meta data information
+<span class="nc" id="L42">	private static FieldInfo m_fieldInfo = new ProjectRulesFieldInfo();</span>
+<span class="nc" id="L43">	private ProjectStartFieldInfo projectStartFieldInfo = new ProjectStartFieldInfo();</span>
+<span class="nc" id="L44">	private ActivityFieldInfo activityFieldInfo = new ActivityFieldInfo();</span>
+<span class="nc" id="L45">	private OrganizationFieldInfo organizationFieldInfo = new OrganizationFieldInfo();</span>
+	private ProjectStartDAO projStartDAO;
+
+<span class="nc" id="L48">	private final String activitySortFieldKey = activityFieldInfo.getTableName() + &quot;_&quot; + activityFieldInfo.getFieldName(ActivityFieldInfo.ACTIVITY_NAME);</span>
+<span class="nc" id="L49">	private final String organizationSortFieldKey = organizationFieldInfo.getTableName() + &quot;_&quot; + organizationFieldInfo.getFieldName(OrganizationFieldInfo.ORGANIZATION_NAME);</span>
+
+	@Override
+	protected FieldInfo getFieldInfo()
+	{
+<span class="nc" id="L54">		return m_fieldInfo;</span>
+	}
+
+	public ProjectRulesDAO()
+	{
+<span class="nc" id="L59">		super();</span>
+<span class="nc" id="L60">	}</span>
+
+	public ProjectRulesDAO(Jdmo dmo)
+	{
+<span class="nc" id="L64">		super(dmo);</span>
+<span class="nc" id="L65">	}</span>
+
+	@Override
+	protected void buildDBRelationships()
+	{
+<span class="nc" id="L70">		projStartDAO = new ProjectStartDAO(m_dmo);</span>
+
+<span class="nc" id="L72">		addRelationship(</span>
+			new OneToManyRelationship(
+				this,
+				projStartDAO,
+<span class="nc" id="L76">				getFieldInfo().getFieldIndexByName(&quot;ID&quot;),</span>
+<span class="nc" id="L77">				projStartDAO.getFieldInfo().getFieldIndexByName(&quot;PROJECTID&quot;),</span>
+				ProjectRules.PROJECT_START_RELATIONSHIP_KEY));
+<span class="nc" id="L79">	}</span>
+
+	@Override
+	protected ProjectRules createValueObject()
+	{
+<span class="nc" id="L84">		return new ProjectRules();</span>
+	}
+
+	@Override
+	public Collection&lt;ProjectRules&gt; getObjects(String strWhere)
+		throws BbmFinderException
+	{
+<span class="nc" id="L91">		StringBuffer sb = new StringBuffer();</span>
+<span class="nc" id="L92">		sb.append(&quot;(A.DELETEONDATE IS NULL OR A.DELETEONDATE &gt; &quot;);</span>
+<span class="nc" id="L93">		sb.append(JdmoUtil.asSqlLiteral(new Date(System.currentTimeMillis())));</span>
+<span class="nc" id="L94">		sb.append(&quot;)&quot;);</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">		sb.append(strWhere == null ? &quot;&quot; : &quot; AND &quot; + strWhere);</span>
+<span class="nc" id="L96">		StringBuffer strSQL = getQuerySQL(sb);</span>
+<span class="nc" id="L97">		return getObjectsGivenFullSqlQueryStr(strSQL.toString());</span>
+	}
+
+	public void copyProjects(
+		Collection&lt;ID&gt; projIDs,
+		boolean isOrgMode,
+		ID ownerID,
+		LocaleContext localeContext,
+		String currentUser)
+		throws BbmFinderException, BbmCreateException
+	{
+<span class="nc" id="L108">		CopyDAO copyDAO = new CopyDAO();</span>
+
+		try {
+			//Before we initiate the copy operation we want to clear out the IDs on the input objects and their
+			// children and set the create date/user
+<span class="nc" id="L113">			ArrayList&lt;ProjectRules&gt; projectToCopy = new ArrayList&lt;ProjectRules&gt;(getObjectsByIDs(projIDs));</span>
+
+<span class="nc bnc" id="L115" title="All 2 branches missed.">			for (ProjectRules projRule : projectToCopy) {</span>
+<span class="nc" id="L116">				projRule.setName(copyDAO.getNewNameForCopiedValueObjectWithLengthLimitation(projRule.getName(),</span>
+						&quot;PROJECT&quot;, localeContext, ProjectRulesFieldInfo.PROJECT_NAME_MAX_LENGTH));
+
+<span class="nc bnc" id="L119" title="All 2 branches missed.">				if (isOrgMode) {</span>
+<span class="nc" id="L120">					projRule.setCampaignID(null);</span>
+<span class="nc" id="L121">					projRule.setOrganizationID(ownerID);</span>
+				}
+				else {
+<span class="nc" id="L124">					projRule.setOrganizationID(null);</span>
+<span class="nc" id="L125">					projRule.setCampaignID(ownerID);</span>
+				}
+
+<span class="nc" id="L128">				projRule.setID(null);</span>
+<span class="nc" id="L129">				projRule.setDEID(null);</span>
+<span class="nc" id="L130">				projRule.setCreatedBy(currentUser);</span>
+<span class="nc" id="L131">				projRule.setModifiedBy(null);</span>
+<span class="nc" id="L132">				projRule.setCreatedDate(new Date(System.currentTimeMillis()));</span>
+<span class="nc" id="L133">				projRule.setModifiedDate(null);</span>
+
+				//Clear the IDs on associated start times
+<span class="nc" id="L136">				Collection&lt;ProjectStart&gt; collProjStart = new ArrayList&lt;ProjectStart&gt;(projRule.getProjectStartTimes());</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">				for (ProjectStart projStart : collProjStart) {</span>
+<span class="nc" id="L138">					projStart.setID(null);</span>
+<span class="nc" id="L139">					projStart.setCreatedBy(currentUser);</span>
+<span class="nc" id="L140">					projStart.setModifiedBy(null);</span>
+<span class="nc" id="L141">					projStart.setCreatedDate(new Date(System.currentTimeMillis()));</span>
+<span class="nc" id="L142">					projStart.setModifiedDate(null);</span>
+<span class="nc" id="L143">				}</span>
+<span class="nc" id="L144">				projRule.setProjectStartTimes(collProjStart);</span>
+<span class="nc" id="L145">			}</span>
+<span class="nc" id="L146">			createObjects(projectToCopy);</span>
+		}
+<span class="nc" id="L148">		catch (BbmFinderException ex) {</span>
+<span class="nc" id="L149">			throw new BbmFinderException(ex);</span>
+		}
+<span class="nc" id="L151">		catch (BbmCreateException ex) {</span>
+<span class="nc" id="L152">			throw new BbmCreateException(ex);</span>
+<span class="nc" id="L153">		}</span>
+<span class="nc" id="L154">	}</span>
+
+	/**
+	 * Returns a complete list of IDs and the first chunk of data to be displayed
+	 * &lt;p&gt;
+	 * @param orgID
+	 * @param sortFieldIndices
+	 * @param isAscendingSort
+	 * &lt;p&gt;
+	 * @return
+	 * &lt;p&gt;
+	 * @throws BbmFinderException
+	 */
+	public PaginationPair&lt;ProjectRules&gt; getCompletePaginationDataSetForOrg(
+		ID orgID, boolean isAscendingSort, int pageIDSize,
+		int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap,
+		Collection&lt;ID&gt; filteredIDs, String filterByName)
+		throws BbmFinderException
+	{
+<span class="nc" id="L173">		StringBuffer whereClause = new StringBuffer();</span>
+<span class="nc" id="L174">		whereClause.append(DAOUtil.getCurrentObjectsByOrgHierarchySQLString(orgID));</span>
+<span class="nc bnc" id="L175" title="All 4 branches missed.">		if (filterByName != null &amp;&amp; filterByName.length() &gt; 0) {</span>
+<span class="nc" id="L176">			whereClause.append(&quot; AND A.&quot;);</span>
+<span class="nc" id="L177">			whereClause.append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_NAME));</span>
+<span class="nc" id="L178">			whereClause.append(&quot; LIKE '%&quot;);</span>
+<span class="nc" id="L179">			whereClause.append(filterByName).append(&quot;%'&quot;);</span>
+		}
+<span class="nc" id="L181">		return super.getCompletePaginationDataSet(whereClause.toString(),</span>
+			isAscendingSort, pageIDSize, pageIndex, sortFieldMap, filteredIDs);
+	}
+
+	/**
+	 * Returns a complete list of IDs and the first chunk of data to be displayed
+	 * &lt;p&gt;
+	 * @param orgID
+	 * @param sortFieldIndices
+	 * @param isAscendingSort
+	 * &lt;p&gt;
+	 * @return
+	 * &lt;p&gt;
+	 * @throws BbmFinderException
+	 */
+	public PaginationPair&lt;ProjectRules&gt; getCompletePaginationDataSetForSchedulingPeriod(
+		SchedulingPeriod sp,
+		boolean isAscendingSort, int pageIDSize, int pageIndex,
+		LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap,
+		Collection&lt;ID&gt; filteredIDs, String filterByName)
+		throws BbmFinderException
+	{
+<span class="nc" id="L203">		StringBuffer whereClause = new StringBuffer();</span>
+<span class="nc" id="L204">		whereClause.append(DAOUtil.getCurrentObjectsBySchedulingPeriodSQLString(sp));</span>
+<span class="nc bnc" id="L205" title="All 4 branches missed.">		if (filterByName != null &amp;&amp; filterByName.length() &gt; 0) {</span>
+<span class="nc" id="L206">			whereClause.append(&quot; AND A.&quot;);</span>
+<span class="nc" id="L207">			whereClause.append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_NAME));</span>
+<span class="nc" id="L208">			whereClause.append(&quot; LIKE '%&quot;);</span>
+<span class="nc" id="L209">			whereClause.append(filterByName).append(&quot;%'&quot;);</span>
+		}
+<span class="nc" id="L211">		return super.getCompletePaginationDataSet(whereClause.toString(),</span>
+			isAscendingSort, pageIDSize, pageIndex, sortFieldMap, filteredIDs);
+	}
+
+	public HashMap&lt;ID, String&gt; getShiftNamesByOrg(ID orgID)
+		throws BbmFinderException
+	{
+<span class="nc" id="L218">		HashMap&lt;ID, String&gt; retVal = new HashMap&lt;ID, String&gt;();</span>
+		try {
+<span class="nc" id="L220">			JdmoRowset r = getDMO().createRowset(&quot;SELECT &quot; + getFieldInfo().getIDFieldName() + &quot;,&quot;</span>
+<span class="nc" id="L221">				+ getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_NAME) + &quot; FROM &quot; + getFieldInfo().getTableName()</span>
+<span class="nc" id="L222">				+ &quot; A WHERE &quot; + DAOUtil.getCurrentObjectsByOrgHierarchySQLString(orgID));</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L224">				retVal.put(r.getID(getFieldInfo().getIDFieldName()),</span>
+<span class="nc" id="L225">					r.getString(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_NAME)));</span>
+			}
+		}
+<span class="nc" id="L228">		catch (JdmoException ex) {</span>
+<span class="nc" id="L229">			throw new BbmFinderException(ex);</span>
+<span class="nc" id="L230">		}</span>
+<span class="nc" id="L231">		return retVal;</span>
+	}
+
+	public HashMap&lt;ID, String&gt; getShiftNamesBySchedulingPeriod(
+		SchedulingPeriod sp)
+		throws BbmFinderException
+	{
+<span class="nc" id="L238">		HashMap&lt;ID, String&gt; retVal = new HashMap&lt;ID, String&gt;();</span>
+		try {
+<span class="nc" id="L240">			JdmoRowset r = getDMO().createRowset(&quot;SELECT &quot; + getFieldInfo().getIDFieldName() + &quot;,&quot;</span>
+<span class="nc" id="L241">				+ getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_NAME) + &quot; FROM &quot; + getFieldInfo().getTableName()</span>
+<span class="nc" id="L242">				+ &quot; A WHERE &quot; + DAOUtil.getCurrentObjectsBySchedulingPeriodSQLString(sp));</span>
+<span class="nc bnc" id="L243" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L244">				retVal.put(r.getID(getFieldInfo().getIDFieldName()),</span>
+<span class="nc" id="L245">					r.getString(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_NAME)));</span>
+			}
+		}
+<span class="nc" id="L248">		catch (JdmoException ex) {</span>
+<span class="nc" id="L249">			throw new BbmFinderException(ex);</span>
+<span class="nc" id="L250">		}</span>
+<span class="nc" id="L251">		return retVal;</span>
+	}
+
+	@Override
+	protected void buildSortQuery(
+		List&lt;DBSortField&gt; sortFields,
+		StringBuffer selectQuery,
+		StringBuffer fromQuery,
+		StringBuffer whereQuery,
+		StringBuffer groupByQuery,
+		StringBuffer orderByQuery)
+	{
+<span class="nc bnc" id="L263" title="All 2 branches missed.">		for (DBSortField sortField : sortFields) {</span>
+<span class="nc bnc" id="L264" title="All 11 branches missed.">			switch ((ProjectRulesSortField)sortField) {</span>
+				case ID:
+<span class="nc" id="L266">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(getFieldInfo().getIDFieldName());</span>
+<span class="nc" id="L267">					break;</span>
+				case NAME:
+<span class="nc" id="L269">					selectQuery.append(&quot;, &quot;).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_NAME));</span>
+<span class="nc" id="L270">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_NAME));</span>
+<span class="nc" id="L271">					break;</span>
+				case DESCRIPTION:
+<span class="nc" id="L273">					selectQuery.append(&quot;, &quot;).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_DESCRIPTION));</span>
+<span class="nc" id="L274">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_DESCRIPTION));</span>
+<span class="nc" id="L275">					break;</span>
+				case ACTIVITY:
+<span class="nc" id="L277">					selectQuery.append(&quot;, (SELECT B.&quot;).append(activityFieldInfo.getFieldName(ActivityFieldInfo.ACTIVITY_NAME)).append(</span>
+<span class="nc" id="L278">						&quot; FROM &quot;).append(activityFieldInfo.getTableName()).append(&quot; B WHERE B.&quot;).append(activityFieldInfo.getIDFieldName()).append(</span>
+<span class="nc" id="L279">							&quot; = A.&quot;).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_ACTIVITYID)).append(</span>
+<span class="nc" id="L280">							&quot;) AS &quot;).append(activityFieldInfo.getTableName()).append(&quot;_&quot;).append(</span>
+<span class="nc" id="L281">							activityFieldInfo.getFieldName(ActivityFieldInfo.ACTIVITY_NAME));</span>
+<span class="nc" id="L282">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(activitySortFieldKey);</span>
+<span class="nc" id="L283">					break;</span>
+				case LENGTH:
+<span class="nc" id="L285">					selectQuery.append(&quot;, &quot;).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_LENGTH));</span>
+<span class="nc" id="L286">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_LENGTH));</span>
+<span class="nc" id="L287">					break;</span>
+				case ORGANIZATION:
+<span class="nc" id="L289">					selectQuery.append(&quot;, (SELECT E.&quot;).append(organizationFieldInfo.getFieldName(OrganizationFieldInfo.ORGANIZATION_NAME)).append(</span>
+<span class="nc" id="L290">						&quot; FROM &quot;).append(organizationFieldInfo.getTableName()).append(&quot; E WHERE E.&quot;).append(organizationFieldInfo.getIDFieldName()).append(</span>
+<span class="nc" id="L291">							&quot; = A.&quot;).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_ORGANIZATIONID)).append(</span>
+<span class="nc" id="L292">							&quot;) AS &quot;).append(organizationSortFieldKey);</span>
+<span class="nc" id="L293">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(organizationSortFieldKey);</span>
+<span class="nc" id="L294">					break;</span>
+				case DAILYMAXPEREMPLOYEE:
+<span class="nc" id="L296">					selectQuery.append(&quot;, &quot;).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_DAILYMAXPEREMPLOYEE));</span>
+<span class="nc" id="L297">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_DAILYMAXPEREMPLOYEE));</span>
+<span class="nc" id="L298">					break;</span>
+				case WEEKLYMAXPEREMPLOYEE:
+<span class="nc" id="L300">					selectQuery.append(&quot;, &quot;).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_WEEKLYMAXPEREMPLOYEE));</span>
+<span class="nc" id="L301">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_WEEKLYMAXPEREMPLOYEE));</span>
+<span class="nc" id="L302">					break;</span>
+				case MAXSIMULTANEOUS:
+<span class="nc" id="L304">					selectQuery.append(&quot;, &quot;).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_MAXSIMULTANEOUS));</span>
+<span class="nc" id="L305">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_MAXSIMULTANEOUS));</span>
+<span class="nc" id="L306">					break;</span>
+				case START_TIME:
+<span class="nc" id="L308">					selectQuery.append(&quot;, A.&quot; + getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_ID) + &quot;, min(C.&quot;).</span>
+<span class="nc" id="L309">						append(projectStartFieldInfo.getFieldName(ProjectStartFieldInfo.PROJECTSTART_POSSIBLESTSTARTTIME) + &quot;) as STARTTIME&quot;);</span>
+<span class="nc" id="L310">					fromQuery.append(&quot;, &quot; + projectStartFieldInfo.getTableName() + &quot; C&quot;);</span>
+<span class="nc" id="L311">					fromQuery.append(&quot;, &quot; + organizationFieldInfo.getTableName() + &quot; D&quot;);</span>
+<span class="nc" id="L312">					whereQuery.append(&quot; AND C.&quot; + projectStartFieldInfo.getFieldName(ProjectStartFieldInfo.PROJECTSTART_PROJECTID)</span>
+<span class="nc" id="L313">						+ &quot; = A.&quot; + getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_ID));</span>
+<span class="nc" id="L314">					WorkRuleUtil.appendCommaIfPassStringIsNotEmpty(orderByQuery).append(&quot; STARTTIME&quot;);</span>
+<span class="nc" id="L315">					groupByQuery.append(&quot; GROUP BY A.&quot; + getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_ID)</span>
+<span class="nc" id="L316">						+ &quot;, A.&quot; + getFieldInfo().getIDFieldName());</span>
+<span class="nc" id="L317">					String s = selectQuery.toString() + fromQuery.toString() + whereQuery.toString() + orderByQuery.toString() + groupByQuery.toString();</span>
+<span class="nc" id="L318">					break;</span>
+				default:
+					break;
+			}
+<span class="nc" id="L322">		}</span>
+<span class="nc" id="L323">	}</span>
+
+	@Override
+	protected Object getPaginationDataFieldValue(JdmoRowset rowData, DBSortField sortField)
+		throws JdmoException
+	{
+<span class="nc" id="L329">		ProjectRulesSortField prsf = (ProjectRulesSortField)sortField;</span>
+<span class="nc bnc" id="L330" title="All 10 branches missed.">		switch (prsf) {</span>
+			case NAME:
+<span class="nc" id="L332">				return rowData.getString(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_NAME));</span>
+			case DESCRIPTION:
+<span class="nc" id="L334">				return rowData.getString(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_DESCRIPTION));</span>
+			case ACTIVITY:
+<span class="nc" id="L336">				return rowData.getString(activitySortFieldKey);</span>
+			case LENGTH:
+<span class="nc" id="L338">				return rowData.getString(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_LENGTH));</span>
+			case ORGANIZATION:
+<span class="nc" id="L340">				return rowData.getString(organizationSortFieldKey);</span>
+			case DAILYMAXPEREMPLOYEE:
+<span class="nc" id="L342">				return rowData.getString(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_DAILYMAXPEREMPLOYEE));</span>
+			case WEEKLYMAXPEREMPLOYEE:
+<span class="nc" id="L344">				return rowData.getString(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_WEEKLYMAXPEREMPLOYEE));</span>
+			case MAXSIMULTANEOUS:
+<span class="nc" id="L346">				return rowData.getString(getFieldInfo().getFieldName(ProjectRulesFieldInfo.PROJECT_MAXSIMULTANEOUS));</span>
+			case START_TIME:
+<span class="nc" id="L348">				return rowData.getInt(&quot;STARTTIME&quot;);</span>
+			default:
+<span class="nc" id="L350">				return null;</span>
+		}
+	}
+
+	@Override
+	protected Map&lt;Integer, ? extends FieldInfo&gt; getForeignKeyFieldInfo()
+	{
+<span class="nc" id="L357">		Map&lt;Integer, FieldInfo&gt; retVal = new HashMap&lt;Integer, FieldInfo&gt;();</span>
+<span class="nc" id="L358">		retVal.put(ProjectRulesFieldInfo.PROJECT_CAMPAIGNID, new CampaignFieldInfo());</span>
+<span class="nc" id="L359">		return retVal;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

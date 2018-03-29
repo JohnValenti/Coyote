@@ -1,0 +1,1272 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>BaseBidOptionsPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.auction</a> &gt; <span class="el_source">BaseBidOptionsPM.java</span></div><h1>BaseBidOptionsPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.auction;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.ResourceBundle;
+import java.util.Set;
+import java.util.TimeZone;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.CalendarRange;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.l10n.RegionalFormatBundleKey;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.skill.model.SkillAssignment;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.bbm.workresource.model.Phantom;
+import com.bluepumpkin.ejb.core.base.SupportNavigation;
+import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.model.ShiftBidAuction;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.BiddableSchedule;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidder;
+import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.ejb.rm.util.LicenseUtil;
+import com.bluepumpkin.ejb.rm.util.RmFilterChain;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.bbm.skill.SkillModelHandler;
+import com.bluepumpkin.web.fs.shift.ShiftDetailsPopupPM;
+import com.bluepumpkin.web.rm.auction.filter.BidOptionsFilter;
+import com.bluepumpkin.web.rm.auction.filter.BidOptionsFilterPC;
+import com.bluepumpkin.web.rm.auction.filter.BidOptionsFilterUtil;
+import com.bluepumpkin.web.rm.keys.RmJavaScriptFileID;
+import com.bluepumpkin.web.rm.keys.RmKeys;
+import com.bluepumpkin.web.rm.keys.RmPageAction;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.requests.shiftbidding.ShiftBidUtil;
+import com.bluepumpkin.web.rm.setup.settings.SettingsModelHandler;
+import com.witness.ejb.core.security.model.User;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.data.wrapper.BasicWrapper;
+import com.witness.web.uif.data.wrapper.NumberWrapper;
+import com.witness.web.uif.keys.ImageFileID;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.l10n.CommonWebLogBundleKey;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.contenttitle.ContentTitlePC;
+import com.witness.web.uif.pagecomponent.dialog.DialogToolbarMenuPC;
+import com.witness.web.uif.pagecomponent.form.FormInputPC;
+import com.witness.web.uif.pagecomponent.table.GenericHeaderData;
+import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
+import com.witness.web.uif.pagemodel.WorkpaneListPM;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.html.CSSUtil;
+import com.witness.web.uif.util.html.HtmlLinkUtil;
+import com.witness.web.uif.util.js.JSUtil;
+
+/**
+ * Title:        BaseBidOptionsPM
+ * Description:  Abstract base class for Bid Options Page Model
+ * Copyright:    Copyright (c) 2003
+ * Company:      Blue Pumpkin Software, Inc
+ * @author       David Su, DSu
+ * @version      1.0
+ *
+ * Created on Jun 30, 2003, 5:46:40 PM
+ */
+public abstract class BaseBidOptionsPM extends WorkpaneListPM implements AuctionPM {
+	protected static final String BIDDER_ID_FN = &quot;bidderID&quot;;
+	protected static final String PREFERENCE_PREFIX_FN = &quot;preferenceEditPF&quot;;
+
+	protected ResourceBundle m_bundle;
+	protected ResourceBundle m_bbm_bundle;
+<span class="nc" id="L94">	protected boolean m_isPageEnabled = true;</span>
+<span class="nc" id="L95">	protected boolean m_isAuctionClosed = false;</span>
+<span class="nc" id="L96">	protected boolean hasRMAdvanceLicense = false;</span>
+<span class="nc" id="L97">	protected Collection&lt;BiddableSchedule&gt; m_listData = Collections.emptyList();</span>
+	protected ShiftBidAuction m_auction;
+	protected SchedulingPeriod m_schedPeriod;
+	protected TimeZone m_tz;
+	protected TimeZone m_campaignTz;
+	protected ID m_bidderID;
+	protected ID m_empID;
+	private Map m_empTemplateNameMap;
+	protected BidOptionsFilterPC m_filterPC;
+
+	protected DialogToolbarMenuPC m_sortByMenuPC;
+	public final static String SORT_DIALOG_PC = &quot;SORT_DIALOG_PC&quot;;
+
+	//Sort Type constants for the Shift columns
+	public final static String SORT_BY_START_ACTION = &quot;sortByStart&quot;;
+	public final static String SORT_BY_END_ACTION = &quot;sortByEnd&quot;;
+	public final static String SORT_BY_LENGTH_ACTION = &quot;sortByLength&quot;;
+
+<span class="nc" id="L115">	protected String m_sortType = &quot;&quot;; //SORT_BY_START_ACTION or SORT_BY_END_ACTION or SORT_BY_LENGTH_ACTION</span>
+
+	//Sort criteria for the secondary sort
+	public final static String SORT_COLUMN2_HIDDEN = &quot;sortColumn2&quot;;
+	public final static String SORT_ORDER2_HIDDEN = &quot;sortOrder2&quot;;
+	public final static String SORT_TYPE2_HIDDEN = &quot;sortType2&quot;;
+
+<span class="nc" id="L122">	protected String m_sortColumn2 = &quot;&quot;; //column number</span>
+<span class="nc" id="L123">	protected String m_sortOrder2 = &quot;&quot;; //&quot;ascending&quot; or &quot;descending&quot;</span>
+<span class="nc" id="L124">	protected String m_sortType2 = &quot;&quot;; //SORT_BY_START_ACTION or SORT_BY_END_ACTION or SORT_BY_LENGTH_ACTION</span>
+
+	//Sort criteria for the third sort
+	public final static String SORT_COLUMN3_HIDDEN = &quot;sortColumn3&quot;;
+	public final static String SORT_ORDER3_HIDDEN = &quot;sortOrder3&quot;;
+	public final static String SORT_TYPE3_HIDDEN = &quot;sortType3&quot;;
+
+<span class="nc" id="L131">	protected String m_sortColumn3 = &quot;&quot;; //column number</span>
+<span class="nc" id="L132">	protected String m_sortOrder3 = &quot;&quot;; //&quot;ascending&quot; or &quot;descending&quot;</span>
+<span class="nc" id="L133">	protected String m_sortType3 = &quot;&quot;; //SORT_BY_START_ACTION or SORT_BY_END_ACTION or SORT_BY_LENGTH_ACTION</span>
+
+	//Sort criteria for the fourth sort
+	public final static String SORT_COLUMN4_HIDDEN = &quot;sortColumn4&quot;;
+	public final static String SORT_ORDER4_HIDDEN = &quot;sortOrder4&quot;;
+	public final static String SORT_TYPE4_HIDDEN = &quot;sortType4&quot;;
+
+<span class="nc" id="L140">	protected String m_sortColumn4 = &quot;&quot;; //column number</span>
+<span class="nc" id="L141">	protected String m_sortOrder4 = &quot;&quot;; //&quot;ascending&quot; or &quot;descending&quot;</span>
+<span class="nc" id="L142">	protected String m_sortType4 = &quot;&quot;; //SORT_BY_START_ACTION or SORT_BY_END_ACTION or SORT_BY_LENGTH_ACTION</span>
+
+	private Map&lt;ID, Integer&gt; biddableScheduleToPreference;
+
+	private int maxPrefValue;
+	private boolean canShowMultiSubmitButton;
+	private Integer totalSubmittedBids;
+	private Integer minimumNumberOfBids;
+<span class="nc" id="L150">	private Collection&lt;ID&gt; spOrgList = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L151">	private Collection&lt;ID&gt; viewUserScopeOrgIDs = Collections.EMPTY_LIST;</span>
+	private Map&lt;ID, Boolean&gt; orgDescSettings;
+<span class="nc" id="L153">	private boolean displayDescColumn = false;</span>
+<span class="nc" id="L154">	private User viewingUser = null;</span>
+
+
+	protected BaseBidOptionsPM(RequestContext context, int modeType, String formAction) {
+<span class="nc" id="L158">		super(context, modeType);</span>
+
+<span class="nc" id="L160">		removeChildComponent(m_contentTitlePC);</span>
+<span class="nc" id="L161">		m_contentTitlePC = new BaseBidOptionsContentTitlePC(context);</span>
+<span class="nc" id="L162">		addChildComponent(m_contentTitlePC);</span>
+
+<span class="nc" id="L164">		hasRMAdvanceLicense = LicenseUtil.isAdvancedRMLicense();</span>
+<span class="nc" id="L165">		viewingUser = context.getUser();</span>
+
+<span class="nc" id="L167">		setFormAction(formAction);</span>
+<span class="nc" id="L168">		m_list.setIsZebra(true);</span>
+<span class="nc" id="L169">		m_bundle = m_localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L170">		m_bbm_bundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+
+<span class="nc" id="L172">		m_tz = m_context.getViewingTimeZone();</span>
+
+<span class="nc" id="L174">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="nc" id="L175">		setJSMediator(RmJavaScriptFileID.MEDIATOR_SCHEDULES);</span>
+<span class="nc" id="L176">		setIsAutoSortEnabled(false);</span>
+<span class="nc" id="L177">		setIsSortSupported(true);</span>
+
+<span class="nc" id="L179">		setDefaultPageIDSize(10);</span>
+<span class="nc" id="L180">		setIsPaginatingSelectedIDs(false);</span>
+<span class="nc" id="L181">	}</span>
+
+	public Map&lt;ID, Integer&gt; getUnsubmittedPreferences() {
+<span class="nc" id="L184">		return biddableScheduleToPreference;</span>
+	}
+
+	/**
+	 * Load Data for Bidder
+	 */
+	protected void loadDataForBidder(ID auctionID, ID bidderID, ID empID, boolean isValidate)
+			throws RmHardValidationException, Exception {
+
+<span class="nc" id="L193">		boolean byEmplType = false;</span>
+<span class="nc" id="L194">		OrganizationSetting orgSettings = null;</span>
+<span class="nc" id="L195">		setPageDirty(false);</span>
+
+<span class="nc bnc" id="L197" title="All 2 branches missed.">		if (isValidate) {</span>
+<span class="nc" id="L198">			m_auction = AuctionUtil.getAuctionAndValidate(auctionID, m_context, this);</span>
+		} else {
+<span class="nc" id="L200">			m_auction = AuctionMH.getAuction(auctionID);</span>
+		}
+<span class="nc bnc" id="L202" title="All 2 branches missed.">		m_isAuctionClosed = !m_auction.getIsAuctionOpen();</span>
+
+		// Get User's Scoped OrgIDs
+<span class="nc bnc" id="L205" title="All 2 branches missed.">		if (viewUserScopeOrgIDs.isEmpty()) {</span>
+<span class="nc" id="L206">			viewUserScopeOrgIDs = OrganizationModelHandler.getAllOrgIdsInUserScope(m_context, viewingUser);</span>
+		}
+
+		// Get Users Org ID
+<span class="nc" id="L210">		ID orgID = OrganizationModelHandler.getEmployeeOrgID(m_context, empID);</span>
+
+		// Get Filter by Employee Type Setting
+<span class="nc bnc" id="L213" title="All 2 branches missed.">		if (hasRMAdvanceLicense) {</span>
+<span class="nc" id="L214">			orgSettings = SettingsModelHandler.getSettings(orgID);</span>
+<span class="nc" id="L215">			byEmplType = orgSettings.getFilterBidOptionsByEmpType();</span>
+		}
+
+		// Determine OrgID for filtering
+<span class="nc bnc" id="L219" title="All 2 branches missed.">		if (!m_auction.getBidsOnlyWithinOrg()) {</span>
+<span class="nc" id="L220">			orgID = null;</span>
+		}
+
+		// Gets Multi-Submit, Schedule Period, and Timezone for the Schedule Period
+<span class="nc" id="L224">		canShowMultiSubmitButton = getCanShowMultiSubmitButton();</span>
+<span class="nc" id="L225">		m_schedPeriod = BidOptionsFilterUtil.getSP(m_context, m_auction);</span>
+<span class="nc" id="L226">		m_campaignTz = CampaignModelHandler.getCampaign(m_context, m_schedPeriod.getCampaignID()).getTimeZone();</span>
+
+		//We need to store whether the SP is skilled in the session because the filter popup PM
+		//needs to instantiate its skills assignment box member variable only when SP is skilled.
+		//It cannot use a popup param for this decision because the assignment box must be instantiated
+		//in the popup PM constructor, before the popup parameters are extracted.
+<span class="nc bnc" id="L232" title="All 2 branches missed.">		if (m_schedPeriod.getSkillBased()) {</span>
+<span class="nc" id="L233">			m_context.setAttribute(RequestContext.SESSION_SCOPE, BidOptionsFilterUtil.IS_SKILLED_SP_KEY, &quot;true&quot;);</span>
+		} else {
+<span class="nc" id="L235">			m_context.removeAttribute(RequestContext.SESSION_SCOPE, BidOptionsFilterUtil.IS_SKILLED_SP_KEY);</span>
+		}
+
+		// Get Orgs for the Schedule Period and Populate Org Description Setting Map
+<span class="nc" id="L239">		spOrgList = CampaignModelHandler.getLinkedOrgsforSP(m_context, m_auction.getOptMethods().getSP().getID());</span>
+<span class="nc" id="L240">		orgDescSettings = AuctionUtil.setOrgDisplayDecription(spOrgList);</span>
+
+		// Get Unsubmitted Schedule Preferences
+<span class="nc" id="L243">		biddableScheduleToPreference = AuctionMH.getUnsubmittedSchedulePreference(auctionID, empID);</span>
+
+		// Get the Employee Maximum Preference Level
+<span class="nc" id="L246">		maxPrefValue = AuctionMH.getEmpMaxPrefLevel(m_context, empID);</span>
+
+
+
+<span class="nc bnc" id="L250" title="All 2 branches missed.">		if (m_isAuctionClosed) {</span>
+<span class="nc" id="L251">			addPageMessage(Message.INFO_TYPE, RmWebBundleKey.AUCTION_IS_CLOSED, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">		} else if (isPaginationNavPressed()) {</span>
+			//get next chunk
+<span class="nc" id="L254">			m_listData = AuctionMH.getBiddableSchedulesByIDs(getPageIDs(), bidderID);</span>
+		} else {
+<span class="nc" id="L256">			initSortSettings();</span>
+<span class="nc" id="L257">			int[] sortColumns = getSortColumnArray();</span>
+<span class="nc" id="L258">			Pair biddableSchedPair = AuctionMH.getBiddableSchedulesForAuction(auctionID, orgID, bidderID, empID, byEmplType,</span>
+					sortColumns,
+<span class="nc" id="L260">					getSortOrderArray(sortColumns.length),</span>
+<span class="nc" id="L261">					getPageIDSize(),</span>
+<span class="nc" id="L262">					getFilterChain(empID),</span>
+<span class="nc" id="L263">					AuctionUtil.getWeekRanges(m_schedPeriod, m_auction.getOptMethods().getCampaign().getTimeZone()));</span>
+<span class="nc" id="L264">			m_listData = (Collection) biddableSchedPair.getSecond();</span>
+<span class="nc" id="L265">			initPaginationIDs((Collection) biddableSchedPair.getFirst());</span>
+		}
+<span class="nc" id="L267">		addPopupArgs(RmPageAction.POPUP_AGENT_SKILLS_ACTION, RmKeys.RH_AGENT_SKILLS,</span>
+				null, &quot;employeeID,empTemplateID,shiftDate1,shiftDate2&quot;, &quot;450,350,ctr,ctr&quot;, true, 1);
+<span class="nc" id="L269">		ShiftDetailsPopupPM.addPopupArgs(this, RmPageAction.POPUP_SHIFT_DETAILS_ACTION);</span>
+
+<span class="nc" id="L271">		BidRequestFormPopupPM.addPopupArgs(this, RmPageAction.POPUP_CREATE_BID_REQUEST_ACTION);</span>
+
+<span class="nc" id="L273">	}</span>
+
+	private boolean getCanShowMultiSubmitButton() {
+<span class="nc bnc" id="L276" title="All 8 branches missed.">		return LicenseUtil.isAdvancedRMLicense() &amp;&amp; m_auction != null &amp;&amp; m_auction.getIsFullPeriodSchedule() &amp;&amp; !m_isAuctionClosed;</span>
+	}
+
+	public static RmFilterChain getFilterChain(RequestContext context, ShiftBidAuction auction, SchedulingPeriod schedPeriod, ID empID,
+			ID bidderID, TimeZone timeZone)
+			throws RemoteException, BbmException, Exception {
+<span class="nc" id="L282">		BidOptionsFilter filter = null;</span>
+
+		// If showing only agent's skills, need to create a skills filter
+<span class="nc bnc" id="L285" title="All 2 branches missed.">		if (BidOptionsFilterUtil.isShowBidderSkillsOnly(context, schedPeriod, empID)) {</span>
+<span class="nc" id="L286">			ArrayList skillsIDList = new ArrayList();</span>
+<span class="nc" id="L287">			Collection skillAssignments = SkillModelHandler.getSkillAssignments(context, empID,</span>
+<span class="nc" id="L288">					auction.getStartTime(), auction.getEndTime());</span>
+
+<span class="nc bnc" id="L290" title="All 2 branches missed.">			if (skillAssignments != null) {</span>
+<span class="nc" id="L291">				skillsIDList = new ArrayList(skillAssignments.size());</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">				for (Iterator it = skillAssignments.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L293">					SkillAssignment sa = (SkillAssignment) it.next();</span>
+<span class="nc" id="L294">					ID skillID = sa.getSkillID();</span>
+<span class="nc" id="L295">					skillsIDList.add(skillID);</span>
+<span class="nc" id="L296">				}</span>
+			}
+<span class="nc bnc" id="L298" title="All 2 branches missed.">			if (filter == null) {</span>
+<span class="nc" id="L299">				filter = new BidOptionsFilter();</span>
+			}
+<span class="nc" id="L301">			filter.put(&quot;skills&quot;, skillsIDList);</span>
+<span class="nc" id="L302">			filter.put(&quot;skillsMatchType&quot;, new Integer(BidOptionsFilter.SKILLS_MATCH_AT_MOST));</span>
+<span class="nc bnc" id="L303" title="All 4 branches missed.">		} else if (!schedPeriod.getSkillBased() &amp;&amp; (filter != null)) {</span>
+			// Remove skills (if any) from filter
+<span class="nc" id="L305">			filter.remove(&quot;skills&quot;);</span>
+		}
+
+<span class="nc bnc" id="L308" title="All 2 branches missed.">		if (filter == null) {</span>
+<span class="nc" id="L309">			return null;</span>
+		}
+
+<span class="nc" id="L312">		return BidOptionsFilterUtil.createFilterChain(filter, auction, bidderID, context, timeZone);</span>
+	}
+
+	/**
+	 * Construct an RmFilterChain from our BidOptionsFilter object (if any).
+	 * @param empID The agent's employee ID. We use it to get skills.
+	 * @return An RmFilterChain object containing the settings for our filter.
+	 */
+	private RmFilterChain getFilterChain(ID empID) throws RemoteException, BbmException, Exception {
+		//Load the filter from the session
+<span class="nc" id="L322">		BidOptionsFilter filter = (BidOptionsFilter)m_context.getAttribute(RequestContext.SESSION_SCOPE,</span>
+				RmKeys.BID_OPTIONS_FILTER);
+
+		//If showing only agent's skills, need to create a skills filter
+<span class="nc bnc" id="L326" title="All 2 branches missed.">		if (BidOptionsFilterUtil.isShowBidderSkillsOnly(m_context, m_schedPeriod, empID)) {</span>
+<span class="nc" id="L327">			ArrayList skillsIDList = new ArrayList();;</span>
+<span class="nc" id="L328">			Collection skillAssignments = SkillModelHandler.getSkillAssignments(m_context, empID,</span>
+<span class="nc" id="L329">					m_auction.getStartTime(), m_auction.getEndTime());</span>
+
+<span class="nc bnc" id="L331" title="All 2 branches missed.">			if (skillAssignments != null) {</span>
+<span class="nc" id="L332">				skillsIDList = new ArrayList(skillAssignments.size());</span>
+<span class="nc bnc" id="L333" title="All 2 branches missed.">				for (Iterator it = skillAssignments.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L334">					SkillAssignment sa = (SkillAssignment) it.next();</span>
+<span class="nc" id="L335">					ID skillID = sa.getSkillID();</span>
+<span class="nc" id="L336">					skillsIDList.add(skillID);</span>
+<span class="nc" id="L337">				}</span>
+			}
+<span class="nc bnc" id="L339" title="All 2 branches missed.">			if (filter == null)</span>
+<span class="nc" id="L340">				filter = new BidOptionsFilter();</span>
+<span class="nc" id="L341">			filter.put(&quot;skills&quot;, skillsIDList);</span>
+<span class="nc" id="L342">			filter.put(&quot;skillsMatchType&quot;, new Integer(BidOptionsFilter.SKILLS_MATCH_AT_MOST));</span>
+<span class="nc" id="L343">			m_context.setAttribute(RequestContext.SESSION_SCOPE, RmKeys.BID_OPTIONS_FILTER, filter);</span>
+<span class="nc bnc" id="L344" title="All 4 branches missed.">		} else if (!m_schedPeriod.getSkillBased() &amp;&amp; (filter != null)) {</span>
+			//Remove skills (if any) from filter
+<span class="nc" id="L346">			filter.remove(&quot;skills&quot;);</span>
+<span class="nc" id="L347">			m_context.setAttribute(RequestContext.SESSION_SCOPE, RmKeys.BID_OPTIONS_FILTER, filter);</span>
+		}
+
+<span class="nc bnc" id="L350" title="All 2 branches missed.">		if (filter == null)</span>
+<span class="nc" id="L351">			return null;</span>
+
+<span class="nc" id="L353">		return BidOptionsFilterUtil.createFilterChain(filter, m_auction, m_bidderID, m_context, m_tz);</span>
+	}
+
+	/**
+	 * Initialize Content Title
+	 */
+	@Override
+	protected void initContentTitle() {
+		//We need to render our content title components with a top alignment,
+		//so that they will not move when the bid options filter PC is expanded.
+
+		//We override the default ID of contentTitle_act_comp_tbl_id because that sets all TD elements in the content title to have a padding-right of 10px,
+		//even for embedded tables, and there is no other way to change this.
+<span class="nc" id="L366">		m_contentTitlePC.setActiveComponentTableID(&quot;&quot;);</span>
+
+<span class="nc" id="L368">		String pageTitle = i18n(m_bundle, RmWebBundleKey.RM_SA_BID_OPTIONS);</span>
+<span class="nc" id="L369">		m_contentTitlePC.setPageTitle(pageTitle);</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">		if (m_auction == null)</span>
+<span class="nc" id="L371">			return;</span>
+
+<span class="nc" id="L373">		String name = getAuctionNameUI();</span>
+<span class="nc" id="L374">		m_contentTitlePC.setItemName(name);</span>
+
+<span class="nc" id="L376">		((BaseBidOptionsContentTitlePC) m_contentTitlePC).setMinimumBidCountString(getMinimumBidCountStringForEmployee());</span>
+
+<span class="nc" id="L378">	}</span>
+
+	protected String getMinimumBidCountStringForEmployee() {
+<span class="nc" id="L381">		String minBidString = &quot;&quot;;</span>
+
+<span class="nc bnc" id="L383" title="All 4 branches missed.">		if (LicenseUtil.isAdvancedRMLicense() &amp;&amp; m_auction.getIsRequiredBids()) {</span>
+			try {
+
+<span class="nc" id="L386">				EmployeeName name = AuctionMH.getEmployeeNameByBidderID(m_context, m_bidderID);</span>
+
+<span class="nc" id="L388">				Integer numBidsRequired = getMinimumNumberOfBids();</span>
+<span class="nc" id="L389">				String numBidsString = numBidsRequired.toString();</span>
+
+<span class="nc" id="L391">				Object[] params = { name.getFirstName(), name.getLastName(), numBidsString };</span>
+<span class="nc" id="L392">				minBidString = this.m_localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.MINIMUM_BID_MSG_MANAGER, params);</span>
+
+<span class="nc" id="L394">			} catch (Exception e) {</span>
+<span class="nc" id="L395">				log.error(e.getMessage(), e);</span>
+<span class="nc" id="L396">				return &quot;&quot;;</span>
+<span class="nc" id="L397">			}</span>
+		}
+
+<span class="nc" id="L400">		return minBidString;</span>
+
+	}
+
+	/**
+	 * Return Auction Name UI in Content Title
+	 */
+	protected abstract String getAuctionNameUI();
+
+	/**
+	 * Return Deadline to be shown in Content Title
+	 */
+	protected abstract Date getDeadline();
+
+	public abstract ID getEmployeeID();
+
+	/**
+	 * Initialize Header
+	 */
+	@Override
+	protected void initHeader() {
+<span class="nc bnc" id="L421" title="All 2 branches missed.">		if (m_auction == null) {</span>
+<span class="nc" id="L422">			return;</span>
+		}
+
+<span class="nc" id="L425">		TableHeaderPC header = m_list.getHeader();</span>
+
+<span class="nc" id="L427">		displayDescColumn = AuctionUtil.getDisplayDescriptionColumn(spOrgList, viewUserScopeOrgIDs, orgDescSettings);</span>
+
+<span class="nc" id="L429">		header.setDefaultSortColumn(String.valueOf(BiddableSchedule.SORTBY_NONE));</span>
+
+<span class="nc" id="L431">		GenericHeaderData ghd = header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_PHANTOMNAME),</span>
+<span class="nc" id="L432">				getColumnLabel(BiddableSchedule.SORTBY_PHANTOMNAME));</span>
+<span class="nc" id="L433">		ghd.setHeaderClass(CSSUtil.CLASS_HEADER_DEFAULT);</span>
+
+<span class="nc bnc" id="L435" title="All 4 branches missed.">		if (hasRMAdvanceLicense &amp;&amp; displayDescColumn) {</span>
+<span class="nc" id="L436">			ghd = header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_DESCRIPTION),</span>
+<span class="nc" id="L437">					getColumnLabel(BiddableSchedule.SORTBY_DESCRIPTION));</span>
+<span class="nc" id="L438">			ghd.setHeaderClass(CSSUtil.CLASS_HEADER_DEFAULT);</span>
+		}
+
+<span class="nc" id="L441">		ghd = header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_PREFERENCE),</span>
+<span class="nc" id="L442">				getColumnLabel(BiddableSchedule.SORTBY_PREFERENCE));</span>
+<span class="nc" id="L443">		ghd.setIsForNumeric(true);</span>
+<span class="nc" id="L444">		ghd.setHeaderClass(CSSUtil.CLASS_HEADER_DEFAULT);</span>
+
+<span class="nc" id="L446">		ghd = header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_NUMBER_AVAIALBLE),</span>
+<span class="nc" id="L447">				getColumnLabel(BiddableSchedule.SORTBY_NUMBER_AVAIALBLE));</span>
+<span class="nc" id="L448">		ghd.setIsForNumeric(true);</span>
+<span class="nc" id="L449">		ghd.setHeaderClass(CSSUtil.CLASS_HEADER_DEFAULT);</span>
+
+<span class="nc" id="L451">		ghd = header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_NUMBER_SUBMITTED),</span>
+<span class="nc" id="L452">				getColumnLabel(BiddableSchedule.SORTBY_NUMBER_SUBMITTED));</span>
+<span class="nc" id="L453">		ghd.setIsForNumeric(true);</span>
+<span class="nc" id="L454">		ghd.setHeaderClass(CSSUtil.CLASS_HEADER_DEFAULT);</span>
+
+<span class="nc bnc" id="L456" title="All 4 branches missed.">		if (m_auction != null &amp;&amp; m_auction.getUsesScoring()) {</span>
+
+<span class="nc" id="L458">			header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_BIDRANK),</span>
+<span class="nc" id="L459">					getColumnLabel(BiddableSchedule.SORTBY_BIDRANK));</span>
+<span class="nc" id="L460">			ghd.setIsForNumeric(true);</span>
+<span class="nc" id="L461">			ghd.setHeaderClass(CSSUtil.CLASS_HEADER_DEFAULT);</span>
+		}
+
+<span class="nc" id="L464">		header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_BONUSASSIGNED),</span>
+<span class="nc" id="L465">				getColumnLabel(BiddableSchedule.SORTBY_BONUSASSIGNED));</span>
+<span class="nc" id="L466">		ghd.setIsForNumeric(true);</span>
+<span class="nc" id="L467">		ghd.setHeaderClass(CSSUtil.CLASS_HEADER_DEFAULT);</span>
+
+<span class="nc" id="L469">		header.addColumnHeaderData(String.valueOf(BiddableSchedule.SORTBY_HOURS),</span>
+<span class="nc" id="L470">				getColumnLabel(BiddableSchedule.SORTBY_HOURS));</span>
+<span class="nc" id="L471">		ghd.setIsForNumeric(true);</span>
+<span class="nc" id="L472">		ghd.setHeaderClass(CSSUtil.CLASS_HEADER_DEFAULT);</span>
+
+<span class="nc bnc" id="L474" title="All 2 branches missed.">		if (m_isPageEnabled) {</span>
+<span class="nc" id="L475">			AuctionUtil.addShiftDatesToHeader(m_schedPeriod, m_localizer, m_campaignTz, header, true);</span>
+		}
+<span class="nc" id="L477">	}</span>
+
+	/**
+	 * Wrap a String in an anchor tag that links to nothing (#).
+	 */
+	protected String anchor(String innerHTML) {
+<span class="nc" id="L483">		return &quot;&lt;a href=\&quot;#\&quot;&gt;&quot; + innerHTML + &quot;&lt;/a&gt;&quot;;</span>
+	}
+
+	/**
+	 * Initialize List
+	 */
+	@Override
+	protected void initSelectableItems() {
+<span class="nc bnc" id="L491" title="All 4 branches missed.">		if (m_listData.isEmpty() || !m_isPageEnabled) {</span>
+<span class="nc" id="L492">			return;</span>
+		}
+
+<span class="nc" id="L495">		List&lt;DefaultMultiColumnNodeData&gt; listModel = new ArrayList&lt;DefaultMultiColumnNodeData&gt;(m_listData.size());</span>
+<span class="nc" id="L496">		boolean isEditable = isAuthorizedToConfigure();</span>
+<span class="nc" id="L497">		boolean isUseScoring = m_auction.getUsesScoring();</span>
+<span class="nc" id="L498">		String noBidMsg = i18n(m_bundle, RmWebBundleKey.BID_NO_BID);</span>
+<span class="nc" id="L499">		m_empTemplateNameMap = AuctionUtil.getEmpTemplateNameMap(m_listData, m_context);</span>
+<span class="nc" id="L500">		Set&lt;ID&gt; selectedIDSet = new HashSet&lt;ID&gt;(getPerfromActionOnIDsAsCollection());</span>
+<span class="nc bnc" id="L501" title="All 2 branches missed.">		for (BiddableSchedule schedule : m_listData) {</span>
+<span class="nc" id="L502">			String rowID = schedule.getID().toString();</span>
+<span class="nc" id="L503">			ShiftBidRequest request = schedule.getOptMethods().getShiftBidRequestForShiftBidder();</span>
+<span class="nc bnc" id="L504" title="All 2 branches missed.">			boolean isReqAvail = request != null;</span>
+<span class="nc bnc" id="L505" title="All 2 branches missed.">			if (isReqAvail) {</span>
+<span class="nc" id="L506">				request = reloadRequest(request);</span>
+			}
+
+<span class="nc" id="L509">			int avail = schedule.getNumOfAvailableInstances();</span>
+<span class="nc" id="L510">			int submitted = schedule.getOptMethods().getNumberOfBids();</span>
+<span class="nc" id="L511">			int bonus = schedule.getBonusPoints();</span>
+<span class="nc" id="L512">			String description = schedule.getDescription();</span>
+
+<span class="nc" id="L514">			DefaultMultiColumnNodeData node = new DefaultMultiColumnNodeData(rowID);</span>
+<span class="nc" id="L515">			node.add(getTemplateUI(schedule), CSSUtil.STYLE_NORMAL_LEFT);</span>
+
+<span class="nc bnc" id="L517" title="All 4 branches missed.">			if (hasRMAdvanceLicense &amp;&amp; displayDescColumn) {</span>
+<span class="nc" id="L518">				node.add(description, CSSUtil.STYLE_NORMAL_LEFT);</span>
+			}
+
+<span class="nc" id="L521">			addPreferenceColumn(node, schedule.getID(), request, isReqAvail, noBidMsg, isEditable);</span>
+
+<span class="nc" id="L523">			node.add(new NumberWrapper(avail, m_localizer), CSSUtil.STYLE_NUMERIC);</span>
+<span class="nc" id="L524">			node.add(new NumberWrapper(submitted, m_localizer), CSSUtil.STYLE_NUMERIC);</span>
+
+<span class="nc bnc" id="L526" title="All 2 branches missed.">			if (isUseScoring) {</span>
+<span class="nc" id="L527">				node.add(getRank(request), CSSUtil.STYLE_NUMERIC);</span>
+			}
+
+<span class="nc" id="L530">			node.add(new NumberWrapper(bonus, m_localizer), CSSUtil.STYLE_NUMERIC);</span>
+
+<span class="nc" id="L532">			Collection shifts = schedule.getOptMethods().getShiftAssignments();</span>
+<span class="nc" id="L533">			node.add(AuctionUtil.getScheduleHourWrapper(shifts, m_localizer), CSSUtil.STYLE_NUMERIC);</span>
+<span class="nc" id="L534">			AuctionUtil.addShiftsData(m_schedPeriod, shifts, m_localizer, m_tz, m_campaignTz, node);</span>
+
+<span class="nc" id="L536">			node.setSelectable(isEditable);</span>
+			// Mark selected IDs
+<span class="nc bnc" id="L538" title="All 2 branches missed.">			if (selectedIDSet.contains(schedule.getID())) {</span>
+<span class="nc" id="L539">				m_list.addSelectedRowID(rowID);</span>
+			}
+
+<span class="nc" id="L542">			listModel.add(node);</span>
+<span class="nc" id="L543">		}</span>
+
+<span class="nc" id="L545">		boolean isFullSched = m_auction.getIsFullPeriodSchedule();</span>
+<span class="nc bnc" id="L546" title="All 2 branches missed.">		m_list.setMultiRowSelectable(!isFullSched);</span>
+
+<span class="nc" id="L548">		m_list.setListModel(listModel);</span>
+<span class="nc" id="L549">	}</span>
+
+	private ShiftBidRequest reloadRequest(ShiftBidRequest request) {
+		try {
+<span class="nc" id="L553">			return AuctionMH.getRequest(request.getID(), true);</span>
+<span class="nc" id="L554">		} catch (Exception e) {</span>
+			// This is what it was doing, I am assuming there was a reason to continue past this exception
+<span class="nc" id="L556">			log.l7dDebug(CommonWebLogBundleKey.UNABLE_TO_LOAD_DATA, e);</span>
+		}
+<span class="nc" id="L558">		return request;</span>
+	}
+
+	private void addPreferenceColumn(DefaultMultiColumnNodeData node, ID biddableScheduleId, ShiftBidRequest request,
+			boolean isReqAvailable, String noBidMsg, boolean isEditable) {
+
+<span class="nc" id="L564">		NumberWrapper pref = getPref(isReqAvailable, request, noBidMsg, m_localizer);</span>
+<span class="nc bnc" id="L565" title="All 6 branches missed.">		if (isReqAvailable || !canShowMultiSubmitButton || !isEditable) {</span>
+<span class="nc" id="L566">			node.add(pref, CSSUtil.STYLE_NORMAL_LEFT);</span>
+<span class="nc" id="L567">			return;</span>
+		}
+
+<span class="nc" id="L570">		Integer preference = biddableScheduleToPreference.get(biddableScheduleId);</span>
+<span class="nc bnc" id="L571" title="All 2 branches missed.">		if (preference == null) {</span>
+<span class="nc" id="L572">			preference = 0;</span>
+		}
+
+<span class="nc" id="L575">		StringsPair noBidOption = new StringsPair(&quot;0&quot;, noBidMsg);</span>
+<span class="nc" id="L576">		String html = ShiftBidUtil.createBidPrefDD(PREFERENCE_PREFIX_FN + biddableScheduleId, preference.toString(), maxPrefValue,</span>
+				noBidOption, null);
+
+<span class="nc" id="L579">		node.add(new NumberWrapper(preference, html), CSSUtil.STYLE_NORMAL_LEFT);</span>
+<span class="nc" id="L580">	}</span>
+
+	@Override
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="nc" id="L584">		boolean success = super.extractParameters(request);</span>
+<span class="nc" id="L585">		biddableScheduleToPreference = getPreferenceFromParamters(request);</span>
+<span class="nc" id="L586">		return success;</span>
+	}
+
+	private Map&lt;ID, Integer&gt; getPreferenceFromParamters(HttpServletRequest request) {
+<span class="nc" id="L590">		Map&lt;ID, Integer&gt; result = new HashMap&lt;ID, Integer&gt;();</span>
+
+<span class="nc" id="L592">		Map&lt;ID, String&gt; preferencesFromUI = FormInputPC.extractIDKeyParamMap(request, PREFERENCE_PREFIX_FN);</span>
+
+<span class="nc bnc" id="L594" title="All 2 branches missed.">		for (Map.Entry&lt;ID, String&gt; entry : preferencesFromUI.entrySet()) {</span>
+<span class="nc" id="L595">			ID biddableScheduleId = entry.getKey();</span>
+<span class="nc" id="L596">			String prefString = entry.getValue();</span>
+<span class="nc" id="L597">			Integer preference = RmUtil.tryParseInt(prefString, 0);</span>
+<span class="nc" id="L598">			result.put(biddableScheduleId, preference);</span>
+<span class="nc" id="L599">		}</span>
+
+<span class="nc" id="L601">		return result;</span>
+	}
+
+	private static NumberWrapper getPref(boolean isReqAvail, ShiftBidRequest request, String noBidMsg, Localizer localizer) {
+<span class="nc bnc" id="L605" title="All 2 branches missed.">		int iPref = isReqAvail ? request.getPreference() : 0;</span>
+<span class="nc bnc" id="L606" title="All 2 branches missed.">		String display = isReqAvail ? AuctionUtil.columnCellFormatForAlignment(AuctionUtil.COLUMN_CELL_ALIGNMENT, localizer.formatNumber(iPref)) : noBidMsg;</span>
+<span class="nc" id="L607">		return new NumberWrapper(iPref, display);</span>
+	}
+
+	public static Pair&lt;Integer, String&gt; getRankPair(ShiftBidRequest sbRequest) {
+<span class="nc" id="L611">		int bidRankWithout = 0;</span>
+<span class="nc" id="L612">		int bidRankWith = 0;</span>
+<span class="nc bnc" id="L613" title="All 2 branches missed.">		if (sbRequest != null) {</span>
+<span class="nc" id="L614">			Integer bidRankWithoutBonusInt = (Integer) sbRequest.getOptMethods().getRankWithoutBonus().getFirst();</span>
+<span class="nc" id="L615">			Integer bidRankWithBonusInt = (Integer) sbRequest.getOptMethods().getRankWithBonus().getFirst();</span>
+<span class="nc bnc" id="L616" title="All 2 branches missed.">			bidRankWithout = (bidRankWithoutBonusInt != null) ? bidRankWithoutBonusInt.intValue() : 0;</span>
+<span class="nc bnc" id="L617" title="All 2 branches missed.">			bidRankWith = (bidRankWithBonusInt != null) ? bidRankWithBonusInt.intValue() : 0;</span>
+		}
+<span class="nc" id="L619">		String display = bidRankWithout + &quot;(&quot; + bidRankWith + &quot;)&quot;;</span>
+<span class="nc" id="L620">		return new Pair&lt;Integer, String&gt;(bidRankWithout, display);</span>
+	}
+
+	private static NumberWrapper getRank(ShiftBidRequest sbRequest) {
+<span class="nc" id="L624">		Pair&lt;Integer, String&gt; pair = getRankPair(sbRequest);</span>
+<span class="nc" id="L625">		return new NumberWrapper(pair.getFirst(), pair.getSecond());</span>
+	}
+
+	/**
+	 * Initialize Toolbar
+	 */
+	@Override
+	protected void initToolbar() {
+<span class="nc bnc" id="L633" title="All 2 branches missed.">		if (m_isAuctionClosed) {</span>
+<span class="nc" id="L634">			return;</span>
+		}
+
+<span class="nc" id="L637">		boolean isAuthToConfig = isAuthorizedToConfigure();</span>
+
+		String label;
+<span class="nc bnc" id="L640" title="All 2 branches missed.">		if (canShowMultiSubmitButton) {</span>
+<span class="nc" id="L641">			label = i18n(m_bundle, RmWebBundleKey.SAVE_PREFERENCE);</span>
+<span class="nc" id="L642">			m_toolbar.addSubmitTextButton(RmPageAction.SAVE_UNSUBMITTED_BID_PREFERENCE, label, isAuthToConfig);</span>
+
+<span class="nc" id="L644">			label = i18n(m_bundle, RmWebBundleKey.SUBMIT_MULTIPLE_BIDS);</span>
+<span class="nc" id="L645">			String onClickJS = &quot;pageMediator.submitMutlipleBids();&quot;;</span>
+<span class="nc" id="L646">			m_toolbar.addJSTextButton(RmPageAction.SUBMIT_MULTIPLE_BIDS, label, canEnableMultiSubmitButton(isAuthToConfig), onClickJS);</span>
+		}
+
+<span class="nc" id="L649">		label = i18n(m_common_bundle, UIFWebBundleKey.TOOLBAR_CREATE);</span>
+<span class="nc" id="L650">		m_toolbar.addPopupWindowTextButton(RmPageAction.POPUP_CREATE_BID_REQUEST_ACTION, label, false).setIsListButton(isAuthToConfig);</span>
+<span class="nc" id="L651">		enableToolbarPagination();</span>
+<span class="nc" id="L652">	}</span>
+
+	/**
+	 * Return the JavaScript init code required to initialize this component.
+	 * This code is put in the JavaScript main() function.
+	 */
+	@Override
+	public String getJavaScriptInitCode() {
+<span class="nc" id="L660">		StringBuilder jsInitCode = new StringBuilder();</span>
+<span class="nc" id="L661">		jsInitCode.append(super.getJavaScriptInitCode() +</span>
+				JSUtil.WORKPANE_MEDIATOR_REF + &quot;.bidderID=&quot; + m_bidderID + &quot;;\n\n&quot;);
+
+
+<span class="nc" id="L665">		addMediatorVariable(jsInitCode, &quot;submittableBidsInOtherPages&quot;, getSubmittableBidsInOtherPages());</span>
+<span class="nc" id="L666">		addMediatorVariable(jsInitCode, &quot;minimumNumberOfBids&quot;, getMinimumNumberOfBids());</span>
+<span class="nc" id="L667">		addMediatorVariable(jsInitCode, &quot;totalSubmittedBids&quot;, getTotalSubmittedBids());</span>
+<span class="nc" id="L668">		addMediatorVariable(jsInitCode, &quot;confirmMultiSubmitMessage&quot;, i18n(m_bundle, RmWebBundleKey.CONFIRM_MULTIPLE_BIDS_MESSAGE));</span>
+<span class="nc" id="L669">		jsInitCode.append(&quot;top.workpaneMediator.handleTableSelection();\n\n&quot;);</span>
+
+<span class="nc" id="L671">		return jsInitCode.toString();</span>
+	}
+
+
+	boolean canEnableMultiSubmitButton(boolean isAuthToConfig) {
+<span class="nc bnc" id="L676" title="All 2 branches missed.">		if (!isAuthToConfig) {</span>
+<span class="nc" id="L677">			return false;</span>
+		}
+
+<span class="nc" id="L680">		int totalSubmittableBids = getTotalSubmittableBids();</span>
+<span class="nc bnc" id="L681" title="All 2 branches missed.">		if (totalSubmittableBids &lt;= 0) {</span>
+<span class="nc" id="L682">			return false;</span>
+		}
+<span class="nc bnc" id="L684" title="All 2 branches missed.">		return totalSubmittableBids + getTotalSubmittedBids() &gt;= getMinimumNumberOfBids();</span>
+	}
+
+	int getTotalSubmittedBids() {
+<span class="nc bnc" id="L688" title="All 2 branches missed.">		if (totalSubmittedBids != null) {</span>
+<span class="nc" id="L689">			return totalSubmittedBids;</span>
+		}
+
+<span class="nc bnc" id="L692" title="All 4 branches missed.">		if (m_auction == null || m_bidderID == null) {</span>
+<span class="nc" id="L693">			totalSubmittedBids = 0;</span>
+<span class="nc" id="L694">			return 0;</span>
+		}
+
+<span class="nc" id="L697">		totalSubmittedBids = AuctionMH.getTotalSubmittedBids(m_auction.getID(), m_bidderID);</span>
+<span class="nc" id="L698">		return totalSubmittedBids;</span>
+	}
+
+	int getMinimumNumberOfBids() {
+<span class="nc bnc" id="L702" title="All 2 branches missed.">		if (minimumNumberOfBids != null) {</span>
+<span class="nc" id="L703">			return minimumNumberOfBids;</span>
+		}
+
+<span class="nc bnc" id="L706" title="All 8 branches missed.">		if (m_auction == null || !m_auction.getIsRequiredBids() || m_auction.isStatusClosed() || !LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L707">			minimumNumberOfBids = 0;</span>
+<span class="nc" id="L708">			return 0;</span>
+		}
+
+<span class="nc" id="L711">		int employeeRank = AuctionMH.getEmployeeRankFromEmployeeID(m_context, getEmployeeID());</span>
+<span class="nc" id="L712">		minimumNumberOfBids = employeeRank + m_auction.getNumOfBidSubmissions();</span>
+<span class="nc" id="L713">		return minimumNumberOfBids;</span>
+	}
+
+	private int getSubmittableBidsInOtherPages() {
+<span class="nc" id="L717">		return getTotalSubmittableBids() - getSubmittableBidsInCurrentPage();</span>
+	}
+
+	private int getSubmittableBidsInCurrentPage() {
+<span class="nc bnc" id="L721" title="All 4 branches missed.">		if (biddableScheduleToPreference == null || m_listData == null) {</span>
+<span class="nc" id="L722">			return 0;</span>
+		}
+
+<span class="nc" id="L725">		int count = 0;</span>
+<span class="nc bnc" id="L726" title="All 2 branches missed.">		for (BiddableSchedule schedule : m_listData) {</span>
+<span class="nc" id="L727">			ID biddableScheduleId = schedule.getID();</span>
+<span class="nc" id="L728">			Integer pref = biddableScheduleToPreference.get(biddableScheduleId);</span>
+<span class="nc bnc" id="L729" title="All 4 branches missed.">			if (pref == null || pref &lt;= 0) {</span>
+<span class="nc" id="L730">				continue;</span>
+			}
+<span class="nc" id="L732">			count++;</span>
+<span class="nc" id="L733">		}</span>
+<span class="nc" id="L734">		return count;</span>
+	}
+
+	int getTotalSubmittableBids() {
+<span class="nc bnc" id="L738" title="All 2 branches missed.">		if (biddableScheduleToPreference == null) {</span>
+<span class="nc" id="L739">			return 0;</span>
+		}
+
+<span class="nc" id="L742">		int count = 0;</span>
+<span class="nc bnc" id="L743" title="All 2 branches missed.">		for (Map.Entry&lt;ID, Integer&gt; entry : biddableScheduleToPreference.entrySet()) {</span>
+<span class="nc" id="L744">			Integer pref = entry.getValue();</span>
+<span class="nc bnc" id="L745" title="All 4 branches missed.">			if (pref == null || pref &lt;= 0) {</span>
+<span class="nc" id="L746">				continue;</span>
+			}
+<span class="nc" id="L748">			count++;</span>
+<span class="nc" id="L749">		}</span>
+<span class="nc" id="L750">		return count;</span>
+	}
+
+	private void addMediatorVariable(StringBuilder jsInitCode, String variableName, int value) {
+<span class="nc" id="L754">		jsInitCode.append(String.format(&quot;%s.%s=%d;\n\n&quot;, JSUtil.WORKPANE_MEDIATOR_REF, variableName, value)); // NOSONAR</span>
+<span class="nc" id="L755">	}</span>
+
+	private void addMediatorVariable(StringBuilder jsInitCode, String variableName, String value) {
+<span class="nc" id="L758">		jsInitCode.append(String.format(&quot;%s.%s=%s;\n\n&quot;, JSUtil.WORKPANE_MEDIATOR_REF, variableName, JSUtil.createStringLiteral(value))); // NOSONAR</span>
+<span class="nc" id="L759">	}</span>
+
+	/**
+	 * Return Required HTML for this component.
+	 */
+	@Override
+	public String getRequiredHTML() {
+<span class="nc" id="L766">		return super.getRequiredHTML() + getTieredSortHTML();</span>
+	}
+
+	/**
+	 * Prepare hidden variables to support the three-tiered sort settings.
+	 * The user can sort by three different columns at the same time. For example:
+	 * Sort by &quot;Availability&quot; then by &quot;Monday shift start time&quot; then by &quot;Submitted&quot;.
+	 * The top sort criteria is gotten from the getSortColumn(), getSortOrder() and
+	 * getSortType() methods. The second and third sort criteria are stored in
+	 * hidden variables.
+	 */
+	protected String getTieredSortHTML() {
+<span class="nc" id="L778">		StringBuilder sb = new StringBuilder();</span>
+
+		//third sort becomes fourth sort
+<span class="nc" id="L781">		sb.append(HtmlUtil.makeHiddenInput(SORT_COLUMN4_HIDDEN, m_sortColumn3));</span>
+<span class="nc" id="L782">		sb.append(HtmlUtil.makeHiddenInput(SORT_ORDER4_HIDDEN, m_sortOrder3));</span>
+<span class="nc" id="L783">		sb.append(HtmlUtil.makeHiddenInput(SORT_TYPE4_HIDDEN, m_sortType3));</span>
+
+		//secondary sort becomes third sort
+<span class="nc" id="L786">		sb.append(HtmlUtil.makeHiddenInput(SORT_COLUMN3_HIDDEN, m_sortColumn2));</span>
+<span class="nc" id="L787">		sb.append(HtmlUtil.makeHiddenInput(SORT_ORDER3_HIDDEN, m_sortOrder2));</span>
+<span class="nc" id="L788">		sb.append(HtmlUtil.makeHiddenInput(SORT_TYPE3_HIDDEN, m_sortType2));</span>
+
+		//current sort becomes secondary sort
+<span class="nc" id="L791">		sb.append(HtmlUtil.makeHiddenInput(SORT_COLUMN2_HIDDEN, getSortColumn()));</span>
+<span class="nc" id="L792">		sb.append(HtmlUtil.makeHiddenInput(SORT_ORDER2_HIDDEN, getSortOrder()));</span>
+<span class="nc" id="L793">		sb.append(HtmlUtil.makeHiddenInput(SORT_TYPE2_HIDDEN, getSortType()));</span>
+
+<span class="nc" id="L795">		return sb.toString();</span>
+	}
+
+	@Override
+	public String getSortColumn() {
+<span class="nc" id="L800">		String sortColumn = super.getSortColumn();</span>
+<span class="nc bnc" id="L801" title="All 2 branches missed.">		return (sortColumn != null) ? sortColumn : &quot;&quot;;</span>
+	}
+
+	@Override
+	public String getSortOrder() {
+<span class="nc" id="L806">		String sortOrder = super.getSortOrder();</span>
+<span class="nc bnc" id="L807" title="All 2 branches missed.">		return (sortOrder != null) ? sortOrder : &quot;&quot;;</span>
+	}
+
+	public String getSortType() {
+<span class="nc bnc" id="L811" title="All 2 branches missed.">		return (m_sortType != null) ? m_sortType : &quot;&quot;;</span>
+	}
+
+	/**
+	 * Create the array of 1, 2, or 3 sort columns.
+	 */
+	protected int[] getSortColumnArray() {
+<span class="nc" id="L818">		int col1 = getSortColumnInt(getSortColumn(), getSortType());</span>
+<span class="nc" id="L819">		int col2 = getSortColumnInt(m_sortColumn2, m_sortType2);</span>
+<span class="nc" id="L820">		int col3 = getSortColumnInt(m_sortColumn3, m_sortType3);</span>
+
+<span class="nc" id="L822">		int size = 1;</span>
+<span class="nc bnc" id="L823" title="All 2 branches missed.">		if (col1 == -1)</span>
+<span class="nc" id="L824">			col1 = ShiftBidder.SORTBY_NONE; //the default</span>
+
+<span class="nc bnc" id="L826" title="All 2 branches missed.">		if (col2 != -1)</span>
+<span class="nc" id="L827">			size = 2;</span>
+
+<span class="nc bnc" id="L829" title="All 4 branches missed.">		if ((col2 != -1) &amp;&amp; (col3 != -1))</span>
+<span class="nc" id="L830">			size = 3;</span>
+
+<span class="nc" id="L832">		int[] sortColumns = new int[size];</span>
+
+<span class="nc" id="L834">		sortColumns[0] = col1;</span>
+<span class="nc bnc" id="L835" title="All 2 branches missed.">		if (size &gt; 1)</span>
+<span class="nc" id="L836">			sortColumns[1] = col2;</span>
+<span class="nc bnc" id="L837" title="All 2 branches missed.">		if (size &gt; 2)</span>
+<span class="nc" id="L838">			sortColumns[2] = col3;</span>
+
+<span class="nc" id="L840">		return sortColumns;</span>
+	}
+
+	/**
+	 * Create the array of 1, 2, or 3 sort orders.
+	 */
+	protected int[] getSortOrderArray(int size) {
+<span class="nc" id="L847">		int[] sortOrders = new int[size];</span>
+
+<span class="nc bnc" id="L849" title="All 2 branches missed.">		if (size &gt; 0)</span>
+<span class="nc" id="L850">			sortOrders[0] = getSortOrderInt(getSortOrder());</span>
+<span class="nc bnc" id="L851" title="All 2 branches missed.">		if (size &gt; 1)</span>
+<span class="nc" id="L852">			sortOrders[1] = getSortOrderInt(m_sortOrder2);</span>
+<span class="nc bnc" id="L853" title="All 2 branches missed.">		if (size &gt; 2)</span>
+<span class="nc" id="L854">			sortOrders[2] = getSortOrderInt(m_sortOrder3);</span>
+
+<span class="nc" id="L856">		return sortOrders;</span>
+	}
+
+	/**
+	 * If the col parameter signifies a day column, then we need to convert it to
+	 * a day column which includes type info (start, end, or length).
+	 * @param col The string representation of one of the BiddableSchedule.SORTBY_XXX_XXX constants.
+	 * @param type One of our sort type constants (SORT_BY_START_ACTION or SORT_BY_END_ACTION or SORT_BY_LENGTH_ACTION)
+	 * @return One of the BiddableSchedule.SORTBY_XXX_XXX constants for this col, type combination, or -1 if none.
+	 */
+	protected int getSortColumnInt(String col, String type) {
+<span class="nc" id="L867">		int newCol = -1;</span>
+<span class="nc bnc" id="L868" title="All 4 branches missed.">		if ((col != null) &amp;&amp; (col.length() &gt; 0)) {</span>
+<span class="nc" id="L869">			int iCol = Integer.valueOf(col).intValue();</span>
+<span class="nc" id="L870">			newCol = iCol;</span>
+<span class="nc bnc" id="L871" title="All 2 branches missed.">			if (iCol &gt;= BiddableSchedule.SORTBY_SUNDAY_STARTTIME) //&amp;&amp; (iCol &lt;= BiddableSchedule.SORTBY_SATURDAY_STARTTIME))</span>
+			{
+<span class="nc bnc" id="L873" title="All 4 branches missed.">				if ((type != null) &amp;&amp; (type.length() &gt; 0)) {</span>
+<span class="nc bnc" id="L874" title="All 2 branches missed.">					if (type.equals(SORT_BY_START_ACTION)) {</span>
+<span class="nc" id="L875">						newCol = iCol;</span>
+<span class="nc bnc" id="L876" title="All 2 branches missed.">					} else if (type.equals(SORT_BY_END_ACTION)) {</span>
+<span class="nc" id="L877">						newCol = iCol + 7;</span>
+<span class="nc bnc" id="L878" title="All 2 branches missed.">					} else if (type.equals(SORT_BY_LENGTH_ACTION)) {</span>
+<span class="nc" id="L879">						newCol = iCol + 14;</span>
+					}
+				}
+			}
+		}
+<span class="nc" id="L884">		return newCol;</span>
+	}
+
+	/**
+	 * Get the sort order parameter as an int.
+	 * @param col The string representation of one of the BiddableSchedule.SORTBY_XXX_XXX constants.
+	 * @return SupportNavigation.SORT_ASCENDING, SupportNavigation.SORT_DESCENDING, or -1 if none.
+	 */
+	protected int getSortOrderInt(String order) {
+<span class="nc" id="L893">		int orderInt = -1;</span>
+<span class="nc bnc" id="L894" title="All 4 branches missed.">		if ((order != null) &amp;&amp; (order.length() &gt; 0)) {</span>
+<span class="nc bnc" id="L895" title="All 2 branches missed.">			if (SORT_ASCENDING.equals(order))</span>
+<span class="nc" id="L896">				orderInt = SupportNavigation.SORT_ASCENDING;</span>
+			else
+<span class="nc" id="L898">				orderInt = SupportNavigation.SORT_DESCENDING;</span>
+		}
+<span class="nc" id="L900">		return orderInt;</span>
+	}
+
+	public void setBidderID(ID bidderID) {
+<span class="nc" id="L904">		m_bidderID = bidderID;</span>
+<span class="nc" id="L905">	}</span>
+
+	public ID getBidderID() {
+<span class="nc" id="L908">		return m_bidderID;</span>
+	}
+
+	public void setSortType(String type) {
+<span class="nc" id="L912">		m_sortType = type;</span>
+<span class="nc" id="L913">	}</span>
+
+	public void setSortColumn2(String col) {
+<span class="nc" id="L916">		m_sortColumn2 = col;</span>
+<span class="nc" id="L917">	}</span>
+
+	public void setSortOrder2(String order) {
+<span class="nc" id="L920">		m_sortOrder2 = order;</span>
+<span class="nc" id="L921">	}</span>
+
+	public void setSortType2(String type) {
+<span class="nc" id="L924">		m_sortType2 = type;</span>
+<span class="nc" id="L925">	}</span>
+
+	public void setSortColumn3(String col) {
+<span class="nc" id="L928">		m_sortColumn3 = col;</span>
+<span class="nc" id="L929">	}</span>
+
+	public void setSortOrder3(String order) {
+<span class="nc" id="L932">		m_sortOrder3 = order;</span>
+<span class="nc" id="L933">	}</span>
+
+	public void setSortType3(String type) {
+<span class="nc" id="L936">		m_sortType3 = type;</span>
+<span class="nc" id="L937">	}</span>
+
+	public void setSortColumn4(String col) {
+<span class="nc" id="L940">		m_sortColumn4 = col;</span>
+<span class="nc" id="L941">	}</span>
+
+	public void setSortOrder4(String order) {
+<span class="nc" id="L944">		m_sortOrder4 = order;</span>
+<span class="nc" id="L945">	}</span>
+
+	public void setSortType4(String type) {
+<span class="nc" id="L948">		m_sortType4 = type;</span>
+<span class="nc" id="L949">	}</span>
+
+	@Override
+	public void setIsPageEnabled(boolean bValue) {
+<span class="nc" id="L953">		m_isPageEnabled = bValue;</span>
+<span class="nc" id="L954">	}</span>
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Helper Methods
+	//////////////////////////////////////////////////////////////////////////////
+
+	private BasicWrapper getTemplateUI(BiddableSchedule schedule) {
+<span class="nc" id="L961">		Phantom phantomEmp = schedule.getOptMethods().getEmployee();</span>
+<span class="nc" id="L962">		ID etID = phantomEmp.getEmployeeTemplateID();</span>
+<span class="nc" id="L963">		long auctionStartDate = m_auction.getStartTime().getTime();</span>
+<span class="nc" id="L964">		String eNameDisplay = AuctionUtil.getEmployeeNameDisplay(m_localizer, schedule, m_empTemplateNameMap);</span>
+
+<span class="nc" id="L966">		String alt = i18n(m_bbm_bundle, BbmWebBundleKey.BBM_PEOPLE_SKILLS);</span>
+<span class="nc" id="L967">		String onClickJS = &quot;pageMediator.popupAgentsSkillsNew('&quot; + m_empID + &quot;','&quot; + etID + &quot;','&quot; + auctionStartDate + &quot;','&quot; + auctionStartDate + &quot;');&quot;;</span>
+<span class="nc" id="L968">		String display = HtmlLinkUtil.createActiveLink(eNameDisplay, alt, &quot;&quot;, onClickJS);</span>
+<span class="nc" id="L969">		return new BasicWrapper(eNameDisplay, display);</span>
+	}
+
+	/**
+	 * Initialize for Display
+	 */
+	@Override
+	public void initForDisplay() {
+<span class="nc bnc" id="L977" title="All 2 branches missed.">		if (m_isInitializedForDisplay) {</span>
+<span class="nc" id="L978">			return;</span>
+		} else {
+			//initSortSettings();
+<span class="nc" id="L981">			initSortByMenu();</span>
+<span class="nc" id="L982">			super.initForDisplay();</span>
+		}
+<span class="nc" id="L984">	}</span>
+
+	/**
+	 * Unrotate sort settings if they are sorting by the same column as before.
+	 */
+	protected void initSortSettings() {
+<span class="nc bnc" id="L990" title="All 6 branches missed.">		if (getSortColumn().equals(m_sortColumn2) &amp;&amp; (getSortType().equals(m_sortType2) || getSortType().length() == 0)) {</span>
+			//first sort gets second sort (except for order, which the user may have toggled)
+<span class="nc" id="L992">			m_sortType = m_sortType2;</span>
+
+			//second sort gets third sort
+<span class="nc" id="L995">			m_sortColumn2 = m_sortColumn3;</span>
+<span class="nc" id="L996">			m_sortOrder2 = m_sortOrder3;</span>
+<span class="nc" id="L997">			m_sortType2 = m_sortType3;</span>
+
+			//third sort gets fourth sort
+<span class="nc" id="L1000">			m_sortColumn3 = m_sortColumn4;</span>
+<span class="nc" id="L1001">			m_sortOrder3 = m_sortOrder4;</span>
+<span class="nc" id="L1002">			m_sortType3 = m_sortType4;</span>
+
+			//fourth sort is cleared
+<span class="nc" id="L1005">			m_sortColumn4 = &quot;&quot;;</span>
+<span class="nc" id="L1006">			m_sortOrder4 = &quot;&quot;;</span>
+<span class="nc" id="L1007">			m_sortType4 = &quot;&quot;;</span>
+		}
+<span class="nc" id="L1009">	}</span>
+
+	/**
+	 * Return a String which summarizes the current sort columns and orders.
+	 * Ex: &quot;Sort by Template (Ascending), then by Available (Descending)&quot;
+	 */
+	protected String getSortString() {
+<span class="nc" id="L1016">		StringBuffer sb = new StringBuffer(200);</span>
+
+<span class="nc bnc" id="L1018" title="All 2 branches missed.">		if (!checkEmpty(getSortColumn())) {</span>
+<span class="nc" id="L1019">			String sortByLabel = i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_BY);</span>
+<span class="nc" id="L1020">			sb.append(&quot;&lt;b&gt;&quot; + sortByLabel + &quot;:&lt;/b&gt; &quot; + getColumnLabel(getSortColumn()) + &quot; &quot; +</span>
+<span class="nc" id="L1021">					getTypeLabel(getSortType()) + &quot; &quot; + getOrderLabel(getSortOrder()));</span>
+
+<span class="nc" id="L1023">			sb.append(HtmlUtil.NEW_LINE);</span>
+
+<span class="nc bnc" id="L1025" title="All 2 branches missed.">			if (!checkEmpty(m_sortColumn2)) {</span>
+<span class="nc" id="L1026">				String thenByLabel = i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_THEN_BY);</span>
+<span class="nc" id="L1027">				sb.append(BidOptionsFilterUtil.TAB + &quot;&lt;b&gt;&quot; + thenByLabel + &quot;:&lt;/b&gt; &quot; + &quot; &quot; +</span>
+<span class="nc" id="L1028">						getColumnLabel(m_sortColumn2) + &quot; &quot; +</span>
+<span class="nc" id="L1029">						&quot; &quot; + getTypeLabel(m_sortType2) + &quot; &quot; + getOrderLabel(m_sortOrder2));</span>
+<span class="nc" id="L1030">				sb.append(HtmlUtil.NEW_LINE);</span>
+
+<span class="nc bnc" id="L1032" title="All 2 branches missed.">				if (!checkEmpty(m_sortColumn3)) {</span>
+<span class="nc" id="L1033">					sb.append(BidOptionsFilterUtil.TAB + BidOptionsFilterUtil.TAB + &quot;&lt;b&gt;&quot; + thenByLabel + &quot;:&lt;/b&gt; &quot; + &quot; &quot; +</span>
+<span class="nc" id="L1034">							getColumnLabel(m_sortColumn3) + &quot; &quot; +</span>
+<span class="nc" id="L1035">							getTypeLabel(m_sortType3) + &quot; &quot; + getOrderLabel(m_sortOrder3));</span>
+<span class="nc" id="L1036">					sb.append(HtmlUtil.NEW_LINE);</span>
+				}
+			}
+		}
+<span class="nc" id="L1040">		return sb.toString();</span>
+	}
+
+	/**
+	 * Given a sort type string, return the corresponding description for the user to read.
+	 * @param sortType One of: SORT_BY_START_ACTION, SORT_BY_END_ACTION, SORT_BY_LENGTH_ACTION
+	 * @return The localized string, such as &quot;Start Time&quot;, &quot;End Time&quot;, or &quot;Length&quot;
+	 */
+	protected String getTypeLabel(String sortType) {
+<span class="nc bnc" id="L1049" title="All 2 branches missed.">		if (sortType != null) {</span>
+<span class="nc bnc" id="L1050" title="All 2 branches missed.">			if (sortType.equals(SORT_BY_START_ACTION))</span>
+<span class="nc" id="L1051">				return i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_BY_START);</span>
+<span class="nc bnc" id="L1052" title="All 2 branches missed.">			else if (sortType.equals(SORT_BY_END_ACTION))</span>
+<span class="nc" id="L1053">				return i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_BY_END);</span>
+<span class="nc bnc" id="L1054" title="All 2 branches missed.">			else if (sortType.equals(SORT_BY_LENGTH_ACTION))</span>
+<span class="nc" id="L1055">				return i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_BY_LENGTH);</span>
+		}
+<span class="nc" id="L1057">		return &quot;&quot;;</span>
+	}
+
+	/**
+	 * Given a sort order string, return the corresponding description for the user to read.
+	 * @param sortOrder One of: &quot;ascending&quot;, &quot;descending&quot;
+	 * @return The localized string, such as &quot;(ascending)&quot;, or &quot;(descending)&quot;
+	 */
+	protected String getOrderLabel(String sortOrder) {
+<span class="nc bnc" id="L1066" title="All 2 branches missed.">		if (sortOrder != null) {</span>
+<span class="nc bnc" id="L1067" title="All 2 branches missed.">			if (sortOrder.equals(SORT_ASCENDING))</span>
+<span class="nc" id="L1068">				return &quot;(&quot; + i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_ASCENDING) + &quot;)&quot;;</span>
+			else
+<span class="nc" id="L1070">				return &quot;(&quot; + i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_DESCENDING) + &quot;)&quot;;</span>
+		}
+<span class="nc" id="L1072">		return &quot;&quot;;</span>
+	}
+
+	/**
+	 * See if a particular sort column is not yet set.
+	 * @param sortCol The sort column to check.
+	 * @return true is the sort column is empty (not yet set to a value).
+	 */
+	private boolean checkEmpty(String sortCol) {
+<span class="nc bnc" id="L1081" title="All 6 branches missed.">		if ((sortCol == null) || sortCol.equals(String.valueOf(BiddableSchedule.SORTBY_NONE)) || (sortCol.length() == 0))</span>
+<span class="nc" id="L1082">			return true;</span>
+<span class="nc" id="L1083">		return false;</span>
+	}
+
+	/**
+	 * Given a shift day column number in our bid options table, return the formatted label string.
+	 * @param colNum A shift day's column number (ex: BiddableSchedule.SORTBY_SUNDAY_STARTTIME)
+	 * @return The label string for this column, ex: &quot;Mon 12/05&quot; (it's displayed in the column header).
+	 */
+	protected String getDayColumnLabel(SchedulingPeriod schedPeriod,
+			Localizer localizer, TimeZone tz, int colNum) {
+<span class="nc" id="L1093">		String dayDisplay = &quot;&quot;;</span>
+
+<span class="nc bnc" id="L1095" title="All 2 branches missed.">		if (schedPeriod != null) {</span>
+<span class="nc" id="L1096">			Locale locale = localizer.getLocaleContext().getRegionalFormatLocale();</span>
+<span class="nc" id="L1097">			CalendarRange cRange = AuctionUtil.getCalendarRange(schedPeriod, tz, locale);</span>
+<span class="nc" id="L1098">			Calendar startCal = cRange.getStartCalendar();</span>
+<span class="nc" id="L1099">			Calendar endCal = cRange.getEndCalendar();</span>
+
+<span class="nc" id="L1101">			int i = 0;</span>
+<span class="nc bnc" id="L1102" title="All 2 branches missed.">			while (endCal.after(startCal)) {</span>
+<span class="nc" id="L1103">				int w = i / 7; //the current week offset</span>
+<span class="nc" id="L1104">				Date date = startCal.getTime();</span>
+<span class="nc" id="L1105">                dayDisplay = localizer.formatDate(date, tz,</span>
+                        RegionalFormatBundleKey.DATE_NOYEAR_DAYINWEEKFULL_FORMAT);
+
+<span class="nc" id="L1108">				int curDayOfWeek = startCal.get(Calendar.DAY_OF_WEEK);</span>
+<span class="nc" id="L1109">				int curSortCol = BiddableSchedule.getDayColumnIndex(w, curDayOfWeek, BiddableSchedule.SORTBY_STARTTIME);</span>
+<span class="nc bnc" id="L1110" title="All 2 branches missed.">				if (curSortCol == colNum)</span>
+<span class="nc" id="L1111">					break;</span>
+
+<span class="nc" id="L1113">				startCal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L1114">				i++;</span>
+<span class="nc" id="L1115">			}</span>
+		}
+<span class="nc" id="L1117">		return dayDisplay;</span>
+	}
+
+	/**
+	 * Given a column number in our bid options table, return the label string.
+	 * @param sortCol A column number
+	 * @return The label string for this column (it's displayed in the column header).
+	 */
+	protected String getColumnLabel(int sortCol) {
+<span class="nc" id="L1126">		return getColumnLabel(String.valueOf(sortCol));</span>
+	}
+
+	/**
+	 * Given a column number in our bid options table, return the label string.
+	 * @param sortCol A column number
+	 * @return The label string for this column (it's displayed in the sort string).
+	 */
+	protected String getColumnLabel(String sortCol) {
+<span class="nc" id="L1135">		String colDisplay = &quot;&quot;;</span>
+<span class="nc bnc" id="L1136" title="All 4 branches missed.">		if ((m_schedPeriod != null) &amp;&amp; (!checkEmpty(sortCol))) {</span>
+<span class="nc" id="L1137">			int colNum = Integer.parseInt(sortCol);</span>
+<span class="nc bnc" id="L1138" title="All 2 branches missed.">			if (colNum &gt;= BiddableSchedule.SORTBY_SUNDAY_STARTTIME) {</span>
+<span class="nc" id="L1139">				colDisplay = getDayColumnLabel(m_schedPeriod, m_localizer, m_tz, colNum);</span>
+			} else {
+<span class="nc bnc" id="L1141" title="All 9 branches missed.">				switch (colNum) {</span>
+				case BiddableSchedule.SORTBY_PHANTOMNAME:
+<span class="nc" id="L1143">					colDisplay = i18n(m_bbm_bundle, BbmWebBundleKey.TEMPLATE_NAME);</span>
+<span class="nc" id="L1144">					break;</span>
+				case BiddableSchedule.SORTBY_DESCRIPTION:
+<span class="nc" id="L1146">					colDisplay = i18n(m_common_bundle, UIFWebBundleKey.DESCRIPTION);</span>
+<span class="nc" id="L1147">					break;</span>
+				case BiddableSchedule.SORTBY_PREFERENCE:
+<span class="nc" id="L1149">					colDisplay = i18n(m_common_bundle, UIFWebBundleKey.PREFERENCE);</span>
+<span class="nc" id="L1150">					break;</span>
+				case BiddableSchedule.SORTBY_NUMBER_AVAIALBLE:
+<span class="nc" id="L1152">					colDisplay = i18n(m_common_bundle, UIFWebBundleKey.AVAILABLE);</span>
+<span class="nc" id="L1153">					break;</span>
+				case BiddableSchedule.SORTBY_NUMBER_SUBMITTED:
+<span class="nc" id="L1155">					colDisplay = i18n(m_common_bundle, UIFWebBundleKey.SUBMITTED);</span>
+<span class="nc" id="L1156">					break;</span>
+				case BiddableSchedule.SORTBY_BIDRANK:
+<span class="nc" id="L1158">					colDisplay = i18n(m_bundle, RmWebBundleKey.BID_RANK);</span>
+<span class="nc" id="L1159">					break;</span>
+				case BiddableSchedule.SORTBY_BONUSASSIGNED:
+<span class="nc" id="L1161">					colDisplay = i18n(m_common_bundle, UIFWebBundleKey.BONUS);</span>
+<span class="nc" id="L1162">					break;</span>
+				case BiddableSchedule.SORTBY_HOURS:
+<span class="nc" id="L1164">					colDisplay = i18n(m_common_bundle, UIFWebBundleKey.HOURS);</span>
+					break;
+				}
+			}
+		}
+<span class="nc" id="L1169">		return colDisplay;</span>
+	}
+
+	private String printArray(int[] nums) {
+<span class="nc" id="L1173">		StringBuffer sb = new StringBuffer(20);</span>
+<span class="nc" id="L1174">		sb.append(&quot;[&quot;);</span>
+<span class="nc bnc" id="L1175" title="All 2 branches missed.">		for (int i = 0; i &lt; nums.length; i++) {</span>
+<span class="nc" id="L1176">			sb.append(nums[i]);</span>
+<span class="nc bnc" id="L1177" title="All 2 branches missed.">			if (i + 1 &lt; nums.length)</span>
+<span class="nc" id="L1178">				sb.append(&quot;, &quot;);</span>
+		}
+<span class="nc" id="L1180">		sb.append(&quot;]&quot;);</span>
+<span class="nc" id="L1181">		return sb.toString();</span>
+	}
+
+	/**
+	 * Initialize the &quot;Sort By&quot; Menu dialog.
+	 */
+	protected void initSortByMenu() {
+<span class="nc" id="L1188">		String sortByLabel = i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_BY);</span>
+<span class="nc" id="L1189">		String sortByStartLabel = i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_BY_START);</span>
+<span class="nc" id="L1190">		String sortByEndLabel = i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_BY_END);</span>
+<span class="nc" id="L1191">		String sortByLengthLabel = i18n(m_bundle, RmWebBundleKey.RM_SA_FILTER_SORT_BY_LENGTH);</span>
+
+<span class="nc" id="L1193">		m_sortByMenuPC = new DialogToolbarMenuPC(m_context, m_toolbar);</span>
+<span class="nc" id="L1194">		m_sortByMenuPC.setName(SORT_DIALOG_PC);</span>
+<span class="nc" id="L1195">		addChildComponent(m_sortByMenuPC);</span>
+
+		//Initialize Title
+<span class="nc" id="L1198">		m_sortByMenuPC.setHeader(sortByLabel + &quot;:&quot;);</span>
+
+		//Initialize Menu Buttons
+<span class="nc" id="L1201">		m_sortByMenuPC.addSubmitButton(SORT_BY_START_ACTION, sortByStartLabel, true);</span>
+<span class="nc" id="L1202">		m_sortByMenuPC.addSubmitButton(SORT_BY_END_ACTION, sortByEndLabel, true);</span>
+<span class="nc" id="L1203">		m_sortByMenuPC.addSubmitButton(SORT_BY_LENGTH_ACTION, sortByLengthLabel, true);</span>
+<span class="nc" id="L1204">	}</span>
+
+	private class BaseBidOptionsContentTitlePC extends ContentTitlePC {
+		private static final long serialVersionUID = 1L;
+<span class="nc" id="L1208">		private final String BBO_DEFAULT_IMG_FILE = ImageFileID.CONTENT_TITLE_DEFAULT_ICON;</span>
+		private static final String BBO_DEFAULT_IMAGE_NAME = &quot;DEFAULT&quot;;
+<span class="nc" id="L1210">		private String minimumBidCountString = &quot;&quot;;</span>
+
+		public String getMinimumBidCountString() {
+<span class="nc" id="L1213">			return minimumBidCountString;</span>
+		}
+
+		public void setMinimumBidCountString(String str) {
+<span class="nc" id="L1217">			minimumBidCountString = str;</span>
+<span class="nc" id="L1218">		}</span>
+
+<span class="nc" id="L1220">		private final String BBO_DEFAULT_TMPL =</span>
+			&quot;&lt;div id=\&quot;contentTitleDiv\&quot; style=\&quot;width:100% overflow:hidden\&quot;&gt;&quot; +
+			&quot;&lt;table id=\&quot;contentTitle_tbl_id\&quot; cellpadding=\&quot;0\&quot; cellspacing=\&quot;0\&quot; width=\&quot;100%\&quot; border=\&quot;0\&quot; height=\&quot;30\&quot;&gt;&quot; +
+			&quot;&lt;tr&gt;&lt;td style=\&quot;width:0px\&quot; width=\&quot;0\&quot;&gt;&quot; +
+			&quot;&lt;img id=\&quot;contentTitleDiv_img_id\&quot; style=\&quot;width:0px;visibility:hidden;\&quot; alt=\&quot;\&quot; src=\&quot;{0}\&quot; width=\&quot;23\&quot; height=\&quot;22\&quot; border=\&quot;0\&quot;&gt;&lt;/td&gt;&quot; +
+			&quot;&lt;td align=\&quot;left\&quot; class=\&quot;headerText1\&quot; nowrap&gt;{1}&lt;/td&gt;&quot; +
+			&quot;&lt;td align=\&quot;left\&quot; class=\&quot;headerText2\&quot; nowrap id=\&quot;contentTitleItemName\&quot;&gt;{2} &amp;nbsp; &amp;nbsp;&lt;/td&gt;&quot; + //width=\&quot;100%\&quot;
+			&quot;&lt;td align=\&quot;left\&quot; class=\&quot;headerText2\&quot; nowrap id=\&quot;minimumBidText\&quot;&gt;{3} &amp;nbsp; &amp;nbsp;&lt;/td&gt;&quot; +
+			&quot;&lt;td align=\&quot;right\&quot; nowrap&gt;{4}&lt;/td&gt;&lt;/tr&gt;&quot; +
+			&quot;&lt;tr&gt;&lt;td height=\&quot;8\&quot; colspan=\&quot;4\&quot;&gt;&lt;img id=\&quot;blank_spacer_img_id\&quot; alt=\&quot;\&quot; src=\&quot;&quot; + ImageFileID.BLANK_SPACER + &quot;\&quot; width=\&quot;1\&quot; height=\&quot;8\&quot;&gt;&lt;/td&gt;&quot; +
+			&quot;&lt;/tr&gt;&lt;/table&gt;&lt;/div&gt;&quot;;
+
+
+<span class="nc" id="L1233">		public BaseBidOptionsContentTitlePC(RequestContext context) {</span>
+<span class="nc" id="L1234">			super(context);</span>
+<span class="nc" id="L1235">		}</span>
+
+		/**
+		 * Get string of the HTML representing this component.
+		 */
+		@Override
+		public String getHtmlDisplay() {
+<span class="nc bnc" id="L1242" title="All 2 branches missed.">			if (!isVisible()) {</span>
+<span class="nc" id="L1243">				return &quot;&quot;;</span>
+			}
+<span class="nc bnc" id="L1245" title="All 2 branches missed.">			if (StringUtil.isEmpty(getImage())) {</span>
+<span class="nc" id="L1246">				setImage(ImageFileID.BLANK_SPACER);</span>
+			}
+
+			// Set the template first
+<span class="nc bnc" id="L1250" title="All 2 branches missed.">			if (getTemplate() == null) {</span>
+<span class="nc" id="L1251">				setTemplate(BBO_DEFAULT_TMPL);</span>
+			}
+
+			// Set image
+<span class="nc bnc" id="L1255" title="All 2 branches missed.">			String imageFile = getImage().equals(BBO_DEFAULT_IMAGE_NAME) ? BBO_DEFAULT_IMG_FILE : getImage();</span>
+<span class="nc" id="L1256">			addComponent(imageFile);</span>
+
+<span class="nc bnc" id="L1258" title="All 2 branches missed.">			addComponent((getPageTitle() == null ? &quot;&quot; : getPageTitle()) + m_context.getLocalizer().getScreenTitleSeparator());</span>
+<span class="nc bnc" id="L1259" title="All 2 branches missed.">			addComponent(getItemName() == null ? &quot;&quot; : getItemName());</span>
+
+<span class="nc bnc" id="L1261" title="All 2 branches missed.">			addComponent(getMinimumBidCountString().isEmpty() ? &quot;&quot; : getMinimumBidCountString());</span>
+
+<span class="nc" id="L1263">			String actCompDisplay = getActiveComponentDisplay();</span>
+<span class="nc" id="L1264">			addComponent(actCompDisplay);</span>
+
+<span class="nc" id="L1266">			return super.getHtmlDisplay();</span>
+		}//getHtmlDisplay
+
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

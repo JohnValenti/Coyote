@@ -1,0 +1,656 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftSwapRequest.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.request.model</a> &gt; <span class="el_source">ShiftSwapRequest.java</span></div><h1>ShiftSwapRequest.java</h1><pre class="source lang-java linenums">/*
+ * ShiftSwapRequest.java
+ *
+ * Copyright (c) 2002, Blue Pumpkin Software, Inc.
+ * All rights reserved.
+ */
+package com.bluepumpkin.ejb.rm.requests.swap.request.model;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestDetailLevel;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.ShiftSwapValidationCache;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.requests.swap.withdraw.model.ShiftSwapWithdraw;
+
+
+/**
+ * Class represents ShiftSwapRequests.
+ *
+ * A shift swap request is associated with 2 or more {@link ShiftSwapItem shift swap items}.
+ * The swap happens linearly,  ie. first shift in the list is handed off to
+ * the 2nd employee, the 2nd shift to the 3rd employee and so on.  For this n-person swap:
+ * &lt;li&gt; items is an ordered list item(0) ... item(N-1)
+ * &lt;li&gt; item(A) gives its shift to item((A+1)modN)
+ * &lt;li&gt; item(A) receives its new shift from item((A+N-1)modN)
+ * &lt;li&gt; min/max hours not violated for either employee
+ *
+ */
+public class ShiftSwapRequest extends RequestAggregate {
+    public static final String SHIFTSWAP_TYPE_ONEWAY = &quot;one-way&quot;;
+    public static final String SHIFTSWAP_TYPE_TWOWAY = &quot;two-way&quot;;
+
+    private static final long serialVersionUID = 6909127108854014755L;
+
+<span class="nc" id="L48">    private static final FieldInfo m_fieldInfo = new ShiftSwapRequestFieldInfo();</span>
+
+    public static final long DL_SHIFTSWAP_ITEMS = RequestDetailLevel.DL_SHIFTSWAP_ITEMS;
+	public static final long DL_SHIFTSWAP_WITHDRAW = RequestDetailLevel.DL_SHIFTSWAP_WITHDRAW;
+
+<span class="nc" id="L53">    private transient ValidationCache m_validationCache = null;</span>
+    private transient ShiftSwapWithdraw m_ShiftSwapWithdrawCache;
+
+<span class="nc" id="L56">	private boolean m_updateAllShiftSwapItems = false;</span>
+
+    // we do not want to serialize this
+<span class="nc" id="L59">    private transient List&lt;ShiftSwapItem&gt; m_cachedSSItems = null;</span>
+
+    // not necessary to be serialized.
+<span class="nc" id="L62">    private transient List m_cachedEmpIDTimeRangePairs = null;</span>
+
+    public static long getDetailLevelForValidation()   {
+<span class="nc" id="L65">        return DL_BASIC | DL_SHIFTSWAP_ITEMS;</span>
+    }
+
+    public ShiftSwapRequest(long detailLevel) {
+<span class="nc" id="L69">        super(Request.REQUESTTYPE_SHIFTSWAP, detailLevel);</span>
+<span class="nc" id="L70">    }</span>
+
+    //getters
+    @Override
+	public FieldInfo getFieldInfo() {
+<span class="nc" id="L75">        return m_fieldInfo;</span>
+    }
+
+    /*
+    public void setShiftSwapItem(ShiftSwapItem ssItem)
+    {
+        ShiftSwapRequestItem ssrItem = new ShiftSwapRequestItem(ssItem, 1);
+        createChildObject(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE,  ssrItem);
+    }
+     */
+
+	/*
+	 *  flag all existing shift swap items for udpate during the next
+	 *  request update
+	 *  &lt;p&gt;
+	 *  In the current implementation, the existing set of SSItems never have to
+	 *  be replaced with new set.  So there is no use for this method.
+	 */
+	public void setUpdateAllShiftSwapItems(boolean update) {
+<span class="nc" id="L94">		m_updateAllShiftSwapItems = update;</span>
+<span class="nc" id="L95">	}</span>
+
+	/*
+	 *  flag all existing shift swap items for udpate during the next
+	 *  request update
+	 *  &lt;p&gt;
+	 *  In the current implementation, the existing set of SSItems never have to
+	 *  be replaced with new set.  So there is no use for this method.
+	 */
+	public boolean getUpdateAllShiftSwapItems() {
+<span class="nc" id="L105">		return m_updateAllShiftSwapItems;</span>
+	}
+
+	/**
+	 * Finds the shift swap item associated with this request that
+     * matches the given shift swap item. Used by the unit test code.
+	 *
+	 * @param ssItem
+	 * @return
+	 */
+	public ShiftSwapItem getShiftSwapItem(ShiftSwapItem givenSSItem)
+	{
+<span class="nc" id="L117">		List swapItems = getShiftSwapItems();</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">		for (int i=0; i &lt; swapItems.size(); i++) {</span>
+<span class="nc" id="L119">			ShiftSwapItem curItem = (ShiftSwapItem) swapItems.get(i);</span>
+
+<span class="nc bnc" id="L121" title="All 2 branches missed.">			if (curItem.getEmployeeID().equals(givenSSItem.getEmployeeID()) &amp;&amp;</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">				curItem.getStartDate().equals(givenSSItem.getStartDate()) &amp;&amp;</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">				curItem.getEndDate().equals(givenSSItem.getEndDate()) &amp;&amp;</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">				curItem.getShiftType().equals(givenSSItem.getShiftType()))</span>
+			{
+<span class="nc" id="L126">				return curItem;</span>
+			}
+		}
+
+<span class="nc" id="L130">		return null;</span>
+	}
+
+
+    public Collection getShiftSwapRequestItems() {
+<span class="nc" id="L135">        return getChildObjects(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE);</span>
+    }
+
+	//TODO: ordered list for TORequest as well.
+    public List&lt;ShiftSwapItem&gt; getShiftSwapItems() {
+<span class="nc bnc" id="L140" title="All 2 branches missed.">        if (m_cachedSSItems == null)  {</span>
+<span class="nc" id="L141">            m_cachedSSItems = new ArrayList&lt;ShiftSwapItem&gt;();</span>
+
+        	// get the shift swap request items.
+<span class="nc" id="L144">            Collection ssReqItems = getShiftSwapRequestItems();</span>
+
+            // then obtain the shift swap items from the shift swap request items.
+<span class="nc bnc" id="L147" title="All 2 branches missed.">            for (Iterator itr = ssReqItems.iterator(); itr.hasNext(); ) {</span>
+<span class="nc" id="L148">            	ShiftSwapRequestItem ssReqItem = (ShiftSwapRequestItem) itr.next();</span>
+
+<span class="nc" id="L150">            	int itemOrder = ssReqItem.getShiftSwapItemOrder();</span>
+<span class="nc bnc" id="L151" title="All 4 branches missed.">            	if (itemOrder != 0 &amp;&amp; itemOrder != 1) {</span>
+<span class="nc" id="L152">            		throw new IllegalStateException(&quot;Item Order == &quot; + itemOrder);</span>
+            	}
+
+<span class="nc" id="L155">                m_cachedSSItems.add( ssReqItem.getShiftSwapItem() );</span>
+<span class="nc" id="L156">            }</span>
+        }
+
+<span class="nc" id="L159">        return m_cachedSSItems;</span>
+    }
+
+    public ID getFirstEmployeeID() {
+        //TODO: cache
+<span class="nc" id="L164">        Iterator itr = getChildObjects(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE).iterator();</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">        if ( itr.hasNext() ) {</span>
+<span class="nc" id="L166">            return ((ShiftSwapRequestItem) itr.next()).getShiftSwapItem().getEmployeeID();</span>
+        }
+
+<span class="nc" id="L169">        return null;</span>
+    }
+
+    public ID getSecondEmployeeID() {
+        //TODO: cache
+<span class="nc" id="L174">        Iterator itr = getChildObjects(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE).iterator();</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">        if ( itr.hasNext() ) {</span>
+<span class="nc" id="L176">        	itr.next();</span>
+        }
+
+<span class="nc bnc" id="L179" title="All 2 branches missed.">        if (itr.hasNext()) {</span>
+<span class="nc" id="L180">            return ((ShiftSwapRequestItem) itr.next()).getShiftSwapItem().getEmployeeID();</span>
+        }
+
+<span class="nc" id="L183">        return null;</span>
+    }
+
+    /**
+     * Returns one of the following:
+     * {@link #SHIFTSWAP_TYPE_ONEWAY SHIFTSWAP_TYPE_ONEWAY} or {@link #SHIFTSWAP_TYPE_TWOWAY SHIFTSWAP_TYPE_TWOWAY}
+     *
+     * @return
+     */
+    public String getSwapType() {
+<span class="nc" id="L193">        return this.getFormattedFieldValue(ShiftSwapRequestFieldInfo.SHIFTSWAPREQUEST_S_SWAPTYPE);</span>
+    }
+
+    public String getNegotiationComment() {
+<span class="nc" id="L197">        return getFormattedFieldValue(ShiftSwapRequestFieldInfo.SHIFTSWAPREQUEST_S_NEGOTIATIONCOMMENT);</span>
+    }
+
+	/**
+	 * Note:  This returns a collection of employee IDs and not employees.
+	 *
+	 * @return
+	 */
+	//TODO: must be renamed to getEmployeeIDs().
+    public List&lt;ID&gt; getEmployees() {
+<span class="nc" id="L207">        ShiftSwapValidationCache vc = (ShiftSwapValidationCache) getValidationCache();</span>
+
+<span class="nc" id="L209">        return vc.getEmployeeIDsForRequest();</span>
+    }
+
+    public ArrayList getStartDates() {
+<span class="nc" id="L213">        List items = this.getShiftSwapItems();</span>
+<span class="nc" id="L214">        ShiftSwapItem item = null;</span>
+<span class="nc" id="L215">        ArrayList dateList = new ArrayList(items.size());</span>
+
+<span class="nc bnc" id="L217" title="All 2 branches missed.">        for (int i = 0; i &lt; items.size(); i++) {</span>
+<span class="nc" id="L218">            item = (ShiftSwapItem) items.get(i);</span>
+<span class="nc" id="L219">            dateList.add(item.getStartDate());</span>
+        }
+
+<span class="nc" id="L222">        return dateList;</span>
+    }
+
+    public ArrayList getDisplayStartDates() {
+<span class="nc" id="L226">        List items = this.getShiftSwapItems();</span>
+<span class="nc" id="L227">        ShiftSwapItem item = null;</span>
+<span class="nc" id="L228">        ArrayList dateList = new ArrayList(items.size());</span>
+
+<span class="nc bnc" id="L230" title="All 2 branches missed.">        for (int i = 0; i &lt; items.size(); i++) {</span>
+<span class="nc" id="L231">            item = (ShiftSwapItem) items.get(i);</span>
+<span class="nc" id="L232">            dateList.add(item.getDisplayStartDate());</span>
+        }
+
+<span class="nc" id="L235">        return dateList;</span>
+    }
+
+    public ArrayList getEndDates() {
+<span class="nc" id="L239">        List items = this.getShiftSwapItems();</span>
+<span class="nc" id="L240">        ShiftSwapItem item = null;</span>
+<span class="nc" id="L241">        ArrayList dateList = new ArrayList(items.size());</span>
+
+<span class="nc bnc" id="L243" title="All 2 branches missed.">        for (int i = 0; i &lt; items.size(); i++) {</span>
+<span class="nc" id="L244">            item = (ShiftSwapItem) items.get(i);</span>
+<span class="nc" id="L245">            dateList.add(item.getEndDate());</span>
+        }
+
+<span class="nc" id="L248">        return dateList;</span>
+    }
+
+    /**
+     * Returns the expiration date for each shiftSwap item associated with
+     * the request.  # of entries == # of shift swap items assoc with the req.
+     *
+     * @return
+     */
+    public ArrayList getExpirationDates() {
+<span class="nc" id="L258">        List items = this.getShiftSwapItems();</span>
+<span class="nc" id="L259">        ShiftSwapItem item = null;</span>
+<span class="nc" id="L260">        ArrayList dateList = new ArrayList(items.size());</span>
+
+<span class="nc bnc" id="L262" title="All 2 branches missed.">        for (int i = 0; i &lt; items.size(); i++) {</span>
+<span class="nc" id="L263">            item = (ShiftSwapItem) items.get(i);</span>
+<span class="nc" id="L264">            dateList.add(item.getExpirationDate());</span>
+        }
+
+<span class="nc" id="L267">        return dateList;</span>
+    }
+
+    public ArrayList getNegotiations() {
+<span class="nc" id="L271">        List items = this.getShiftSwapItems();</span>
+<span class="nc" id="L272">        ShiftSwapItem item = null;</span>
+<span class="nc" id="L273">        ArrayList booleanList = new ArrayList(items.size());</span>
+
+<span class="nc bnc" id="L275" title="All 2 branches missed.">        for (int i = 0; i &lt; items.size(); i++) {</span>
+<span class="nc" id="L276">            item = (ShiftSwapItem) items.get(i);</span>
+<span class="nc" id="L277">            booleanList.add(new Boolean(item.getNegotiation()));</span>
+        }
+
+<span class="nc" id="L280">        return booleanList;</span>
+    }
+
+    public ArrayList getShiftTypes() {
+<span class="nc" id="L284">        List items = this.getShiftSwapItems();</span>
+<span class="nc" id="L285">        ShiftSwapItem item = null;</span>
+<span class="nc" id="L286">        ArrayList shiftList = new ArrayList(items.size());</span>
+
+<span class="nc bnc" id="L288" title="All 2 branches missed.">        for (int i = 0; i &lt; items.size(); i++) {</span>
+<span class="nc" id="L289">            item = (ShiftSwapItem) items.get(i);</span>
+<span class="nc" id="L290">            shiftList.add(item.getShiftType());</span>
+        }
+
+<span class="nc" id="L293">        return shiftList;</span>
+    }
+
+    /*public String getStatus() {
+        return super.getRequestStatus();
+    }*/
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getEmpIDTimeRangePairs()
+     */
+    @Override
+	public Collection getEmpIDTimeRangePairs() {
+<span class="nc bnc" id="L305" title="All 2 branches missed.">        if (m_cachedEmpIDTimeRangePairs == null)   {</span>
+<span class="nc" id="L306">            m_cachedEmpIDTimeRangePairs = new ArrayList();</span>
+
+<span class="nc" id="L308">            List ssItems = getShiftSwapItems();</span>
+<span class="nc bnc" id="L309" title="All 2 branches missed.">            for (int i=0; i &lt; ssItems.size(); i++)  {</span>
+<span class="nc" id="L310">                ShiftSwapItem ssItem = (ShiftSwapItem) ssItems.get(i);</span>
+<span class="nc" id="L311">                m_cachedEmpIDTimeRangePairs.add( new Pair(ssItem.getEmployeeID(),</span>
+<span class="nc" id="L312">                    new TimeRange(ssItem.getStartDate(), ssItem.getEndDate()) ) );</span>
+            }
+        }
+
+<span class="nc" id="L316">        return m_cachedEmpIDTimeRangePairs;</span>
+    }
+
+//    /* (non-Javadoc)
+//     * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getRequestNotificationDetail(java.lang.String)
+//     */
+//    public RequestNotificationDetail getRequestNotificationDetail(String statusChangeType) {
+//        RequestNotificationDetail notifDetail = new RequestNotificationDetail();
+//
+//        fillRequestNotificationDetail(notifDetail, statusChangeType);
+//
+//        // set shiftswap request related fields in the notification detail object.
+//        notifDetail.setSSSwapType(getSwapType()); //one or two way swap.
+//
+//        List swapItems = getShiftSwapItems();
+//        assert swapItems.size() == 2:&quot;swapItems.size() == 2&quot;;
+//
+//        ShiftSwapItem ssItem1 = (ShiftSwapItem) swapItems.get(0);
+//        notifDetail.setSSEmployee1ID(ssItem1.getEmployeeID());
+//        notifDetail.setSSEmployee1StartDate(ssItem1.getStartDate());
+//        notifDetail.setSSEmployee1EndDate(ssItem1.getEndDate());
+//        notifDetail.setSSEmployee1SwapItemType(ssItem1.getShiftType()); //shift or day off swap
+//
+//        ShiftSwapItem ssItem2 = (ShiftSwapItem) swapItems.get(1);
+//        notifDetail.setSSEmployee2ID(ssItem2.getEmployeeID());
+//        notifDetail.setSSEmployee2StartDate(ssItem2.getStartDate());
+//        notifDetail.setSSEmployee2EndDate(ssItem2.getEndDate());
+//        notifDetail.setSSEmployee2SwapItemType(ssItem2.getShiftType()); //shift or day off swap
+//
+//        return notifDetail;
+//    }
+
+    public void setSwapType(String type) {
+<span class="nc" id="L349">        setFieldValue(ShiftSwapRequestFieldInfo.SHIFTSWAPREQUEST_S_SWAPTYPE, type);</span>
+<span class="nc" id="L350">    }</span>
+
+    public void setShiftSwapItems(List ssItems) {
+    	// Unlike TORequests (for which existing TOChoices can be replaced with a new set),
+    	// an SSRequest's existing set of SSItems will not be replaced with a new set.
+    	// Thus this call to clearAllShiftSwapItems()is not necessary to delete
+    	// exisiting SSItems and create new SSItems during a request update.
+        //deleteAllChildren(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE);
+
+<span class="nc bnc" id="L359" title="All 2 branches missed.">        for (int i=0; i &lt; ssItems.size(); i++ ) {</span>
+<span class="nc" id="L360">            ShiftSwapRequestItem ssrItem = new ShiftSwapRequestItem(</span>
+<span class="nc" id="L361">                            (ShiftSwapItem) ssItems.get(i), i);</span>
+<span class="nc" id="L362">            createChildObject(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE, ssrItem);</span>
+        }
+<span class="nc" id="L364">    }</span>
+
+    public void setNegotiationComment(String comment) {
+<span class="nc" id="L367">        setFieldValue(ShiftSwapRequestFieldInfo.SHIFTSWAPREQUEST_S_NEGOTIATIONCOMMENT, comment);</span>
+<span class="nc" id="L368">    }</span>
+
+    /**
+     * Implements a method from the Validatable interface.
+     * @return the ValidationCache associated with this object.
+     */
+    @Override
+	public ValidationCache getValidationCache() {
+<span class="nc bnc" id="L376" title="All 2 branches missed.">        if (m_validationCache == null) {</span>
+<span class="nc" id="L377">            m_validationCache = new ShiftSwapValidationCache(this);</span>
+        }
+
+<span class="nc" id="L380">        return m_validationCache;</span>
+    }
+
+    public ShiftSwapValidationCache getCache() {
+<span class="nc" id="L384">        return (ShiftSwapValidationCache) getValidationCache();</span>
+    }
+
+    /**
+     * Implements a method from the Validatable interface.
+     * @return a collection of TimeRange objects: one for each shift swap item
+     */
+    @Override
+	public Collection getValidationTimeRanges() {
+<span class="nc" id="L393">        Collection result = new ArrayList();</span>
+
+<span class="nc" id="L395">        Collection items = this.getShiftSwapItems();</span>
+
+<span class="nc bnc" id="L397" title="All 2 branches missed.">        if (items != null) {</span>
+            ShiftSwapItem item;
+            TimeRange range;
+
+<span class="nc bnc" id="L401" title="All 2 branches missed.">            for (Iterator itr = items.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L402">                item = (ShiftSwapItem) itr.next();</span>
+<span class="nc" id="L403">                range = new TimeRange(item.getStartDate(), item.getEndDate());</span>
+<span class="nc" id="L404">                result.add(range);</span>
+            }
+        }
+
+<span class="nc" id="L408">        return result;</span>
+    }
+
+	public boolean isOneWay() {
+<span class="nc" id="L412">		return getSwapType().equals(ShiftSwapRequest.SHIFTSWAP_TYPE_ONEWAY);</span>
+	}
+
+	// TODO: refactor SSRequestDAO.deleteAllChildren() and TORequestDAO.deleteAllChildren() methods
+	//  for code similar to moveChildrenFromPersistedToUpdated().
+	// TODO: Instead of clearAllShiftSwapItems() and setDeleteAllChildFlag(), use method in ValueObjectNode (added by greg).
+	public void moveChildrenFromPersistedToUpdated() {
+		// get the shift swap request items.
+<span class="nc" id="L420">		Collection ssReqItems = getChildObjects(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE);</span>
+
+<span class="nc bnc" id="L422" title="All 4 branches missed.">		if (ssReqItems != null &amp;&amp; !ssReqItems.isEmpty()) {</span>
+			//for each SSReqItem
+<span class="nc bnc" id="L424" title="All 2 branches missed.">			for (Iterator itr = ssReqItems.iterator(); itr.hasNext(); ) {</span>
+<span class="nc" id="L425">				ShiftSwapRequestItem ssReqItem = (ShiftSwapRequestItem) itr.next();</span>
+
+				// move SSItem from persisted to updated list
+<span class="nc" id="L428">				ssReqItem.moveChildrenFromPersistedToUpdated();</span>
+
+				// move SSReqItem from persisted to updated list.
+<span class="nc" id="L431">				updateChildObject(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE, ssReqItem);</span>
+<span class="nc" id="L432">			}</span>
+
+			//clear persisted SSRequestItems associated with this SSRequest
+<span class="nc" id="L435">			clearChildObjectMap(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE);</span>
+		}
+
+<span class="nc" id="L438">		ShiftSwapWithdraw ssWithdraw = getWithdrawInfo();</span>
+<span class="nc bnc" id="L439" title="All 2 branches missed.">		if (ssWithdraw!=null){</span>
+<span class="nc" id="L440">			updateChildObject(ShiftSwapRequestFieldInfo.SS_WITHDRAW_CHILD_TYPE, ssWithdraw);</span>
+<span class="nc" id="L441">			clearChildObjectMap(ShiftSwapRequestFieldInfo.SS_WITHDRAW_CHILD_TYPE);</span>
+		}
+
+		//TODO: if caching implemented, invalidate cache.
+<span class="nc" id="L445">	}</span>
+
+    /**
+     * updates the following expiration dates associated with the request
+     * &lt;li&gt; request expiration date.
+     * &lt;li&gt; shift swap item expiration date.
+     *
+     * &lt;p&gt; Request expiration date:
+     * &lt;li&gt; If status == negotiation, request expiration date is
+     * &lt;code&gt;min( min(shiftswapitem.startTime), max(shiftswapItem.expirationDate)) &lt;/code&gt;
+     * considering all shiftSwap items.
+     * &lt;li&gt; if status == pending or other states, the request expiration date is
+     * &lt;code&gt;min(shiftswapitem.startTime) &lt;/code&gt; taking into account all the shiftswapitems
+     *
+     * &lt;p&gt; ShiftSwapItemExpiration date:  This cannot be after the request's expiration date.
+     *
+     */
+    public void updateReqAndItemExpirationDates(Collection ssItems) {
+<span class="nc bnc" id="L463" title="All 2 branches missed.">        if ( ssItems == null ) {</span>
+<span class="nc" id="L464">            ssItems = getShiftSwapItems();</span>
+        }
+
+        // Considering all ssItems, earliest date for ssItem.startDate.
+        //
+        // start with the maximum value.
+<span class="nc" id="L470">        Date ssItemStartDateMin = new Date(Long.MAX_VALUE);</span>
+
+        // Considering all ssItems, latest date for ssItem.expirationDate.
+        // start with the minimum value
+<span class="nc" id="L474">        Date ssItemExpirDateMax = new Date(Long.MIN_VALUE);</span>
+        // for each shift swap item
+<span class="nc bnc" id="L476" title="All 2 branches missed.">        for (Iterator it = ssItems.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L477">            ShiftSwapItem ssItem = (ShiftSwapItem) it.next();</span>
+            // if expiration date for the item is not set, use the item's start date.
+<span class="nc bnc" id="L479" title="All 2 branches missed.">            if (ssItem.getExpirationDate() == null) {</span>
+<span class="nc" id="L480">                ssItem.setExpirationDate(ssItem.getStartDate());</span>
+            }
+
+<span class="nc" id="L483">            ssItemStartDateMin = RequestUtil.getEarlierDate(ssItemStartDateMin, ssItem.getStartDate());</span>
+            // if status is negotiation, get the max(ssItem.expirationDate).
+<span class="nc bnc" id="L485" title="All 2 branches missed.">            if (isNegotiation()) {</span>
+<span class="nc" id="L486">                ssItemExpirDateMax = RequestUtil.getLaterDate(ssItemExpirDateMax, ssItem.getExpirationDate());</span>
+            }
+<span class="nc" id="L488">        }</span>
+        // if status is negotiation, also consider max(ssItem.expirationDate).
+<span class="nc" id="L490">        Date ssReqExpirDate = null;</span>
+<span class="nc bnc" id="L491" title="All 2 branches missed.">        if (isNegotiation()) {</span>
+<span class="nc" id="L492">            ssReqExpirDate = RequestUtil.getEarlierDate(ssItemStartDateMin, ssItemExpirDateMax);</span>
+        } else {
+<span class="nc" id="L494">            ssReqExpirDate = ssItemStartDateMin;</span>
+        }
+
+        // set the expirationDate
+<span class="nc" id="L498">        setExpirationDate(ssReqExpirDate);</span>
+
+        // an item's expiration date cannot be later than the request's expiration date. verify and fix.
+<span class="nc bnc" id="L501" title="All 2 branches missed.">        for (Iterator it = ssItems.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L502">            ShiftSwapItem item = (ShiftSwapItem) it.next();</span>
+
+<span class="nc bnc" id="L504" title="All 2 branches missed.">            if (item.getExpirationDate().after(ssReqExpirDate)) {</span>
+<span class="nc" id="L505">                item.setExpirationDate(ssReqExpirDate);</span>
+            }
+<span class="nc" id="L507">        }</span>
+<span class="nc" id="L508">    }</span>
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getRequestSubType()
+     */
+    @Override
+	public ID getRequestSubType() {
+        // TODO Auto-generated method stub
+<span class="nc" id="L516">        return null;</span>
+    }
+
+    /**
+     * Obtain the shiftSwapItem which will be received by the specified employee
+     * participating in the swap.
+     * &lt;p&gt; Note: the received swapItem can either be a 'shift' or 'timeoff'.
+     *
+     * @param empID
+     * @return
+     */
+    public ShiftSwapItem getShiftSwapItemRcvdByEmpID(ID empID) {
+<span class="nc" id="L528">        ShiftSwapItem ssItemRcvd = null;</span>
+
+<span class="nc" id="L530">        List ssItems = getShiftSwapItems();</span>
+<span class="nc" id="L531">        int ssItemsSize = ssItems.size();</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">        for (int i = 0; i &lt; ssItemsSize; i++) {</span>
+<span class="nc" id="L533">            ShiftSwapItem ssItemGivenUp = (ShiftSwapItem)ssItems.get(i);</span>
+
+<span class="nc" id="L535">            ssItemRcvd = (ShiftSwapItem) ssItems.get( (i - 1 + ssItemsSize) % ssItemsSize );</span>
+
+
+<span class="nc bnc" id="L538" title="All 2 branches missed.">            if (ssItemGivenUp.getEmployeeID().equals(empID)) {</span>
+<span class="nc" id="L539">                break;</span>
+            }
+        }
+
+<span class="nc" id="L543">        return ssItemRcvd;</span>
+    }
+
+	public boolean isEligibleForAcceptAndRejectWithdrawAction() {
+<span class="nc bnc" id="L547" title="All 4 branches missed.">		return isEligibleForRejectWithdrawAction() &amp;&amp; isEligibleForAcceptWithdrawAction();</span>
+	}
+
+	public boolean isEligibleForRejectWithdrawAction() {
+<span class="nc bnc" id="L551" title="All 2 branches missed.">		return getWithdrawInfo() != null &amp;&amp;</span>
+<span class="nc bnc" id="L552" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_WITHDRAW_REQUEST.equals(getWithdrawInfo().getRequestStatus()) &amp;&amp;</span>
+<span class="nc bnc" id="L553" title="All 2 branches missed.">		        getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED);</span>
+	}
+
+	public boolean isEligibleForAcceptWithdrawAction() {
+<span class="nc bnc" id="L557" title="All 2 branches missed.">		return getWithdrawInfo() != null &amp;&amp;</span>
+<span class="nc bnc" id="L558" title="All 2 branches missed.">		        (RequestAuditTrail.STATUS_WITHDRAW_REQUEST.equals(getWithdrawInfo().getRequestStatus()) ||</span>
+<span class="nc bnc" id="L559" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_WITHDRAW_REJECT.equals(getWithdrawInfo().getRequestStatus())) &amp;&amp;</span>
+<span class="nc bnc" id="L560" title="All 2 branches missed.">		        getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED);</span>
+	}
+
+	public boolean isApprovedWithdrawStatusInProgress() {
+<span class="nc bnc" id="L564" title="All 2 branches missed.">		return getWithdrawInfo() != null &amp;&amp;</span>
+<span class="nc bnc" id="L565" title="All 2 branches missed.">		        (RequestAuditTrail.SSW_SOFT_VALIDATION_STATES.contains(getWithdrawInfo().getRequestStatus())) &amp;&amp;</span>
+<span class="nc bnc" id="L566" title="All 2 branches missed.">		        getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED);</span>
+	}
+
+	/**
+	 * Check if employee is allowed to confirm a withdrawal request made by another employee in the swap
+	 * @param employeeID - employee id
+	 * @return boolean true - the employee needs to confirm the withdrawal request, false - no withdrawal approval required
+	 */
+	public boolean isEligibleForConfirmWithdrawAction(ID employeeID) {
+<span class="nc bnc" id="L575" title="All 2 branches missed.">		boolean isNegotiation = getWithdrawInfo() != null &amp;&amp;</span>
+<span class="nc bnc" id="L576" title="All 2 branches missed.">		        (RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION.equals(getWithdrawInfo().getRequestStatus())) &amp;&amp;</span>
+<span class="nc bnc" id="L577" title="All 2 branches missed.">		        getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED);</span>
+<span class="nc bnc" id="L578" title="All 2 branches missed.">		if(isNegotiation){</span>
+<span class="nc" id="L579">			ShiftSwapItem ssItem1 = (ShiftSwapItem) getShiftSwapItems().get(0);</span>
+<span class="nc" id="L580">			ShiftSwapItem ssItem2 = (ShiftSwapItem) getShiftSwapItems().get(1);</span>
+			//Check if current employee has negotiation set to false, then return true.
+<span class="nc bnc" id="L582" title="All 4 branches missed.">			if ((!ssItem1.getNegotiation() &amp;&amp; ssItem1.getEmployeeID().compareTo(employeeID)==0) ||</span>
+<span class="nc bnc" id="L583" title="All 4 branches missed.">				(!ssItem2.getNegotiation() &amp;&amp; ssItem2.getEmployeeID().compareTo(employeeID)==0)){</span>
+<span class="nc" id="L584">				return true;</span>
+			}
+<span class="nc" id="L586">			return false;</span>
+		}
+<span class="nc" id="L588">		return false;</span>
+	}
+
+	public boolean isEligibleForCancelWithdrawAction() {
+<span class="nc bnc" id="L592" title="All 2 branches missed.">		return getWithdrawInfo() != null &amp;&amp;</span>
+<span class="nc bnc" id="L593" title="All 2 branches missed.">		        (RequestAuditTrail.STATUS_WITHDRAW_REQUEST.equals(getWithdrawInfo().getRequestStatus()) ||</span>
+<span class="nc bnc" id="L594" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_WITHDRAW_REJECT.equals(getWithdrawInfo().getRequestStatus()) ||</span>
+<span class="nc bnc" id="L595" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION.equals(getWithdrawInfo().getRequestStatus())) &amp;&amp;</span>
+<span class="nc bnc" id="L596" title="All 2 branches missed.">		        getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED);</span>
+	}
+
+    public boolean isEligibleForWithdraw() {
+<span class="nc bnc" id="L600" title="All 2 branches missed.">		return (RequestAuditTrail.STATUS_WAITLIST.equals(getRequestStatus()) ||</span>
+<span class="nc bnc" id="L601" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_PENDING.equals(getRequestStatus()) ||</span>
+<span class="nc bnc" id="L602" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_TENTATIVE.equals(getRequestStatus()) ||</span>
+<span class="nc bnc" id="L603" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_ESCALATED.equals(getRequestStatus()) ||</span>
+<span class="nc bnc" id="L604" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_NEGOTIATION.equals(getRequestStatus())) ||</span>
+<span class="nc bnc" id="L605" title="All 2 branches missed.">		        (getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED) &amp;&amp;</span>
+<span class="nc bnc" id="L606" title="All 4 branches missed.">		        (getWithdrawInfo() == null || getWithdrawInfo().getRequestStatus().equals(RequestAuditTrail.STATUS_WITHDRAW_CANCEL)));</span>
+	}
+
+    public boolean isEligibleForWithdrawNegotiation() {
+<span class="nc bnc" id="L610" title="All 2 branches missed.">		return getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED) &amp;&amp;</span>
+<span class="nc bnc" id="L611" title="All 4 branches missed.">		        (getWithdrawInfo() == null || getWithdrawInfo().getRequestStatus().equals(RequestAuditTrail.STATUS_WITHDRAW_CANCEL));</span>
+	}
+
+	/**
+	 * Returns withdraw info associated with this request.
+	 * &lt;p/&gt;
+	 * Note:
+	 *
+	 * @return
+	 */
+	public ShiftSwapWithdraw getWithdrawInfo() {
+		// if m_TOWithdraw Cache is uninitialized, initialize.
+<span class="nc bnc" id="L623" title="All 2 branches missed.">		if (m_ShiftSwapWithdrawCache == null) {</span>
+<span class="nc" id="L624">			Collection ssWithdrawCol = getChildObjects(ShiftSwapRequestFieldInfo.SS_WITHDRAW_CHILD_TYPE);</span>
+<span class="nc bnc" id="L625" title="All 4 branches missed.">			if (ssWithdrawCol != null &amp;&amp; !ssWithdrawCol.isEmpty()) {</span>
+<span class="nc" id="L626">				m_ShiftSwapWithdrawCache = (ShiftSwapWithdraw) ssWithdrawCol.iterator().next();</span>
+			}
+		}
+<span class="nc" id="L629">		return m_ShiftSwapWithdrawCache;</span>
+	}
+
+	/**
+	 * Replaces existing Withdraw with the given list.
+	 *
+	 * @param Withdraw
+	 */
+	public void setWithdrawInfo(ShiftSwapWithdraw withdraw) {
+		// clear existing choices (in this valueObject and set flag for removal from database).
+		//deleteAllChildren(ShiftSwapRequestFieldInfo.SS_WITHDRAW_CHILD_TYPE);
+<span class="nc bnc" id="L640" title="All 2 branches missed.">		if (withdraw != null) {</span>
+<span class="nc" id="L641">			ShiftSwapWithdraw existing = getWithdrawInfo();</span>
+<span class="nc bnc" id="L642" title="All 2 branches missed.">			if (existing==null){</span>
+<span class="nc" id="L643">				createChildObject(ShiftSwapRequestFieldInfo.SS_WITHDRAW_CHILD_TYPE, withdraw);</span>
+			} else {
+<span class="nc" id="L645">				withdraw.setID(existing.getID());</span>
+<span class="nc" id="L646">				updateChildObject(ShiftSwapRequestFieldInfo.SS_WITHDRAW_CHILD_TYPE, withdraw);</span>
+			}
+		}
+
+		// invalidate cache as the m_TOWithdraw  has changed.
+<span class="nc" id="L651">		m_ShiftSwapWithdrawCache = null;</span>
+<span class="nc" id="L652">		addDetailLevel(DL_SHIFTSWAP_WITHDRAW);</span>
+<span class="nc" id="L653">	}</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

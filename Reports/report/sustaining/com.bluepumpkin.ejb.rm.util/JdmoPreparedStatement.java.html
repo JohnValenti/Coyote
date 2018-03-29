@@ -1,0 +1,370 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JdmoPreparedStatement.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.util</a> &gt; <span class="el_source">JdmoPreparedStatement.java</span></div><h1>JdmoPreparedStatement.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.util;
+
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.ScopeID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoPCommand;
+import com.bluepumpkin.common.jdmo.JdmoParam;
+import com.bluepumpkin.common.jdmo.JdmoQuery;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.rm.base.RmRuntimeException;
+
+/**
+ * 
+ * Creates JdmoRowset using prepared statements. 
+ * Clients should use the static functions (constructor is package private for unit testing)
+ * 
+ * In clause parameter is specified using a single ? without parenthesis 
+ * for example: Select name from Organization where ID in ?
+ *  
+ * The currently supported types for in clauses are ID (only integer type) and the integer types Integer,Long,Short
+ * 
+ * If number of parameters specified in the collection parameter corresponding to the in clause is less than MAX_IN_CLAUSE_PARAMS then
+ * the parameters are expanded directly i.e. &quot;ID in ?&quot; is translated into &quot;ID in (?,?,...)&quot;. 
+ * If the number is greater than MAX_IN_CLAUSE_PARAMS  then a temp table is used automatically. 
+ * Temp tables are called #JDMO_PREPARED_STATEMENT_IN_ID_LIST_0 for the first in clause parameter, ...LIST_1 for the  next and so on. 
+ * The name is not random since that would mean that the SQL server plan cache would not be used. 
+ * There is a slight limitation that the function might not be reentrant due to this.  
+ * 
+ * MAX_IN_CLAUSE_PARAMS must be a small enough value so that we do not pollute the SQL server plan cache with multiple versions of the 
+ * same query. Currently this is 10 which means that there can be 11 distinct version of any given query in the plan cache (ten plans when 
+ * the parameter count for the in clause varies from one to ten, plus the one that uses the temp table for counts &gt; 10)
+ *  
+ *
+ */
+public class JdmoPreparedStatement {
+
+	private static final int MAX_IN_CLAUSE_PARAMS = 10;
+<span class="fc" id="L50">	public static final JdmoParam NullInteger = new JdmoParam(null, java.sql.Types.INTEGER);</span>
+
+	private final Jdmo dmo;
+	private List&lt;Object&gt; tempTableValuesList;
+	private StringBuilder tempTableCreateSql;
+	private List&lt;Object&gt; adjustedParameterList;
+	private String adjustedSql;
+
+
+	//Should really be private, but package private just for unit testing. 
+<span class="fc" id="L60">	JdmoPreparedStatement(Jdmo dmo) {</span>
+<span class="fc" id="L61">		this.dmo = dmo;</span>
+<span class="fc" id="L62">	}</span>
+
+	JdmoRowset createRowset(String sql, Object... parameters) throws JdmoException {
+<span class="fc" id="L65">		adjustSqlAndParameters(sql, parameters);</span>
+<span class="fc" id="L66">		JdmoQuery query = dmo.createQuery(adjustedSql, Jdmo.PARAM_QUERY);</span>
+<span class="fc" id="L67">		setupParamaters(query);</span>
+<span class="fc" id="L68">		return dmo.createRowset(query, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+	}
+
+	int executeSql(String sql, Object... parameters) throws JdmoException {
+
+<span class="nc" id="L73">		adjustSqlAndParameters(sql, parameters);</span>
+
+<span class="nc" id="L75">		HashMap&lt;Integer, Object&gt; paramMap = new HashMap&lt;Integer, Object&gt;();</span>
+<span class="nc" id="L76">		int index = setupTempTableIfNeeded(paramMap);</span>
+
+<span class="nc bnc" id="L78" title="All 2 branches missed.">		for (Object param : adjustedParameterList) {</span>
+<span class="nc" id="L79">			paramMap.put(index, param);</span>
+<span class="nc" id="L80">			index++;</span>
+<span class="nc" id="L81">		}</span>
+
+<span class="nc" id="L83">		JdmoPCommand pc = dmo.createPCommand(adjustedSql);</span>
+<span class="nc" id="L84">		return dmo.executePCommand(pc, paramMap);</span>
+	}
+
+	private void setupParamaters(JdmoQuery query) throws JdmoException {
+<span class="fc" id="L88">		int index = setupTempTableIfNeeded(query);</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">		for (Object param : adjustedParameterList) {</span>
+<span class="fc" id="L90">			index = setParamFromObject(query, index, param);</span>
+<span class="fc" id="L91">		}</span>
+<span class="fc" id="L92">	}</span>
+
+	private int setupTempTableIfNeeded(JdmoQuery query) {
+<span class="fc" id="L95">		int index = 1;</span>
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">		if (tempTableValuesList != null) {</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">			for (Object values : tempTableValuesList) {</span>
+<span class="nc" id="L98">				setJdmoCsvList(query, index, (Collection&lt;?&gt;) values);</span>
+<span class="nc" id="L99">				index++;</span>
+<span class="nc" id="L100">			}</span>
+		}
+<span class="fc" id="L102">		return index;</span>
+	}
+
+	private int setupTempTableIfNeeded(Map&lt;Integer, Object&gt; paramMap) {
+<span class="nc" id="L106">		int index = 1;</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">		if (tempTableValuesList != null) {</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">			for (Object values : tempTableValuesList) {</span>
+<span class="nc" id="L109">				paramMap.put(index, convertCollectionToCsv((Collection&lt;?&gt;) values));</span>
+<span class="nc" id="L110">				index++;</span>
+<span class="nc" id="L111">			}</span>
+		}
+<span class="nc" id="L113">		return index;</span>
+	}
+
+	//Used only for unit testing
+	String getAdjustedSql() {
+<span class="nc" id="L118">		return adjustedSql;</span>
+	}
+
+	//Used only for unit testing
+	List&lt;Object&gt; getAdjustedParameters() {
+<span class="nc" id="L123">		return adjustedParameterList;</span>
+	}
+
+	//package private for unit testing
+	void adjustSqlAndParameters(String sql, Object[] parameters) {
+
+<span class="fc" id="L129">		adjustedParameterList = new ArrayList&lt;Object&gt;(parameters.length);</span>
+<span class="fc" id="L130">		adjustedSql = sql;</span>
+
+<span class="fc" id="L132">		int i = 0;</span>
+<span class="fc bfc" id="L133" title="All 2 branches covered.">		for (Object param : parameters) {</span>
+
+			//If a parameter is a collection then it will not appear directly in adjustedParameterList
+			//Either it is moved to  tempTableValuesList or the values in the collection are expanded into adjustedParameterList
+			//See handleInClauseParameters for details
+<span class="fc bfc" id="L138" title="All 2 branches covered.">			if (param instanceof Collection&lt;?&gt;) {</span>
+<span class="fc" id="L139">				Collection&lt;?&gt; values = (Collection&lt;?&gt;) param;</span>
+<span class="fc" id="L140">				handleInClauseParameters(values);</span>
+<span class="fc" id="L141">				i = adjustInClauseSql(values.size(), i);</span>
+<span class="fc" id="L142">				continue;</span>
+			}
+<span class="fc" id="L144">			adjustedParameterList.add(param);</span>
+		}
+
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">		if (tempTableCreateSql != null) {</span>
+<span class="nc" id="L148">			adjustedSql = tempTableCreateSql + adjustedSql;</span>
+		}
+<span class="fc" id="L150">	}</span>
+
+	private int adjustInClauseSql(int count, int inClauseIndex) {
+<span class="pc bpc" id="L153" title="1 of 2 branches missed.">		if (count &gt; MAX_IN_CLAUSE_PARAMS) {</span>
+<span class="nc" id="L154">			String tempTableName = String.format(&quot;#JDMO_PREPARED_STATEMENT_IN_ID_LIST_%d&quot;, inClauseIndex);</span>
+<span class="nc" id="L155">			addIDsTempTable(tempTableName);</span>
+<span class="nc" id="L156">			String replaceString = String.format(&quot; in (select id from %s) &quot;, tempTableName);</span>
+<span class="nc" id="L157">			replaceInClauseWith(replaceString);</span>
+<span class="nc" id="L158">			return inClauseIndex + 1;</span>
+		}
+
+<span class="fc" id="L161">		String paramList = RmUtil.repeat(&quot;?&quot;, &quot;,&quot;, count);</span>
+
+<span class="fc" id="L163">		String replaceString = String.format(&quot; in (%s) &quot;, paramList);</span>
+<span class="fc" id="L164">		replaceInClauseWith(replaceString);</span>
+<span class="fc" id="L165">		return inClauseIndex;</span>
+	}
+
+	private void addIDsTempTable(String tempTableName) {
+
+<span class="nc" id="L170">		String sql = tempTableSql(tempTableName);</span>
+
+<span class="nc bnc" id="L172" title="All 2 branches missed.">		if (tempTableCreateSql == null) {</span>
+<span class="nc" id="L173">			tempTableCreateSql = new StringBuilder();</span>
+		}
+<span class="nc" id="L175">		tempTableCreateSql.append(sql);</span>
+
+<span class="nc" id="L177">	}</span>
+
+	static String tempTableSql(String tempTableName) {
+<span class="nc" id="L180">		return String.format(&quot;if Object_ID('tempdb..%s') is Not Null Drop Table %s  \n  &quot;</span>
+				+ &quot;select cast( case when item='null' then null else item end as int) id into %s from FN_DelimitedSplitMax(?,',') \n&quot;,
+				tempTableName, tempTableName, tempTableName);
+	}
+
+	private void replaceInClauseWith(String replaceWith) {
+<span class="fc" id="L186">		adjustedSql = adjustedSql.replaceFirst(&quot;(?i)\\s+IN\\s+\\?&quot;, replaceWith);</span>
+<span class="fc" id="L187">	}</span>
+
+	private void handleInClauseParameters(Collection&lt;?&gt; values) {
+<span class="pc bpc" id="L190" title="1 of 2 branches missed.">		if (values.size() &gt; MAX_IN_CLAUSE_PARAMS) {</span>
+			//we need to use a temp table for these values
+<span class="nc bnc" id="L192" title="All 2 branches missed.">			if (tempTableValuesList == null) {</span>
+<span class="nc" id="L193">				tempTableValuesList = new ArrayList&lt;Object&gt;();</span>
+			}
+<span class="nc" id="L195">			tempTableValuesList.add(values);</span>
+<span class="nc" id="L196">			return;</span>
+		}
+
+		//Since the number of values is less than MAX_IN_CLAUSE_PARAMS we will expand the in clause to  in (?,?,...)
+		//this means that we need to expand the in clause into the parameter list
+<span class="fc bfc" id="L201" title="All 2 branches covered.">		for (Object value : values) {</span>
+<span class="pc bpc" id="L202" title="1 of 2 branches missed.">			if (value == null) {</span>
+				//since the in clause can only include integers we make any nulls be NullInteger
+<span class="nc" id="L204">				adjustedParameterList.add(NullInteger);</span>
+			} else {
+<span class="fc" id="L206">				adjustedParameterList.add(value);</span>
+			}
+<span class="fc" id="L208">		}</span>
+<span class="fc" id="L209">	}</span>
+
+	private static int setParamFromObject(JdmoQuery query, int parIndex, Object obj) throws JdmoException { // NOSONAR
+
+<span class="pc bpc" id="L213" title="1 of 2 branches missed.">		if (obj == null) {</span>
+<span class="nc" id="L214">			throw new JdmoException(&quot;Null values should be passed using an instance of JdmoParam&quot;);</span>
+<span class="fc bfc" id="L215" title="All 2 branches covered.">		} else if (obj instanceof String) {</span>
+<span class="fc" id="L216">			query.setParString(parIndex, (String) obj);</span>
+<span class="pc bpc" id="L217" title="1 of 2 branches missed.">		} else if (obj instanceof Integer) {</span>
+<span class="nc" id="L218">			query.setParInt(parIndex, (Integer) obj);</span>
+<span class="pc bpc" id="L219" title="1 of 2 branches missed.">		} else if (obj instanceof Timestamp) {</span>
+<span class="nc" id="L220">			query.setParTimestamp(parIndex, (Timestamp) obj);</span>
+<span class="fc bfc" id="L221" title="All 2 branches covered.">		} else if (obj instanceof Date) {</span>
+<span class="fc" id="L222">			query.setParTimestamp(parIndex, TimeZoneUtil.toTimestamp((Date) obj));</span>
+<span class="pc bpc" id="L223" title="1 of 2 branches missed.">		} else if (obj instanceof ID) {</span>
+<span class="fc" id="L224">			query.setParID(parIndex, (ID) obj);</span>
+<span class="nc bnc" id="L225" title="All 2 branches missed.">		} else if (obj instanceof Long) {</span>
+<span class="nc" id="L226">			query.setParLong(parIndex, (Long) obj);</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">		} else if (obj instanceof Boolean) {</span>
+<span class="nc" id="L228">			query.setParBoolean(parIndex, (Boolean) obj);</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">		} else if (obj instanceof JdmoParam) {</span>
+<span class="nc" id="L230">			JdmoParam jdmoParam = (JdmoParam) obj;</span>
+<span class="nc" id="L231">			setJdmoParam(query, parIndex, jdmoParam);</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">		} else if (obj instanceof Short) {</span>
+<span class="nc" id="L233">			query.setParShort(parIndex, (Short) obj);</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">		} else if (obj instanceof Byte) {</span>
+<span class="nc" id="L235">			query.setParByte(parIndex, (Byte) obj);</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">		} else if (obj instanceof Float) {</span>
+<span class="nc" id="L237">			query.setParFloat(parIndex, (Float) obj);</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">		} else if (obj instanceof Double) {</span>
+<span class="nc" id="L239">			query.setParDouble(parIndex, (Double) obj);</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">		} else if (obj instanceof ScopeID) {</span>
+<span class="nc" id="L241">			query.setParString(parIndex, obj.toString());</span>
+<span class="nc bnc" id="L242" title="All 2 branches missed.">		} else if (obj instanceof BigDecimal) {</span>
+<span class="nc" id="L243">			query.setParBigDecimal(parIndex, (BigDecimal) obj);</span>
+		} else {
+<span class="nc" id="L245">			throw new IllegalArgumentException(String.format(&quot;Object is type %s which is not implemented&quot;, obj.getClass()));</span>
+		}
+<span class="fc" id="L247">		return parIndex + 1;</span>
+	}
+
+	private static void setJdmoCsvList(JdmoQuery query, int parIndex, Collection&lt;?&gt; values) {
+<span class="nc" id="L251">		query.setParString(parIndex, convertCollectionToCsv(values));</span>
+<span class="nc" id="L252">	}</span>
+
+	static String convertCollectionToCsv(Collection&lt;?&gt; values) {
+<span class="nc" id="L255">		StringBuilder csv = new StringBuilder();</span>
+<span class="nc" id="L256">		int i = 0;</span>
+<span class="nc" id="L257">		int count = values.size();</span>
+<span class="nc bnc" id="L258" title="All 2 branches missed.">		for (Object value : values) {</span>
+
+<span class="nc" id="L260">			csv.append(toCsvStringValue(value));</span>
+<span class="nc" id="L261">			i++;</span>
+<span class="nc bnc" id="L262" title="All 2 branches missed.">			if (i != count) {</span>
+<span class="nc" id="L263">				csv.append(&quot;,&quot;);</span>
+			}
+<span class="nc" id="L265">		}</span>
+<span class="nc" id="L266">		return csv.toString();</span>
+	}
+
+	static String toCsvStringValue(Object value) {
+
+<span class="nc bnc" id="L271" title="All 2 branches missed.">		if (value == null) {</span>
+<span class="nc" id="L272">			return &quot;null&quot;;</span>
+		}
+
+<span class="nc bnc" id="L275" title="All 2 branches missed.">		if (value instanceof ID) {</span>
+<span class="nc" id="L276">			ID id = (ID) value;</span>
+			//do this so that id.toInt() will throw if it the ID is not a string
+<span class="nc" id="L278">			return Integer.toString(id.toInt());</span>
+<span class="nc bnc" id="L279" title="All 6 branches missed.">		} else if (value instanceof Integer || value instanceof Long || value instanceof Short) {</span>
+<span class="nc" id="L280">			return value.toString();</span>
+		} else {
+<span class="nc" id="L282">			throw new IllegalArgumentException(String.format(</span>
+<span class="nc" id="L283">					&quot;Unexpected type for in clause. %s. Currently supported types are ID (int) and Integer&quot;, value.getClass()));</span>
+		}
+	}
+
+	private static void setJdmoParam(JdmoQuery query, int parIndex, JdmoParam obj) {
+<span class="nc bnc" id="L288" title="All 2 branches missed.">		if (obj.getValue() == null) {</span>
+<span class="nc" id="L289">			query.setParNull(parIndex, obj.sqltype);</span>
+<span class="nc" id="L290">			return;</span>
+		}
+<span class="nc bnc" id="L292" title="All 2 branches missed.">		if (obj.sqltype == Types.SQLXML) {</span>
+<span class="nc" id="L293">			query.setParSqlXml(parIndex, (String) obj.value);</span>
+<span class="nc" id="L294">			return;</span>
+		}
+
+<span class="nc" id="L297">		throw new IllegalArgumentException(&quot;JdmoParam object should be null or of type SQLXML&quot;);</span>
+	}
+
+	//public functions
+
+	public static Map&lt;ID, Integer&gt; getIDToIntegerMap(Jdmo dmo, String sql, Object... parameters) {
+		try {
+<span class="nc" id="L304">			Map&lt;ID, Integer&gt; result = new HashMap&lt;ID, Integer&gt;();</span>
+<span class="nc" id="L305">			JdmoRowset rs = createRowset(dmo, sql, parameters);</span>
+<span class="nc bnc" id="L306" title="All 2 branches missed.">			while (rs.next()) {</span>
+<span class="nc" id="L307">				result.put(rs.getID(1), rs.getInt(2));</span>
+			}
+<span class="nc" id="L309">			return result;</span>
+<span class="nc" id="L310">		} catch (JdmoException e) {</span>
+<span class="nc" id="L311">			throw new RmRuntimeException(e);</span>
+		}
+	}
+
+	public static int executeScalarInt(Jdmo dmo, int defaultValue, String sql, Object... parameters) {
+		try {
+<span class="nc" id="L317">			JdmoRowset rs = createRowset(dmo, sql, parameters);</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">			if (rs.next()) {</span>
+<span class="nc" id="L319">				Integer val = rs.getInt(1);</span>
+<span class="nc bnc" id="L320" title="All 2 branches missed.">				return val == null ? defaultValue : val;</span>
+			} else {
+<span class="nc" id="L322">				return defaultValue;</span>
+			}
+<span class="nc" id="L324">		} catch (JdmoException e) {</span>
+<span class="nc" id="L325">			throw new RmRuntimeException(e);</span>
+		}
+	}
+
+	public static JdmoRowset createRowset(Jdmo dmo, JdmoPreparedStatementBuilder builder) throws JdmoException {
+<span class="fc" id="L330">		return createRowset(dmo, builder.getSql(), builder.getParameters());</span>
+	}
+
+	public static JdmoRowset createRowset(Jdmo dmo, String sql, Object... parameters) throws JdmoException {
+<span class="fc" id="L334">		JdmoPreparedStatement preparedStatement = new JdmoPreparedStatement(dmo);</span>
+<span class="fc" id="L335">		return preparedStatement.createRowset(sql, parameters);</span>
+	}
+
+
+	/**
+	 * @return The number of rows affected. 
+	*/
+	public static int executeSql(Jdmo dmo, JdmoPreparedStatementBuilder builder) throws JdmoException {
+<span class="nc" id="L343">		return executeSql(dmo, builder.getSql(), builder.getParameters());</span>
+	}
+
+	/**
+	 * @return The number of rows affected. 
+	 */
+	public static int executeSql(Jdmo dmo, String sql, Object... parameters) throws JdmoException {
+<span class="nc" id="L350">		JdmoPreparedStatement preparedStatement = new JdmoPreparedStatement(dmo);</span>
+<span class="nc" id="L351">		return preparedStatement.executeSql(sql, parameters);</span>
+	}
+
+	public static String executeScalarString(Jdmo dmo, String defaultValue, String sql, Object... parameters) {
+		try {
+<span class="nc" id="L356">			JdmoRowset rs = createRowset(dmo, sql, parameters);</span>
+<span class="nc bnc" id="L357" title="All 2 branches missed.">			if (rs.next()) {</span>
+<span class="nc" id="L358">				String val = rs.getString(1);</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">				return val == null ? defaultValue : val;</span>
+			} else {
+<span class="nc" id="L361">				return defaultValue;</span>
+			}
+<span class="nc" id="L363">		} catch (JdmoException e) {</span>
+<span class="nc" id="L364">			throw new RmRuntimeException(e);</span>
+		}
+	}
+	
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

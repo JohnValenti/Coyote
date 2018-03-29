@@ -1,0 +1,572 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>WorkRuleManager.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.workrules.ejb</a> &gt; <span class="el_source">WorkRuleManager.java</span></div><h1>WorkRuleManager.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.workrules.ejb;
+
+import java.rmi.RemoteException;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+
+import javax.ejb.EJBObject;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.datatypes.PaginationPair;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.ScopeID;
+import com.bluepumpkin.common.localization.LocaleContext;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmDuplicateExternalIdentException;
+import com.bluepumpkin.ejb.bbm.base.BbmDuplicateNameException;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.empworkrule.model.TimePeriodOfDay;
+import com.bluepumpkin.ejb.bbm.empworkrule.model.WorkUnit;
+import com.bluepumpkin.ejb.bbm.vo.DBSortField;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workrules.model.CalendarPeriod.CalendarUnit;
+import com.bluepumpkin.ejb.bbm.workrules.model.ComplexWorkRule;
+import com.bluepumpkin.ejb.bbm.workrules.model.ComplexWorkRuleSortField;
+import com.bluepumpkin.ejb.bbm.workrules.model.ProjectRules;
+import com.bluepumpkin.ejb.bbm.workrules.model.Rotation;
+import com.bluepumpkin.ejb.bbm.workrules.model.RotationSortField;
+import com.bluepumpkin.ejb.bbm.workrules.model.Shift;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftEvent;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftOTExtension;
+import com.bluepumpkin.ejb.bbm.workrules.model.ShiftPattern;
+import com.bluepumpkin.ejb.bbm.workrules.model.TimeBank;
+import com.bluepumpkin.ejb.bbm.workrules.model.VTOEvent;
+import com.bluepumpkin.ejb.bbm.workrules.model.WorkRule;
+import com.bluepumpkin.ejb.bbm.workrules.model.WorkRuleException;
+import com.bluepumpkin.ejb.bbm.workrules.model.WorkRuleTemplate;
+import com.bluepumpkin.ejb.bbm.workrules.timebanking.model.TimeBankPlannerData;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+
+
+public interface WorkRuleManager extends EJBObject, CoreWorkRuleManager {
+
+  /**
+  * &lt;B&gt;CreateRule&lt;/B&gt;
+  * creates a Rule in the DB
+  * &lt;P&gt;
+  * @param pWorkRule, the workrule to be created, its ID will be ignored
+  * &lt;P&gt;
+  *  @return  valid ID or exception if unsuccessful
+  *  @exception WorkRuleException if the work rule is invalid
+  *  @exception BbmCreateException if there is an error inserting the rule into the DB
+  *
+  */
+  public ID createWorkRule(WorkRule pWorkRule) throws RemoteException,WorkRuleException,BbmCreateException;
+
+  /**
+  * &lt;B&gt;UpdateWorkRule&lt;/B&gt;
+  * updates a WorkRule with given attributes in database
+  * &lt;P&gt;
+  *  @param pWorkRule, the workrule to be updated, it must be fully loaded
+  * &lt;P&gt;
+  *  @return  exception if unsuccessful
+  *  @exception WorkRuleException if the work rule is invalid
+  *  @exception BbmUpdateException if there is an error updating the rule in the DB
+  *
+  */
+  public void updateWorkRule(WorkRule pWorkRule) throws RemoteException,WorkRuleException,BbmUpdateException;
+
+/**
+  * &lt;B&gt;removes WorkRule&lt;/B&gt;
+  * deletes a WorkRule and cascades its delete
+  * &lt;P&gt;
+  *  @param idWorkRule, ID of the workrule to be deleted
+  * &lt;P&gt;
+  *  @return  exception if unsuccessful
+  *  @exception WorkRuleException if the work rule is invalid
+  *  @exception BbmRemoveException if there is an error removing the rule from the DB
+  */
+  public void removeWorkRule(ID idWorkRule) throws RemoteException,BbmRemoveException;
+
+  /**
+  * &lt;B&gt;Gets all rules for an organization and parent orgs of certain type&lt;/B&gt;
+  * &lt;P&gt;
+  *  @param idOrganization      Organization ID
+  *  @param nType               Types are WorkRule.PAYRULE or WorkRule.ASSIGNMENTRULE
+  * &lt;P&gt;
+  *  @return  collection of WorkRule objects if successful
+  *  @exception WorkRuleException if the work rule is invalid
+  *  @exception BbmFinderException if there is an error finding the rules in the DB
+  */
+  public HashMap getWorkRulesForOrganization(ID idOrganization, int eType) throws RemoteException,WorkRuleException,BbmFinderException;
+
+
+  /**
+  * &lt;B&gt;Gets all rules for an organization and parent orgs of certain type and certain durations&lt;/B&gt;
+  * &lt;P&gt;
+  *  @param idOrganization      Organization ID
+  *  @param nDuration           Period of the rule in days
+  *  @param nType               Types are WorkRule.PAYRULE or WorkRule.ASSIGNMENTRULE
+  * &lt;P&gt;
+  *  @return  collection of WorkRule objects if successful
+  *  @exception WorkRuleException if the work rule is invalid
+  *  @exception BbmFinderException if there is an error finding the rules in the DB
+  */
+  public HashMap getWorkRulesForOrganizationDuration(ID idOrganization, int nDuration, int eType) throws RemoteException,WorkRuleException,BbmFinderException;
+
+  /**
+  * &lt;B&gt;Gets all rules for an organization and parent orgs &lt;/B&gt;
+  * &lt;P&gt;
+  *  @param idOrganization      Organization ID
+  * &lt;P&gt;
+  *  @return  collection of WorkRule objects if successful
+  *  @exception WorkRuleException if the work rule is invalid
+  *  @exception BbmFinderException if there is an error finding the rules in the DB
+  */
+  public HashMap getWorkRulesForOrganization(ID idOrganization) throws RemoteException,WorkRuleException,BbmFinderException;
+
+//  /**
+//  * &lt;B&gt;Gets all rules by IDs, this will also load all additional data needed for validation &lt;/B&gt;
+//  * &lt;P&gt;
+//  *  @param idWorkRules     Collection of Work Rule IDs
+//  * &lt;P&gt;
+//  *  @return  collection of initialized WorkRule objects if successful
+//  *  @exception WorkRuleException if the work rule is invalid
+//  *  @exception BbmFinderException if there is an error finding the rules in the DB
+//  *
+//  */
+//  public HashMap getInitializedWorkRulesByIDs(Collection cWorkRuleIDs, Collection cOrgs, Collection cWorkResourceIDs,
+//											  LocalDate dtStartDate, LocalDate dtEndDate, int eOverlap)
+//											  throws WorkRuleException,RemoteException,BbmFinderException;
+
+  /**
+  * &lt;B&gt;Gets all rules by IDs&lt;/B&gt;
+  * &lt;P&gt;
+  *  @param idWorkRules     Collection of Work Rule IDs
+  * &lt;P&gt;
+  *  @return  collection of WorkRule objects if successful
+  *  @exception WorkRuleException if the work rule is invalid
+  *  @exception BbmFinderException if there is an error finding the rules in the DB
+  *
+  */
+  public HashMap getWorkRulesByIDs(Collection cWorkRuleIDs)
+											  throws WorkRuleException,RemoteException,BbmFinderException;
+
+ /**
+  * &lt;B&gt;Gets a rule by ID&lt;/B&gt;
+  * &lt;P&gt;
+  *  @param idWorkRule     Work Rule ID
+  * &lt;P&gt;
+  *  @return  a WorkRule object if successful
+  *  @exception WorkRuleException if the work rule is invalid
+  *  @exception BbmFinderException if there is an error finding the rules in the DB
+  *
+  */
+  public WorkRule getWorkRuleByID(ID idWorkRule)
+					  throws WorkRuleException,RemoteException,BbmFinderException;
+
+
+//  /**
+//  * &lt;B&gt;returns a new (expanded) start and end such that all overlapping rules can be evaluated
+//  *   Note that this function is largely a wrapper for WorkRuleUtil.expandWindows&lt;/B&gt;
+//  * &lt;P&gt;
+//  *  @param cWorkRuleIDs      Collection of Work Rule IDs
+//  *  @param dtStartDate       Start of active window
+//  *  @param dtEndDate         End of active Window
+//  *
+//  * &lt;P&gt;
+//  *  @return  new Pair
+//  *  @exception WorkRuleException if the work rule is invalid
+//  *
+//  */
+//  public Pair expandRuleWindow(HashMap hWorkRules, LocalDate dtStartDate, LocalDate dtEndDate)
+//	throws RemoteException,WorkRuleException;
+
+  /**
+  * &lt;B&gt;Gets all conflicts for an employee
+  *   Note that this function is largely a wrapper for WorkRuleUtil.getConflicts&lt;/B&gt;
+  * &lt;P&gt;
+  *  @param dtStartDate       Start of active window
+  *  @param dtEndDate         End of active Window
+  *  @param idWorkResource    ID of employee
+  *  @param cWorkRules      Collection of Work Rules (these must be initialized)
+  *  @param cEvents           Collection of events for employee, there are certain assumptions
+  *  the work rule manager makes about events.
+  *  1) the events are container events such as shift assignments, time records, or imported events
+  *  2) the events have no more then a 2 level hierarchy (parents and children)
+  *  3) there is basically one event per workday
+  *  4) The containers are paid (the children may be paid or unpaid)
+  * &lt;P&gt;
+  *  @return  CommonConflict collection if successfule
+  *  @exception WorkRuleException if the work rule is invalid
+  *
+  */
+
+  public Collection getConflictsForEmployee(LocalDate dtStartDate, LocalDate dtEndDate,
+										ID idWorkResource, Organization pOrganization,
+										HashMap hWorkRules, Collection cEvents)
+										throws RemoteException,WorkRuleException;
+
+ /**
+  * &lt;B&gt;Gets all work rule templates&lt;/B&gt;
+  *  @return  collection of WorkRuleTemplate objects if successful
+  *  @exception BbmFinderException if there is an error finding the rules in the DB
+  */
+  public HashMap getWorkRuleTemplates() throws RemoteException,BbmFinderException;
+
+ /**
+  * &lt;B&gt;Gets all work rule templates&lt;/B&gt;
+  *  @return  collection of WorkRuleTemplate objects if successful
+  *  @exception BbmFinderException if there is an error finding the rules in the DB
+  */
+  public HashMap getWorkRuleTemplates(int eType) throws RemoteException,BbmFinderException;
+
+ /**
+  * &lt;B&gt;Returns the sentences associated with the rules&lt;/B&gt;
+  * &lt;P&gt;
+  *  @param hWorkRules      HashMap (WorkRuleID,WorkRule)
+  * &lt;P&gt;
+  *  @return  HashMap (WorkRuleID,String) if successful
+  *  @exception BbmFinderException if there is an error finding the rules' template in the DB
+  *  @exception WorkRuleException if there is an error finding the activities or earning types
+  *  or the rules are invalid
+  */
+  public HashMap getWorkRuleSentences(HashMap hWorkRules,LocaleContext locale)
+									throws RemoteException,BbmFinderException, WorkRuleException;
+
+
+
+ /**
+  * &lt;B&gt;Parses the template's XML sentence and returns it as a collection&lt;/B&gt;
+  * &lt;P&gt;
+  *  @param pWorkRuleTemplate      WorkRuleTemplate which is to be created or updated
+  *  @param pWorkRule              WorkRule to be updated, can be null if a new workrule is to be created
+  *  @param idOrganization         Organization in which the rule was created
+  *  @param locale                 Locale of the user
+  * &lt;P&gt;
+  *  @return  collection contains String objects, Integer objects, Double objects, Time objects,
+  *  and Collection (LinkedLists of SelectorElements) objects.
+  *  @exception WorkRuleException if there is an error finding the activities
+  *  or pWorkRule is invalid
+  */
+  public Collection getParsedSentence(WorkRuleTemplate pWorkRuleTemplate, WorkRule pWorkRule, ID idOrganization,
+									  LocaleContext locale)
+									throws RemoteException, WorkRuleException;
+
+  public void updatePostedConflicts(HashMap hEmployeeConflicts,ID idPayPeriod)
+									throws RemoteException,BbmUpdateException;
+
+  public HashMap getPostedConflicts(Collection cEmployeeIDs,ID idPayPeriod)
+									throws RemoteException,BbmFinderException;
+  
+//  public Shift getShift(ID idShift) throws BbmFinderException, RemoteException;
+  
+  public Collection&lt;Shift&gt; getShifts(Collection&lt;ID&gt; empIDs, Date start, Date end) throws BbmFinderException, RemoteException;
+  
+//  public Collection&lt;Shift&gt; getShiftsByIDs(Collection&lt;ID&gt; ids)throws BbmFinderException, RemoteException;
+  public Collection&lt;Shift&gt; getShiftsByName(ScopeID scopeID, Collection&lt;String&gt; names) throws BbmFinderException, RemoteException;
+  
+  public Collection&lt;ShiftOTExtension&gt; getShiftOTExtension(ScopeID scopeID, Date start, Date end) throws BbmFinderException, RemoteException;
+  
+  public Collection&lt;ShiftOTExtension&gt; getShiftOTExtension(Collection empIDs, Date start, Date end) throws BbmFinderException, RemoteException;
+
+  public Collection getAllTimeBanks() throws BbmFinderException, RemoteException;
+  public TimeBank getTimeBank (ID idTimeBank) throws BbmFinderException, RemoteException;
+  public Collection&lt;TimeBank&gt; getTimeBanks (Collection&lt;ID&gt; timeBankIDs) throws BbmFinderException, RemoteException;
+  public ID createTimeBank(TimeBank pTimeBank) throws BbmCreateException, RemoteException;
+  public void updateTimeBank(TimeBank pTimeBank) throws BbmUpdateException, MultiUserException, RemoteException;
+  public void deleteTimeBank (ID idTimeBank) throws RemoteException, BbmRemoveException;
+  public Collection getTimeBanksForOrganization(ID orgID) throws BbmFinderException, RemoteException;
+  public Collection getTimeBanksForOrganizations(Collection orgIds, boolean findParentOrgs) throws BbmFinderException, RemoteException;
+  
+  public ComplexWorkRule getComplexWorkRuleByID(ID idWorkRule) throws WorkRuleException, BbmFinderException, RemoteException;
+  public Collection&lt;ComplexWorkRule&gt; getComplexWorkRulesByIDs(Collection&lt;ID&gt; workRuleIDs) throws WorkRuleException, BbmFinderException, RemoteException;
+
+	/**
+	 * Finds if timebankplannerdata with same name exists
+	 * @param name: timebankplannerdata
+
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 */
+
+	public boolean isTimebankPlannerDataNameExists(String name) throws BbmFinderException, RemoteException;
+
+	/**
+	 * Deletes timebankplannerdata given the name
+	 *
+	 * @param name
+	 * @throws BbmRemoveException
+	 * @throws RemoteException
+	 */
+
+	public void deleteTimebankPlannerData(String name) throws BbmRemoveException, RemoteException;
+
+	/**
+	 * Creates timebankplannerdata
+	 *
+	 * @throws BbmCreateException
+	 * @throws RemoteException*/
+	public void saveTimebankPlannerData(Collection&lt;TimeBankPlannerData&gt; timeBankPlannerData) throws BbmCreateException, RemoteException;
+
+
+	public Collection&lt;Rotation&gt; getRotationsByIDs(Collection&lt;ID&gt; rotationIDs) throws WorkRuleException, BbmFinderException, RemoteException;
+	/**
+	 * 
+	 * @param selectedOrgID
+	 * @param pageSize
+	 * @param pageIndex
+	 * @param sortFields
+	 * @param isAscending
+	 * @return
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 */
+	public PaginationPair&lt;Rotation&gt; getRotationsForOrgAndAncestors(ID selectedOrgID, int pageSize, int pageIndex, LinkedHashMap&lt;RotationSortField, Comparator&gt; sortFields, boolean isAscending) throws BbmFinderException, RemoteException;
+	public PaginationPair&lt;Rotation&gt; getRotationsForOrgAndAncestors(ID selectedOrgID, int pageSize, int pageIndex, LinkedHashMap&lt;RotationSortField, Comparator&gt; sortFields, boolean isAscending,String filterByName) throws BbmFinderException, RemoteException;
+<span class="pc" id="L328">	public enum RotationValidationError {</span>
+<span class="fc" id="L329">		NameMustBeUnique,</span>
+<span class="fc" id="L330">		NameNotSpecified,</span>
+<span class="fc" id="L331">		NotEnoughWorkPatterns,</span>
+<span class="fc" id="L332">		TooManyWorkPatterns,</span>
+<span class="fc" id="L333">		OwnerOrgNotSpecified,</span>
+<span class="fc" id="L334">		AlignmentDateNotSpecified,</span>
+<span class="fc" id="L335">		AlignmentDateNotAlignedWithWeekStart</span>
+	}
+	/**
+	 * Checks to see if the given Rotation is valid for create or update.
+	 * @param rotation
+	 * @return Collection of RotationValidationError values indicating the violations.
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 */
+	public Collection&lt;RotationValidationError&gt; validate(Rotation rotation) throws BbmFinderException, RemoteException;
+	public void deleteRotations(Collection&lt;ID&gt; rotationIDs) throws BbmRemoveException, RemoteException;
+	public void copyRotationsToOrg(Collection&lt;ID&gt; rotationIDs, ID orgID, LocaleContext localeContext) throws BbmCreateException, RemoteException;
+  
+  public Collection getComplexWorkRulesForOrgs(Collection colOrgIDs) throws BbmFinderException, RemoteException;
+  /**
+   * 
+   * @param selectedOrgID
+   * @param pageSize
+   * @param pageIndex
+   * @param sortFields
+   * @param isAscending
+   * @return
+   * @throws BbmFinderException
+   * @throws RemoteException
+   */
+  public PaginationPair&lt;ComplexWorkRule&gt; getComplexWorkRulesForOrgAndAncestors(ID selectedOrgID, int pageSize, int pageIndex, LinkedHashMap&lt;ComplexWorkRuleSortField, Comparator&lt;?&gt;&gt; sortFields, boolean isAscending) throws BbmFinderException, RemoteException;
+  public Collection&lt;ShiftPattern&gt; getShiftPatternsByOrgHierarchy(ID orgID) throws BbmFinderException, RemoteException;
+  public HashMap&lt;ID, String&gt; getShiftPatternsIDNameByOrgHierarchyOrderByName(ID orgID) throws BbmFinderException, RemoteException;
+  
+  public void deleteShifts(Collection&lt;ID&gt; shiftIDs) throws BbmRemoveException, RemoteException;
+  public HashMap&lt;ID, String&gt; getShiftNamesByOrg(ID orgID) throws BbmFinderException, RemoteException;
+  public HashMap&lt;ID, String&gt; getShiftNamesBySchedulingPeriod(SchedulingPeriod sp) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;Shift&gt; getCurrentShiftsByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs, String filterByName) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;Shift&gt; getCurrentShiftsBySchedulingPeriod(SchedulingPeriod sp, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs, String filterByName) throws BbmFinderException, RemoteException;
+  public void copyShifts(Collection&lt;ID&gt; shiftIDs, boolean isByOrg, ID ownerID, LocaleContext localeContext) throws BbmException, RemoteException;
+  public Shift createShift(Shift shift) throws BbmCreateException, BbmDuplicateExternalIdentException, RemoteException;
+  public void updateShifts(Collection&lt;Shift&gt; shifts) throws BbmUpdateException, RemoteException;
+  
+  //Added for Project Rules
+  public PaginationPair&lt;ProjectRules&gt; getProjectRulesByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs, String filterByName) throws BbmFinderException, RemoteException;
+  public void deleteProjects(Collection&lt;ID&gt; projectIDs) throws BbmRemoveException, RemoteException;
+  public Collection&lt;ProjectRules&gt; getProjectRulesByID(Collection&lt;ID&gt; ids)throws BbmFinderException, RemoteException;
+  public ID createProjectRule(ProjectRules projRule) throws BbmCreateException, BbmDuplicateExternalIdentException, RemoteException;
+  public void updateProjectRule(Collection&lt;ProjectRules&gt; projRule) throws BbmUpdateException, RemoteException;
+  public PaginationPair&lt;ProjectRules&gt; getCurrentProjectsBySchedulingPeriod(SchedulingPeriod sp, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs, String filterByName) throws BbmFinderException, RemoteException;
+  public void copyProjects(Collection&lt;ID&gt; projectIDs, boolean isByOrg, ID ownerID, LocaleContext localeContext) throws BbmException, RemoteException;
+  
+  
+  public PaginationPair&lt;ShiftEvent&gt; getShiftEventsByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs, String filterByName) throws BbmFinderException, RemoteException;
+  public Collection&lt;ShiftEvent&gt; getShiftEventsByOrgHierarchy(ID orgID) throws BbmFinderException, RemoteException;
+  public Collection&lt;ShiftEvent&gt; getShiftEventsByOrg(ID orgID) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;ShiftEvent&gt; getShiftEventsBySchedulingPeriod(SchedulingPeriod sp, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs, String filterByName) throws BbmFinderException, RemoteException;
+  public Collection&lt;ShiftEvent&gt; getShiftEventsBySchedulingPeriod(SchedulingPeriod sp) throws BbmFinderException, RemoteException;
+  public Collection&lt;ShiftEvent&gt; getShiftEventsBySchedulingPeriodCampaignOnly(SchedulingPeriod sp) throws BbmFinderException, RemoteException;
+  public Collection&lt;ShiftEvent&gt; getShiftEvents(Collection&lt;ID&gt; ids) throws BbmFinderException, RemoteException;
+  public Collection&lt;ShiftEvent&gt; getShiftEvents(Collection&lt;ID&gt; empIDs, Date start, Date end) throws BbmFinderException, RemoteException;
+  public ShiftEvent getShiftEvent(ID shiftEventID) throws BbmFinderException, RemoteException;
+  public ShiftEvent createShiftEvent(ShiftEvent shiftEvent) throws BbmCreateException, BbmDuplicateExternalIdentException, RemoteException;
+  public void updateShiftEvents(Collection&lt;ShiftEvent&gt; shiftEvents) throws BbmUpdateException, RemoteException;
+  public void deleteShiftEvents(Collection&lt;ID&gt; shiftEventIDs) throws BbmRemoveException, RemoteException;
+  public void copyShiftEvents(Collection&lt;ID&gt; shiftEventIDs, boolean isByOrg, ID ownerID, LocaleContext localeContext) throws BbmException, RemoteException;
+  
+  public PaginationPair&lt;ShiftPattern&gt; getCurrentShiftPatternsByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;ShiftPattern&gt; getCurrentShiftPatternsByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs, String filterByName) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;ShiftPattern&gt; getCurrentWeeklyShiftPatternsByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;ShiftPattern&gt; getCurrentWeeklyShiftPatternsByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs,String filterByName) throws BbmFinderException, RemoteException;
+	/**
+	 * Returns the shift patterns defined for a specific organization (excluding hierarchy org scoped items).
+	 * 
+	 * @param orgID Organization ID
+	 * @return Collection collection of shift patterns 
+	 * @see ShiftPattern
+	 * @throws BbmFinderException If the organization cannot be found
+	 * @throws RemoteException
+	 */
+  	public Collection&lt;ShiftPattern&gt; getCurrentShiftPatternsByOrg(ID orgID) throws BbmFinderException, RemoteException;
+  
+  	public PaginationPair&lt;ShiftPattern&gt; getCurrentShiftPatternsBySchedulingPeriod(SchedulingPeriod sp, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs) throws BbmFinderException, RemoteException;
+  	public PaginationPair&lt;ShiftPattern&gt; getCurrentShiftPatternsBySchedulingPeriod(SchedulingPeriod sp, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs,String filterByName) throws BbmFinderException, RemoteException;
+  
+	/**
+	 * Returns the shift patterns for a scheduling period that have been defined in the campaign only (not the organizations that participate).
+	 * @param sp Scheduling period.
+	 * @return Collection of shift patterns
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 */
+	public Collection&lt;ShiftPattern&gt; getCurrentShiftPatternsBySchedulingPeriodCampaignOnly(SchedulingPeriod sp) throws BbmFinderException, RemoteException;
+  
+  public Collection&lt;Shift&gt; getCurrentShiftsByOrg(ID orgID) throws BbmFinderException, RemoteException;
+  public Collection&lt;Shift&gt; getCurrentShiftsByOrgHierarchy(ID orgID) throws BbmFinderException, RemoteException;
+  public Collection&lt;Shift&gt; getCurrentShiftsBySchedulingPeriod(SchedulingPeriod schedulingPeriod) throws BbmFinderException, RemoteException;
+  public Collection&lt;Shift&gt; getCurrentShiftsBySchedulingPeriodCampaignOnly(SchedulingPeriod schedulingPeriod) throws BbmFinderException, RemoteException;
+//  public Collection&lt;ShiftPattern&gt; getShiftPatternsByIDs(Collection&lt;ID&gt; ids) throws BbmFinderException, RemoteException;
+//  public PaginationPair&lt;ShiftPattern&gt; getAvailableShiftPatternsForEmployees(Collection&lt;ID&gt; workResourceIDs,
+//			Date startDate, Date endDate, ID employeeTypeID, SchedulingPeriod selectedSchedulingPeriod, boolean isAscendingSort,
+//			int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap,
+//			Collection&lt;ID&gt; filteredIDs) throws BbmFinderException, RemoteException;
+  /**
+   * 
+   * @param workResourceIDs
+   * @param startDate
+   * @param endDate
+   * @param employeeTypeID
+   * @param selectedSchedulingPeriod
+   * @param isAscendingSort
+   * @param pageIDSize
+   * @param pageIndex
+   * @param sortFieldMap
+   * @param filteredIDs
+   * @param filterByName
+   * @return
+   * @throws BbmFinderException
+   * @throws RemoteException
+   */
+  public PaginationPair&lt;ShiftPattern&gt; getAvailableShiftPatternsForEmployees(Collection&lt;ID&gt; workResourceIDs,
+			Date startDate, Date endDate, ID employeeTypeID, SchedulingPeriod selectedSchedulingPeriod, boolean isAscendingSort,
+			int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap,
+			Collection&lt;ID&gt; filteredIDs,String filterByName) throws BbmFinderException, RemoteException;
+  public void updateShiftPatterns(Collection&lt;ShiftPattern&gt; shiftPatterns) throws BbmUpdateException, RemoteException, BbmDuplicateNameException;
+  public void deleteShiftPatterns(Collection&lt;ID&gt; shiftPatternIDs) throws BbmRemoveException, RemoteException;
+  public void copyShiftPatterns(Collection&lt;ID&gt; shiftPatternIDs, boolean isByOrg, ID ownerID, LocaleContext localeContext) throws BbmException, RemoteException;
+  public ShiftPattern createShiftPattern(ShiftPattern shiftPattern) throws BbmCreateException, BbmDuplicateExternalIdentException, RemoteException, BbmDuplicateNameException;
+  
+  public Collection&lt;ShiftOTExtension&gt; getShiftOTExtensionsByIDs(Collection&lt;ID&gt; shiftOTExtensionIDs) throws BbmFinderException, RemoteException;
+  public ShiftOTExtension getShiftOTExtensionByID(ID shiftOTExtensionID) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;ShiftOTExtension&gt; getShiftOTExtensionsByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;ShiftOTExtension&gt; getShiftOTExtensionsBySchedulingPeriod(SchedulingPeriod sp, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs) throws BbmFinderException, RemoteException;
+  public void deleteOTExtensions(Collection&lt;ID&gt; otextensionIDs) throws BbmRemoveException, RemoteException;
+  public ID createOTExtension(ShiftOTExtension objValue) throws BbmCreateException, BbmDuplicateExternalIdentException, BbmFinderException, RemoteException;
+  public void updateOTExtensions(Collection&lt;ShiftOTExtension&gt; otExtensions) throws BbmUpdateException, RemoteException;
+  public void copyOTExtensions(Collection&lt;ID&gt; otExtensionIDs, boolean isOrgMode, ID ownerID, LocaleContext localeContext)throws BbmCreateException, BbmDuplicateExternalIdentException, BbmFinderException, RemoteException;
+  public HashMap&lt;ID, String&gt; getOTExtensionNamesByOrg(ID orgID) throws BbmFinderException, RemoteException;
+  public HashMap&lt;ID, String&gt; getOTExtensionNamesBySchedulingPeriod(SchedulingPeriod sp) throws BbmFinderException, RemoteException;
+  
+  public Collection&lt;VTOEvent&gt; getVTOEventsByIDs(Collection&lt;ID&gt; vtoEventIDs) throws BbmFinderException, RemoteException;
+  public VTOEvent getVTOEventByID(ID vtoEventID) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;VTOEvent&gt; getVTOEventsByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs) throws BbmFinderException, RemoteException;
+  public PaginationPair&lt;VTOEvent&gt; getVTOEventsBySchedulingPeriod(SchedulingPeriod sp, boolean isAscendingSort, int pageIDSize, int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; sortFieldMap, Collection&lt;ID&gt; filteredIDs) throws BbmFinderException, RemoteException;
+  public ID createVTOEvent(VTOEvent vtoEvent) throws BbmCreateException, BbmDuplicateExternalIdentException, RemoteException;
+  public void updateVTOEvents(Collection&lt;VTOEvent&gt; vtoEvents) throws BbmUpdateException, RemoteException;
+  public void deleteVTOEvents(Collection&lt;ID&gt; vtoEventIDs) throws BbmRemoveException, RemoteException;
+  public void copyVTOEvents(Collection&lt;ID&gt; vtoEventIDs, boolean isByOrg, ID ownerID, LocaleContext localeContext) throws BbmException, RemoteException;
+  public HashMap&lt;ID, String&gt; getVTONamesByOrg(ID orgID) throws BbmFinderException, RemoteException;
+  public HashMap&lt;ID, String&gt; getVTONamesBySchedulingPeriod(SchedulingPeriod sp) throws BbmFinderException, RemoteException;
+  
+  public Collection&lt;Shift&gt; getAllShifts() throws BbmFinderException, RemoteException;
+  public Collection&lt;ID&gt; getShiftIDsOrderByName(Collection&lt;ID&gt; empIDs, Date start, Date end) throws BbmFinderException, RemoteException;
+  
+  public void saveRotation(Rotation rotation) throws BbmCreateException, BbmUpdateException, RemoteException;
+  /**
+   * Saves an Assignment Rule
+   * @param assignmentRule
+   * @returns a Collection of AssignmentRuleValidationError values, paired with a List of error details
+   * @throws BbmCreateException
+   * @throws BbmUpdateException
+   * @throws RemoteException
+   */
+  public Collection&lt;Pair&lt;AssignmentRuleValidationError, List&lt;?&gt;&gt;&gt; saveAssignmentRule(ComplexWorkRule assignmentRule) throws BbmCreateException, BbmUpdateException, RemoteException;
+  
+
+<span class="nc" id="L496">	public enum AssignmentRuleValidationError {</span>
+<span class="nc" id="L497">		NameMustBeUnique,</span>
+<span class="nc" id="L498">		NameNotSpecified,</span>
+<span class="nc" id="L499">		OwnerOrgNotSpecified,</span>
+<span class="nc" id="L500">		CalendarPeriodTooLong,</span>
+<span class="nc" id="L501">		ShiftNotSpecified,</span>
+<span class="nc" id="L502">		ShiftEventNotSpecified,</span>
+<span class="nc" id="L503">		ActivityNotSpecified,</span>
+<span class="nc" id="L504">		UnsatisfiedRule(Integer.class, WorkUnit.class, Integer.class, CalendarUnit.class), // &quot;%1!i! %2 cannot fit into %3!i! %4, therefore this rule can never be satisfied.&quot;</span>
+<span class="nc" id="L505">		RedundantRule(Integer.class, WorkUnit.class, Integer.class, CalendarUnit.class), //  &quot;more than %1!i! %2 cannot fit into %3!i! %4, therefore this rule is redundant.&quot;</span>
+<span class="nc" id="L506">		AlignmentDateBoundaryMismatch,</span>
+<span class="nc" id="L507">		WorkUnitMissing,</span>
+<span class="nc" id="L508">		CalendarPeriodMissing,</span>
+<span class="nc" id="L509">		WorkUnitCountConstraintMissing,</span>
+<span class="nc" id="L510">		AlignmentDateBoundaryMismatchWarning(true),</span>
+<span class="nc" id="L511">		EndDateNotAfterStart, EndDateMissing, AlignmentDateMissing,</span>
+		;
+		@SuppressWarnings(&quot;rawtypes&quot;)
+		private Class[] detailClasses;
+<span class="nc" id="L515">		private boolean isWarning = false;</span>
+<span class="nc" id="L516">		AssignmentRuleValidationError(@SuppressWarnings(&quot;rawtypes&quot;) Class... details) {</span>
+<span class="nc" id="L517">			this.detailClasses = details;</span>
+<span class="nc" id="L518">		}</span>
+<span class="nc" id="L519">		AssignmentRuleValidationError(boolean isWarning) {</span>
+<span class="nc" id="L520">			this.isWarning = isWarning;</span>
+<span class="nc" id="L521">		}</span>
+		
+		/**
+		 * Some error types may have associated information.
+		 * This method returns the list of types provided with the error.
+		 * @return
+		 */
+		@SuppressWarnings(&quot;rawtypes&quot;)
+		public List&lt;Class&gt; getDetailClasses() {
+<span class="nc" id="L530">			return Collections.unmodifiableList(Arrays.asList(detailClasses));</span>
+		}
+		
+		public boolean isWarning() {
+<span class="nc" id="L534">			return isWarning;</span>
+		}
+		
+	}
+	
+	/**
+	 * Checks to see if the given work rule is valid for create or update.
+	 * @param assignmentRule
+	 * @returns a Collection of AssignmentRuleValidationError, paired with a list of error details.
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 */
+	public Collection&lt;Pair&lt;AssignmentRuleValidationError, List&lt;?&gt;&gt;&gt; validate(ComplexWorkRule assignmentRule) throws BbmFinderException, RemoteException;
+
+	public void copyAssignmentRulesToOrg(
+			Collection&lt;ID&gt; assignmentRuleIDs, ID orgID,
+			LocaleContext localeContext) throws BbmCreateException, RemoteException;
+
+	public void deleteAssignmentRules(Collection&lt;ID&gt; ids) throws BbmRemoveException, RemoteException;
+
+	public Collection&lt;TimePeriodOfDay&gt; getTimePeriodsOfDay() throws BbmFinderException, RemoteException;
+	
+	public Collection&lt;String&gt; getRotationRulesNameByShiftPatternIDs(Collection&lt;ID&gt; ids) throws BbmFinderException, RemoteException;
+	
+	public PaginationPair&lt;TimeBank&gt; getCurrentTimeBanksByOrgHierarchy(ID orgID, boolean isAscendingSort, int pageIDSize,
+			int pageIndex, LinkedHashMap&lt;DBSortField, Comparator&gt; comparators, Collection&lt;ID&gt; filteredIDs,
+			String filterByName) throws BbmFinderException,RemoteException;
+	public Collection&lt;ID&gt;  createTimeBanks(Collection&lt;TimeBank&gt; tbs) throws BbmCreateException, RemoteException ;
+	public void updateTimeBanks(Collection&lt;TimeBank&gt; timeBanks) throws BbmUpdateException, RemoteException;
+	
+	public Shift getShift(ID idShift) throws BbmFinderException, RemoteException;
+	
+	public Collection&lt;Shift&gt; getShiftsByIDs(Collection&lt;ID&gt; ids)throws BbmFinderException, RemoteException;
+	
+	public Collection getShiftPatternByWorkUnitID(ID workUnitID) throws BbmFinderException, RemoteException;
+
+	public Collection&lt;ShiftPattern&gt; getShiftPatternsByIDs(Collection&lt;ID&gt; ids) throws BbmFinderException, RemoteException;
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

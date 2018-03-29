@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SameProficienciesValidationRule.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.request.validation</a> &gt; <span class="el_source">SameProficienciesValidationRule.java</span></div><h1>SameProficienciesValidationRule.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.swap.request.validation;
+
+/**
+ * Title:        rm
+ * Description:
+ * Copyright:    Copyright (c) 2002
+ * Company:
+ * @author
+ * @version 1.0
+ */
+
+
+import java.io.Serializable;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.skill.model.SkillAssignment;
+import com.bluepumpkin.ejb.bbm.skill.model.SkillAssignmentFieldInfo;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignWorkResource;
+import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+
+/**
+ * &lt;li&gt; Rule from UI: Both agents have the same proficiencies for the active campaign queue.
+ *
+ * &lt;li&gt; Ensure that the relevant skills and skill proficiency level for an employee 
+ *  giving up his shift matches the skill and proficieny level of the employee 
+ *  receiving the shift during the time period of the shift involved.
+ *
+ * TODO: talk to jason.  need to compare only relevant skills ie. relevant skills of
+ * the employee whose shift is being given up must match the skills of the employee
+ * receiving it during the shift duration.
+ *
+ * &lt;p&gt;
+ * For 2 way swap, done for both shift swap items (with shifts) of the request&lt;br&gt;
+ * For 1 way swap, done only for the shift swap item with the shift. &lt;br&gt;
+ * 
+ * &lt;p&gt;
+ * Applies equally for tentative and non-tentative requests as no shifts are used for this
+ * validation (only skills and proficiencies).
+ */
+<span class="nc" id="L58">public class SameProficienciesValidationRule implements Validator{</span>
+
+<span class="nc" id="L60">	private static final String m_className = SameProficienciesValidationRule.class.getName();</span>
+    
+<span class="nc" id="L62">    private static final Category m_cat = Log.initCategory( m_className );</span>
+    
+    private ShiftSwapValidationCache m_vc;
+    
+    public ValidationResult validate(Validatable validatable)
+            throws Exception 
+    {
+<span class="nc" id="L69">        ShiftSwapRequest ssr = (ShiftSwapRequest)validatable;        </span>
+<span class="nc" id="L70">        String methodName = &quot;validate&quot;;</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpEnterMethod(methodName, ssr));</span>
+        
+        //todo: refactor common code
+<span class="nc" id="L74">        ValidationResult valResult = null;</span>
+        
+<span class="nc" id="L76">        m_vc = (ShiftSwapValidationCache) ssr.getValidationCache();</span>
+        
+        // ssitems is an ordered list item(0) ... item(N-1)
+        // item(A) gives its shift to item((A+1)modN)
+        // item(A) receives its new shift from item((A+N-1)modN)
+<span class="nc" id="L81">        List ssItems = ssr.getShiftSwapItems();</span>
+        
+<span class="nc" id="L83">        int itemsSize = ssItems.size();</span>
+        
+<span class="nc" id="L85">        boolean isSkillBased = false;</span>
+        
+        //todo: an iterator might be more efficient (say in case of LinkedList) 
+        //  as we do access sequentially
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        for (int i = 0; i &lt; itemsSize; i++) {</span>
+<span class="nc" id="L90">            int inIndex = (i + itemsSize -1) % itemsSize;</span>
+            // the shift item being swapped in.
+<span class="nc" id="L92">            ShiftSwapItem itemIn  = (ShiftSwapItem)ssItems.get(inIndex);</span>
+<span class="nc" id="L93">            isSkillBased = isAnyCampaignSkillBased(m_vc.getCampWorkResAssnsForSSItem(itemIn));</span>
+
+<span class="nc bnc" id="L95" title="All 2 branches missed.">            if (!itemIn.isSwapTypeShift()) //no skills required for time off</span>
+<span class="nc" id="L96">                continue;</span>
+            
+            // the SkillAssignments need to be compared for two employees,
+            // for the time period encompassing the shift being received.
+            //
+            // The shiftItem being swapped out.
+<span class="nc" id="L102">            ShiftSwapItem itemOut = (ShiftSwapItem)ssItems.get(i);</span>
+<span class="nc" id="L103">            Date itemInStart= itemIn.getStartDate(), itemInEnd= itemIn.getEndDate();</span>
+<span class="nc" id="L104">            ValidationResult tempValResult = compareProficiencies(validatable, isSkillBased,</span>
+<span class="nc" id="L105">                m_vc.getSkillsForEmployeeDuringPeriod(itemIn.getEmployeeID(),itemInStart, itemInEnd), </span>
+<span class="nc" id="L106">                m_vc.getSkillsForEmployeeDuringPeriod(itemOut.getEmployeeID(), itemInStart, itemInEnd), </span>
+<span class="nc" id="L107">                itemIn.getEmployeeID(),</span>
+<span class="nc" id="L108">                itemOut.getEmployeeID(),</span>
+                itemInStart, 
+                itemInEnd);
+            
+            // overwrite the actual validation result only if the last validation failed, ie result is 'non null'.  
+            // Otherwise, a validation result set in the first iteration might be overwritten by a 'null'
+            // validation result in the 2nd iteration. 
+<span class="nc bnc" id="L115" title="All 2 branches missed.">            valResult = (tempValResult != null)?tempValResult:valResult;</span>
+        }
+        
+<span class="nc bnc" id="L118" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+<span class="nc" id="L119">        return valResult;</span>
+    }
+    
+    private boolean isAnyCampaignSkillBased(Collection campaignWKRSs) throws Exception {
+<span class="nc" id="L123">    	boolean isSkillBased = false;</span>
+<span class="nc" id="L124">    	Collection sps = m_vc.getSchedulingPeriod(campaignWKRSs);</span>
+<span class="nc bnc" id="L125" title="All 2 branches missed.">    	if (sps != null) {</span>
+<span class="nc" id="L126">    		SchedulingPeriod sp = null;</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">    		for (Iterator i = sps.iterator(); i.hasNext(); ) {</span>
+<span class="nc" id="L128">    			sp = (SchedulingPeriod)i.next();</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">    			if (sp.getSkillBased()) {</span>
+<span class="nc" id="L130">    				isSkillBased = true;</span>
+<span class="nc" id="L131">    				break;</span>
+    			}
+    		}
+    	}
+    	
+    	
+<span class="nc" id="L137">    	return isSkillBased;</span>
+    }
+    
+    /**
+     * @param skillsAssnIn the Collection of SkillAssignments from the employee
+     * who is giving a shift away
+     * @param skillsAssnOut the Collection of SkillAssignments for the employee
+     * who is receiving a shift
+     * @param idEmp the ID of the employee who is receiving a shift
+     * @return a ValidationResult containing information about the employee
+     * who is lacking some Skill, and the name of the Skill which is lacking.
+     * @throws Exception
+     */
+    private ValidationResult compareProficiencies(Validatable validatable, boolean isSkillBased, Collection skillAssnsIn, Collection skillAssnsOut, ID inEmpID, ID outEmpID,
+        Date itemInStart, Date itemInEnd) throws Exception {
+<span class="nc" id="L152">        ValidationResult result = null;</span>
+        
+<span class="nc bnc" id="L154" title="All 2 branches missed.">        if (!isSkillBased){</span>
+        	//campare employee proficiency
+<span class="nc" id="L156">        	Employee inEmployee = m_vc.getEmployeeForCurrTimeByID(inEmpID, Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY);</span>
+<span class="nc" id="L157">        	Employee outEmployee = m_vc.getEmployeeForCurrTimeByID(outEmpID, Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY);</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">        	if (inEmployee.getProficiency() != outEmployee.getProficiency()) {</span>
+<span class="nc" id="L159">        		result = ValidationUtil.setSoftValidationResult(validatable, RmEjbBundleKey.SS_SAME_PROFICIENCIES_NOTSKILLBASED,</span>
+    					new Serializable[] {
+<span class="nc" id="L161">    						m_vc.getEmployeeNameByID(outEmpID), </span>
+<span class="nc" id="L162">    						new Double(outEmployee.getProficiency()/10),</span>
+<span class="nc" id="L163">    						new Double(inEmployee.getProficiency()/10),</span>
+    						itemInStart,
+    						itemInEnd}, 
+    					m_className);
+        	}
+        }
+        
+        // if no skill assignments were found.
+<span class="nc bnc" id="L171" title="All 4 branches missed.">		if (skillAssnsIn == null &amp;&amp; skillAssnsOut == null) return result;</span>
+		
+<span class="nc bnc" id="L173" title="All 2 branches missed.">        if (skillAssnsIn == null) skillAssnsIn = Collections.EMPTY_LIST;</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">        if (skillAssnsOut == null) skillAssnsOut = Collections.EMPTY_LIST;</span>
+
+		// if no skill assignments were found.
+<span class="nc bnc" id="L177" title="All 4 branches missed.">		if (skillAssnsIn.isEmpty() &amp;&amp; skillAssnsOut.isEmpty()) return result;</span>
+		
+<span class="nc" id="L179">		Map skillIDToSkillAssnOutMap = RequestUtil.getMapOfFieldToVOBase(skillAssnsOut, SkillAssignmentFieldInfo.SKILLASSIGNMENT_SKILLID);</span>
+        
+        // for each SkillAssignment being received, make sure that the
+        // Employee has that SkillAssignment
+<span class="nc bnc" id="L183" title="All 4 branches missed.">        for (Iterator itr=skillAssnsIn.iterator(); skillAssnsIn != null &amp;&amp; itr.hasNext(); ) {</span>
+            // get skill assignment for employee whose shift is being swapped in.
+<span class="nc" id="L185">            SkillAssignment skillAssnIn = (SkillAssignment)itr.next();</span>
+            
+<span class="nc" id="L187">            boolean skillsMatch = false;</span>
+<span class="nc" id="L188">			boolean proficienciesMatch = false;</span>
+
+			// get skill assignment for employee whose shift is being swapped out.
+<span class="nc" id="L191">			SkillAssignment skillAssnOut = (SkillAssignment) skillIDToSkillAssnOutMap.get(skillAssnIn.getSkillID());</span>
+			// if the skill assignment for the employee whose shift is swapped in cannot be found for 
+			// the employee swapping out
+<span class="nc bnc" id="L194" title="All 2 branches missed.">			if (skillAssnOut == null) {</span>
+<span class="nc" id="L195">				result = ValidationUtil.setSoftValidationResult(validatable, RmEjbBundleKey.SS_SAME_SKILLS, </span>
+<span class="nc" id="L196">							m_vc.getEmployeeNameByID(outEmpID), ValidationUtil.getSkillName(skillAssnIn.getSkillID()),</span>
+							itemInStart, itemInEnd, m_className);
+
+                // 'continue'ing as otherwise a null pointer execption will happen (if skillAssnOut is used)                
+<span class="nc" id="L200">                continue;</span>
+ 			}	 
+
+			// if proficiencies do not match.
+<span class="nc bnc" id="L204" title="All 2 branches missed.">			if (skillAssnIn.getProficiency() &lt; skillAssnOut.getProficiency()) {</span>
+<span class="nc" id="L205">				result = ValidationUtil.setSoftValidationResult(validatable, RmEjbBundleKey.SS_SAME_PROFICIENCIES,</span>
+					new Serializable[] {
+<span class="nc" id="L207">						m_vc.getEmployeeNameByID(outEmpID), </span>
+<span class="nc" id="L208">						ValidationUtil.getSkillName(skillAssnIn.getSkillID()),</span>
+<span class="nc" id="L209">						new Double(skillAssnOut.getProficiency()),</span>
+<span class="nc" id="L210">						new Double(skillAssnIn.getProficiency()),</span>
+						itemInStart,
+						itemInEnd}, 
+					m_className);
+                
+<span class="nc" id="L215">                continue;</span>
+			}
+
+            // Note: use of 'continues' in the above if blocks.
+            
+<span class="nc" id="L220">        } //for(... skillAsssnIn ...)</span>
+        
+<span class="nc" id="L222">        return result;</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

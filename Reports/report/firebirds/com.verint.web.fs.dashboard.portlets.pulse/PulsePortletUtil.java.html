@@ -1,0 +1,1183 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PulsePortletUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.dashboard.portlets.pulse</a> &gt; <span class="el_source">PulsePortletUtil.java</span></div><h1>PulsePortletUtil.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.dashboard.portlets.pulse;
+
+import java.rmi.RemoteException;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.StringTokenizer;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.base.Log;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.ScopeID;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.pulse.ejb.TrackingManager;
+import com.bluepumpkin.ejb.bbm.pulse.model.TraceChart;
+import com.bluepumpkin.ejb.bbm.pulse.model.TrackingView;
+import com.bluepumpkin.ejb.bbm.pulse.util.PulseUtil;
+import com.bluepumpkin.ejb.bbm.timeseries.model.ActualTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.AggrForecastedTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.AggrRequiredTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.util.TraceOperator;
+import com.bluepumpkin.ejb.bbm.timeseries.util.TraceUtil;
+import com.bluepumpkin.ejb.bbm.workload.ejb.WorkloadManager;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.ejb.bbm.workload.model.Queue;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.bbm.campaign.MediaUtil;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.web.core.dashboard.DashboardModelHandler;
+import com.verint.web.fs.dashboard.portlets.pulse.util.Constants;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.Scope;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.system.RequestContext;
+
+<span class="nc" id="L55">public class PulsePortletUtil {</span>
+<span class="nc" id="L56">	private static Category cat = Log.initCategory(PulsePortletUtil.class.getName());</span>
+<span class="nc" id="L57">	private static Integer actualTotal = Trace.TRACENA;</span>
+<span class="nc" id="L58">	private static Integer forecastTotal = Trace.TRACENA;</span>
+<span class="nc" id="L59">	private static Integer requiredTotal = Trace.TRACENA;</span>
+
+	/**
+	 * Returns a map of {@code UserTraceCubes} for the given campaign queue for
+	 * the statistic type between the start and the end dates. If the queue ID
+	 * for which the user trace cubes are to be retrieved is null, the combined
+	 * trace cubes for the whole campaign (combined combined) are retrieved. If
+	 * the combined trace cubes for a specific media are to be retrieved, pass
+	 * the media ID for the queue.
+	 * &lt;p/&gt;
+	 * 
+	 * @param campaignID
+	 *            a campaign ID
+	 * @param queueID
+	 *            a queue ID
+	 * @param startDate
+	 *            a start date
+	 * @param endDate
+	 *            an end date
+	 * @param type
+	 *            a statistic type
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static HashMap&lt;ID, TraceCube[]&gt; getUserTraceCubes(ID campaignID, ID queueID, Date startDate, Date endDate,
+			StatisticType type) {
+		try {
+<span class="nc" id="L86">			TrackingManager manager = getTrackingManager();</span>
+<span class="nc bnc" id="L87" title="All 10 branches missed.">			if (manager != null &amp;&amp; campaignID != null &amp;&amp; startDate != null &amp;&amp; endDate != null &amp;&amp; type != null) {</span>
+<span class="nc" id="L88">				TrackingView view = createTrackingView(type);</span>
+
+				HashMap&lt;ID, TraceCube[]&gt; traceCubes;
+<span class="nc bnc" id="L91" title="All 2 branches missed.">				if (queueID == null) {</span>
+					// combined combined queues trace cubes
+<span class="nc" id="L93">					traceCubes = manager.getCombineTraceCubesByTrackingView(view, campaignID, null, startDate, endDate); // TODO:</span>
+																															// if
+																															// this
+																															// ever
+																															// needs
+																															// to
+																															// be
+																															// supported,
+																															// some
+																															// refactoring
+																															// will
+																															// need
+																															// to
+																															// be
+																															// done
+				} else {
+<span class="nc" id="L109">					ID mediaID = null;</span>
+					// check if it's a regular queue
+					try {
+<span class="nc" id="L112">						Queue queue = getWorkLoadManager().getQueueByID(queueID);</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">						if (queue == null) {</span>
+							// if it's not, set the mediaId
+<span class="nc" id="L115">							mediaID = queueID;</span>
+						}
+<span class="nc" id="L117">					} catch (BbmFinderException e) {</span>
+						// ignore it, it must be a media
+<span class="nc" id="L119">						mediaID = queueID;</span>
+<span class="nc" id="L120">					}</span>
+
+<span class="nc bnc" id="L122" title="All 2 branches missed.">					if (mediaID == null) {</span>
+<span class="nc" id="L123">						ArrayList&lt;ID&gt; queueIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L124">						queueIDs.add(queueID);</span>
+						// plain old queue trace cube
+<span class="nc" id="L126">						traceCubes = manager</span>
+<span class="nc" id="L127">								.getTraceCubesByTrackingView(view, campaignID, queueIDs, startDate, endDate);</span>
+<span class="nc" id="L128">					} else {</span>
+						// combined queues trace cubes
+<span class="nc" id="L130">						traceCubes = manager.getCombineTraceCubesByTrackingView(view, campaignID, mediaID, startDate,</span>
+								endDate);
+<span class="nc" id="L132">						HashMap&lt;ID, TraceCube[]&gt; combinedQueueTraceCubes = new HashMap&lt;ID, TraceCube[]&gt;();</span>
+<span class="nc" id="L133">						combinedQueueTraceCubes.put(mediaID, traceCubes.get(new ID(-1)));</span>
+<span class="nc" id="L134">						traceCubes = new HashMap&lt;ID, TraceCube[]&gt;(combinedQueueTraceCubes);</span>
+					}
+				}
+<span class="nc bnc" id="L137" title="All 2 branches missed.">				for (Iterator&lt;ID&gt; it = traceCubes.keySet().iterator(); it.hasNext();) {</span>
+<span class="nc" id="L138">					ID queueId = it.next();</span>
+<span class="nc" id="L139">					TraceCube[] backendCubes = traceCubes.get(queueId);</span>
+<span class="nc" id="L140">					TraceCube[] uitraceCubes = PulseUtil.createUICubes(view, queueId, startDate, endDate);</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">					if (uitraceCubes != null) {</span>
+						// initialize the &quot;actual&quot; TraceCube
+<span class="nc" id="L143">						PulseUtil.initTraceCube(uitraceCubes[0]);</span>
+					}
+<span class="nc" id="L145">					PulseUtil.mergeTraceCubes(uitraceCubes, backendCubes);</span>
+					// overwrite the back end cubes with the ui cubes.
+<span class="nc" id="L147">					traceCubes.put(queueId, uitraceCubes);</span>
+<span class="nc" id="L148">				}</span>
+<span class="nc" id="L149">				return traceCubes;</span>
+			}
+<span class="nc" id="L151">		} catch (Exception any) {</span>
+<span class="nc" id="L152">			cat.error(&quot;error gettting trace cubes &quot;, any);</span>
+<span class="nc" id="L153">		}</span>
+<span class="nc" id="L154">		return null;</span>
+	}
+
+	/**
+	 * Returns forecasted, actual, and required {@code DayDetailData} for the
+	 * statistic type at 15 minutes intervals from the user trace cubes.
+	 * &lt;p/&gt;
+	 * 
+	 * @param traceCubes
+	 *            the map of trace cubes which need to be combined and a
+	 *            consolidated day detail need to be got
+	 * @param queueID
+	 *            the ID of the queue to retrieve data for
+	 * @param startDate
+	 *            the start date for which the day detail is to be returned
+	 * @param endDate
+	 *            the end date for which the day detail is to be returned
+	 * @param type
+	 *            the type of the statistic
+	 *            &lt;p/&gt;
+	 * @return the day details for the date, or null if the traceCubes is null
+	 */
+	public static DayDetailData getDayDetail(HashMap&lt;ID, TraceCube[]&gt; traceCubes, ID queueID, Date startDate,
+			Date endDate, StatisticType type) {
+<span class="nc" id="L178">		DayDetailData details = new DayDetailData(startDate);</span>
+
+<span class="nc" id="L180">		List&lt;ActualTraceCube&gt; actualTraceCubes = new ArrayList&lt;ActualTraceCube&gt;();</span>
+<span class="nc" id="L181">		List&lt;AggrForecastedTraceCube&gt; aggrForecastedTraceCube = new ArrayList&lt;AggrForecastedTraceCube&gt;();</span>
+<span class="nc" id="L182">		List&lt;AggrRequiredTraceCube&gt; aggRequiredTraceCubes = new ArrayList&lt;AggrRequiredTraceCube&gt;();</span>
+<span class="nc" id="L183">		Map&lt;ID, ID&gt; queueIDToMediaIDMap = new HashMap&lt;ID, ID&gt;();</span>
+
+<span class="nc bnc" id="L185" title="All 2 branches missed.">		if (traceCubes != null) {</span>
+			try {
+<span class="nc" id="L187">				segregateTraceCubeTypes(traceCubes, queueID, actualTraceCubes, aggrForecastedTraceCube,</span>
+						aggRequiredTraceCubes, queueIDToMediaIDMap);
+
+<span class="nc bnc" id="L190" title="All 4 branches missed.">				if (type.supportsActual() &amp;&amp; !actualTraceCubes.isEmpty()</span>
+<span class="nc bnc" id="L191" title="All 2 branches missed.">						&amp;&amp; isTypeSupported(ActualTraceCube.TYPES, type.getId())) {</span>
+					// TODO: this isn't needed unless we'll be supporting
+					// multi-select in the future
+<span class="nc" id="L194">					TraceCube actualTraceCube = actualTraceCubes.get(0); // this</span>
+																			// list
+																			// should
+																			// always
+																			// be
+																			// of
+																			// size
+																			// 1
+																			// since
+																			// multi-select
+																			// isn't
+																			// supported
+					// TraceOperator.combineQueue(actualTraceCubes.toArray(new
+					// ActualTraceCube[0]), true, queueIDToMediaIDMap);
+
+<span class="nc bnc" id="L209" title="All 2 branches missed.">					if (actualTraceCube != null) {</span>
+<span class="nc" id="L210">						double[] traceValues = actualTraceCube.getTraceValueD((short) type.getId(), startDate, endDate);</span>
+<span class="nc" id="L211">						Integer[] dayDetails = new Integer[traceValues.length];</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">						if (traceValues != null) {</span>
+<span class="nc bnc" id="L213" title="All 2 branches missed.">							for (int k = 0; k &lt; traceValues.length; k++) {</span>
+<span class="nc bnc" id="L214" title="All 2 branches missed.">								if (traceValues[k] &gt; Trace.TRACEINCOMP) {</span>
+<span class="nc" id="L215">									dayDetails[k] = TraceUtil.roundDouble(traceValues[k]);</span>
+								} else {
+									// passing back null so holes can be
+									// supported in cases where the value is
+									// incomplete or invalid
+<span class="nc" id="L220">									dayDetails[k] = null;</span>
+								}
+							}
+						}
+<span class="nc" id="L224">						details.setActual(dayDetails);</span>
+					}
+				}
+
+<span class="nc bnc" id="L228" title="All 4 branches missed.">				if (type.supportsForecast() &amp;&amp; aggrForecastedTraceCube.size() &gt; 0</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">						&amp;&amp; isTypeSupported(AggrForecastedTraceCube.TYPES, type.getId())) {</span>
+					// TODO: this isn't needed unless we'll be supporting
+					// multi-select in the future
+<span class="nc" id="L232">					TraceCube forecastedTraceCube = aggrForecastedTraceCube.get(0); // this</span>
+																					// list
+																					// should
+																					// always
+																					// be
+																					// of
+																					// size
+																					// 1
+																					// since
+																					// multi-select
+																					// isn't
+																					// supported
+					// TraceOperator.combineQueue(aggrForecastedTraceCube.toArray(new
+					// AggrForecastedTraceCube[0]), true, queueIDToMediaIDMap);
+
+<span class="nc bnc" id="L247" title="All 2 branches missed.">					if (forecastedTraceCube != null) {</span>
+<span class="nc" id="L248">						double[] traceValues = forecastedTraceCube.getTraceValueD((short) type.getId(), startDate,</span>
+								endDate);
+<span class="nc" id="L250">						Integer[] dayDetails = new Integer[traceValues.length];</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">						if (traceValues != null) {</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">							for (int k = 0; k &lt; traceValues.length; k++) {</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">								if (traceValues[k] &gt; Trace.TRACEINCOMP) {</span>
+<span class="nc" id="L254">									dayDetails[k] = TraceUtil.roundDouble(traceValues[k]);</span>
+								} else {
+									// passing back null so holes can be
+									// supported in cases where the value is
+									// incomplete or invalid
+<span class="nc" id="L259">									dayDetails[k] = null;</span>
+								}
+							}
+						}
+<span class="nc" id="L263">						details.setForecasted(dayDetails);</span>
+					}
+				}
+
+<span class="nc bnc" id="L267" title="All 4 branches missed.">				if (type.supportsRequired() &amp;&amp; aggRequiredTraceCubes.size() &gt; 0</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">						&amp;&amp; isTypeSupported(AggrRequiredTraceCube.TYPES, type.getId())) {</span>
+					// TODO: this isn't needed unless we'll be supporting
+					// multi-select in the future
+<span class="nc" id="L271">					TraceCube requiredTraceCube = aggRequiredTraceCubes.get(0); // this</span>
+																				// list
+																				// should
+																				// always
+																				// be
+																				// of
+																				// size
+																				// 1
+																				// since
+																				// multi-select
+																				// isn't
+																				// supported
+					// TraceOperator.combineQueue(aggRequiredTraceCubes.toArray(new
+					// AggrRequiredTraceCube[0]), true, queueIDToMediaIDMap);
+
+<span class="nc bnc" id="L286" title="All 2 branches missed.">					if (requiredTraceCube != null) {</span>
+<span class="nc" id="L287">						double[] traceValues = requiredTraceCube.getTraceValueD((short) type.getId(), startDate,</span>
+								endDate);
+<span class="nc" id="L289">						Integer[] dayDetails = new Integer[traceValues.length];</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">						if (traceValues != null) {</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">							for (int k = 0; k &lt; traceValues.length; k++) {</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">								if (traceValues[k] &gt; Trace.TRACEINCOMP) {</span>
+<span class="nc" id="L293">									dayDetails[k] = TraceUtil.roundDouble(traceValues[k]);</span>
+								} else {
+									// passing back null so holes can be
+									// supported in cases where the value is
+									// incomplete or invalid
+<span class="nc" id="L298">									dayDetails[k] = null;</span>
+								}
+							}
+						}
+<span class="nc" id="L302">						details.setRequired(dayDetails);</span>
+					}
+				}
+<span class="nc" id="L305">			} catch (BbmObjectNotFoundException e) {</span>
+<span class="nc" id="L306">				cat.error(&quot;Error getting the queues &quot;, e);</span>
+<span class="nc" id="L307">			} catch (BbmFinderException e) {</span>
+<span class="nc" id="L308">				cat.error(&quot;Error getting the queues &quot;, e);</span>
+<span class="nc" id="L309">			} catch (RemoteException e) {</span>
+<span class="nc" id="L310">				cat.error(&quot;Error getting the queues &quot;, e);</span>
+<span class="nc" id="L311">			} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L312">				cat.error(&quot;Exception getting teh work load manager &quot;, e);</span>
+<span class="nc" id="L313">			}</span>
+<span class="nc" id="L314">			return details;</span>
+		}
+<span class="nc" id="L316">		return null;</span>
+	}
+
+	/**
+	 * Returns the summary data for each day between the start date and the end
+	 * date for the given StatisticType.
+	 * 
+	 * @param traceCubes
+	 * @param queueID the ID of the queue to retrieve data for
+	 * @param startDate
+	 * @param endDate
+	 * @param campaignTimeZone the timezone of the campaign associated with the data in traceCubes
+	 * @param type
+	 */
+	public static SummaryData[] getSummaryData(HashMap&lt;ID, TraceCube[]&gt; traceCubes, ID queueID, Date startDate,
+			Date endDate, TimeZone campaignTimeZone, StatisticType type) {
+<span class="nc" id="L332">		List&lt;Date&gt; dates = new ArrayList&lt;Date&gt;();</span>
+
+<span class="nc" id="L334">		Calendar cal = Calendar.getInstance(campaignTimeZone);</span>
+<span class="nc" id="L335">		cal.clear();</span>
+<span class="nc" id="L336">		cal.setTime(startDate);</span>
+		// not including the endDate
+<span class="nc bnc" id="L338" title="All 2 branches missed.">		while (cal.getTime().before(endDate)) {</span>
+<span class="nc" id="L339">			dates.add(cal.getTime());</span>
+<span class="nc" id="L340">			cal.add(Calendar.DATE, 1);</span>
+		}
+
+<span class="nc" id="L343">		List&lt;ActualTraceCube&gt; actualTraceCubes = new ArrayList&lt;ActualTraceCube&gt;();</span>
+<span class="nc" id="L344">		List&lt;AggrForecastedTraceCube&gt; aggrForecastedTraceCube = new ArrayList&lt;AggrForecastedTraceCube&gt;();</span>
+<span class="nc" id="L345">		List&lt;AggrRequiredTraceCube&gt; aggRequiredTraceCubes = new ArrayList&lt;AggrRequiredTraceCube&gt;();</span>
+<span class="nc" id="L346">		Map&lt;ID, ID&gt; queueIDToMediaIDMap = new HashMap&lt;ID, ID&gt;();</span>
+
+<span class="nc" id="L348">		int[] forecasted = new int[dates.size()];</span>
+<span class="nc" id="L349">		initializeArray(forecasted, Trace.TRACENA);</span>
+
+<span class="nc" id="L351">		int[] actual = new int[dates.size()];</span>
+<span class="nc" id="L352">		initializeArray(actual, Trace.TRACENA);</span>
+
+<span class="nc" id="L354">		int[] required = new int[dates.size()];</span>
+<span class="nc" id="L355">		initializeArray(required, Trace.TRACENA);</span>
+
+<span class="nc bnc" id="L357" title="All 2 branches missed.">		if (traceCubes != null) {</span>
+			/*
+			 * ActualTraceCube AggrForecastedTraceCube -&gt; ForecastTraceCube &amp;
+			 * PredictTraceCube AggrRequiredTraceCube -&gt; ForecastTraceCube &amp;
+			 * RequireTraceCube &amp; ServiceGoalTraceCube
+			 */
+			try {
+<span class="nc" id="L364">				segregateTraceCubeTypes(traceCubes, queueID, actualTraceCubes, aggrForecastedTraceCube,</span>
+						aggRequiredTraceCubes, queueIDToMediaIDMap);
+
+<span class="nc" id="L367">				calculateActuals(endDate, type, dates, actualTraceCubes, actual);</span>
+<span class="nc" id="L368">				calculateForecasted(endDate, type, dates, aggrForecastedTraceCube, forecasted);</span>
+<span class="nc" id="L369">				calculateRequired(endDate, type, dates, aggRequiredTraceCubes, required);</span>
+
+<span class="nc" id="L371">				ArrayList&lt;SummaryData&gt; summaryRows = new ArrayList&lt;SummaryData&gt;();</span>
+<span class="nc bnc" id="L372" title="All 2 branches missed.">				for (int i = 0; i &lt; dates.size(); i++) {</span>
+<span class="nc" id="L373">					summaryRows.add(new SummaryData(dates.get(i), forecasted[i], actual[i], required[i]));</span>
+				}
+<span class="nc" id="L375">				return summaryRows.toArray(new SummaryData[0]);</span>
+<span class="nc" id="L376">			} catch (BbmObjectNotFoundException e) {</span>
+<span class="nc" id="L377">				cat.error(&quot;Error getting the queues &quot;, e);</span>
+<span class="nc" id="L378">			} catch (BbmFinderException e) {</span>
+<span class="nc" id="L379">				cat.error(&quot;Error getting the queues &quot;, e);</span>
+<span class="nc" id="L380">			} catch (RemoteException e) {</span>
+<span class="nc" id="L381">				cat.error(&quot;Error getting the queues &quot;, e);</span>
+<span class="nc" id="L382">			} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L383">				cat.error(&quot;Exception getting the work load manager &quot;, e);</span>
+<span class="nc" id="L384">			}</span>
+		}
+<span class="nc" id="L386">		return null;</span>
+	}
+
+	/**
+	 * Calculate the required data aggregations per day and store in the required param, and calculate
+	 * total for the entire period, and store in the requiredTotal member variable.
+	 * @param endDate - absolute end of date range
+	 * @param type - the StatisticType to calculate
+	 * @param dates - all of the dates in the range
+	 * @param aggRequiredTraceCubes - raw trace cube data (contains 15-minute values per trace type)
+	 * @param required - array to store the required data aggregations per day
+	 */
+	protected static void calculateRequired(Date endDate, StatisticType type, List&lt;Date&gt; dates,
+			List&lt;AggrRequiredTraceCube&gt; aggRequiredTraceCubes, int[] required) {
+<span class="nc bnc" id="L400" title="All 4 branches missed.">		if (type.supportsRequired() &amp;&amp; !aggRequiredTraceCubes.isEmpty()</span>
+<span class="nc bnc" id="L401" title="All 2 branches missed.">				&amp;&amp; isTypeSupported(AggrRequiredTraceCube.TYPES, type.getId())) {</span>
+			// TODO: this isn't needed unless we'll be supporting multi-select in the future
+			// this list should always be of size 1 since multi-select isn't supported
+<span class="nc" id="L404">			TraceCube requireTraceCube = aggRequiredTraceCubes.get(0);</span>
+<span class="nc" id="L405">			requiredTotal = Trace.TRACENA;</span>
+
+<span class="nc bnc" id="L407" title="All 2 branches missed.">			if (requireTraceCube != null) {</span>
+<span class="nc" id="L408">				int firstStartIndex = 0;</span>
+<span class="nc" id="L409">				int lastEndIndex = 0;</span>
+
+<span class="nc bnc" id="L411" title="All 2 branches missed.">				for (int i = 0; i &lt; dates.size(); i++) {</span>
+<span class="nc" id="L412">					Date startTime = dates.get(i);</span>
+<span class="nc bnc" id="L413" title="All 2 branches missed.">					Date endTime = (i + 1 &gt;= dates.size() ? endDate : dates.get(i + 1));</span>
+<span class="nc" id="L414">					int startIndex = requireTraceCube.getTimeOffset(startTime);</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">					if (i == 0) {</span>
+<span class="nc" id="L416">						firstStartIndex = startIndex;</span>
+					}
+<span class="nc" id="L418">					int endIndex = requireTraceCube.getTimeOffset(endTime);</span>
+<span class="nc bnc" id="L419" title="All 2 branches missed.">					if (i == dates.size() - 1) {</span>
+<span class="nc" id="L420">						lastEndIndex = endIndex;</span>
+					}
+<span class="nc bnc" id="L422" title="All 4 branches missed.">					if (startIndex != 1 &amp;&amp; endIndex != -1) {</span>
+<span class="nc" id="L423">						double val = TraceOperator.aggregatePeriod(requireTraceCube, (short) type.getId(),</span>
+								startIndex, endIndex);
+<span class="nc" id="L425">						required[i] = TraceUtil.roundDouble(val);</span>
+					}
+				}
+				// calculate the total for the Period summary
+<span class="nc" id="L429">				double totalVal = TraceOperator.aggregatePeriod(requireTraceCube, (short) type.getId(),</span>
+						firstStartIndex, lastEndIndex);
+<span class="nc" id="L431">				requiredTotal = TraceUtil.roundDouble(totalVal);</span>
+			}
+		}
+<span class="nc" id="L434">	}</span>
+
+	/**
+	 * Calculate the forecasted data aggregations per day and store in the forecasted param, and calculate
+	 * total for the entire period, and store in the forecastTotal member variable.
+	 * @param endDate - absolute end of date range
+	 * @param type - the StatisticType to calculate
+	 * @param dates - all of the dates in the range
+	 * @param aggrForecastedTraceCube - raw trace cube data (contains 15-minute values per trace type)
+	 * @param forecasted - array to store the forecasted data aggregations per day
+	 */
+	protected static void calculateForecasted(Date endDate, StatisticType type, List&lt;Date&gt; dates,
+			List&lt;AggrForecastedTraceCube&gt; aggrForecastedTraceCube, int[] forecasted) {
+<span class="nc bnc" id="L447" title="All 4 branches missed.">		if (type.supportsForecast() &amp;&amp; !aggrForecastedTraceCube.isEmpty()</span>
+<span class="nc bnc" id="L448" title="All 2 branches missed.">				&amp;&amp; isTypeSupported(AggrForecastedTraceCube.TYPES, type.getId())) {</span>
+			// TODO: this isn't needed unless we'll be supporting multi-select in the future
+			// this list should always be of size 1 since multi-select isn't supported
+<span class="nc" id="L451">			TraceCube forecastTraceCube = aggrForecastedTraceCube.get(0);</span>
+<span class="nc" id="L452">			forecastTotal = Trace.TRACENA;</span>
+
+<span class="nc bnc" id="L454" title="All 2 branches missed.">			if (forecastTraceCube != null) {</span>
+<span class="nc" id="L455">				int firstStartIndex = 0;</span>
+<span class="nc" id="L456">				int lastEndIndex = 0;</span>
+<span class="nc bnc" id="L457" title="All 2 branches missed.">				for (int i = 0; i &lt; dates.size(); i++) {</span>
+<span class="nc" id="L458">					Date startTime = dates.get(i);</span>
+<span class="nc bnc" id="L459" title="All 2 branches missed.">					Date endTime = (i + 1 &gt;= dates.size() ? endDate : dates.get(i + 1));</span>
+<span class="nc" id="L460">					int startIndex = forecastTraceCube.getTimeOffset(startTime);</span>
+<span class="nc bnc" id="L461" title="All 2 branches missed.">					if (i == 0) {</span>
+<span class="nc" id="L462">						firstStartIndex = startIndex;</span>
+					}
+<span class="nc" id="L464">					int endIndex = forecastTraceCube.getTimeOffset(endTime);</span>
+<span class="nc bnc" id="L465" title="All 2 branches missed.">					if (i == dates.size() - 1) {</span>
+<span class="nc" id="L466">						lastEndIndex = endIndex;</span>
+					}
+<span class="nc bnc" id="L468" title="All 4 branches missed.">					if (startIndex != 1 &amp;&amp; endIndex != -1) {</span>
+<span class="nc" id="L469">						double val = TraceOperator.aggregatePeriod(forecastTraceCube, (short) type.getId(),</span>
+								startIndex, endIndex);
+<span class="nc" id="L471">						forecasted[i] = TraceUtil.roundDouble(val);</span>
+					}
+				}
+
+				// calculate the total for the Period summary
+<span class="nc" id="L476">				double totalVal = TraceOperator.aggregatePeriod(forecastTraceCube, (short) type.getId(),</span>
+						firstStartIndex, lastEndIndex);
+<span class="nc" id="L478">				forecastTotal = TraceUtil.roundDouble(totalVal);</span>
+			}
+		}
+<span class="nc" id="L481">	}</span>
+
+	/**
+	 * Calculate the actual data aggregations per day and store in the actual param, and calculate
+	 * total for the entire period, and store in the actualTotal member variable.
+	 * @param endDate - absolute end of date range
+	 * @param type - the StatisticType to calculate
+	 * @param dates - all of the dates in the range
+	 * @param actualTraceCubes - raw trace cube data (contains 15-minute values per trace type)
+	 * @param actual - array to store the actual data aggregations per day
+	 */
+	protected static void calculateActuals(Date endDate, StatisticType type, List&lt;Date&gt; dates,
+			List&lt;ActualTraceCube&gt; actualTraceCubes, int[] actual) {
+<span class="nc bnc" id="L494" title="All 4 branches missed.">		if (type.supportsActual() &amp;&amp; !actualTraceCubes.isEmpty()</span>
+<span class="nc bnc" id="L495" title="All 2 branches missed.">				&amp;&amp; isTypeSupported(ActualTraceCube.TYPES, type.getId())) {</span>
+			// TODO: this isn't needed unless we'll be supporting multi-select in the future
+			// this list should always be of size 1 since multi-select isn't supported
+<span class="nc" id="L498">			TraceCube actualTraceCube = actualTraceCubes.get(0);</span>
+<span class="nc" id="L499">			actualTotal = Trace.TRACENA;</span>
+
+<span class="nc bnc" id="L501" title="All 2 branches missed.">			if (actualTraceCube != null) {</span>
+<span class="nc" id="L502">				int firstStartIndex = 0;</span>
+<span class="nc" id="L503">				int lastEndIndex = 0;</span>
+<span class="nc bnc" id="L504" title="All 2 branches missed.">				for (int i = 0; i &lt; dates.size(); i++) {</span>
+<span class="nc" id="L505">					Date startTime = dates.get(i);</span>
+<span class="nc bnc" id="L506" title="All 2 branches missed.">					Date endTime = (i + 1 &gt;= dates.size() ? endDate : dates.get(i + 1));</span>
+<span class="nc" id="L507">					int startIndex = actualTraceCube.getTimeOffset(startTime);</span>
+<span class="nc bnc" id="L508" title="All 2 branches missed.">					if (i == 0) {</span>
+<span class="nc" id="L509">						firstStartIndex = startIndex;</span>
+					}
+<span class="nc" id="L511">					int endIndex = actualTraceCube.getTimeOffset(endTime);</span>
+<span class="nc bnc" id="L512" title="All 2 branches missed.">					if (i == dates.size() - 1) {</span>
+<span class="nc" id="L513">						lastEndIndex = endIndex;</span>
+					}
+<span class="nc bnc" id="L515" title="All 4 branches missed.">					if (startIndex != 1 &amp;&amp; endIndex != -1) {</span>
+<span class="nc" id="L516">						double val = TraceOperator.aggregatePeriod(actualTraceCube, (short) type.getId(),</span>
+								startIndex, endIndex);
+<span class="nc" id="L518">						actual[i] = TraceUtil.roundDouble(val);</span>
+					}
+				}
+
+				// calculate the total for the Period summary
+<span class="nc" id="L523">				double totalVal = TraceOperator.aggregatePeriod(actualTraceCube, (short) type.getId(),</span>
+						firstStartIndex, lastEndIndex);
+<span class="nc" id="L525">				actualTotal = TraceUtil.roundDouble(totalVal);</span>
+			}
+		}
+<span class="nc" id="L528">	}</span>
+
+	/**
+	 * Returns the combined (or totals) for the whole period calculated in
+	 * {@code getSummaryData}.
+	 * &lt;p/&gt;
+	 * 
+	 * @return
+	 */
+	public static SummaryData getPeriodSummaryData() {
+<span class="nc" id="L538">		return new SummaryData(null, forecastTotal.intValue(), actualTotal.intValue(), requiredTotal.intValue());</span>
+	}
+
+	/**
+	 * Returns the ID from the string. Returns null if the idStr is null or
+	 * empty.
+	 * &lt;p/&gt;
+	 * 
+	 * @param idStr
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static ID getID(String idStr) {
+<span class="nc bnc" id="L551" title="All 4 branches missed.">		if (idStr != null &amp;&amp; idStr.length() &gt; 0) {</span>
+<span class="nc" id="L552">			return new ID(idStr);</span>
+		}
+<span class="nc" id="L554">		return null;</span>
+	}
+
+	/**
+	 * Returns the ID from the string. The IDs are delimited by the
+	 * {@link Constants#ID_DELIMITER}. Returns null if the idStr is null or
+	 * empty.
+	 * &lt;p/&gt;
+	 * 
+	 * @param idStr
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static List&lt;ID&gt; getIDs(String idStr) {
+<span class="nc bnc" id="L568" title="All 4 branches missed.">		if (idStr != null &amp;&amp; idStr.length() &gt; 0) {</span>
+<span class="nc" id="L569">			List&lt;ID&gt; ids = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L570">			StringTokenizer st = new StringTokenizer(idStr, Constants.ID_DELIMITER);</span>
+<span class="nc bnc" id="L571" title="All 2 branches missed.">			while (st.hasMoreTokens()) {</span>
+<span class="nc" id="L572">				ids.add(new ID(st.nextToken()));</span>
+			}
+<span class="nc" id="L574">			return ids;</span>
+		}
+<span class="nc" id="L576">		return null;</span>
+	}
+
+	/**
+	 * Returns the queue or the media name given Id. The localizer is used if
+	 * the ID is a media. First a check is made to see if the D is a queue, else
+	 * a check is made to see if the ID is a media.
+	 * &lt;p/&gt;
+	 * 
+	 * @param id
+	 * @param localizer
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static String getQueueOrMediaName(ID id, Localizer localizer) {
+		try {
+<span class="nc" id="L592">			String name = getWorkLoadManager().getQueueNameByID(id);</span>
+<span class="nc bnc" id="L593" title="All 2 branches missed.">			if (name != null) {</span>
+<span class="nc" id="L594">				return name;</span>
+			}
+<span class="nc" id="L596">		} catch (BbmFinderException e) {</span>
+			// ignore it might have been a media
+<span class="nc" id="L598">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L599">			cat.error(&quot;Exception getting the Queue/Media by Id &quot; + id, e);</span>
+<span class="nc" id="L600">		} catch (RemoteException e) {</span>
+<span class="nc" id="L601">			cat.error(&quot;Exception getting the Queue/Media by Id &quot; + id, e);</span>
+<span class="nc" id="L602">		}</span>
+
+		try {
+<span class="nc" id="L605">			Media media = getWorkLoadManager().getMediaByID(id);</span>
+<span class="nc bnc" id="L606" title="All 2 branches missed.">			if (media != null) {</span>
+<span class="nc" id="L607">				return MediaUtil.getMediaNodeName(media.getName(), localizer);</span>
+			}
+<span class="nc" id="L609">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L610">			cat.error(&quot;Exception getting the Queue/Media by Id &quot; + id, e);</span>
+<span class="nc" id="L611">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L612">			cat.error(&quot;Exception getting the Queue/Media by Id &quot; + id, e);</span>
+<span class="nc" id="L613">		} catch (RemoteException e) {</span>
+<span class="nc" id="L614">			cat.error(&quot;Exception getting the Queue/Media by Id &quot; + id, e);</span>
+<span class="nc" id="L615">		}</span>
+<span class="nc" id="L616">		return id.toString();</span>
+	}
+
+	/**
+	 * Returns the Name of the campaign by the given ID.
+	 * &lt;p/&gt;
+	 * 
+	 * @param campaignID
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static String getCampaignName(ID campaignID) {
+		try {
+<span class="nc" id="L629">			CampaignManager camManager = getCampaignManager();</span>
+<span class="nc" id="L630">			Campaign campaign = camManager.getCampaignByID(campaignID);</span>
+<span class="nc" id="L631">			return campaign.getName();</span>
+<span class="nc" id="L632">		} catch (BbmObjectNotFoundException e) {</span>
+<span class="nc" id="L633">			cat.error(&quot;Exception gettting the CampaignManager &quot;, e);</span>
+<span class="nc" id="L634">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L635">			cat.error(&quot;Exception finding the campaign by Id &quot; + campaignID, e);</span>
+<span class="nc" id="L636">		} catch (RemoteException e) {</span>
+<span class="nc" id="L637">			cat.error(&quot;Exception getting the campaign by Id &quot; + campaignID, e);</span>
+<span class="nc" id="L638">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L639">			cat.error(&quot;Exception getting the campaign by Id &quot; + campaignID, e);</span>
+<span class="nc" id="L640">		}</span>
+<span class="nc" id="L641">		return campaignID.toString();</span>
+	}
+
+	/**
+	 * Returns a {@code StatisticType} based on the given
+	 * {@code statisticTypeStr}.
+	 * &lt;p/&gt;
+	 * 
+	 * @param statisticTypeStr
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static StatisticType getStatisticType(String statisticTypeStr) {
+<span class="nc bnc" id="L654" title="All 4 branches missed.">		if (statisticTypeStr != null &amp;&amp; statisticTypeStr.length() &gt; 0) {</span>
+<span class="nc" id="L655">			return StatisticType.getStatisticType(Integer.parseInt(statisticTypeStr));</span>
+		}
+<span class="nc" id="L657">		return StatisticType.FTE;</span>
+	}
+
+	/**
+	 * Returns a {@code Date} based on the given date string, or null if the
+	 * dateStr is null or if there is a parsing error. This uses
+	 * {@link DateFormat#FULL} for parsing.
+	 * &lt;p/&gt;
+	 * 
+	 * @param dateStr
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static Date getDate(String dateStr) {
+<span class="nc bnc" id="L671" title="All 2 branches missed.">		if (dateStr != null) {</span>
+			try {
+<span class="nc" id="L673">				return DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.FULL).parse(dateStr);</span>
+<span class="nc" id="L674">			} catch (ParseException e) {</span>
+<span class="nc" id="L675">				cat.error(e);</span>
+			}
+		}
+<span class="nc" id="L678">		return null;</span>
+	}
+
+	/**
+	 * Returns the date that is -periodicity (days) * numPeriods before today's
+	 * day. The date returned is with regard to campaign time zone.
+	 * &lt;p/&gt;
+	 * 
+	 * @param campaignID
+	 * @param periodicity
+	 * @param numPeriods
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static Date getStartDate(ID campaignID, int periodicity, int numPeriods) {
+<span class="nc" id="L693">		TimeZone tz = getCampaignTimeZone(campaignID);</span>
+<span class="nc" id="L694">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L695">		Calendar cal1 = Calendar.getInstance(tz);</span>
+		// need to clear the time component
+<span class="nc" id="L697">		cal.clear();</span>
+<span class="nc" id="L698">		cal.set(Calendar.YEAR, cal1.get(Calendar.YEAR));</span>
+<span class="nc" id="L699">		cal.set(Calendar.MONTH, cal1.get(Calendar.MONTH));</span>
+<span class="nc" id="L700">		cal.set(Calendar.DATE, cal1.get(Calendar.DATE));</span>
+
+<span class="nc bnc" id="L702" title="All 2 branches missed.">		if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_DAILY) {</span>
+<span class="nc" id="L703">			cal.add(Calendar.DATE, -1 * numPeriods);</span>
+<span class="nc bnc" id="L704" title="All 2 branches missed.">		} else if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_WEEKLY) {</span>
+<span class="nc" id="L705">			cal.add(Calendar.DATE, -7 * numPeriods);</span>
+<span class="nc bnc" id="L706" title="All 2 branches missed.">		} else if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_MONTHLY) {</span>
+<span class="nc" id="L707">			cal.add(Calendar.MONTH, -1 * numPeriods);</span>
+<span class="nc bnc" id="L708" title="All 2 branches missed.">		} else if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_QUARTERLY) {</span>
+<span class="nc" id="L709">			cal.add(Calendar.MONTH, -3 * numPeriods);</span>
+<span class="nc bnc" id="L710" title="All 2 branches missed.">		} else if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_YEARLY) {</span>
+<span class="nc" id="L711">			cal.add(Calendar.YEAR, -1 * numPeriods);</span>
+		}
+<span class="nc" id="L713">		return cal.getTime();</span>
+	}
+
+	/**
+	 * Returns today's date in campaign time zone.
+	 * &lt;p/&gt;
+	 * 
+	 * @param campaignID
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static Date getTodayDate(ID campaignID) {
+<span class="nc" id="L725">		TimeZone tz = getCampaignTimeZone(campaignID);</span>
+
+<span class="nc" id="L727">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L728">		Calendar cal1 = Calendar.getInstance(tz);</span>
+		// need to clear the time component
+<span class="nc" id="L730">		cal.clear();</span>
+<span class="nc" id="L731">		cal.set(Calendar.YEAR, cal1.get(Calendar.YEAR));</span>
+<span class="nc" id="L732">		cal.set(Calendar.MONTH, cal1.get(Calendar.MONTH));</span>
+<span class="nc" id="L733">		cal.set(Calendar.DATE, cal1.get(Calendar.DATE));</span>
+
+<span class="nc" id="L735">		return cal.getTime();</span>
+	}
+
+	/**
+	 * Returns true if the date picker type is type &quot;dateRange&quot;, returns false
+	 * otherwise.
+	 * &lt;p/&gt;
+	 * 
+	 * @param datePickerType
+	 *            the date picker type to check
+	 *            &lt;p/&gt;
+	 * @return true if the date picker type is type &quot;dateRange&quot;, returns false
+	 *         otherwise
+	 */
+	public static boolean isDateRangeType(String datePickerType) {
+<span class="nc" id="L750">		return LastNPeriodPickerPC.PICKER_TYPE_DATE_RANGE.equals(datePickerType);</span>
+	}
+
+	public static boolean isLastNPeriodsType(String datePickerType) {
+<span class="nc" id="L754">		return LastNPeriodPickerPC.PICKER_TYPE_LAST_PERIOD.equals(datePickerType);</span>
+	}
+
+	public static String getDatePeriodString(int periodicity, int period, Localizer localizer) {
+<span class="nc bnc" id="L758" title="All 2 branches missed.">		String prefix = (period &lt; 0 ? localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.PERIOD_NEXT)</span>
+<span class="nc" id="L759">				: localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.PERIOD_PREVIOUS));</span>
+<span class="nc" id="L760">		int absPeriods = Math.abs(period);</span>
+<span class="nc" id="L761">		StringBuffer sb = new StringBuffer();</span>
+<span class="nc" id="L762">		sb.append(prefix);</span>
+<span class="nc" id="L763">		sb.append(&quot; &quot;);</span>
+<span class="nc" id="L764">		sb.append(absPeriods);</span>
+<span class="nc" id="L765">		sb.append(&quot; &quot;);</span>
+<span class="nc bnc" id="L766" title="All 2 branches missed.">		if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_DAILY) {</span>
+<span class="nc" id="L767">			sb.append(localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.PERIOD_DAYS));</span>
+<span class="nc bnc" id="L768" title="All 2 branches missed.">		} else if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_WEEKLY) {</span>
+<span class="nc" id="L769">			sb.append(localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.PERIOD_WEEKS));</span>
+<span class="nc bnc" id="L770" title="All 2 branches missed.">		} else if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_MONTHLY) {</span>
+<span class="nc" id="L771">			sb.append(localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.PERIOD_MONTHS));</span>
+<span class="nc bnc" id="L772" title="All 2 branches missed.">		} else if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_QUARTERLY) {</span>
+<span class="nc" id="L773">			sb.append(localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.PERIOD_QUARTERS));</span>
+<span class="nc bnc" id="L774" title="All 2 branches missed.">		} else if (periodicity == LastNPeriodPickerPC.PERIOD_TYPE_YEARLY) {</span>
+<span class="nc" id="L775">			sb.append(localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.PERIOD_YEARS));</span>
+		}
+<span class="nc" id="L777">		return sb.toString();</span>
+	}
+
+	public static String getDateRangeString(Date start, Date end, Locale locale) {
+<span class="nc" id="L781">		return DateFormat.getDateInstance(DateFormat.DEFAULT, locale).format(start) + &quot; - &quot;</span>
+<span class="nc" id="L782">				+ DateFormat.getDateInstance(DateFormat.DEFAULT, locale).format(end);</span>
+	}
+
+	public static String getDateRangeString(Date start, Date end, Locale locale, TimeZone tz) {
+<span class="nc" id="L786">		DateFormat df = DateFormat.getDateInstance(DateFormat.DEFAULT, locale);</span>
+<span class="nc" id="L787">		df.setTimeZone(tz);</span>
+<span class="nc" id="L788">		return df.format(start) + &quot; - &quot; + df.format(end);</span>
+	}
+
+	/**
+	 * This method will take a 24 hour time range that spans two dates and trim
+	 * it back to encompass a single date. A date of 2Jun12 5:59:59 GMT
+	 * processed with a time zone with an offset of -6 will return a value of
+	 * 1Jun12 11:59:59. This is primarily being used to adjust the end date of a
+	 * time range in the pulse portlet view mode.
+	 * &lt;p/&gt;
+	 * 
+	 * @param date
+	 * @param timeZone
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static Date trimDateToMidnight(Date date, TimeZone timeZone) {
+<span class="nc" id="L805">		return new Date(date.getTime() + timeZone.getOffset(date.getTime()));</span>
+	}
+
+	/**
+	 * Returns true if type is present in the supportedTypes, otherwise returns
+	 * false.
+	 * &lt;p/&gt;
+	 * 
+	 * @param supportedTypes
+	 * @param type
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	public static boolean isTypeSupported(short[] supportedTypes, int type) {
+<span class="nc bnc" id="L819" title="All 2 branches missed.">		if (supportedTypes != null) {</span>
+<span class="nc bnc" id="L820" title="All 2 branches missed.">			for (int i = 0; i &lt; supportedTypes.length; i++) {</span>
+<span class="nc bnc" id="L821" title="All 2 branches missed.">				if (supportedTypes[i] == type) {</span>
+<span class="nc" id="L822">					return true;</span>
+				}
+			}
+		}
+<span class="nc" id="L826">		return false;</span>
+	}
+
+	/**
+	 * Segregates the trace cubes and fills the list of forecasted, predicted,
+	 * actual, required, and aggRequire trace cubes.
+	 * &lt;p/&gt;
+	 * 
+	 * @param traceCubes
+	 * @param forecastTraceCubes
+	 * @param predictTraceCubes
+	 * @param actualTraceCubes
+	 * @param requireTraceCubes
+	 * @param aggrRequiredTraceCubes
+	 * @param queueIDToMediaIDMap
+	 *            &lt;p/&gt;
+	 * @throws BbmObjectNotFoundException
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 * @throws BbmEJBCreateException
+	 */
+	private static void segregateTraceCubeTypes(HashMap&lt;ID, TraceCube[]&gt; traceCubes, ID queueID,
+			List&lt;ActualTraceCube&gt; actualTraceCubes, List&lt;AggrForecastedTraceCube&gt; aggrForecastedTraceCube,
+			List&lt;AggrRequiredTraceCube&gt; aggrRequiredTraceCubes, Map&lt;ID, ID&gt; queueIDToMediaIDMap)
+			throws BbmObjectNotFoundException, BbmFinderException, RemoteException, BbmEJBCreateException {
+<span class="nc bnc" id="L851" title="All 2 branches missed.">		if (traceCubes != null) {</span>
+<span class="nc" id="L852">			WorkloadManager workloadManager = getWorkLoadManager();</span>
+<span class="nc bnc" id="L853" title="All 2 branches missed.">			for (Iterator&lt;ID&gt; it = traceCubes.keySet().iterator(); it.hasNext();) {</span>
+<span class="nc" id="L854">				ID queueId = it.next();</span>
+
+				// set media ID to the queue ID for combined case
+<span class="nc" id="L857">				ID mediaID = queueID;</span>
+<span class="nc" id="L858">				Queue queue = workloadManager.getQueueByID(queueId);</span>
+<span class="nc bnc" id="L859" title="All 2 branches missed.">				if (queue != null) {</span>
+<span class="nc" id="L860">					mediaID = queue.getMediaID();</span>
+				}
+				// TODO: leaving this here for now in case multi-select is
+				// needed in the near future, otherwise it isn't needed
+<span class="nc" id="L864">				queueIDToMediaIDMap.put(queueId, mediaID);</span>
+<span class="nc" id="L865">				TraceCube[] traceCubesForQueue = traceCubes.get(queueId);</span>
+
+<span class="nc bnc" id="L867" title="All 2 branches missed.">				for (int i = 0; i &lt; traceCubesForQueue.length; i++) {</span>
+<span class="nc" id="L868">					TraceCube cube = traceCubesForQueue[i];</span>
+<span class="nc bnc" id="L869" title="All 2 branches missed.">					if (cube != null) {</span>
+<span class="nc bnc" id="L870" title="All 2 branches missed.">						if (cube instanceof ActualTraceCube) {</span>
+<span class="nc" id="L871">							cube.calcComputedTraceValues(mediaID);</span>
+<span class="nc" id="L872">							actualTraceCubes.add((ActualTraceCube) cube);</span>
+<span class="nc bnc" id="L873" title="All 2 branches missed.">						} else if (cube instanceof AggrRequiredTraceCube) {</span>
+<span class="nc" id="L874">							cube.calcComputedTraceValues(mediaID);</span>
+<span class="nc" id="L875">							aggrRequiredTraceCubes.add((AggrRequiredTraceCube) cube);</span>
+<span class="nc bnc" id="L876" title="All 2 branches missed.">						} else if (cube instanceof AggrForecastedTraceCube) {</span>
+<span class="nc" id="L877">							aggrForecastedTraceCube.add((AggrForecastedTraceCube) cube);</span>
+						} else {
+<span class="nc" id="L879">							cat.error(&quot;TraceCube type is not currently handled: &quot; + cube.getClass().getName());</span>
+						}
+					}
+				}
+<span class="nc" id="L883">			}</span>
+		}
+<span class="nc" id="L885">	}</span>
+
+	/**
+	 * Initializes each element of the given array with the given value.
+	 * &lt;p/&gt;
+	 * 
+	 * @param values
+	 * @param defaultValue
+	 */
+	private static void initializeArray(int[] values, int defaultValue) {
+<span class="nc bnc" id="L895" title="All 2 branches missed.">		if (values != null) {</span>
+<span class="nc bnc" id="L896" title="All 2 branches missed.">			for (int i = 0; i &lt; values.length; i++) {</span>
+<span class="nc" id="L897">				values[i] = defaultValue;</span>
+			}
+		}
+<span class="nc" id="L900">	}</span>
+
+	/**
+	 * Creates an in-memory {@code TrackingView} instance for the given
+	 * statistic type.
+	 * &lt;p/&gt;
+	 * 
+	 * @param type
+	 *            &lt;p/&gt;
+	 * @return
+	 */
+	private static TrackingView createTrackingView(StatisticType type) {
+<span class="nc" id="L912">		TrackingView view = new TrackingView();</span>
+<span class="nc" id="L913">		view.setTrending(true);</span>
+<span class="nc" id="L914">		view.setViewName(type.getName());</span>
+<span class="nc" id="L915">		List chartDefinitions = view.getChartDefinition();</span>
+<span class="nc bnc" id="L916" title="All 2 branches missed.">		if (chartDefinitions == null) {</span>
+<span class="nc" id="L917">			chartDefinitions = new ArrayList&lt;TraceChart&gt;();</span>
+		}
+<span class="nc" id="L919">		TraceChart chart = new TraceChart();</span>
+<span class="nc" id="L920">		chartDefinitions.add(chart);</span>
+
+<span class="nc bnc" id="L922" title="All 2 branches missed.">		if (type == StatisticType.FTE) {</span>
+<span class="nc" id="L923">			chart.setTraceType(Trace.FTE);</span>
+<span class="nc bnc" id="L924" title="All 2 branches missed.">		} else if (type == StatisticType.CV) {</span>
+<span class="nc" id="L925">			chart.setTraceType(Trace.CV);</span>
+<span class="nc bnc" id="L926" title="All 2 branches missed.">		} else if (type == StatisticType.AHT) {</span>
+<span class="nc" id="L927">			chart.setTraceType(Trace.AHT);</span>
+<span class="nc bnc" id="L928" title="All 2 branches missed.">		} else if (type == StatisticType.PCA) {</span>
+<span class="nc" id="L929">			chart.setTraceType(Trace.PCA);</span>
+<span class="nc bnc" id="L930" title="All 2 branches missed.">		} else if (type == StatisticType.ASA) {</span>
+<span class="nc" id="L931">			chart.setTraceType(Trace.ASA);</span>
+<span class="nc bnc" id="L932" title="All 2 branches missed.">		} else if (type == StatisticType.ABANDONMENT) {</span>
+<span class="nc" id="L933">			chart.setTraceType(Trace.ABANDONMENT);</span>
+<span class="nc bnc" id="L934" title="All 2 branches missed.">		} else if (type == StatisticType.BACKLOG) {</span>
+<span class="nc" id="L935">			chart.setTraceType(Trace.BACKLOG);</span>
+<span class="nc bnc" id="L936" title="All 2 branches missed.">		} else if (type == StatisticType.STAFFING) {</span>
+<span class="nc" id="L937">			chart.setTraceType(Trace.STAFFING);</span>
+<span class="nc bnc" id="L938" title="All 2 branches missed.">		} else if (type == StatisticType.OCCUPANCY) {</span>
+<span class="nc" id="L939">			chart.setTraceType(Trace.OCCUPANCY);</span>
+		}
+
+		// add the dependant types as well
+<span class="nc" id="L943">		short[] dependantTypes = com.bluepumpkin.web.fs.pulse.util.PulseUtil.getDependantTraceTypes(</span>
+<span class="nc" id="L944">				chart.getTraceType(), false, false);</span>
+<span class="nc bnc" id="L945" title="All 2 branches missed.">		if (dependantTypes != null) {</span>
+<span class="nc bnc" id="L946" title="All 2 branches missed.">			for (int i = 0; i &lt; dependantTypes.length; i++) {</span>
+<span class="nc" id="L947">				TraceChart depChart = new TraceChart();</span>
+<span class="nc" id="L948">				chartDefinitions.add(depChart);</span>
+<span class="nc" id="L949">				depChart.setTraceType(dependantTypes[i]);</span>
+<span class="nc" id="L950">				depChart.setLineType(TraceChart.LINE_TYPES_ARRAY, true);</span>
+			}
+		}
+<span class="nc" id="L953">		chart.setLineType(TraceChart.LINE_TYPES_ARRAY, true);</span>
+<span class="nc" id="L954">		view.setChartDefinition(chartDefinitions);</span>
+<span class="nc" id="L955">		PulseUtil.addDependentLinesToView(view, false);</span>
+<span class="nc" id="L956">		return view;</span>
+	}
+
+	/**
+	 * This method will first check for campaigns that the user has permission
+	 * to view within the organization that defined the dashboard, if none are
+	 * found there it will check for campaigns that the user has permission to
+	 * view within their own organization, and if still none are found, it will
+	 * return null.
+	 * &lt;p&gt;
+	 * 
+	 * @param context
+	 * @return
+	 * @throws BbmException
+	 * @throws RemoteException
+	 */
+	public static Collection&lt;Campaign&gt; getCampaignsForUser(RequestContext context) throws BbmException, RemoteException {
+<span class="nc" id="L973">		String dashboardInstanceIDStr = context.getRequest().getParameter(Constants.DASHBOARD_INSTANCE_ID);</span>
+		// check if the user has permission to view any campaigns under the dashboards defining org
+<span class="nc" id="L975">    	ID organizationID = DashboardModelHandler.getDefiningOrganizationOfDashboard(ID.fromString(dashboardInstanceIDStr)).getID();</span>
+<span class="nc" id="L976">		Collection&lt;Campaign&gt; defaultCampaignList = getPermittedOrgCampaignsForUser(context, organizationID);</span>
+
+		// check if the user has permission to view any campaigns under their own org
+<span class="nc" id="L979">		organizationID = OrganizationModelHandler.getEmployeeOrg(context, context.getUser().getEmployeeID()).getID();</span>
+<span class="nc" id="L980">		Collection&lt;Campaign&gt; campaignList = getPermittedOrgCampaignsForUser(context, organizationID);</span>
+<span class="nc bnc" id="L981" title="All 2 branches missed.">		for (Campaign campaign : campaignList) {</span>
+			// if the list doesn't already contain the campaign...
+<span class="nc bnc" id="L983" title="All 2 branches missed.">			if (!defaultCampaignList.contains(campaign)) {</span>
+				// add it
+<span class="nc" id="L985">				defaultCampaignList.add(campaign);</span>
+			}
+<span class="nc" id="L987">		}</span>
+<span class="nc" id="L988">		return defaultCampaignList;</span>
+	}
+
+	/**
+	 * This method will return the first campaign that the user has permission
+	 * to view within the organization that defined the dashboard, if none are
+	 * found there it will return the first campaign that the user has
+	 * permission to view within their own organization, and if still none are
+	 * found, it will return null.
+	 * &lt;p&gt;
+	 * 
+	 * @param context
+	 * @param dashboardInstanceIDStr
+	 * @param now
+	 * @param weekFromNow
+	 * @return
+	 * @throws BbmException
+	 * @throws RemoteException
+	 */
+	public static Campaign getDefualtCampaignForUser(RequestContext context) throws BbmException, RemoteException {
+<span class="nc" id="L1008">		String dashboardInstanceIDStr = context.getRequest().getParameter(Constants.DASHBOARD_INSTANCE_ID);</span>
+<span class="nc" id="L1009">		Campaign defaultCampaignForUser = null;</span>
+		// first check if the user has permission to view any campaigns from the
+		// dashboards defining org
+<span class="nc" id="L1012">    	ID organizationID = DashboardModelHandler.getDefiningOrganizationOfDashboard(ID.fromString(dashboardInstanceIDStr)).getID();</span>
+<span class="nc" id="L1013">		Collection&lt;Campaign&gt; campaignList = getPermittedOrgCampaignsForUser(context, organizationID);</span>
+<span class="nc bnc" id="L1014" title="All 2 branches missed.">		if (!campaignList.isEmpty()) {</span>
+			// defaulting to the first one in the list
+<span class="nc" id="L1016">			defaultCampaignForUser = (((ArrayList&lt;Campaign&gt;) campaignList).get(0));</span>
+		} else {
+			// if they didn't have permissions to view any of those, see if they
+			// have
+			// permission to view any campaigns under their own org
+<span class="nc" id="L1021">			organizationID = OrganizationModelHandler.getEmployeeOrg(context, context.getUser().getEmployeeID()).getID();</span>
+<span class="nc" id="L1022">			campaignList = getPermittedOrgCampaignsForUser(context, organizationID);</span>
+<span class="nc bnc" id="L1023" title="All 2 branches missed.">			if (!campaignList.isEmpty()) {</span>
+<span class="nc" id="L1024">				defaultCampaignForUser = (((ArrayList&lt;Campaign&gt;) campaignList).get(0));</span>
+			}
+		}
+<span class="nc" id="L1027">		return defaultCampaignForUser;</span>
+	}
+
+	/**
+	 * This method will return any campaigns the user has permission to view
+	 * from the given organization during the given time frame, or null if none
+	 * are found.
+	 * &lt;p&gt;
+	 * 
+	 * @param context
+	 * @param organizationID
+	 * @return
+	 * @throws BbmEJBCreateException
+	 * @throws BbmObjectNotFoundException
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 * @throws BbmException
+	 */
+	public static Collection&lt;Campaign&gt; getPermittedOrgCampaignsForUser(RequestContext context, ID organizationID)
+			throws RemoteException, BbmException {
+<span class="nc" id="L1047">		ArrayList&lt;Campaign&gt; campaignList = new ArrayList&lt;Campaign&gt;();</span>
+<span class="nc" id="L1048">		ArrayList&lt;ID&gt; orgIDList = new ArrayList&lt;ID&gt;(OrganizationModelHandler.getSelfAndChildOrganizationIDs(context,</span>
+				organizationID));
+		// remove the parent org id since in the current implementation it's
+		// placed at the end of the list...
+<span class="nc bnc" id="L1052" title="All 2 branches missed.">		if (orgIDList.contains(organizationID)) {</span>
+<span class="nc" id="L1053">			orgIDList.remove(orgIDList.indexOf(organizationID));</span>
+		}
+		// and add it back in at the beginning of the list so that we begin our
+		// processing with it
+<span class="nc" id="L1057">		orgIDList.add(0, organizationID);</span>
+<span class="nc" id="L1058">		ArrayList&lt;ID&gt; campaignIDList = (ArrayList&lt;ID&gt;) CampaignModelHandler.getAllCampaignIDsLinkedToOrgs(context,</span>
+				orgIDList);
+		// for (ID orgID : orgIDList) {
+		// ArrayList&lt;CampaignOrg&gt; orgCampaignList =
+		// (ArrayList&lt;CampaignOrg&gt;)OrganizationModelHandler.getOrgCampaignAssignments(context,
+		// orgID, startDate.getTime(), endDate.getTime());
+<span class="nc bnc" id="L1064" title="All 2 branches missed.">		for (ID campaignID : campaignIDList) {</span>
+			// if the list doesn't already contain the campaign...
+<span class="nc bnc" id="L1066" title="All 2 branches missed.">			if (!campaignList.contains(WfmManagerFactory.getCampaignManager().getCampaignByID(campaignID))) {</span>
+				// see if the user has privileges to it...
+<span class="nc bnc" id="L1068" title="All 2 branches missed.">				if (context.getUser().isAuthorized(PrivilegeKeys.FS_VIEWCAMPAIGN_ID,</span>
+						new ScopeID(campaignID, Scope.CAMPAIGN_SCOPE))) {
+					// and add it to the list if they do
+<span class="nc" id="L1071">					campaignList.add(WfmManagerFactory.getCampaignManager().getCampaignByID(campaignID));</span>
+				}
+			}
+<span class="nc" id="L1074">		}</span>
+		// }
+<span class="nc" id="L1076">		return campaignList;</span>
+	}
+
+	/**
+	 * This method will return a date relative to the given date and offset with
+	 * regard to the given campaign ID. If the date passed in were &quot;Thursday,
+	 * June 21 02:12:00 GMT 2012&quot; and the campaign had a -4 hour offset from
+	 * GMT, the returned date will be &quot;Wednesday, June 20 22:12:00 GMT 2012&quot;.
+	 * &lt;p/&gt;
+	 * 
+	 * @param campaignID
+	 * @param date
+	 *            &lt;p/&gt;
+	 * @return a date relative to the given date and offset with regard to the
+	 *         given campaign ID
+	 */
+	public static Date getCampaignTZAdjustedDate(ID campaignID, Date date) {
+		// adjust the given date according to the capaign timezone offset,
+		// the DST for the timezone will be taken into account with this call
+		// to getOffset
+<span class="nc" id="L1096">		return new Date(date.getTime() - getCampaignTimeZone(campaignID).getOffset(date.getTime()));</span>
+	}
+
+	/**
+	 * This method will return the start of day for a given date with regard to
+	 * the campaign.
+	 * &lt;p/&gt;
+	 * 
+	 * @param campaignID
+	 * @param date
+	 *            &lt;p/&gt;
+	 * @return the start of day for a given date with regard to the campaign
+	 */
+	public static Date getCampaignStartOfDay(ID campaignID, Date date) {
+<span class="nc" id="L1110">		Calendar campaignTZAdjustedDate = Calendar.getInstance();</span>
+<span class="nc" id="L1111">		campaignTZAdjustedDate.clear();</span>
+		// set the calendar to the given date adjusted according to the capaign
+		// timezone offset
+<span class="nc" id="L1114">		campaignTZAdjustedDate.setTime(getCampaignTZAdjustedDate(campaignID, date));</span>
+<span class="nc" id="L1115">		Calendar campaignStartOfDay = Calendar.getInstance();</span>
+<span class="nc" id="L1116">		campaignStartOfDay.clear();</span>
+<span class="nc" id="L1117">		campaignStartOfDay.setTimeZone(getCampaignTimeZone(campaignID));</span>
+<span class="nc" id="L1118">		campaignStartOfDay.set(Calendar.YEAR, campaignTZAdjustedDate.get(Calendar.YEAR));</span>
+<span class="nc" id="L1119">		campaignStartOfDay.set(Calendar.MONTH, campaignTZAdjustedDate.get(Calendar.MONTH));</span>
+<span class="nc" id="L1120">		campaignStartOfDay.set(Calendar.DATE, campaignTZAdjustedDate.get(Calendar.DATE));</span>
+<span class="nc" id="L1121">		return campaignStartOfDay.getTime();</span>
+	}
+
+	/**
+	 * This method will return the end of day for a given date with regard to
+	 * the campaign.
+	 * &lt;p/&gt;
+	 * 
+	 * @param campaignID
+	 * @param date
+	 *            &lt;p/&gt;
+	 * @return the end of day for a given date with regard to the campaign
+	 */
+	public static Date getCampaignEndOfDay(ID campaignID, Date date) {
+<span class="nc" id="L1135">		Calendar campaignEndOfDay = Calendar.getInstance();</span>
+<span class="nc" id="L1136">		campaignEndOfDay.clear();</span>
+<span class="nc" id="L1137">		campaignEndOfDay.setTime(getCampaignStartOfDay(campaignID, date));</span>
+<span class="nc" id="L1138">		campaignEndOfDay.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L1139">		campaignEndOfDay.add(Calendar.MINUTE, -15);</span>
+
+<span class="nc" id="L1141">		return campaignEndOfDay.getTime();</span>
+	}
+
+	public static Date getCampaignStartOfDayForDate(ID campaignID, Date date) {
+<span class="nc" id="L1145">		return getCampaignTZAdjustedDate(campaignID, date);</span>
+	}
+
+	public static Date getCampaignEndOfDayForDate(ID campaignID, Date date) {
+<span class="nc" id="L1149">		Calendar campaignEndOfDayForDate = Calendar.getInstance();</span>
+<span class="nc" id="L1150">		campaignEndOfDayForDate.clear();</span>
+<span class="nc" id="L1151">		campaignEndOfDayForDate.setTime(getCampaignStartOfDayForDate(campaignID, date));</span>
+<span class="nc" id="L1152">		campaignEndOfDayForDate.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L1153">		campaignEndOfDayForDate.add(Calendar.MINUTE, -15);</span>
+
+<span class="nc" id="L1155">		return campaignEndOfDayForDate.getTime();</span>
+	}
+
+	public static TimeZone getCampaignTimeZone(ID campaignID) {
+		try {
+<span class="nc" id="L1160">			return getCampaignManager().getTimeZoneByCampaignID(campaignID);</span>
+<span class="nc" id="L1161">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L1162">			cat.error(&quot;Could not get campaign Time zone &quot;, e);</span>
+<span class="nc" id="L1163">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L1164">			cat.error(&quot;Could not get campaign Time zone &quot;, e);</span>
+<span class="nc" id="L1165">		} catch (RemoteException e) {</span>
+<span class="nc" id="L1166">			cat.error(&quot;Could not get campaign Time zone&quot;, e);</span>
+<span class="nc" id="L1167">		}</span>
+<span class="nc" id="L1168">		return null;</span>
+	}
+
+	public static TrackingManager getTrackingManager() throws BbmEJBCreateException {
+<span class="nc" id="L1172">		return WfmManagerFactory.getPulseTrackingManager();</span>
+	}
+
+	public static WorkloadManager getWorkLoadManager() throws BbmEJBCreateException {
+<span class="nc" id="L1176">		return WfmManagerFactory.getWorkloadManager();</span>
+	}
+
+	public static CampaignManager getCampaignManager() throws BbmEJBCreateException {
+<span class="nc" id="L1180">		return WfmManagerFactory.getCampaignManager();</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

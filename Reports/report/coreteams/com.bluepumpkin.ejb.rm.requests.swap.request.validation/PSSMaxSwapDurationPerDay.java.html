@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PSSMaxSwapDurationPerDay.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.request.validation</a> &gt; <span class="el_source">PSSMaxSwapDurationPerDay.java</span></div><h1>PSSMaxSwapDurationPerDay.java</h1><pre class="source lang-java linenums">/*
+ * Created on Oct 26, 2005
+ */
+package com.bluepumpkin.ejb.rm.requests.swap.request.validation;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodUtil;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.RmManagerFactory;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.setup.validation.ejb.ValidationRuleManager;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.bluepumpkin.ejb.rm.util.ShiftSwapRequestUtil;
+
+/**
+ *
+ * &lt;b&gt;Soft Validation: applies only for partial shift swap requests&lt;/b&gt;
+ * &lt;p&gt;
+ *    Validates that the shift hours after the swap are less than the specified value
+ *    The period can be specified in two ways:
+ *    - Org HOO
+ *    - Rolling 24 hour period (this will check that the shift duration is less than
+ *    the specified amount for every time increment[15 min period] within 24 hours of the shift)
+ * &lt;p&gt;
+ *    Checks for both the shifts for a two way swap
+ */
+<span class="nc" id="L47">public class PSSMaxSwapDurationPerDay  implements Validator</span>
+{
+<span class="nc" id="L49">    private static final String m_className = PSSMaxSwapDurationPerDay.class.getName();</span>
+<span class="nc" id="L50">    private static final Category m_cat = Log.initCategory(m_className);</span>
+    
+    public static final String MAX_SHIFT_DURATION_VALUE = &quot;MAX_SHIFT_DURATION_VALUE&quot;;
+    public static final String MAX_SHIFT_DURATION_UNIT = &quot;MAX_SHIFT_DURATION_UNIT&quot;;
+    public static final int MAX_SHIFT_DURATION_UNIT_24HOURS = 1;
+    public static final int MAX_SHIFT_DURATION_UNIT_ORGHOO = 0;
+<span class="nc" id="L56">    public static final ID RULE_ID = new ID(-194034);</span>
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.validation.Validator#validate(com.bluepumpkin.ejb.rm.requests.common.validation.Validatable)
+     */
+    @Override
+	public ValidationResult validate(Validatable validatable) throws Exception
+    {
+<span class="nc" id="L64">        String methodName = &quot;validate&quot;;</span>
+<span class="nc bnc" id="L65" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
+
+<span class="nc" id="L67">        ShiftSwapRequest ssr = (ShiftSwapRequest) validatable;</span>
+<span class="nc" id="L68">        ShiftSwapValidationCache valCache = ssr.getCache();</span>
+<span class="nc" id="L69">        ShiftSwapItem ssItem1 = (ShiftSwapItem) ssr.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L70">        ShiftSwapItem ssItem2 = (ShiftSwapItem) ssr.getShiftSwapItems().get(1);</span>
+<span class="nc bnc" id="L71" title="All 4 branches missed.">        if ((ssItem1.getIsPartial() || ssItem2.getIsPartial())) {</span>
+        	
+//        	make sure the orgIDs are not duplicate
+<span class="nc" id="L74">        	ArrayList orgList = new ArrayList();</span>
+<span class="nc bnc" id="L75" title="All 2 branches missed.">        	for (Iterator it = ssr.getValidationCache().getOrgIDs().iterator(); it.hasNext();){</span>
+<span class="nc" id="L76">	        	ID orgID = (ID)it.next();</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">	        	if (!orgList.contains(orgID))</span>
+<span class="nc" id="L78">	        		orgList.add(orgID);</span>
+<span class="nc" id="L79">        	}</span>
+        	
+//        	for each org, find out the validator- if beeded to run for both or not
+<span class="nc bnc" id="L82" title="All 2 branches missed.">        	for (int i = 0; i &lt; orgList.size(); i++){</span>
+<span class="nc" id="L83">	        	ID orgID = (ID)orgList.get(i);</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">	        	if (valCache.isValidationRequiredForOrg(orgID, &quot;shift-swap&quot;, m_className)){</span>
+		        	//get the rule params
+<span class="nc" id="L86">		        	ValidationRuleManager valMan = RmManagerFactory.getInstance().getValidationRuleManager();</span>
+<span class="nc" id="L87">					Map&lt;String, Integer&gt; ruleParams = valMan.getValidationRuleParams(orgID, RULE_ID);</span>
+<span class="nc" id="L88">					int maxDuration = ruleParams.get(MAX_SHIFT_DURATION_VALUE);</span>
+<span class="nc" id="L89">		        	int unit = ruleParams.get(MAX_SHIFT_DURATION_UNIT).intValue();</span>
+		      
+		        	//get the shifts for the agents on the days swapped
+<span class="nc" id="L92">		        	ScheduleAccessManager sam = RequestUtil.getScheduleAccessManager();</span>
+		        	
+		        	//validate based on day type
+<span class="nc bnc" id="L95" title="All 2 branches missed.">		        	if (unit == MAX_SHIFT_DURATION_UNIT_ORGHOO){</span>
+<span class="nc" id="L96">		        		return verifyOrgDayShiftDuration(ssr, maxDuration, sam);</span>
+		        	} else {
+<span class="nc" id="L98">		        		return verify24HourShiftDuration(ssr, maxDuration, sam);</span>
+		        	}
+	        	}
+        	}
+        }
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+<span class="nc" id="L104">        return null;</span>
+    }
+    
+    private ValidationResult verifyOrgDayShiftDuration(ShiftSwapRequest ssr,
+    		int maxDuration, ScheduleAccessManager sam) throws Exception{
+<span class="nc" id="L109">    	ValidationResult result = null;</span>
+<span class="nc" id="L110">    	ShiftSwapItem ssItem1 = (ShiftSwapItem) ssr.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L111">        ShiftSwapItem ssItem2 = (ShiftSwapItem) ssr.getShiftSwapItems().get(1);</span>
+        
+        //get the resulting shifts from the swap
+<span class="nc" id="L114">        ShiftAssignment[] saArray = ShiftSwapRequestUtil.getShiftsAfterSwap(ssr, sam);</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">        ShiftAssignment sa1 = !saArray[0].getWorkResourceIDs().iterator().next().equals(ssItem2.getEmployeeID())?saArray[1]:saArray[0];</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">        ShiftAssignment sa2 = !saArray[1].getWorkResourceIDs().iterator().next().equals(ssItem1.getEmployeeID())?saArray[0]:saArray[1];</span>
+        
+<span class="nc bnc" id="L118" title="All 2 branches missed.">        if (!ssItem1.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF))</span>
+<span class="nc" id="L119">        	result = verifyOrgDayShiftDurationForItem(ssItem1, maxDuration, sam, ssr, ssItem2, sa1);</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">        if (!ssItem2.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF))</span>
+<span class="nc" id="L121">        	result = verifyOrgDayShiftDurationForItem(ssItem2, maxDuration, sam, ssr, ssItem1, sa2);</span>
+        
+<span class="nc" id="L123">    	return result;</span>
+    }
+    
+    private ValidationResult verifyOrgDayShiftDurationForItem(ShiftSwapItem ssItem, int maxDuration, 
+    		ScheduleAccessManager sam, ShiftSwapRequest ssr, ShiftSwapItem otherSSItem, ShiftAssignment sa) throws Exception{
+<span class="nc" id="L128">    	ValidationResult result = null;</span>
+    	
+//    	get calendar for employee's org
+<span class="nc" id="L131">        ShiftSwapValidationCache cache = (ShiftSwapValidationCache)ssr.getValidationCache();</span>
+<span class="nc" id="L132">	    Organization org = cache.getOrganizationForEmployeeDuringPeriod(otherSSItem.getEmployeeID(), </span>
+<span class="nc" id="L133">	    		ssItem.getStartDate(), ssItem.getEndDate());</span>
+<span class="nc" id="L134">	    Calendar startCal = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L135">	    startCal.setTime(ssItem.getStartDate());</span>
+<span class="nc" id="L136">	    startCal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="nc" id="L137">	    startCal.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L138">	    startCal.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L139">	    startCal.add(Calendar.MINUTE, org.getDayBoundaryOffset());</span>
+	    
+<span class="nc" id="L141">	    Calendar endCal = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L142">	    endCal.setTime(startCal.getTime());</span>
+<span class="nc" id="L143">	    endCal.add(Calendar.HOUR, 24);</span>
+	    
+		//get all shifts for the agent on the day of the item
+<span class="nc" id="L146">		Collection origSaColl = sam.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT, </span>
+<span class="nc" id="L147">				otherSSItem.getEmployeeID(), startCal.getTime(), endCal.getTime());</span>
+		
+		//defualt duration
+<span class="nc" id="L150">		int shiftDuration = 0;</span>
+<span class="nc" id="L151">		Collection saColl = getCollWithoutShiftStartingOnDay(origSaColl, startCal.getTime(), endCal.getTime());</span>
+		
+		//now add the newly created shift if valid
+<span class="nc bnc" id="L154" title="All 2 branches missed.">		if (sa != null)</span>
+<span class="nc" id="L155">			saColl.add(sa);</span>
+		
+		//itearte through the collection
+<span class="nc bnc" id="L158" title="All 2 branches missed.">		for (Iterator it = saColl.iterator(); it.hasNext();){</span>
+<span class="nc" id="L159">			ShiftAssignment sAssgn = (ShiftAssignment)it.next();</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">			if (TimePeriodUtil.overlap(sAssgn.getStartTime(), sAssgn.getEndTime(), </span>
+<span class="nc" id="L161">					startCal.getTime(), endCal.getTime())){</span>
+				//found shift within org day, will append item to this if not completely within sa
+<span class="nc" id="L163">				shiftDuration += getPaidDurationForSegment(sAssgn, startCal.getTime(), endCal.getTime());</span>
+			}
+<span class="nc" id="L165">		}</span>
+<span class="nc bnc" id="L166" title="All 2 branches missed.">		if (shiftDuration &gt; maxDuration){</span>
+<span class="nc" id="L167">			result = ValidationUtil.setSoftValidationResult(ssr, </span>
+	                RmEjbBundleKey.PSS_SHIFT_MAX_DURATION_ORG_DAY, 
+<span class="nc" id="L169">	                String.valueOf(shiftDuration), </span>
+<span class="nc" id="L170">	                String.valueOf(maxDuration), </span>
+<span class="nc" id="L171">	                ssItem.getStartDate(), </span>
+<span class="nc" id="L172">	                cache.getEmployeeNameByID(otherSSItem.getEmployeeID()),</span>
+	                m_className);
+		}
+<span class="nc" id="L175">		return result;</span>
+    }
+    
+    private Collection getCollWithoutShiftStartingOnDay(Collection saColl, Date start, Date end){
+<span class="nc" id="L179">    	Collection col = new ArrayList();</span>
+//    	itearte through the collection
+<span class="nc bnc" id="L181" title="All 2 branches missed.">		for (Iterator it = saColl.iterator(); it.hasNext();){</span>
+<span class="nc" id="L182">			ShiftAssignment sAssgn = (ShiftAssignment)it.next();</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">			if (!(sAssgn.getStartTime().after(start) &amp;&amp; </span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">					sAssgn.getStartTime().before(end))){</span>
+<span class="nc" id="L185">				col.add(sAssgn);</span>
+			}
+<span class="nc" id="L187">		}</span>
+<span class="nc" id="L188">		return col;</span>
+    }
+    
+    private ValidationResult verify24HourShiftDuration(ShiftSwapRequest ssr,
+    		int maxDuration, ScheduleAccessManager sam) throws Exception{
+<span class="nc" id="L193">    	ValidationResult result = null;</span>
+<span class="nc" id="L194">    	ShiftSwapItem ssItem1 = (ShiftSwapItem) ssr.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L195">        ShiftSwapItem ssItem2 = (ShiftSwapItem) ssr.getShiftSwapItems().get(1);</span>
+        
+//      get the resulting shifts from the swap
+<span class="nc" id="L198">        ShiftAssignment[] saArray = ShiftSwapRequestUtil.getShiftsAfterSwap(ssr, sam);</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">        ShiftAssignment sa1 = !saArray[0].getWorkResourceIDs().iterator().next().equals(ssItem2.getEmployeeID())?saArray[1]:saArray[0];</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">        ShiftAssignment sa2 = !saArray[1].getWorkResourceIDs().iterator().next().equals(ssItem1.getEmployeeID())?saArray[0]:saArray[1];</span>
+        
+<span class="nc bnc" id="L202" title="All 2 branches missed.">        if (!ssItem1.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF))</span>
+<span class="nc" id="L203">        	result = verify24HourShiftDurationForItem(ssItem1, maxDuration, sam, ssr, ssItem2, sa1);</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">        if (!ssItem2.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF))</span>
+<span class="nc" id="L205">        	result = verify24HourShiftDurationForItem(ssItem2, maxDuration, sam, ssr, ssItem1, sa2);</span>
+        
+<span class="nc" id="L207">    	return result;</span>
+    }
+    
+    private ValidationResult verify24HourShiftDurationForItem(ShiftSwapItem ssItem, int maxDuration, 
+    		ScheduleAccessManager sam, ShiftSwapRequest ssr, ShiftSwapItem otherSSItem, ShiftAssignment sa) throws Exception{
+<span class="nc" id="L212">    	ValidationResult result = null;</span>
+    	
+//    	get calendar for employee's org
+<span class="nc" id="L215">        ShiftSwapValidationCache cache = (ShiftSwapValidationCache)ssr.getValidationCache();</span>
+<span class="nc" id="L216">	    Organization org = cache.getOrganizationForEmployeeDuringPeriod(otherSSItem.getEmployeeID(), </span>
+<span class="nc" id="L217">	    		ssItem.getStartDate(), ssItem.getEndDate());</span>
+<span class="nc" id="L218">	    Calendar startCal = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L219">	    startCal.setTime(ssItem.getStartDate());</span>
+<span class="nc" id="L220">	    startCal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="nc" id="L221">	    startCal.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L222">	    startCal.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L223">	    Date orgDayStart = startCal.getTime();</span>
+<span class="nc" id="L224">	    Calendar orgDayEnd = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L225">	    orgDayEnd.setTime(orgDayStart);</span>
+	        
+<span class="nc" id="L227">	    orgDayEnd.add(Calendar.HOUR, 24);</span>
+<span class="nc" id="L228">	    startCal.add(Calendar.HOUR, -24);   </span>
+<span class="nc" id="L229">	    Calendar endCal = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L230">	    endCal.setTime(ssItem.getEndDate());</span>
+<span class="nc" id="L231">	    endCal.add(Calendar.HOUR, 24);</span>
+	    
+		//get all shifts for the agent on the day of the item
+<span class="nc" id="L234">		Collection origSaColl = sam.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT, otherSSItem.getEmployeeID(), </span>
+<span class="nc" id="L235">				startCal.getTime(), endCal.getTime());	</span>
+		
+<span class="nc" id="L237">		startCal.setTime(getPeriodStartDate(origSaColl, ssItem));</span>
+		//now subtract 24
+<span class="nc" id="L239">		startCal.add(Calendar.HOUR, -24);</span>
+<span class="nc" id="L240">		Calendar iterCal = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L241">		iterCal.setTime(startCal.getTime());</span>
+<span class="nc" id="L242">		iterCal.add(Calendar.HOUR, 24);</span>
+<span class="nc" id="L243">		Date endPeriod = getPeriodEndDate(origSaColl, ssItem);</span>
+		
+//		defualt duration
+<span class="nc" id="L246">		Collection saColl = getCollWithoutShiftStartingOnDay(origSaColl, orgDayStart, orgDayEnd.getTime());</span>
+		
+		//now add the newly created shift if valid
+<span class="nc bnc" id="L249" title="All 2 branches missed.">		if (sa != null)</span>
+<span class="nc" id="L250">			saColl.add(sa);</span>
+		
+		//itearte through the time period for each 15 minute interval
+<span class="nc bnc" id="L253" title="All 2 branches missed.">		while (startCal.getTime().before(endPeriod)){</span>
+//			defualt duration
+<span class="nc" id="L255">			int shiftDuration = 0;</span>
+			
+//			itearte through the collection
+<span class="nc bnc" id="L258" title="All 2 branches missed.">			for (Iterator it = saColl.iterator(); it.hasNext();){</span>
+<span class="nc" id="L259">				ShiftAssignment sAssgn = (ShiftAssignment)it.next();		</span>
+<span class="nc" id="L260">				shiftDuration += getPaidDurationForSegment(sAssgn, startCal.getTime(), iterCal.getTime());</span>
+<span class="nc" id="L261">			}</span>
+				
+<span class="nc bnc" id="L263" title="All 2 branches missed.">			if (shiftDuration &gt; maxDuration){	</span>
+<span class="nc" id="L264">				return ValidationUtil.setSoftValidationResult(ssr, </span>
+		                RmEjbBundleKey.PSS_SHIFT_MAX_DURATION, 
+<span class="nc" id="L266">		                String.valueOf(maxDuration), </span>
+<span class="nc" id="L267">		                cache.getEmployeeNameByID(otherSSItem.getEmployeeID()),</span>
+		                m_className);
+			}
+<span class="nc" id="L270">			startCal.add(Calendar.MINUTE, 15);</span>
+<span class="nc" id="L271">			iterCal.add(Calendar.MINUTE, 15);</span>
+<span class="nc" id="L272">			shiftDuration = 0;</span>
+<span class="nc" id="L273">		}</span>
+<span class="nc" id="L274">		return result;</span>
+    }
+    
+    private Date getPeriodEndDate(Collection saColl, ShiftSwapItem ssItem){
+<span class="nc bnc" id="L278" title="All 2 branches missed.">    	for (Iterator it = saColl.iterator(); it.hasNext();){</span>
+<span class="nc" id="L279">			ShiftAssignment sAssgn = (ShiftAssignment)it.next();</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">			if (sAssgn.getStartTime().after(ssItem.getStartDate()) &amp;&amp; </span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">					sAssgn.getStartTime().before(ssItem.getEndDate())){</span>
+<span class="nc" id="L282">				return sAssgn.getEndTime();</span>
+			}
+<span class="nc" id="L284">		}</span>
+<span class="nc" id="L285">    	return ssItem.getEndDate();</span>
+    }
+    
+    private Date getPeriodStartDate(Collection saColl, ShiftSwapItem ssItem){
+<span class="nc bnc" id="L289" title="All 2 branches missed.">    	for (Iterator it = saColl.iterator(); it.hasNext();){</span>
+<span class="nc" id="L290">			ShiftAssignment sAssgn = (ShiftAssignment)it.next();</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">			if (sAssgn.getEndTime().after(ssItem.getStartDate()) &amp;&amp; </span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">					sAssgn.getEndTime().before(ssItem.getEndDate())){</span>
+<span class="nc" id="L293">				return sAssgn.getStartTime();</span>
+			}
+<span class="nc" id="L295">		}</span>
+<span class="nc" id="L296">    	return ssItem.getStartDate();</span>
+    }
+    
+    private int getPaidDurationForSegment(ShiftAssignment sa, Date startPeriod, Date endPeriod){
+<span class="nc" id="L300">    	int paidDuration = 0;</span>
+   
+<span class="nc bnc" id="L302" title="All 2 branches missed.">    	if (TimePeriodUtil.inside(sa.getStartTime(), sa.getEndTime(), </span>
+				startPeriod, endPeriod)){//event completely within period
+<span class="nc" id="L304">			paidDuration = sa.getDuration();</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">		} else if (sa.getStartTime().before(startPeriod)</span>
+<span class="nc bnc" id="L306" title="All 2 branches missed.">        		&amp;&amp; sa.getEndTime().after(endPeriod)){</span>
+<span class="nc" id="L307">			paidDuration = (int)(endPeriod.getTime() - startPeriod.getTime())/(1000*60);</span>
+<span class="nc bnc" id="L308" title="All 2 branches missed.">		} else if (sa.getStartTime().after(startPeriod)</span>
+<span class="nc bnc" id="L309" title="All 4 branches missed.">        		&amp;&amp; sa.getStartTime().before(endPeriod) &amp;&amp; sa.getEndTime().after(endPeriod)){</span>
+<span class="nc" id="L310">			paidDuration = (int)(endPeriod.getTime() - sa.getStartTime().getTime())/(1000*60);</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">		} else if (sa.getEndTime().after(startPeriod)</span>
+<span class="nc bnc" id="L312" title="All 4 branches missed.">        		&amp;&amp; sa.getEndTime().before(endPeriod) &amp;&amp; sa.getStartTime().before(startPeriod)){</span>
+<span class="nc" id="L313">			paidDuration = (int)(sa.getEndTime().getTime() - startPeriod.getTime())/(1000*60);</span>
+		}
+
+    	//iterate through all the shift events
+<span class="nc bnc" id="L317" title="All 2 branches missed.">    	for (Iterator itr = sa.getChildren().iterator(); itr.hasNext(); ) {</span>
+<span class="nc" id="L318">    		ShiftEventAssignment shiftEventAssn = (ShiftEventAssignment) itr.next();</span>
+    	
+    		//if overlaps with period, and paid: add to duration
+<span class="nc bnc" id="L321" title="All 2 branches missed.">    		if (TimePeriodUtil.overlap(startPeriod, endPeriod, shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime())){</span>
+<span class="nc bnc" id="L322" title="All 2 branches missed.">    			if (!shiftEventAssn.getPaid()){</span>
+    				//get exact period that overlaps
+<span class="nc bnc" id="L324" title="All 2 branches missed.">    				if (TimePeriodUtil.inside(shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime(), </span>
+    						startPeriod, endPeriod)){//event completely within period
+<span class="nc" id="L326">    					paidDuration -= shiftEventAssn.getDuration();</span>
+<span class="nc bnc" id="L327" title="All 2 branches missed.">    				} else if (shiftEventAssn.getStartTime().before(startPeriod)</span>
+<span class="nc bnc" id="L328" title="All 2 branches missed.">    	            		&amp;&amp; shiftEventAssn.getEndTime().after(endPeriod)){</span>
+<span class="nc" id="L329">    					paidDuration -= (int)(endPeriod.getTime() - startPeriod.getTime())/(1000*60);</span>
+<span class="nc bnc" id="L330" title="All 2 branches missed.">    				} else if (shiftEventAssn.getStartTime().after(startPeriod)</span>
+<span class="nc bnc" id="L331" title="All 4 branches missed.">    	            		&amp;&amp; shiftEventAssn.getStartTime().before(endPeriod) &amp;&amp; shiftEventAssn.getEndTime().after(endPeriod)){</span>
+<span class="nc" id="L332">    					paidDuration -= (int)(endPeriod.getTime() - shiftEventAssn.getStartTime().getTime())/(1000*60);</span>
+<span class="nc bnc" id="L333" title="All 2 branches missed.">    				} else if (shiftEventAssn.getEndTime().after(startPeriod)</span>
+<span class="nc bnc" id="L334" title="All 4 branches missed.">    	            		&amp;&amp; shiftEventAssn.getEndTime().before(endPeriod) &amp;&amp; shiftEventAssn.getStartTime().before(startPeriod)){</span>
+<span class="nc" id="L335">    					paidDuration -= (int)(shiftEventAssn.getEndTime().getTime() - startPeriod.getTime())/(1000*60);</span>
+    				}
+    			}
+    		}
+<span class="nc" id="L339">    	}</span>
+<span class="nc" id="L340">    	return paidDuration;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

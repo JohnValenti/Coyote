@@ -1,0 +1,987 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TORequest.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.timeoff.model</a> &gt; <span class="el_source">TORequest.java</span></div><h1>TORequest.java</h1><pre class="source lang-java linenums">/*
+ * TORequest.java
+ *
+ * Copyright (c) 2002, Blue Pumpkin Software, Inc.
+ * All rights reserved.
+ */
+package com.bluepumpkin.ejb.rm.requests.timeoff.model;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.cache.CacheUtilBBM;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.TimeOffEvent;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.DailyHoursBuckets;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
+import com.bluepumpkin.ejb.rm.base.RmException;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbLogBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestDetailLevel;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.FTValidationCacheFactory;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TOValidationCache;
+import com.bluepumpkin.ejb.rm.requests.timeoff.waitlist.model.TOWaitlist;
+import com.bluepumpkin.ejb.rm.requests.timeoff.withdraw.model.TOWithdraw;
+import com.bluepumpkin.ejb.rm.setup.filingrules.model.RequestFilingRule;
+import com.bluepumpkin.ejb.rm.util.TORequestUtil;
+
+
+/**
+ * Class represents TimeOff Requests.
+ */
+public class TORequest extends RequestAggregate {
+
+	private static final long serialVersionUID = 1414257089538501312L;
+
+	// type of time off debits
+	public static final String DEBITTYPE_DEBIT = &quot;debit&quot;;
+	public static final String DEBITTYPE_DEBIT_ONLY_IF = &quot;debit-only-if&quot;;
+	public static final String DEBITTYPE_DONT_DEBIT = &quot;dont-debit&quot;;
+
+	// Flex types
+	public static final int FLEXTYPE_NONE = 0;
+	public static final int FLEXTYPE_FLEXWITHMAKEUP = 1;
+	
+	
+	/**
+	 * Time Off Request Statuses that are part of Pending hour calculation
+	 */
+<span class="nc" id="L67">	public static final String[] PENDING_HOUR_STATUSES = new String[]{ // NOSONAR</span>
+		RequestAuditTrail.STATUS_PENDING,
+		RequestAuditTrail.STATUS_TENTATIVE,
+		RequestAuditTrail.STATUS_ESCALATED,
+		RequestAuditTrail.STATUS_WAITLIST
+	};
+
+
+	public static final long DL_TIMEOFF_CHOICES = RequestDetailLevel.DL_TIMEOFF_CHOICES;
+	public static final long DL_TIMEOFF_CHOICES_LENGTH = RequestDetailLevel.DL_TIMEOFF_CHOICES_LENGTH;
+	public static final long DL_TIMEOFF_WAITLIST = RequestDetailLevel.DL_TIMEOFF_WAITLIST;
+	public static final long DL_TIMEOFF_WITHDRAW = RequestDetailLevel.DL_TIMEOFF_WITHDRAW;
+	public static final long DL_TIMEOFF_FLEXMAKEUP = RequestDetailLevel.DL_TIMEOFF_FLEXMAKEUP;
+
+<span class="nc" id="L81">	public static final Set VALID_DEBITTYPES = new HashSet(3);</span>
+
+	static {
+<span class="nc" id="L84">		VALID_DEBITTYPES.add(DEBITTYPE_DEBIT);</span>
+<span class="nc" id="L85">		VALID_DEBITTYPES.add(DEBITTYPE_DONT_DEBIT);</span>
+<span class="nc" id="L86">		VALID_DEBITTYPES.add(DEBITTYPE_DEBIT_ONLY_IF);</span>
+	}
+
+<span class="nc" id="L89">	public static final Set&lt;Integer&gt; VALID_FLEXTYPES = new HashSet&lt;Integer&gt;(2);</span>
+
+	static {
+<span class="nc" id="L92">		VALID_FLEXTYPES.add(FLEXTYPE_NONE);</span>
+<span class="nc" id="L93">		VALID_FLEXTYPES.add(FLEXTYPE_FLEXWITHMAKEUP);</span>
+	}
+
+<span class="nc" id="L96">	private static FieldInfo fieldInfo = new TORequestFieldInfo();</span>
+
+	// Caches the TOChoices associated with this request for retrieval by getRequestChoiceList()
+	// method.  Necessary for returning only the approved choice for an approved request.  The
+	// cache must be invalidated if the TOChoice collection is modified in any way.
+	private transient List&lt;TOChoice&gt; timeoffChoiceCache;
+	private transient TOWaitlist timeoffWaitlistCache;
+	private transient TOWithdraw timeoffWithdrawCache;
+	private transient List&lt;FlexRequestMakeup&gt; flexRequestMakeupCache;
+	private transient List&lt;TOChoiceGroup&gt; choiceGroups;
+
+<span class="nc" id="L107">	Boolean cachedWaitlistEnabled = null;</span>
+
+	//this is a priority Order relative to the currently acquired list as per the Request Filter criteria
+<span class="nc" id="L110">	private int timeoffWaitlistPriorityOrder = -1;</span>
+<span class="nc" id="L111">	private transient TOValidationCache validationCache = null;</span>
+<span class="nc" id="L112">	private boolean eligibleForWaitlist = false;</span>
+
+
+
+<span class="nc" id="L116">	private Employee cachedEmployee = null;</span>
+<span class="nc" id="L117">	private TOChoice waitlistEligibleTOChoice = null;</span>
+<span class="nc" id="L118">	private TOChoice waitlistTOChoice = null;</span>
+	private transient TOChoiceGroup toChoiceGroupForValidation;
+<span class="nc" id="L120">	private transient TOChoice toChoiceForValidation = null;</span>
+
+	public TOChoice getTOChoiceForValidation() {
+<span class="nc" id="L123">		return toChoiceForValidation;</span>
+	}
+
+	public void setTOChoiceForValidation(TOChoice aToChoiceForValidation) {
+<span class="nc" id="L127">		this.toChoiceForValidation = aToChoiceForValidation;</span>
+<span class="nc" id="L128">	}</span>
+
+	public TOChoiceGroup getTOChoiceGroupForValidation() {
+<span class="nc" id="L131">		return toChoiceGroupForValidation;</span>
+	}
+
+	public void setTOChoiceGroupForValidation(TOChoiceGroup forValidation) {
+<span class="nc" id="L135">		this.toChoiceGroupForValidation = forValidation;</span>
+<span class="nc" id="L136">	}</span>
+
+
+	public TORequest(long detailLevel) {
+<span class="nc" id="L140">		super(Request.REQUESTTYPE_TIMEOFF, detailLevel);</span>
+<span class="nc" id="L141">	}</span>
+
+	/**
+	 * Note: {@link #DL_TIMEOFF_CHOICES_LENGTH DL_TIMEOFF_CHOICES_LENGTH} is automatically
+	 * added by the validation rule {@link com.bluepumpkin.ejb.rm.requests.timeoff.validation.TimeOffChoiceApprOrTentAppNotZeroLengthHV validation.TimeOffChoiceApprOrTentAppNotZeroLengthHV}
+	 *
+	 * @return
+	 */
+	public static long getDetailLevelForValidation() {
+		//Note: DL_TIMEOFF_CHOICE_LENGTH is automatically added by TimeOffChoiceApprOrTentApprNotZeroLengthHV.java
+		// removing the DL_TIMEOFF_FLEXMAKEUP which might be needed for validation but this is causing the problem for pulling My requests list
+<span class="nc" id="L152">		return DL_BASIC | DL_TIMEOFF_CHOICES | DL_TIMEOFF_WAITLIST | DL_TIMEOFF_WITHDRAW;</span>
+	}
+
+	
+	public TOChoice getApprovedChoice() throws RmException {
+<span class="nc" id="L157">		return getTOChoice(getApprovedChoiceID());</span>
+	}
+
+	public ID getApprovedChoiceID() {
+<span class="nc" id="L161">		return getFieldValueID(TORequestFieldInfo.TIMEOFFREQUEST_I_APPROVEDCHOICEID);</span>
+	}
+
+	/**
+	 * Get the validation cache in the proper type...conveniece method to
+	 * avoid having to cast everywhere it is used.
+	 */
+	public TOValidationCache getCache() {
+<span class="nc" id="L169">		return (TOValidationCache) getValidationCache();</span>
+	}
+
+	public void clearValidationCache() {
+<span class="nc" id="L173">		validationCache = null;</span>
+<span class="nc" id="L174">	}</span>
+
+	public void setCache(TOValidationCache cache) {
+<span class="nc" id="L177">		validationCache = cache;</span>
+<span class="nc" id="L178">	}</span>
+
+	@Override
+	public FieldInfo getFieldInfo() {
+<span class="nc" id="L182">		return fieldInfo;</span>
+	}
+
+	/**
+	 * Returns a list of TOChoices associated with this request, sorted by their rank.
+	 * To obtain only the approved TOChoice, use getApprovedChoice().
+	 * &lt;p/&gt;
+	 * Note:
+	 *
+	 * @return
+	 */
+	public List&lt;TOChoice&gt; getRequestChoiceList() {
+		// if TOChoice cache is uninitialized, initialize.
+<span class="nc bnc" id="L195" title="All 2 branches missed.">		if (timeoffChoiceCache == null) {</span>
+<span class="nc" id="L196">			timeoffChoiceCache = new ArrayList&lt;TOChoice&gt;();</span>
+<span class="nc" id="L197">			timeoffChoiceCache.addAll(getChildObjects(TORequestFieldInfo.TO_CHOICE_CHILD_TYPE));</span>
+
+			// sort TimeOff choices by rank and cache it.  Caching necessary since ValueObjectNode
+			// cannot maintain a sorted list of TOChoices(uses a Map internally to hold the TOChoices).
+<span class="nc bnc" id="L201" title="All 2 branches missed.">			if (timeoffChoiceCache.size() &gt; 1) {</span>
+<span class="nc" id="L202">				Collections.sort(timeoffChoiceCache);</span>
+			}
+		}
+
+<span class="nc" id="L206">		return timeoffChoiceCache;</span>
+	}
+	
+	// For testing primarily
+	protected void addChoice(TOChoice choice){
+<span class="nc bnc" id="L211" title="All 2 branches missed.">		if (timeoffChoiceCache == null) {</span>
+<span class="nc" id="L212">			timeoffChoiceCache = new ArrayList&lt;TOChoice&gt;();</span>
+		}
+<span class="nc" id="L214">		timeoffChoiceCache.add(choice);</span>
+<span class="nc" id="L215">	}</span>
+
+	public Collection&lt;TOChoiceGroup&gt; getChoiceGroups() {
+
+<span class="nc bnc" id="L219" title="All 2 branches missed.">		if (choiceGroups != null) {</span>
+<span class="nc" id="L220">			return choiceGroups;</span>
+		}
+
+<span class="nc" id="L223">		choiceGroups = new ArrayList&lt;TOChoiceGroup&gt;();</span>
+<span class="nc" id="L224">		Map&lt;Integer, List&lt;TOChoice&gt;&gt; map = new HashMap&lt;Integer, List&lt;TOChoice&gt;&gt;();</span>
+
+<span class="nc bnc" id="L226" title="All 2 branches missed.">		for (TOChoice choice : getRequestChoiceList()) {</span>
+<span class="nc" id="L227">			int groupID = choice.getGroupID();</span>
+<span class="nc" id="L228">			List&lt;TOChoice&gt; list = map.get(groupID);</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">			if (list == null) {</span>
+<span class="nc" id="L230">				list = new ArrayList&lt;TOChoice&gt;();</span>
+<span class="nc" id="L231">				map.put(groupID, list);</span>
+			}
+<span class="nc" id="L233">			list.add(choice);</span>
+<span class="nc" id="L234">		}</span>
+
+<span class="nc bnc" id="L236" title="All 2 branches missed.">		for (List&lt;TOChoice&gt; choiceList : map.values()) {</span>
+<span class="nc" id="L237">			Collections.sort(choiceList, TOChoiceStartComparator.INSTANCE);</span>
+<span class="nc" id="L238">			choiceGroups.add(new TOChoiceGroup(choiceList));</span>
+<span class="nc" id="L239">		}</span>
+
+<span class="nc" id="L241">		Collections.sort(choiceGroups, TOChoiceGroupRankComparator.INSTANCE);</span>
+<span class="nc" id="L242">		return choiceGroups;</span>
+	}
+
+	/**
+	 * Returns a list of FlexRequestMakeups associated with this request, sorted by their STARTTIME.
+	 */
+	@SuppressWarnings(&quot;unchecked&quot;)
+	public List&lt;FlexRequestMakeup&gt; getFlexRequestMakeupList() {
+		// if FlexRequestMakeup cache is uninitialized, initialize.
+<span class="nc bnc" id="L251" title="All 2 branches missed.">		if (flexRequestMakeupCache == null) {</span>
+<span class="nc" id="L252">			flexRequestMakeupCache = new ArrayList&lt;FlexRequestMakeup&gt;();</span>
+<span class="nc" id="L253">			flexRequestMakeupCache.addAll(getChildObjects(TORequestFieldInfo.TO_FLEXMAKEUP_CHILD_TYPE));</span>
+
+			// sort FlexRequestMakeups by STARTTIME and cache it.  Caching necessary since ValueObjectNode
+			// cannot maintain a sorted list of FlexRequestMakeups (uses a Map internally to hold the FlexRequestMakeups).
+<span class="nc bnc" id="L257" title="All 2 branches missed.">			if (flexRequestMakeupCache.size() &gt; 1) {</span>
+<span class="nc" id="L258">				Collections.sort(flexRequestMakeupCache);</span>
+			}
+		}
+
+<span class="nc" id="L262">		return flexRequestMakeupCache;</span>
+	}
+
+	/**
+	 * Returns waitlist info associated with this request.
+	 * &lt;p/&gt;
+	 * Note:
+	 *
+	 * @return
+	 */
+	public TOWaitlist getWaitlistInfo() {
+		// if m_TOWaitlist Cache is uninitialized, initialize.
+<span class="nc bnc" id="L274" title="All 2 branches missed.">		if (timeoffWaitlistCache == null) {</span>
+<span class="nc" id="L275">			Collection towaitlistCol = getChildObjects(TORequestFieldInfo.TO_WAITLIST_CHILD_TYPE);</span>
+<span class="nc bnc" id="L276" title="All 4 branches missed.">			if (towaitlistCol != null &amp;&amp; !towaitlistCol.isEmpty()) {</span>
+<span class="nc" id="L277">				timeoffWaitlistCache = (TOWaitlist) towaitlistCol.iterator().next();</span>
+			}
+		}
+<span class="nc" id="L280">		return timeoffWaitlistCache;</span>
+	}
+
+	/**
+	 * get the first TOChoice for this request
+	 *
+	 * @return
+	 */
+	public TOChoice getFirstTOChoice() {
+<span class="nc" id="L289">		TOChoice firstTOChoice = null;</span>
+<span class="nc" id="L290">		Iterator iterator = getRequestChoiceList().iterator();</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">		while (iterator.hasNext()) {</span>
+<span class="nc" id="L292">			TOChoice toChoice = (TOChoice) iterator.next();</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">			if (toChoice.getRank() == 1) {</span>
+<span class="nc" id="L294">				firstTOChoice = toChoice;</span>
+<span class="nc" id="L295">				break;</span>
+			}
+<span class="nc" id="L297">		}</span>
+<span class="nc" id="L298">		return firstTOChoice;</span>
+	}
+
+	/**
+	 * Debit type for time off requests.
+	 * &lt;p/&gt;
+	 * A Time off event is represented by a CalendarEventAssignment. The
+	 * following time off debit types are supported:
+	 * &lt;li&gt;&lt;b&gt; debit &lt;/b&gt;
+	 * CalendarEventAssignment field values: EVENT_TYPE = TIME_OFF;
+	 * TIMEOFFRULE == USE_COUNTMINSTOWARDSRULE; COUNTSMINSTOWARDRULE = timeOffLength. &lt;br&gt;
+	 * TimeOff length calculated during approval and persisted.  Not recalculated
+	 * after approval even if underlying events change.
+	 * &lt;li&gt;&lt;b&gt; debit-if-necessary &lt;/b&gt;
+	 * CalendarEventAssignment field values: EVENT_TYPE = TIME_OFF; TIMEOFFRULE == USE_SHIFT; COUNTSMINSTOWARDRULE = N/A &lt;br&gt;
+	 * TimeOff length is never persisted.  Calculated every time it is needed.
+	 * &lt;li&gt;&lt;b&gt; 'don't debit &lt;/b&gt;
+	 * CalendarEventAssignment field values: EVENT_TYPE == UNAVAILABILITY; TIMEOFFRULE == N/A; COUNTSMINSTOWARDSRULE = N/A. &lt;br&gt;
+	 * Created unavailability event cannot have any events under it (shift assignments
+	 * or calendar or time off events). &lt;br&gt;
+	 *
+	 * @return
+	 */
+	public String getTimeOffDebitType() {
+<span class="nc" id="L322">		return getFormattedFieldValue(TORequestFieldInfo.TIMEOFFREQUEST_S_DEBITTYPE);</span>
+	}
+
+	/**
+	 * Activity ID for this time off event. Following activity attributes are
+	 * used in TORequest workflow:
+	 * &lt;li&gt; Requestable - activity does not qualify for TORequest workflow unless it is requestable.
+	 * &lt;li&gt; TimeOff - activity qualifies for &quot;debit&quot; and &quot;debit-if&quot; TORequest types. In other words, this
+	 * activity can be used to create CalendarEventAssignments with EVENT_TYPE == TIME_OFF. See
+	 * {@link com.bluepumpkin.ejb.bbm.activity.model.Event Event} for further information.
+	 * &lt;li&gt; hasAllocations - available only if &quot;timeOff&quot; attribute is enabled. Denotes that
+	 * activity can have allocations (daily default, weekly default and yearly allocations).
+	 * &lt;li&gt; Unavailability - activity qualifies for &quot;don't debit&quot; TORequest type.
+	 *
+	 * @return
+	 */
+	public ID getTimeOffType() {
+<span class="nc" id="L339">		return getFieldValueID(TORequestFieldInfo.TIMEOFFREQUEST_I_ACTIVITYID);</span>
+	}
+
+	/**
+	 * @return The Flex type for this time off request.
+	 */
+	public int getFlexType() {
+<span class="nc" id="L346">		return getFieldValueInt(TORequestFieldInfo.TIMEOFFREQUEST_N_FLEXTYPE);</span>
+	}
+
+	// Find the TO Choice with ID == choiceID.  If choiceID == null, return the first TO choice.
+	/**
+	 *
+	 */
+	public TOChoice getTOChoice(ID choiceID) throws RmException {
+<span class="nc" id="L354">		Collection requestChoiceList = getRequestChoiceList();</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">		if (requestChoiceList.isEmpty()) {</span>
+<span class="nc" id="L356">			throw RequestUtil.createRmException(RmEjbLogBundleKey.TOCHOICE_NOT_FOUND,</span>
+<span class="nc" id="L357">			        choiceID, getID(), null);</span>
+		}
+
+		// Find the choice
+<span class="nc" id="L361">		TOChoice choice = null;</span>
+<span class="nc" id="L362">		boolean choiceFound = false;</span>
+<span class="nc bnc" id="L363" title="All 2 branches missed.">		for (Iterator it = requestChoiceList.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L364">			choice = (TOChoice) it.next();</span>
+<span class="nc bnc" id="L365" title="All 2 branches missed.">			if (choice.getID().equals(choiceID)) {</span>
+<span class="nc" id="L366">				choiceFound = true;</span>
+<span class="nc" id="L367">				break;</span>
+			}
+		}
+
+<span class="nc bnc" id="L371" title="All 2 branches missed.">		if (!choiceFound) {</span>
+<span class="nc" id="L372">			throw RequestUtil.createRmException(RmEjbLogBundleKey.TOCHOICE_NOT_FOUND,</span>
+<span class="nc" id="L373">			        choiceID, getID(), null);</span>
+		}
+
+<span class="nc" id="L376">		return choice;</span>
+	}
+
+	/**
+	 * Find the FlexRequestMakeup with ID == makeupID.
+	 */
+	public FlexRequestMakeup getFlexRequestMakeup(ID makeupID) throws RmException {
+<span class="nc" id="L383">		Collection&lt;FlexRequestMakeup&gt; makeupList = getFlexRequestMakeupList();</span>
+
+		// Find the makeup
+<span class="nc" id="L386">		FlexRequestMakeup theReturn = null;</span>
+<span class="nc bnc" id="L387" title="All 2 branches missed.">		for (FlexRequestMakeup makeup : makeupList) {</span>
+<span class="nc bnc" id="L388" title="All 2 branches missed.">			if (makeup.getID().equals(makeupID)) {</span>
+<span class="nc" id="L389">				theReturn = makeup;</span>
+<span class="nc" id="L390">				break;</span>
+			}
+<span class="nc" id="L392">		}</span>
+
+<span class="nc bnc" id="L394" title="All 2 branches missed.">		if (theReturn == null) {</span>
+<span class="nc" id="L395">			throw RequestUtil.createRmException(RmEjbLogBundleKey.TOCHOICE_NOT_FOUND,</span>
+<span class="nc" id="L396">					makeupID, getID(), null);</span>
+		}
+
+<span class="nc" id="L399">		return theReturn;</span>
+	}
+
+	/**
+	 * Returns the employee iD and timeoff range for the first timeoff choice. Used for
+	 * autoprocessing.
+	 * &lt;p/&gt;
+	 * (non-Javadoc)
+	 *
+	 * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getEmpIDTimeRangePairs()
+	 */
+	@Override
+	public Collection getEmpIDTimeRangePairs() {
+<span class="nc" id="L412">		TOChoice firstChoice = getFirstTOChoice();</span>
+<span class="nc" id="L413">		return Collections.singletonList(new Pair(getEmployeeID(),</span>
+<span class="nc" id="L414">		        new TimeRange(firstChoice.getStartDate(), firstChoice.getEndDate())));</span>
+	}
+
+	/**
+	 * Returns the employee iD and timeoff range for all timeoff choices. Used for autoprocessing loops only
+	 * &lt;p/&gt;
+	 * (non-Javadoc)
+	 *
+	 * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getEmpIDTimeRangePairs()
+	 */
+	public Pair getAllEmpIDTimeRangePairs() {
+<span class="nc" id="L425">		Collection requestChoiceList = getRequestChoiceList();</span>
+<span class="nc" id="L426">		List toChoiceList = new ArrayList();</span>
+<span class="nc bnc" id="L427" title="All 2 branches missed.">		for (Iterator iterator = requestChoiceList.iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L428">			TOChoice toChoice = (TOChoice) iterator.next();</span>
+<span class="nc" id="L429">			toChoiceList.add(new Pair(getEmployeeID(), new TimeRange(toChoice.getStartDate(), toChoice.getEndDate())));</span>
+<span class="nc" id="L430">		}</span>
+<span class="nc" id="L431">		return new Pair(toChoiceList, requestChoiceList);</span>
+	}
+
+	public Pair getFirstEmpIDTimeRangePair() {
+<span class="nc" id="L435">		Collection requestChoiceList = new ArrayList();</span>
+<span class="nc" id="L436">		List toChoiceList = new ArrayList();</span>
+<span class="nc" id="L437">		TOChoice toChoice = getFirstTOChoice();</span>
+<span class="nc" id="L438">		requestChoiceList.add(toChoice);</span>
+<span class="nc" id="L439">		toChoiceList.add(new Pair(getEmployeeID(), new TimeRange(toChoice.getStartDate(), toChoice.getEndDate())));</span>
+<span class="nc" id="L440">		return new Pair(toChoiceList, requestChoiceList);</span>
+	}
+
+	/**
+	 * Implements a method from the Validatable interface.
+	 *
+	 * @return the ValidationCache associated with this object.
+	 */
+	@Override
+	public ValidationCache getValidationCache() {
+<span class="nc bnc" id="L450" title="All 2 branches missed.">		if (validationCache == null) {</span>
+<span class="nc bnc" id="L451" title="All 2 branches missed.">			validationCache = this.isFlexTimeRequest() ? FTValidationCacheFactory.newFTValidationCache(this) : new TOValidationCache(this);</span>
+		}
+<span class="nc" id="L453">		return validationCache;</span>
+	}
+
+	/**
+	 * Implements a method from the Validatable interface.
+	 *
+	 * @return a Collection of TimeRanges: one for each TOChoice.
+	 */
+	@Override
+	public Collection getValidationTimeRanges() {
+<span class="nc" id="L463">		ArrayList result = new ArrayList();</span>
+
+<span class="nc" id="L465">		Collection&lt;TOChoice&gt; choiceList = getRequestChoiceList();</span>
+		TimeRange range;
+
+<span class="nc bnc" id="L468" title="All 2 branches missed.">		if (choiceList != null) {</span>
+<span class="nc bnc" id="L469" title="All 2 branches missed.">			for (Iterator&lt;TOChoice&gt; it = choiceList.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L470">				TOChoice choice = it.next();</span>
+<span class="nc" id="L471">				range = new TimeRange(choice.getStartDate(), choice.getEndDate());</span>
+<span class="nc" id="L472">				result.add(range);</span>
+<span class="nc" id="L473">			}</span>
+		}
+
+<span class="nc" id="L476">		return result;</span>
+	}
+
+	public void setApprovedChoiceID(ID pApprovedChoiceID) {
+<span class="nc" id="L480">		setFieldValue(TORequestFieldInfo.TIMEOFFREQUEST_I_APPROVEDCHOICEID, pApprovedChoiceID);</span>
+<span class="nc" id="L481">	}</span>
+
+	/**
+	 * Replaces existing list of TOChoices with the given list.
+	 *
+	 * @param toChoices
+	 */
+	public void setRequestChoiceList(Collection toChoices) {
+		// clear existing choices (in this valueObject and set flag for removal from database).
+<span class="nc" id="L490">		deleteAllChildren(TORequestFieldInfo.TO_CHOICE_CHILD_TYPE);</span>
+
+		// Now add the passed choices for creation.
+<span class="nc bnc" id="L493" title="All 2 branches missed.">		for (Iterator itr = toChoices.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L494">			createChildObject(TORequestFieldInfo.TO_CHOICE_CHILD_TYPE, (TOChoice) itr.next());</span>
+		}
+
+		// invalidate cache as the TOChoice collection has changed.
+<span class="nc bnc" id="L498" title="All 2 branches missed.">		if (timeoffChoiceCache != null){</span>
+<span class="nc" id="L499">			timeoffChoiceCache.clear();</span>
+		}
+<span class="nc" id="L501">		timeoffChoiceCache = null;</span>
+
+<span class="nc" id="L503">		addDetailLevel(DL_TIMEOFF_CHOICES);</span>
+<span class="nc" id="L504">	}</span>
+
+	/**
+	 * Replaces existing list of FlexRequestMakeups with the given list.
+	 *
+	 * @param flexMakeups
+	 */
+	public void setFlexRequestMakeupList(Collection&lt;FlexRequestMakeup&gt; flexMakeups) {
+		// clear existing makeups (in this valueObject and set flag for removal from database).
+<span class="nc" id="L513">		deleteAllChildren(TORequestFieldInfo.TO_FLEXMAKEUP_CHILD_TYPE);</span>
+
+		// Now add the passed makeups for creation.
+<span class="nc bnc" id="L516" title="All 2 branches missed.">		for (FlexRequestMakeup makeup : flexMakeups) {</span>
+<span class="nc" id="L517">			createChildObject(TORequestFieldInfo.TO_FLEXMAKEUP_CHILD_TYPE, makeup);</span>
+<span class="nc" id="L518">		}</span>
+
+		// invalidate cache as the FlexRequestMakeup collection has changed.
+<span class="nc bnc" id="L521" title="All 2 branches missed.">		if (flexRequestMakeupCache != null) {</span>
+<span class="nc" id="L522">			flexRequestMakeupCache.clear();</span>
+		}
+<span class="nc" id="L524">		flexRequestMakeupCache = null;</span>
+
+<span class="nc" id="L526">		addDetailLevel(DL_TIMEOFF_FLEXMAKEUP);</span>
+<span class="nc" id="L527">	}</span>
+
+	/**
+	 * Replaces existing Waitlist with the given list.
+	 *
+	 * @param Waitlist
+	 */
+	public void setWaitlistInfo(TOWaitlist waitlist) {
+		// clear existing choices (in this valueObject and set flag for removal from database).
+<span class="nc" id="L536">		deleteAllChildren(TORequestFieldInfo.TO_WAITLIST_CHILD_TYPE);</span>
+<span class="nc bnc" id="L537" title="All 2 branches missed.">		if (waitlist != null) {</span>
+<span class="nc" id="L538">			createChildObject(TORequestFieldInfo.TO_WAITLIST_CHILD_TYPE, waitlist);</span>
+		}
+		// invalidate cache as the m_TOWaitlist  has changed.
+<span class="nc" id="L541">		timeoffWaitlistCache = null;</span>
+<span class="nc" id="L542">		addDetailLevel(DL_TIMEOFF_WAITLIST);</span>
+<span class="nc" id="L543">	}</span>
+
+	/**
+	 * see {@link #getTimeOffDebitType() getTimeOffDebitType}
+	 *
+	 * @param pTimeOffDebitType
+	 */
+	public void setTimeOffDebitType(String pTimeOffDebitType) {
+<span class="nc" id="L551">		setFieldValue(TORequestFieldInfo.TIMEOFFREQUEST_S_DEBITTYPE, pTimeOffDebitType);</span>
+<span class="nc" id="L552">	}</span>
+
+	/**
+	 * see {@link #getTimeOffType() getTimeOffType}
+	 *
+	 * @param pTimeOffType
+	 */
+	public void setTimeOffType(ID pTimeOffType) {
+<span class="nc" id="L560">		setFieldValue(TORequestFieldInfo.TIMEOFFREQUEST_I_ACTIVITYID, pTimeOffType);</span>
+<span class="nc" id="L561">	}</span>
+
+	/**
+	 * Calculate the length of the time off choices
+	 */
+	public void resetLengths() {
+<span class="nc" id="L567">		Collection&lt;TOChoice&gt; choiceList = getRequestChoiceList();</span>
+
+<span class="nc bnc" id="L569" title="All 2 branches missed.">		if (choiceList == null) {</span>
+<span class="nc" id="L570">			return;</span>
+		}
+
+<span class="nc bnc" id="L573" title="All 2 branches missed.">		for (Iterator&lt;TOChoice&gt; it = choiceList.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L574">			it.next().setLength(0.0f);</span>
+		}
+<span class="nc" id="L576">	}</span>
+
+	//Equivalent to Use Unvailability
+	public boolean isUnavailability() {
+<span class="nc" id="L580">		return getTimeOffDebitType().equals(TORequest.DEBITTYPE_DONT_DEBIT);</span>
+	}
+
+	/**
+	 * @return
+	 */
+	//Equivalent to use underlying shift
+	public boolean isUseUnderlyingShift() {
+<span class="nc" id="L588">		return getTimeOffDebitType().equals(TORequest.DEBITTYPE_DEBIT_ONLY_IF);</span>
+	}
+
+	//Equivalent to Use My TO Hours
+	public boolean isUseFixedHours() {
+<span class="nc" id="L593">		return getTimeOffDebitType().equals(TORequest.DEBITTYPE_DEBIT);</span>
+	}
+
+	
+
+	/**
+	 * Validation results for TORequests are stored in the request and its choices.
+	 *
+	 * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#hardValidationFailed()
+	 *      &lt;p/&gt;
+	 *      &lt;p/&gt;
+	 *      &lt;b&gt;Hard validation fails if:&lt;/b&gt;
+	 *      &lt;li&gt; hard validation error(s) exist for the request
+	 *      &lt;li&gt; hard validation error(s) exist for all TOChoices
+	 *      &lt;li&gt; Otherwise hard validation successful.
+	 */
+	@Override
+	public ValidationResult hardValidationFailed() {
+		// if hard validation errors found for the request
+<span class="nc" id="L612">		ValidationResult result = super.hardValidationFailed();</span>
+<span class="nc bnc" id="L613" title="All 2 branches missed.">		if (result != null) {</span>
+<span class="nc" id="L614">			return result;</span>
+		}
+
+		// Verify if all TOChoices have hard validation errors.  If so, hard validation failed.
+<span class="nc bnc" id="L618" title="All 2 branches missed.">		for (Iterator&lt;TOChoice&gt; itr = getRequestChoiceList().iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L619">			Collection&lt;ValidationResult&gt; choiceValResults = itr.next().getValidationResults(true);</span>
+
+			// if this TO choice passes, reset flag to success.
+<span class="nc" id="L622">			result = hardValidationErrorExists(choiceValResults);</span>
+<span class="nc bnc" id="L623" title="All 2 branches missed.">			if (result == null) {</span>
+<span class="nc" id="L624">				return result;</span>
+			}
+<span class="nc" id="L626">		}</span>
+<span class="nc" id="L627">		return result;</span>
+	}
+
+	/* (non-Javadoc)
+	 * @see com.bluepumpkin.ejb.rm.requests.common.validation.Validatable#clearValidationResults(boolean)
+	 */
+	@Override
+	public void clearValidationResults(boolean entireBranch) {
+		// clear the results associated with this request
+<span class="nc" id="L636">		super.clearValidationResults(entireBranch);</span>
+
+		//now clear the results associated with the children.
+<span class="nc bnc" id="L639" title="All 2 branches missed.">		if (entireBranch) {</span>
+<span class="nc" id="L640">			List&lt;TOChoice&gt; toChoices = getRequestChoiceList();</span>
+<span class="nc bnc" id="L641" title="All 2 branches missed.">			for (int i = 0; i &lt; toChoices.size(); i++) {</span>
+<span class="nc" id="L642">				toChoices.get(i).clearValidationResults(true);</span>
+			}
+		}
+<span class="nc" id="L645">	}</span>
+
+	/* (non-Javadoc)
+	 * @see com.bluepumpkin.ejb.rm.requests.common.validation.Validatable#getValidationResults()
+	 */
+	@Override
+	public Collection&lt;ValidationResult&gt; getValidationResults(boolean entireBranch) {
+<span class="nc" id="L652">		Collection&lt;ValidationResult&gt; results = super.getValidationResults(true);</span>
+
+<span class="nc bnc" id="L654" title="All 2 branches missed.">		if (!entireBranch) {</span>
+<span class="nc" id="L655">			return results;</span>
+		}
+
+		//obtain results from children.
+<span class="nc" id="L659">		List&lt;TOChoice&gt; toChoices = getRequestChoiceList();</span>
+
+<span class="nc bnc" id="L661" title="All 2 branches missed.">		for (TOChoice choice : toChoices) {</span>
+<span class="nc" id="L662">			results.addAll(choice.getValidationResults(entireBranch));</span>
+<span class="nc" id="L663">		}</span>
+
+<span class="nc bnc" id="L665" title="All 2 branches missed.">		if (getWithdrawInfo() != null) {</span>
+<span class="nc" id="L666">			results.addAll(getWithdrawInfo().getValidationResults(entireBranch));</span>
+		}
+<span class="nc" id="L668">		return results;</span>
+
+	}
+
+	//This is a hack, needed to deal with the validation interfaces which wants to return a ValidationResult, 
+	//but which should really be returning  a collection of ValidationResult
+	public ValidationResult getFirstValidationResult() {
+<span class="nc" id="L675">		Collection&lt;ValidationResult&gt; results = super.getValidationResults(true);</span>
+<span class="nc bnc" id="L676" title="All 2 branches missed.">		if (!results.isEmpty()) {</span>
+<span class="nc" id="L677">			return results.iterator().next();</span>
+		}
+<span class="nc" id="L679">		return null;</span>
+	}
+
+	/**
+	 * Return the subtype of this request. For a Time Off request, the subtype is the time off type,
+	 * which is the activityID.
+	 * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getRequestSubType()
+	 */
+	@Override
+	public ID getRequestSubType() {
+<span class="nc" id="L689">		return getTimeOffType();</span>
+	}
+
+	/**
+	 * Return the subtype of this Flex Time request, which will be one of the following values:
+	 * 0 : The time off comes before the makeup. (REQUEST_SUB_TYPE_TIMEOFF_BEFORE_MAKEUP)
+	 * 1 : The time off comes after the makeup. (REQUEST_SUB_TYPE_MAKEUP_BEFORE_TIMEOFF)
+	 * The default return value is 0 .
+	 * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getRequestSubType()
+	 */
+	public int getFlexTimeRequestSubType() {
+<span class="nc" id="L700">		int result = RequestFilingRule.REQUEST_SUB_TYPE_TIMEOFF_BEFORE_MAKEUP;</span>
+<span class="nc" id="L701">		List&lt;FlexRequestMakeup&gt; sortedMakeups = getFlexRequestMakeupList();</span>
+<span class="nc bnc" id="L702" title="All 2 branches missed.">		if (sortedMakeups != null) {</span>
+<span class="nc bnc" id="L703" title="All 2 branches missed.">			for (FlexRequestMakeup makeup : sortedMakeups) {</span>
+<span class="nc" id="L704">				TOChoice timeoff = getFirstTOChoice();</span>
+<span class="nc bnc" id="L705" title="All 2 branches missed.">				if (timeoff != null) {</span>
+<span class="nc" id="L706">					Date makeupStart = makeup.getStartTime();</span>
+<span class="nc" id="L707">					Date timeoffStart = timeoff.getStartDate();</span>
+<span class="nc bnc" id="L708" title="All 2 branches missed.">					result = timeoffStart.before(makeupStart) ?</span>
+							RequestFilingRule.REQUEST_SUB_TYPE_TIMEOFF_BEFORE_MAKEUP :
+							RequestFilingRule.REQUEST_SUB_TYPE_MAKEUP_BEFORE_TIMEOFF;
+<span class="nc" id="L711">				}</span>
+				break;
+			}
+		}
+<span class="nc" id="L715">		return result;</span>
+	}
+
+	/**
+	 * Returns the number of hours  for the first timeoff choice. Used for sorting waitlists
+	 * &lt;p/&gt;
+	 * (non-Javadoc)
+	 *
+	 * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getEmpIDTimeRangePairs()
+	 */
+	public TOChoice getWaitlistTOChoice() {
+<span class="nc bnc" id="L726" title="All 6 branches missed.">		if (waitlistTOChoice == null &amp;&amp; (getWaitlistInfo() != null &amp;&amp; RequestAuditTrail.STATUS_WAITLIST.equals(getRequestStatus()))) {</span>
+<span class="nc" id="L727">			Iterator&lt;TOChoice&gt; iterator = getRequestChoiceList().iterator();</span>
+<span class="nc bnc" id="L728" title="All 2 branches missed.">			while (iterator.hasNext()) {</span>
+<span class="nc" id="L729">				TOChoice toChoice = iterator.next();</span>
+<span class="nc bnc" id="L730" title="All 2 branches missed.">				if (toChoice.isWaitlist()) {</span>
+<span class="nc" id="L731">					waitlistTOChoice = toChoice;</span>
+<span class="nc" id="L732">					break;</span>
+				}
+<span class="nc" id="L734">			}</span>
+		}
+<span class="nc" id="L736">		return waitlistTOChoice;</span>
+	}
+
+	public void setWaitlistTOChoice(TOChoice aWaitlistTOChoice) {
+<span class="nc" id="L740">		this.waitlistTOChoice = aWaitlistTOChoice;</span>
+<span class="nc" id="L741">	}</span>
+
+	public long getWaitlistTOChoiceActualDurationInMilliSecs() {
+<span class="nc" id="L744">		TOChoice firstChoice = getWaitlistTOChoice();</span>
+<span class="nc" id="L745">		return firstChoice.getEndDate().getTime() - firstChoice.getStartDate().getTime();</span>
+	}
+
+	public float getWaitlistTOChoiceUsedAllocationHours() {
+<span class="nc" id="L749">		TOChoice firstChoice = getWaitlistTOChoice();</span>
+<span class="nc" id="L750">		return firstChoice.getLength();</span>
+	}
+
+	public Date getWaitlistTOChoiceStartDate() {
+<span class="nc" id="L754">		TOChoice firstChoice = getWaitlistTOChoice();</span>
+<span class="nc" id="L755">		return firstChoice.getStartDate();</span>
+	}
+
+	public int getNumberOfDaysOnWaitlist() {
+<span class="nc" id="L759">		int numberOfDays = -1;</span>
+<span class="nc" id="L760">		long timeinMsecs = getTimeOnWaitlist();</span>
+<span class="nc bnc" id="L761" title="All 2 branches missed.">		if (timeinMsecs &gt; 0) {</span>
+<span class="nc" id="L762">			numberOfDays = new Long(timeinMsecs / TimeZoneUtil.DAY_IN_MILLISECONDS_LONG).intValue();</span>
+		}
+<span class="nc" id="L764">		return numberOfDays;</span>
+	}
+
+	public long getTimeOnWaitlist() {
+<span class="nc" id="L768">		long timeInMilliSecs = -1;</span>
+<span class="nc" id="L769">		TOWaitlist waitlist = getWaitlistInfo();</span>
+<span class="nc bnc" id="L770" title="All 2 branches missed.">		if (waitlist != null) {</span>
+<span class="nc" id="L771">			Date creationDate = waitlist.getTOWaitlistCreationDate();</span>
+<span class="nc" id="L772">			timeInMilliSecs = new Date().getTime() - creationDate.getTime();</span>
+		}
+<span class="nc" id="L774">		return timeInMilliSecs;</span>
+	}
+
+
+	public Date getWaitlistCreationDateTime() {
+<span class="nc" id="L779">		Date creationDate = null;</span>
+<span class="nc" id="L780">		TOWaitlist waitlist = getWaitlistInfo();</span>
+<span class="nc bnc" id="L781" title="All 2 branches missed.">		if (waitlist != null) {</span>
+<span class="nc" id="L782">			creationDate = waitlist.getTOWaitlistCreationDate();</span>
+		}
+<span class="nc" id="L784">		return creationDate;</span>
+	}
+
+	public int getTOWaitlistPriorityOrder() {
+<span class="nc" id="L788">		return timeoffWaitlistPriorityOrder;</span>
+	}
+
+	public void setTOWaitlistPriorityOrder(int priorityOrder) {
+<span class="nc" id="L792">		timeoffWaitlistPriorityOrder = priorityOrder;</span>
+<span class="nc" id="L793">	}</span>
+
+	public Date getEmployeeStartDate() {
+<span class="nc" id="L796">		return getEmployee().getStartTime();</span>
+	}
+
+	public int getEmployeeRank() {
+<span class="nc" id="L800">		return getEmployee().getRank();</span>
+
+	}
+
+	public Employee getEmployee() {
+
+		try {
+<span class="nc bnc" id="L807" title="All 2 branches missed.">			if (cachedEmployee == null) {</span>
+<span class="nc" id="L808">				cachedEmployee = CacheUtilBBM.getEmployeeByID(getEmployeeID(), null,</span>
+				        Employee.DETAIL_LEVEL_EMPLOYEE_BASIC | Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY);
+			}
+
+<span class="nc" id="L812">		} catch (Exception e) {</span>
+<span class="nc" id="L813">			this.logException(e);</span>
+<span class="nc" id="L814">		}</span>
+<span class="nc" id="L815">		return cachedEmployee;</span>
+	}
+
+	public boolean isWaitlistRequested() {
+<span class="nc bnc" id="L819" title="All 2 branches missed.">		return getWaitlistInfo() != null;</span>
+	}
+
+	public boolean isEligibleForWaitlist() {
+<span class="nc" id="L823">		return eligibleForWaitlist;</span>
+	}
+
+	public void setEligibleForWaitlist(boolean flag) {
+<span class="nc" id="L827">		eligibleForWaitlist = flag;</span>
+<span class="nc" id="L828">	}</span>
+
+	/**
+	 * Returns withdraw info associated with this request.
+	 * &lt;p/&gt;
+	 * Note:
+	 *
+	 * @return
+	 */
+	public TOWithdraw getWithdrawInfo() {
+		// if m_TOWithdraw Cache is uninitialized, initialize.
+<span class="nc bnc" id="L839" title="All 2 branches missed.">		if (timeoffWithdrawCache == null) {</span>
+<span class="nc" id="L840">			Collection towithdrawCol = getChildObjects(TORequestFieldInfo.TO_WITHDRAW_CHILD_TYPE);</span>
+<span class="nc bnc" id="L841" title="All 4 branches missed.">			if (towithdrawCol != null &amp;&amp; !towithdrawCol.isEmpty()) {</span>
+<span class="nc" id="L842">				timeoffWithdrawCache = (TOWithdraw) towithdrawCol.iterator().next();</span>
+			}
+		}
+<span class="nc" id="L845">		return timeoffWithdrawCache;</span>
+	}
+
+	/**
+	 * Replaces existing Withdraw with the given list.
+	 *
+	 * @param Withdraw
+	 */
+	public void setWithdrawInfo(TOWithdraw withdraw) {
+		// clear existing choices (in this valueObject and set flag for removal from database).
+<span class="nc" id="L855">		deleteAllChildren(TORequestFieldInfo.TO_WITHDRAW_CHILD_TYPE);</span>
+<span class="nc bnc" id="L856" title="All 2 branches missed.">		if (withdraw != null) {</span>
+<span class="nc" id="L857">			createChildObject(TORequestFieldInfo.TO_WITHDRAW_CHILD_TYPE, withdraw);</span>
+		}
+		// invalidate cache as the m_TOWithdraw  has changed.
+<span class="nc" id="L860">		timeoffWithdrawCache = null;</span>
+<span class="nc" id="L861">		addDetailLevel(DL_TIMEOFF_WITHDRAW);</span>
+<span class="nc" id="L862">	}</span>
+
+	public TOChoice getTOChoiceEligibleForWaitlist() {
+<span class="nc" id="L865">		return waitlistEligibleTOChoice;</span>
+	}
+
+	public void setTOChoiceEligibleForWaitlist(TOChoice aWaitlistEligibleTOChoice) {
+<span class="nc" id="L869">		this.waitlistEligibleTOChoice = aWaitlistEligibleTOChoice;</span>
+<span class="nc" id="L870">	}</span>
+
+	public void setFirstTOChoice(ID toChoiceID) {
+<span class="nc" id="L873">		Collection&lt;TOChoice&gt; col = getRequestChoiceList();</span>
+<span class="nc bnc" id="L874" title="All 2 branches missed.">		for (Iterator&lt;TOChoice&gt; iterator = col.iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L875">			TOChoice choice = iterator.next();</span>
+<span class="nc bnc" id="L876" title="All 2 branches missed.">			choice.setRank(choice.getID().equals(toChoiceID) ? 1 : 0);</span>
+<span class="nc" id="L877">		}</span>
+<span class="nc" id="L878">	}</span>
+
+	public boolean isEligibleForAcceptAndRejectWithdrawAction() {
+<span class="nc bnc" id="L881" title="All 4 branches missed.">		return isEligibleForRejectWithdrawAction() &amp;&amp; isEligibleForAcceptWithdrawAction();</span>
+	}
+
+	public boolean isEligibleForRejectWithdrawAction() {
+<span class="nc bnc" id="L885" title="All 2 branches missed.">		return getWithdrawInfo() != null &amp;&amp;</span>
+<span class="nc bnc" id="L886" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_WITHDRAW_REQUEST.equals(getWithdrawInfo().getRequestStatus()) &amp;&amp;</span>
+<span class="nc bnc" id="L887" title="All 2 branches missed.">		        getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED);</span>
+	}
+
+	public boolean isEligibleForAcceptWithdrawAction() {
+<span class="nc bnc" id="L891" title="All 2 branches missed.">		return getWithdrawInfo() != null &amp;&amp;</span>
+<span class="nc bnc" id="L892" title="All 2 branches missed.">		        (RequestAuditTrail.STATUS_WITHDRAW_REQUEST.equals(getWithdrawInfo().getRequestStatus()) ||</span>
+<span class="nc bnc" id="L893" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_WITHDRAW_REJECT.equals(getWithdrawInfo().getRequestStatus())) &amp;&amp;</span>
+<span class="nc bnc" id="L894" title="All 2 branches missed.">		        getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED);</span>
+	}
+
+	public boolean isEligibleForCancelWithdrawAction() {
+<span class="nc bnc" id="L898" title="All 2 branches missed.">		return getWithdrawInfo() != null &amp;&amp;</span>
+<span class="nc bnc" id="L899" title="All 2 branches missed.">		        (RequestAuditTrail.STATUS_WITHDRAW_REQUEST.equals(getWithdrawInfo().getRequestStatus()) ||</span>
+<span class="nc bnc" id="L900" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_WITHDRAW_REJECT.equals(getWithdrawInfo().getRequestStatus())) &amp;&amp;</span>
+<span class="nc bnc" id="L901" title="All 2 branches missed.">		        getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED);</span>
+	}
+
+	public boolean isEligibleForWithdraw() {
+<span class="nc bnc" id="L905" title="All 2 branches missed.">		return (RequestAuditTrail.STATUS_WAITLIST.equals(getRequestStatus()) ||</span>
+<span class="nc bnc" id="L906" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_PENDING.equals(getRequestStatus()) ||</span>
+<span class="nc bnc" id="L907" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_TENTATIVE.equals(getRequestStatus()) ||</span>
+<span class="nc bnc" id="L908" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_ESCALATED.equals(getRequestStatus()) ||</span>
+<span class="nc bnc" id="L909" title="All 2 branches missed.">		        RequestAuditTrail.STATUS_NEGOTIATION.equals(getRequestStatus())) ||</span>
+<span class="nc bnc" id="L910" title="All 2 branches missed.">		        (getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED) &amp;&amp;</span>
+<span class="nc bnc" id="L911" title="All 4 branches missed.">		        (getWithdrawInfo() == null || getWithdrawInfo().getRequestStatus().equals(RequestAuditTrail.STATUS_WITHDRAW_CANCEL)));</span>
+	}
+
+	@Override
+	protected Collection getSoftValidationStates() {
+<span class="nc bnc" id="L916" title="All 2 branches missed.">		if(isFlexTimeRequest()) {</span>
+<span class="nc" id="L917">			return RequestAuditTrail.FLEX_SOFT_VALIDATION_STATES;</span>
+		}
+		
+<span class="nc" id="L920">		return RequestAuditTrail.TO_SOFT_VALIDATION_STATES;</span>
+	}
+
+	@Override
+	public boolean isHardValidationNeeded(int methodType) {
+		try {
+<span class="nc" id="L926">			String reqStatus = getRequestStatus();</span>
+<span class="nc bnc" id="L927" title="All 2 branches missed.">			if (getHardValidationStatesToBeSkipped().contains(reqStatus)) {</span>
+<span class="nc bnc" id="L928" title="All 4 branches missed.">				if (!(reqStatus.equals(RequestAuditTrail.STATUS_DENIED) &amp;&amp; isWaitlistEnabled())) {</span>
+<span class="nc" id="L929">					return false;</span>
+				}
+			}
+<span class="nc bnc" id="L932" title="All 2 branches missed.">			if (methodType != RequestUtil.METHODTYPE_CREATOR &amp;&amp;</span>
+<span class="nc bnc" id="L933" title="All 4 branches missed.">			        getExpirationDate() != null &amp;&amp; hasExpired()) {</span>
+<span class="nc" id="L934">				return false;</span>
+			}
+<span class="nc" id="L936">		} catch (Exception e) {</span>
+<span class="nc" id="L937">			this.logException(e);</span>
+<span class="nc" id="L938">		}</span>
+<span class="nc" id="L939">		return true;</span>
+	}
+
+	
+
+	public boolean isWaitlistEnabled() {
+		try {
+<span class="nc bnc" id="L946" title="All 2 branches missed.">			if (cachedWaitlistEnabled == null) {</span>
+<span class="nc" id="L947">				cachedWaitlistEnabled = new Boolean(TORequestUtil.isTOWaitlistEnabled(this));</span>
+			}
+<span class="nc" id="L949">		} catch (Exception e) {</span>
+<span class="nc" id="L950">			this.logException(e);</span>
+<span class="nc" id="L951">		}</span>
+<span class="nc bnc" id="L952" title="All 4 branches missed.">		return cachedWaitlistEnabled != null &amp;&amp; cachedWaitlistEnabled.booleanValue();</span>
+	}
+
+	public int getTimeOffRule() {
+<span class="nc bnc" id="L956" title="All 2 branches missed.">		if (getTimeOffDebitType().equals(TORequest.DEBITTYPE_DEBIT)) {</span>
+<span class="nc" id="L957">			return TimeOffEvent.TIME_OFF_RULE_USE_MINSTOWARDSRULES;</span>
+<span class="nc bnc" id="L958" title="All 2 branches missed.">		} else if (getTimeOffDebitType().equals(TORequest.DEBITTYPE_DEBIT_ONLY_IF)) {</span>
+<span class="nc" id="L959">			return TimeOffEvent.TIME_OFF_RULE_USE_SHIFT;</span>
+		} else {
+<span class="nc" id="L961">			return -1;</span>
+		}
+	}
+
+	public int getPeriodFlag(TOChoice choice) {
+		try {
+<span class="nc" id="L967">			ShiftAssignment lastShift = getCache().getLastPublishedShiftAssignment();</span>
+<span class="nc bnc" id="L968" title="All 2 branches missed.">			if (choice.getEndDate().before(lastShift.getEndTime())) {</span>
+<span class="nc" id="L969">				return DailyHoursBuckets.DAILYHOURSBUCKETS_PERIOD_SCHED;</span>
+<span class="nc bnc" id="L970" title="All 2 branches missed.">			} else if (choice.getStartDate().after(lastShift.getEndTime())) {</span>
+<span class="nc" id="L971">				return DailyHoursBuckets.DAILYHOURSBUCKETS_PERIOD_UNSCHED;</span>
+			} else {
+<span class="nc" id="L973">				return DailyHoursBuckets.DAILYHOURSBUCKETS_PERIOD_OVERLAP;</span>
+			}
+<span class="nc" id="L975">		} catch (Exception e) {</span>
+<span class="nc" id="L976">			this.logException(e);</span>
+		
+		}
+<span class="nc" id="L979">		return DailyHoursBuckets.DAILYHOURSBUCKETS_PERIOD_INIT;</span>
+	}
+
+	public String getOrgName()throws Exception{ // NOSONAR
+<span class="nc" id="L983">		return getCache().getOrgNameForMsg();</span>
+	}
+	
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

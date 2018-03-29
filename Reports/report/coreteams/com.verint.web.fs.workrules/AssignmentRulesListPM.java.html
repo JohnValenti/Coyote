@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AssignmentRulesListPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.workrules</a> &gt; <span class="el_source">AssignmentRulesListPM.java</span></div><h1>AssignmentRulesListPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.workrules;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.PaginationPair;
+import com.bluepumpkin.common.datatypes.ScopeID;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.empworkrule.model.WorkResourceComplexWorkRule;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectIDListComparator;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectUtil;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workrules.ejb.WorkRuleManager;
+import com.bluepumpkin.ejb.bbm.workrules.model.ComplexWorkRule;
+import com.bluepumpkin.ejb.bbm.workrules.model.Rotation;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.bbm.workresource.WorkResourceModelHandler;
+import com.bluepumpkin.web.fs.keys.FsJavaScriptFileID;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.web.fs.widgets.JumpToPagePaginationPC;
+import com.verint.web.fs.workrules.assignment.AssignmentRuleListPC;
+import com.verint.web.fs.workrules.assignmentrules.ui.ARParamPCUtil;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.Scope;
+import com.witness.web.uif.Log;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+
+@SuppressWarnings(&quot;serial&quot;)
+public class AssignmentRulesListPM extends WorkRulesListPM {
+<span class="fc" id="L50">	protected static Category log = Log.initCategory(AssignmentRulesListPM.class.getName());</span>
+	public static final String ASSIGNMENTRULE_LIST_SORTCOLUMN = AssignmentRuleListPC.ASSIGNMENTRULE_LIST_SORTCOLUMN;
+	public static final String ASSIGNMENTRULE_LIST_SORTORDER = AssignmentRuleListPC.ASSIGNMENTRULE_LIST_SORTORDER;
+	//public static final String ASSIGNMENTRULE_LIST_ITEMINDEX = JumpToPagePaginationPC.ASSIGNMENTRULE_LIST_ITEMINDEX;
+	//private Collection&lt;ComplexWorkRule&gt; complexWorkRules = Collections.emptySet();
+<span class="fc" id="L55">	private List&lt;ComplexWorkRule&gt; complexWorkRules = Collections.emptyList();</span>
+<span class="fc" id="L56">	private HashMap&lt;ID, Organization&gt; orgsByID = new HashMap&lt;ID, Organization&gt;();</span>
+	private AssignmentRuleListPC m_assignmentRuleListPC;
+<span class="fc" id="L58">	private Map&lt;ID, String&gt; assignmentRuleDescriptionMap = new HashMap&lt;ID, String&gt;();</span>
+	private HashMap&lt;ID, String&gt; cwrEmpNameMap;
+<span class="fc" id="L60">	boolean isAscendingSort = true;</span>
+	public AssignmentRulesListPM(RequestContext context) {
+<span class="fc" id="L62">		super(context);</span>
+		
+<span class="fc" id="L64">		this.setJSMediator(FsJavaScriptFileID.WORK_PANE_LIST_ALT_DELETE_MEDIATOR);</span>
+		
+<span class="fc" id="L66">		option_showTimeZoneToggle = false;</span>
+<span class="fc" id="L67">		removeChildComponent(m_list);</span>
+<span class="fc" id="L68">		m_list = new AssignmentRuleListPC(m_context, new LinkedList&lt;ComplexWorkRule&gt;(), new HashMap&lt;ID, Organization&gt;(),</span>
+				new HashMap&lt;ID, String&gt;(),true);
+		//Need to get the sort order after initialize the component for loadData(). 
+<span class="fc" id="L71">		isAscendingSort = m_list.getHeader().isAscending();</span>
+<span class="fc" id="L72">		this.addChildComponent(m_list);</span>
+<span class="fc" id="L73">		setIsMultiRowSelectable(false);</span>
+<span class="fc" id="L74">	}</span>
+	
+	@Override
+	protected void loadData() throws Exception {
+<span class="fc" id="L78">		super.loadData();</span>
+<span class="fc" id="L79">		int pageIndex = getPagePaginationIndex(); </span>
+<span class="fc" id="L80">		int pageSize = getPageIDSize();	</span>
+		
+		
+<span class="fc" id="L83">		ID selectedOrgID = getSelectedIDObject();</span>
+<span class="pc bpc" id="L84" title="1 of 2 branches missed.">		if (selectedOrgID != null) {</span>
+			// Get Complex Work Rules
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">			if ( m_context.getUser().isAuthorized(PrivilegeKeys.FS_VIEWWORKRULES_ID, new ScopeID(selectedOrg.getID(), Scope.ORG_SCOPE))) {</span>
+<span class="fc" id="L87">				WorkRuleManager wrm = WfmManagerFactory.getWorkRuleManager(m_context.isInWhatIfMode());</span>
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">				if (isPaginationNavPressed()) {</span>
+<span class="nc" id="L89">					complexWorkRules = new ArrayList&lt;ComplexWorkRule&gt;( wrm.getComplexWorkRulesByIDs(getPageIDs()));</span>
+<span class="nc" id="L90">					ArrayList&lt;ID&gt; pageIDs = (ArrayList&lt;ID&gt;)getPageIDs();</span>
+<span class="nc" id="L91">					Collections.sort(complexWorkRules, new ValueObjectIDListComparator(pageIDs));</span>
+					
+<span class="nc" id="L93">				} else{</span>
+<span class="fc" id="L94">					PaginationPair&lt;ComplexWorkRule&gt; data = </span>
+<span class="fc" id="L95">						wrm.getComplexWorkRulesForOrgAndAncestors(</span>
+								selectedOrgID, 
+								pageSize, 
+<span class="fc" id="L98">								pageIndex,	((AssignmentRuleListPC) m_list).getSortFields(),isAscendingSort);</span>
+<span class="fc" id="L99">					complexWorkRules = new ArrayList&lt;ComplexWorkRule&gt; (data.getValues());</span>
+<span class="fc" id="L100">					initPaginationIDs(data.getIDs());</span>
+<span class="fc" id="L101">					Collections.sort(complexWorkRules, new ValueObjectIDListComparator(new ArrayList&lt;ID&gt;(getPageIDs())));</span>
+				}
+				
+<span class="fc" id="L104">			} else {</span>
+<span class="nc" id="L105">				addPageMessage(Message.INFO_TYPE, FsWebBundleKey.FS_NOT_AUTHORIZED_TO_VIEW_WORK_RULES_IN_THIS_SCOPE, FsWebBundleKey.BUNDLE_NAME);</span>
+			}
+
+<span class="fc" id="L108">			loadEmployeeAssignmentNames();</span>
+			
+			// Get Owner Org Names
+<span class="fc" id="L111">			HashSet&lt;ID&gt; ownerOrgIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">			for (ComplexWorkRule cwr : complexWorkRules) {</span>
+<span class="fc" id="L113">				ID ownerOrgID = cwr.getOrganizationID();</span>
+<span class="pc bpc" id="L114" title="1 of 2 branches missed.">				if (ownerOrgID != null) ownerOrgIDs.add(cwr.getOrganizationID());</span>
+<span class="fc" id="L115">			}</span>
+			
+<span class="fc" id="L117">			orgsByID = ValueObjectUtil.getIDObjectMap(OrganizationModelHandler.getOrganizationsByIDs(m_context, ownerOrgIDs));</span>
+			
+<span class="fc" id="L119">			assignmentRuleDescriptionMap = ARParamPCUtil.buildAssignmentRuleDescriptions(m_context, orgsByID, complexWorkRules);</span>
+		}
+<span class="fc" id="L121">	}</span>
+
+
+
+	/**
+	 * Loads the names of the assigned employees, formats the lists as strings, and stores them in the cwrEmpNameMap field.
+	 * @throws BbmFinderException
+	 * @throws RemoteException
+	 * @throws BbmException
+	 */
+	private void loadEmployeeAssignmentNames() throws BbmFinderException, RemoteException, BbmException {
+		// First get the object representation of the assignment for the rotations
+<span class="fc" id="L133">		Map&lt;ID, ? extends Collection&lt;WorkResourceComplexWorkRule&gt;&gt; rotationAssignmentMap = </span>
+<span class="fc" id="L134">			WorkRulesModelHandler.getComplexWorkRuleAssignmentsByCWRIDs(m_context, ValueObjectUtil.getIDFromObjects(complexWorkRules));</span>
+
+		// Now Collect the employee IDs so we can get the names
+<span class="fc" id="L137">		Set&lt;ID&gt; workResourceIDs = new HashSet&lt;ID&gt;();</span>
+<span class="pc bpc" id="L138" title="1 of 2 branches missed.">		for (Collection&lt;WorkResourceComplexWorkRule&gt;  assignments : rotationAssignmentMap.values()) {</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">			for (WorkResourceComplexWorkRule assignment: assignments) {</span>
+<span class="nc" id="L140">				workResourceIDs.add(assignment.getWorkResourceID());</span>
+<span class="nc" id="L141">			}</span>
+<span class="nc" id="L142">		}</span>
+		
+		// Get the Name abstraction for all the employees
+<span class="fc" id="L145">		HashMap&lt;ID, EmployeeName&gt; assignmentNames = WorkResourceModelHandler.getWorkResourceManager(m_context).getWorkResourceNamesByIDs(workResourceIDs);</span>
+		
+<span class="fc" id="L147">		cwrEmpNameMap = new HashMap&lt;ID, String&gt;();</span>
+<span class="pc bpc" id="L148" title="1 of 2 branches missed.">		for (Entry&lt;ID, ? extends Collection&lt;WorkResourceComplexWorkRule&gt;&gt;  assignmentEntry : rotationAssignmentMap.entrySet()) {</span>
+<span class="nc" id="L149">			ID rotationID = assignmentEntry.getKey();</span>
+<span class="nc" id="L150">			ArrayList&lt;String&gt; empNames = new ArrayList&lt;String&gt;(assignmentEntry.getValue().size());</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">			for (WorkResourceComplexWorkRule assignment: assignmentEntry.getValue()) {</span>
+				try {
+					// QC 109704 - handling NPE for empNames.add(null)
+<span class="nc" id="L154">					empNames.add(assignmentNames.get(assignment.getWorkResourceID()).getDisplayName(m_localizer));</span>
+				}
+<span class="nc" id="L156">				catch (NullPointerException npe) {</span>
+<span class="nc" id="L157">					addPageMessage(Message.WARNING_TYPE, FsWebBundleKey.ASSIGNMENT_RULE_WARN_RULES_LIST_EMPLOYEE_INVALID_DATA, FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L158">					log.l7dWarn(FsWebBundleKey.ASSIGNMENT_RULE_WARN_EMPLOYEE_INVALID_DATA + assignment.getWorkResourceID(), npe); // log the employee ID for these occurrences</span>
+<span class="nc" id="L159">					empNames.add(&quot;Employee ID: &quot; + assignment.getWorkResourceID()); // add something identifiable to empNames for these occurrences</span>
+<span class="nc" id="L160">				}</span>
+<span class="nc" id="L161">			}</span>
+<span class="nc" id="L162">			cwrEmpNameMap.put(rotationID, StringUtil.join(empNames, &quot;, &quot;));</span>
+<span class="nc" id="L163">		}</span>
+<span class="fc" id="L164">	}</span>
+
+
+	@Override
+	protected boolean isSortSupported() {
+<span class="fc" id="L169">		return true;</span>
+	}
+
+	@Override
+	protected void initHeader() {
+<span class="fc" id="L174">	}</span>
+
+	@Override
+	protected void initSelectableItems() {
+<span class="fc" id="L178">		removeChildComponent(m_list);</span>
+<span class="fc" id="L179">		m_list = m_assignmentRuleListPC = new AssignmentRuleListPC(m_context, complexWorkRules, orgsByID, assignmentRuleDescriptionMap,true) {</span>
+			@Override
+			protected void setRowAttributes(DefaultMultiColumnNodeData rowData,
+					ComplexWorkRule cwr) {
+<span class="fc" id="L183">				super.setRowAttributes(rowData, cwr);</span>
+<span class="fc" id="L184">				AssignmentRulesListPM.this.setRowAttributes(rowData, cwr.getOrganizationID());</span>
+<span class="pc bpc" id="L185" title="1 of 2 branches missed.">				if (cwrEmpNameMap.containsKey(cwr.getID())) {</span>
+<span class="nc" id="L186">					String msg = m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.DELETE_CONFIRMATION_WITH_ASSIGNMENTS, cwrEmpNameMap.get(cwr.getID()));</span>
+<span class="nc" id="L187">					rowData.setNodeAttribute(&quot;deleteConfirmation&quot;, msg);</span>
+				}
+<span class="fc" id="L189">			}</span>
+		};
+<span class="fc" id="L191">		m_assignmentRuleListPC.extractParameters(m_context.getRequest());</span>
+<span class="fc" id="L192">		addChildComponent(m_list);</span>
+<span class="fc" id="L193">	}</span>
+
+	@Override
+	protected void initContentTitle() {
+<span class="fc" id="L197">		super.initContentTitle();</span>
+<span class="fc" id="L198">		m_contentTitlePC.setPageTitle(m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_ASSIGNMENT_RULES));</span>
+<span class="fc" id="L199">	}</span>
+	
+	public static AssignmentRulesListPM getInstance(RequestContext context) {
+<span class="fc" id="L202">		return (AssignmentRulesListPM) PageModel.getInstance(context, AssignmentRulesListPM.class);</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

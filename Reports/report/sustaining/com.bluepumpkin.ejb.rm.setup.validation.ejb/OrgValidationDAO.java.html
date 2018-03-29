@@ -1,0 +1,1047 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>OrgValidationDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.setup.validation.ejb</a> &gt; <span class="el_source">OrgValidationDAO.java</span></div><h1>OrgValidationDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.setup.validation.ejb;
+
+import java.sql.Types;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoQuery;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectBase;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.setup.validation.model.OrgValidation;
+import com.bluepumpkin.ejb.rm.setup.validation.model.OrgValidationFieldInfo;
+import com.bluepumpkin.ejb.rm.setup.validation.model.ValidationRule;
+import com.bluepumpkin.ejb.rm.util.DAOUtil;
+import com.bluepumpkin.ejb.rm.util.JdmoPreparedStatement;
+import com.bluepumpkin.ejb.rm.util.JdmoPreparedStatementBuilder;
+import com.bluepumpkin.ejb.rm.util.LicenseUtil;
+import com.bluepumpkin.ejb.rm.util.OrgInheritUtilDAO;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.bluepumpkin.ejb.rm.util.ThreadLocalCache;
+
+/**
+ * Title: OrgValidationDAO Description: DAO class for OrgValidation Copyright:
+ * Copyright (c) 2016 Company: Blue Pumpkin Software, Inc.
+ * 
+ * @author Shailendra Sharma
+ * @version 1.0
+ */
+
+public class OrgValidationDAO extends OrgInheritUtilDAO {
+
+<span class="fc" id="L47">	private static final Category LOG = Log.initCategory(OrgInheritUtilDAO.class.getName());</span>
+
+	// Organization validation field info for the class.
+<span class="fc" id="L50">	private static FieldInfo fieldInfo = new OrgValidationFieldInfo();</span>
+
+	//Advanced RM license enables validation for time-off by activities
+<span class="pc" id="L53">	boolean isRMAdvancedLicense = LicenseUtil.isAdvancedRMLicense();</span>
+
+	class BundleKeyParams {
+		private String bundleKey;
+		private String paramName;
+		private Integer intValue;
+
+<span class="fc" id="L60">		BundleKeyParams(String bundleKey, String paramName, Integer intValue) {</span>
+<span class="fc" id="L61">			this.bundleKey = bundleKey;</span>
+<span class="fc" id="L62">			this.paramName = paramName;</span>
+<span class="fc" id="L63">			this.intValue = intValue;</span>
+<span class="fc" id="L64">		}</span>
+
+<span class="fc" id="L66">		public BundleKeyParams(BundleKeyParams param) {</span>
+<span class="fc" id="L67">			this.bundleKey = param.bundleKey;</span>
+<span class="fc" id="L68">			this.paramName = param.paramName;</span>
+<span class="fc" id="L69">			this.intValue = param.intValue;</span>
+<span class="fc" id="L70">		}</span>
+
+	}
+
+	/** mapping from validation rule bundlekey to the rule's id */
+	private Map&lt;String, ID&gt; mapValidationRuleIds;
+
+	/**
+	 * Default constructor for the creating object instance of the class.
+	 */
+	public OrgValidationDAO() {
+<span class="fc" id="L81">		super();</span>
+<span class="fc" id="L82">	}</span>
+
+	/**
+	 * Constructor for the creating object instance of the class.
+	 * 
+	 * @param Jdmo
+	 *            - Jdmo instance used for executing sql statements.
+	 */
+	public OrgValidationDAO(Jdmo dmo) {
+<span class="nc" id="L91">		super(dmo);</span>
+<span class="nc" id="L92">	}</span>
+
+	/**
+	 * Returns the Category for the class
+	 * 
+	 * @return Category - Category object for the class
+	 */
+	@Override
+	protected Category getCategory() {
+<span class="nc" id="L101">		return LOG;</span>
+	}
+
+	/**
+	 * Return the FieldInfo object for the class.
+	 * 
+	 * @return FieldInfo object for the class.
+	 */
+	@Override
+	protected FieldInfo getFieldInfo() {
+<span class="fc" id="L111">		return fieldInfo;</span>
+	}
+
+	/**
+	 * Create new OrgValidation object and return it as ValueObjectBase.
+	 * 
+	 * @return ValueObjectBase object.
+	 */
+	@Override
+	protected ValueObjectBase createValueObject() {
+<span class="nc" id="L121">		return new OrgValidation();</span>
+	}
+
+	/**
+	 * Find the ENABLED Validator class names for the OrganizationId, request
+	 * type passed as argument and returns a collection of Validator class
+	 * names. If shallow is false, then the validation rules from the parent
+	 * organizations of the supplied org are also checked if the rules do not
+	 * exist for the specified org.
+	 * 
+	 * @param pRequestType
+	 *            - Type of request TimeOff or ShiftSwap. Note that All is not a
+	 *            valid choice here since this method is expected to be called
+	 *            for a particular request type, not the UI setting up
+	 *            validation rules for an organization.
+	 * @param pOrganizationId
+	 *            - Organisation ID object.
+	 * @param shallow
+	 *            - If true, only the specified org's enabled rules of the
+	 *            specified type are returned. If false, and if the requested
+	 *            rules do not exist for the specified org, then we get the
+	 *            rules from the ancestor orgs until we find all the rules of
+	 *            the requested type. Once we find a rule (whether it's enabled
+	 *            or disabled), we stop searching for it.
+	 * 
+	 * @return A collection of Strings that are the Validator class names in
+	 *         effect for the given organization and type. Returns an empty
+	 *         collection if there are none.
+	 */
+	public Set&lt;String&gt; findValidators(String pRequestType, ID organizationId, ID activityID) throws JdmoException {
+<span class="fc" id="L151">		final String methodName = &quot;findValidators&quot;;</span>
+<span class="fc" id="L152">		this.enterMethod(methodName, null);</span>
+
+<span class="fc" id="L154">		Set&lt;String&gt; result = new HashSet&lt;String&gt;();</span>
+		try {
+			// Starting with the first org in the list, find the rules of the
+			// specified type.
+			// If they do not exist in the org, then check the ancestor orgs
+			// until you find the rules.
+
+<span class="fc" id="L161">			JdmoPreparedStatementBuilder sql = new JdmoPreparedStatementBuilder();</span>
+<span class="fc" id="L162">			sql.add(&quot;;with C1 as ( &quot; + &quot; SELECT V.VALIDATOR, O.ACTIVITYID, O.ISENABLED, level &quot; + &quot; FROM VALIDATIONRULE V &quot;</span>
+					+ &quot; inner join ORGANIZATIONVALIDATION O on O.VALIDATIONRULEID = V.ID &quot;
+					+ &quot; inner join FN_GetParentOrgs(?) ParentOrgs on ParentOrgs.ID = O.ORGANIZATIONID &quot; + &quot; WHERE &quot;, organizationId);
+
+<span class="pc bpc" id="L166" title="3 of 4 branches missed.">			if (isRMAdvancedLicense &amp;&amp; activityID != null) {</span>
+<span class="nc" id="L167">				sql.add(&quot; O.ACTIVITYID = ? AND &quot;, activityID);</span>
+			}
+
+<span class="fc" id="L170">			sql.add(&quot;  V.REQUESTTYPE= ?&quot; + &quot; ), &quot; + &quot; C2 as ( &quot;</span>
+					+ &quot; select VALIDATOR, ISENABLED, ROW_NUMBER() Over (Partition BY VALIDATOR order by Level) rNum  &quot; + &quot; from C1  &quot;
+					+ &quot; )  &quot; + &quot; select VALIDATOR  &quot; + &quot; from C2  &quot; + &quot; where rNum =1  AND ISENABLED=1&quot;, pRequestType);
+
+<span class="fc" id="L174">			JdmoRowset rs = JdmoPreparedStatement.createRowset(m_dmo, sql);</span>
+
+<span class="fc bfc" id="L176" title="All 2 branches covered.">			while (rs.next()) {</span>
+<span class="fc" id="L177">				String validator = rs.getString(1);</span>
+<span class="fc" id="L178">				result.add(validator);</span>
+<span class="fc" id="L179">			}</span>
+		} finally {
+<span class="pc" id="L181">			this.exitMethod(methodName, null);</span>
+<span class="fc" id="L182">		}</span>
+
+<span class="fc" id="L184">		return result;</span>
+	}
+
+	/**
+	 * Create PROPERTY-KEY and PROPERTY-VALUE specified in the propertyMap for
+	 * the OrganizationId passed as argument. We override the default
+	 * createPropertyList so that we can load the mapping from validation rule
+	 * bundlekey to rule id. The callers only use the bundlekey but the database
+	 * uses the rule id.
+	 * 
+	 * @param orgId
+	 *            - Organisation ID object.
+	 * @param propertyMap
+	 *            - A Map that contains PROPERTY-KEY and PROPERTY-VALUE
+	 * @param shallow
+	 *            - true will create properties only for orgId, false will also
+	 *            affect child orgs.
+	 * @param listSelectedTimeOffTypeActivityIDs
+	 *            - list of activities for time-off
+	 */
+
+	private void insertUpdateProperties(ID orgId, Map&lt;String, Object&gt; propertyMap, // NOSONAR
+			List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs) throws JdmoException {
+
+<span class="fc" id="L208">		this.enterMethod(&quot;insertUpdateProperties&quot;, null);</span>
+
+<span class="pc bpc" id="L210" title="1 of 2 branches missed.">		if (propertyMap.keySet().isEmpty()) {</span>
+<span class="nc" id="L211">			return;</span>
+		}
+		try {
+<span class="fc" id="L214">			Iterator&lt;String&gt; propItr = propertyMap.keySet().iterator();</span>
+<span class="fc" id="L215">			InsertUpdateOrganizationValidation insertUpdate = new InsertUpdateOrganizationValidation();</span>
+
+<span class="fc bfc" id="L217" title="All 2 branches covered.">			while (propItr.hasNext()) {</span>
+<span class="fc" id="L218">				String propName = propItr.next();</span>
+<span class="fc" id="L219">				ValidationRule validationRule = (ValidationRule) propertyMap.get(propName);</span>
+
+<span class="fc" id="L221">				insertUpdateOrganizationValidation(orgId, propName, validationRule, listSelectedTimeOffTypeActivityIDs, insertUpdate);</span>
+<span class="fc" id="L222">			}</span>
+
+<span class="fc" id="L224">			insertUpdate.mergeToDB(m_dmo);</span>
+
+			// Update the params
+<span class="fc" id="L227">			Iterator&lt;String&gt; it = propertyMap.keySet().iterator();</span>
+<span class="fc bfc" id="L228" title="All 2 branches covered.">			while (it.hasNext()) {</span>
+<span class="fc" id="L229">				String propName = it.next();</span>
+<span class="fc" id="L230">				ValidationRule validationRule = (ValidationRule) propertyMap.get(propName);</span>
+<span class="fc" id="L231">				deleteAndInsertOrgRequestValidationParams(validationRule, propName, Collections.singletonList(orgId),</span>
+						listSelectedTimeOffTypeActivityIDs);
+<span class="fc" id="L233">			}</span>
+
+		} finally {
+<span class="pc" id="L236">			this.exitMethod(&quot;insertUpdateProperties&quot;, null);</span>
+<span class="fc" id="L237">		}</span>
+<span class="fc" id="L238">	}</span>
+
+	/**
+	 * Load the mapping from validation rule bundlekey to rule id. The callers
+	 * only use the bundlekey but the database uses the rule id.
+	 */
+	protected void createInitPropertyList() throws JdmoException {
+		// have to load the validation rules to insert new rows
+		// We don't expect the admins to insert new properties often
+		// so we won't bother to cache the results.
+<span class="fc" id="L248">		final String methodName = &quot;createInitPropertyList&quot;;</span>
+<span class="fc" id="L249">		this.enterMethod(methodName, null);</span>
+
+<span class="fc" id="L251">		mapValidationRuleIds = new HashMap&lt;String, ID&gt;(31);</span>
+		try {
+<span class="fc" id="L253">			String jQuery = &quot;SELECT BUNDLEKEY, ID FROM VALIDATIONRULE&quot;;</span>
+<span class="fc" id="L254">			JdmoRowset rs = m_dmo.createRowset(jQuery);</span>
+<span class="pc bpc" id="L255" title="1 of 4 branches missed.">			while (rs != null &amp;&amp; rs.next()) {</span>
+<span class="fc" id="L256">				mapValidationRuleIds.put(rs.getString(1), rs.getID(2));</span>
+			}
+		} finally {
+<span class="pc" id="L259">			this.exitMethod(methodName, null);</span>
+<span class="fc" id="L260">		}</span>
+<span class="fc" id="L261">	}</span>
+
+	/**
+	 * Assuming you called createInitPropertyList() prior to this method, we
+	 * will get the ValidationRuleID corresponding to the bundleKey parameter.
+	 */
+	private ID getValidationRuleId(Object bundlekey) {
+<span class="fc bfc" id="L268" title="All 2 branches covered.">		if (mapValidationRuleIds == null) {</span>
+<span class="fc" id="L269">			return null; // the caller is not going to like this.</span>
+		}
+<span class="fc" id="L271">		return mapValidationRuleIds.get(bundlekey);</span>
+	}
+
+	/*
+	 * Preload all the parameters from OrgRequestParam table for this org and all properties and activities
+	 */
+	private List&lt;BundleKeyParams&gt; loadValidationParams(ID orgID, Collection&lt;String&gt; wantedPropList,
+			List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs) throws JdmoException {
+<span class="fc" id="L279">		List&lt;BundleKeyParams&gt; paramList = new ArrayList&lt;BundleKeyParams&gt;();</span>
+<span class="fc" id="L280">		List&lt;String&gt; propertyKeysWithParams = new ArrayList&lt;String&gt;();</span>
+		//get the keys with params
+<span class="fc bfc" id="L282" title="All 2 branches covered.">		for (String propertyKey : wantedPropList) {</span>
+<span class="fc bfc" id="L283" title="All 2 branches covered.">			if (isParamRule(propertyKey)) {</span>
+<span class="fc" id="L284">				propertyKeysWithParams.add(propertyKey);</span>
+			}
+<span class="fc" id="L286">		}</span>
+
+<span class="fc" id="L288">		String stringSelectedActivities = &quot;&quot;;</span>
+<span class="pc bpc" id="L289" title="1 of 2 branches missed.">		if (this.isRMAdvancedLicense) {</span>
+<span class="nc" id="L290">			stringSelectedActivities = StringUtil.join(listSelectedTimeOffTypeActivityIDs, &quot;,&quot;);</span>
+		}
+
+<span class="fc" id="L293">		String stringProperties = StringUtil.join(propertyKeysWithParams, &quot;,&quot;);</span>
+
+<span class="fc" id="L295">		JdmoQuery jdmoQuery = m_dmo.createQuery(&quot;RM_GET_VALIDATION_RULE_PARAMETERS&quot;, Jdmo.STORPROC_QUERY);</span>
+<span class="fc" id="L296">		jdmoQuery.setParID(1, orgID);</span>
+<span class="fc" id="L297">		jdmoQuery.setParString(2, stringSelectedActivities);</span>
+<span class="fc" id="L298">		jdmoQuery.setParString(3, stringProperties);</span>
+<span class="fc" id="L299">		jdmoQuery.setParNull(4, Types.INTEGER);</span>
+<span class="fc" id="L300">		jdmoQuery.setParBoolean(5, this.isRMAdvancedLicense);</span>
+
+<span class="fc" id="L302">		JdmoRowset rs = m_dmo.createRowset(jdmoQuery, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+
+<span class="pc bpc" id="L304" title="2 of 6 branches missed.">		while (rs != null &amp;&amp; !rs.isEmpty() &amp;&amp; rs.next()) {</span>
+<span class="fc" id="L305">			String key = rs.getString(1);</span>
+<span class="fc" id="L306">			String paramName = rs.getString(2);</span>
+<span class="fc" id="L307">			String paramValue = rs.getString(3);</span>
+<span class="fc" id="L308">			Integer intValue = Integer.MAX_VALUE;</span>
+
+			// multi-value == &quot;*&quot; due to timeoff being by activity
+			// convert to max int to signal UI that this is multi-value
+<span class="pc bpc" id="L312" title="1 of 2 branches missed.">			if (!&quot;*&quot;.equals(paramValue)) {</span>
+<span class="fc" id="L313">				intValue = Integer.parseInt(paramValue);</span>
+			}
+
+<span class="fc" id="L316">			BundleKeyParams params = new BundleKeyParams(key, paramName, intValue);</span>
+<span class="fc" id="L317">			paramList.add(params);</span>
+<span class="fc" id="L318">		}</span>
+
+<span class="fc" id="L320">		return paramList;</span>
+	}
+
+	/**
+	 * Given a propertyMap of BUNDLEKEY-&gt;ISENABLED, convert one of it's
+	 * bundleKey's values to a ValidationRule. Calling this method for all keys
+	 * results in a map of BUNDLEKEY-&gt;ValidationRule. The ValidationRule objects
+	 * contain the rule's parameters, if any. If shallow is true, we only search
+	 * the given org for the rule's parameters. If false, we search the org and
+	 * its ancestors until we find the parameters for the given rule. If the
+	 * rule type isn't supposed to have parameters, we don't bother searching
+	 * for them.
+	 * 
+	 * @param orgID
+	 * @param propertyMap
+	 * @param bundleKey
+	 * @param shallow
+	 * @throws Exception
+	 */
+	@SuppressWarnings(&quot;unchecked&quot;)
+	protected void createValidationRule(ID orgID, Map propertyMap, String bundleKey, List&lt;BundleKeyParams&gt; paramList) throws Exception {
+
+<span class="fc" id="L342">		ValidationRule rule = new ValidationRule();</span>
+		ID valRuleID;
+
+<span class="fc" id="L345">		HashMap paramMap = new HashMap();</span>
+
+<span class="pc bpc" id="L347" title="1 of 2 branches missed.">		if (propertyMap.get(bundleKey) instanceof ValidationRule) {</span>
+<span class="nc" id="L348">			rule = (ValidationRule) propertyMap.get(bundleKey);</span>
+<span class="nc" id="L349">			valRuleID = rule.getID();</span>
+		} else {
+<span class="fc" id="L351">			rule.setEnabledState((Integer) propertyMap.get(bundleKey));</span>
+<span class="fc" id="L352">			valRuleID = getValidationRuleId(bundleKey);</span>
+<span class="fc bfc" id="L353" title="All 2 branches covered.">			if (valRuleID == null) {</span>
+<span class="fc" id="L354">				createInitPropertyList();</span>
+<span class="fc" id="L355">				valRuleID = getValidationRuleId(bundleKey);</span>
+			}
+		}
+
+		// If the rule type isn't supposed to have parameters, we don't
+		// bother searching for them.
+<span class="fc bfc" id="L361" title="All 2 branches covered.">		if (isParamRule(bundleKey)) {</span>
+			// get preloaded params from the list for the bundlekey
+<span class="fc" id="L363">			List&lt;BundleKeyParams&gt; params = getBundleKeyParamsFromList(bundleKey, paramList);</span>
+<span class="fc bfc" id="L364" title="All 2 branches covered.">			for (BundleKeyParams param : params) {</span>
+<span class="fc" id="L365">				paramMap.put(param.paramName, param.intValue);</span>
+<span class="fc" id="L366">			}</span>
+		}
+
+<span class="fc" id="L369">		rule.setValidationRuleId(valRuleID);</span>
+<span class="fc" id="L370">		rule.setParamMap(paramMap);</span>
+<span class="fc" id="L371">		propertyMap.put(bundleKey, rule);</span>
+<span class="fc" id="L372">	}</span>
+
+	private List&lt;BundleKeyParams&gt; getBundleKeyParamsFromList(String bundleKeySearch, List&lt;BundleKeyParams&gt; paramList) {
+<span class="fc" id="L375">		List&lt;BundleKeyParams&gt; results = new ArrayList&lt;BundleKeyParams&gt;();</span>
+<span class="fc bfc" id="L376" title="All 2 branches covered.">		for (BundleKeyParams param : paramList) {</span>
+<span class="fc bfc" id="L377" title="All 2 branches covered.">			if (bundleKeySearch.equalsIgnoreCase(param.bundleKey)) {</span>
+<span class="fc" id="L378">				results.add(new BundleKeyParams(param));</span>
+			}
+<span class="fc" id="L380">		}</span>
+<span class="fc" id="L381">		return results;</span>
+	}
+
+	/**
+	 * Return true if the specified key is for a rule that should have
+	 * parameters, false otherwise.
+	 */
+	
+	private boolean isParamRule(String key) {// NOSONAR
+<span class="fc bfc" id="L390" title="All 2 branches covered.">		return key.equals(ValidationRule.VALIDATION_PSS_MIN_SHIFT_SWAP_DURATION) // NOSONAR</span>
+<span class="fc bfc" id="L391" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_PSS_MIN_REMAINING_SHIFT_DURATION)</span>
+<span class="fc bfc" id="L392" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_PSS_MAX_SWAP_DURATION_PER_DAY)</span>
+<span class="fc bfc" id="L393" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_PSS_NON_SWAPPABLE_ACTIVITIES)</span>
+<span class="fc bfc" id="L394" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_PSS_SHIFT_GAP_CONDITIONS)</span>
+<span class="fc bfc" id="L395" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_PSS_MAX_ALLOWABLE_OVERLAP)</span>
+<span class="fc bfc" id="L396" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_REQ_MIN_DURATION) </span>
+<span class="fc bfc" id="L397" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_REQ_MAX_DURATION)</span>
+<span class="fc bfc" id="L398" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_FT_MAX_DURATION) </span>
+<span class="fc bfc" id="L399" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_FT_MIN_DURATION)</span>
+<span class="fc bfc" id="L400" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_FT_MAX_NUMBER_MAKEUP_PER_REQUEST)</span>
+<span class="fc bfc" id="L401" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_FT_MAX_NUMBER_FLEX_REQ_PER_PERIOD)</span>
+<span class="fc bfc" id="L402" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_FT_AVOID_SCHEDULED_CALENDAR_EVENTS)</span>
+<span class="fc bfc" id="L403" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_FT_MUST_OCCUR_ASAP) </span>
+<span class="fc bfc" id="L404" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_FT_MAX_SHIFT_DURATION)</span>
+<span class="fc bfc" id="L405" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_AVOID_CAL_EVENTS)</span>
+<span class="fc bfc" id="L406" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_CS_MAX_SHIFT_DURATION_PER_DAY)</span>
+<span class="fc bfc" id="L407" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_CS_MIN_SHIFT_DURATION_PER_DAY)</span>
+<span class="fc bfc" id="L408" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_CS_FULFILLS_NET_STAFFING_SHORTAGE)</span>
+<span class="fc bfc" id="L409" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_VTO_REDUCE_NET_STAFFING_SURPLUS)</span>
+<span class="fc bfc" id="L410" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_SS_MAX_ONE_WAY_SWAP_PER_PERSON_PERIOD)</span>
+<span class="fc bfc" id="L411" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_SS_MAX_APPROVED_SWAP_PER_SHIFT)</span>
+<span class="fc bfc" id="L412" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_PSS_MAX_APPROVED_PARTIAL_SWAPS_PER_SHIFT)</span>
+<span class="fc bfc" id="L413" title="All 2 branches covered.">				|| key.equals(ValidationRule.VALIDATION_SS_MAX_HOURS_ALTERNATE_MAX_HOURS_PER_DAY);</span>
+	}
+
+	private void insertUpdateOrganizationValidation(ID orgId, String propName, ValidationRule validationRule,
+			List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs, InsertUpdateOrganizationValidation insertUpdate) {
+
+<span class="pc bpc" id="L419" title="2 of 4 branches missed.">		if (validationRule == null || validationRule.getID() == null) {</span>
+<span class="nc" id="L420">			return;</span>
+		}
+
+<span class="fc" id="L423">		int enabledState = validationRule.getEnabledState();</span>
+
+		// If rule is time-off type, insert each activity type listed
+<span class="fc" id="L426">		boolean timeOffType = ValidationRule.isRuleTimeOffType(propName);</span>
+<span class="fc bfc" id="L427" title="All 2 branches covered.">		boolean isEnabled = enabledState == ValidationRule.VALIDATION_ENABLED ? true : false;</span>
+<span class="fc" id="L428">		int organizationId = orgId.toInt();</span>
+<span class="fc" id="L429">		int validationRuleId = validationRule.getID().toInt();</span>
+
+<span class="pc bpc" id="L431" title="5 of 6 branches missed.">		if (!isRMAdvancedLicense || !timeOffType || listSelectedTimeOffTypeActivityIDs == null</span>
+<span class="nc bnc" id="L432" title="All 2 branches missed.">				|| listSelectedTimeOffTypeActivityIDs.isEmpty()) {</span>
+
+<span class="fc" id="L434">			insertUpdate.add(validationRuleId, organizationId, null, isEnabled);</span>
+
+		} else {
+			//for advanced rm license, update time-off types per activity
+<span class="nc bnc" id="L438" title="All 2 branches missed.">			for (ID activityID : listSelectedTimeOffTypeActivityIDs) {</span>
+<span class="nc" id="L439">				insertUpdate.add(validationRuleId, organizationId, activityID.toInt(), isEnabled);</span>
+<span class="nc" id="L440">			}</span>
+		}
+
+<span class="fc" id="L443">	}</span>
+
+	@SuppressWarnings(&quot;unchecked&quot;)
+	private void deleteAndInsertOrgRequestValidationParams(ValidationRule validationRule, String propName, Collection&lt;ID&gt; childOrgIDList, // NOSONAR
+			List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs) throws JdmoException {
+
+<span class="fc" id="L449">		boolean isTimeOffType = ValidationRule.isRuleTimeOffType(propName);</span>
+
+<span class="fc" id="L451">		ValidationRule rule = validationRule;</span>
+<span class="pc bpc" id="L452" title="1 of 4 branches missed.">		if (rule.getParamMap() == null || rule.getParamMap().size() &lt; 1) {</span>
+<span class="fc" id="L453">			return;</span>
+		}
+
+<span class="fc" id="L456">		deleteOrgRequestValidationParams(validationRule, propName, childOrgIDList, listSelectedTimeOffTypeActivityIDs);</span>
+
+<span class="fc" id="L458">		HashMap&lt;String, Object&gt; map = new HashMap&lt;String, Object&gt;(1);</span>
+
+		// now create for each org
+<span class="fc bfc" id="L461" title="All 2 branches covered.">		for (ID orgID : childOrgIDList) {</span>
+
+<span class="fc" id="L463">			Set&lt;String&gt; set = rule.getParamMap().keySet();</span>
+<span class="fc bfc" id="L464" title="All 2 branches covered.">			for(String paramName : set){</span>
+
+				// Do not save (or delete) multivalues.
+				// We need to update the ORGVALIDATIONID
+<span class="fc" id="L468">				Object paramValue = rule.getParamMap().get(paramName);</span>
+<span class="pc bpc" id="L469" title="5 of 6 branches missed.">				if (this.isRMAdvancedLicense &amp;&amp; isTimeOffType &amp;&amp; &quot;*&quot;.equals(paramValue.toString())) {</span>
+<span class="nc" id="L470">					continue;</span>
+				}
+
+<span class="fc" id="L473">				map.put(&quot;PARAMNAME&quot;, paramName);</span>
+<span class="fc" id="L474">				map.put(&quot;PARAMVALUE&quot;, paramValue);</span>
+
+				// @formatter:off
+				// USE STRINGBUILDER HERE SO THE batch insert doesn't convert it
+				// to a sqlliteral string.
+<span class="fc" id="L479">				String sqlSelectOrganizationValidationId = &quot; ( select ID from ORGANIZATIONVALIDATION WHERE VALIDATIONRULEID = &quot;</span>
+<span class="fc" id="L480">						+ rule.getID().toString()</span>
+						+ &quot; AND ORGANIZATIONID = &quot;
+<span class="fc" id="L482">						+ orgID.toString();</span>
+				// @formatter:on
+
+				// If rule is time-off type, insert each activity type listed
+<span class="pc bpc" id="L486" title="5 of 6 branches missed.">				if (this.isRMAdvancedLicense &amp;&amp; isTimeOffType &amp;&amp; listSelectedTimeOffTypeActivityIDs != null) {</span>
+<span class="nc" id="L487">					addSqlSelectOrganizationValidationActivities(sqlSelectOrganizationValidationId, listSelectedTimeOffTypeActivityIDs, map);</span>
+				} else {
+<span class="fc" id="L489">					addSqlSelectOrganizationValidationNoActivities(sqlSelectOrganizationValidationId, map);</span>
+				}
+<span class="fc" id="L491">			}</span>
+<span class="fc" id="L492">		}</span>
+<span class="fc" id="L493">		m_dmo.executeBatch();</span>
+
+<span class="fc" id="L495">	}</span>
+
+	private void addSqlSelectOrganizationValidationNoActivities(String sqlSelectOrganizationValidationId, HashMap&lt;String, Object&gt; map)
+			throws JdmoException {
+<span class="fc" id="L499">		StringBuilder sqlSelectOrganizationValidation = new StringBuilder();</span>
+<span class="fc" id="L500">		sqlSelectOrganizationValidation.append(sqlSelectOrganizationValidationId);</span>
+<span class="fc" id="L501">		sqlSelectOrganizationValidation.append(&quot; AND ACTIVITYID IS NULL ) &quot;);</span>
+<span class="fc" id="L502">		map.put(&quot;ORGANIZATIONVALIDATIONID&quot;, sqlSelectOrganizationValidation);</span>
+<span class="fc" id="L503">		m_dmo.addBatchInsert(&quot;ORGREQUESTVALIDATIONPARAM&quot;, map);</span>
+<span class="fc" id="L504">	}</span>
+
+	private void addSqlSelectOrganizationValidationActivities(String sqlSelectOrganizationValidationId, List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs, HashMap&lt;String, Object&gt; map) throws JdmoException {
+<span class="nc bnc" id="L507" title="All 2 branches missed.">		for (ID activityID : listSelectedTimeOffTypeActivityIDs) {</span>
+<span class="nc" id="L508">			StringBuilder sqlSelectOrganizationValidation = new StringBuilder();</span>
+<span class="nc" id="L509">			sqlSelectOrganizationValidation.append(sqlSelectOrganizationValidationId);</span>
+<span class="nc" id="L510">			sqlSelectOrganizationValidation.append(&quot; AND ACTIVITYID = &quot; + activityID.toString() + &quot; )&quot;);</span>
+<span class="nc" id="L511">			map.put(&quot;ORGANIZATIONVALIDATIONID&quot;, sqlSelectOrganizationValidation);</span>
+<span class="nc" id="L512">			m_dmo.addBatchInsert(&quot;ORGREQUESTVALIDATIONPARAM&quot;, map);</span>
+<span class="nc" id="L513">		}</span>
+		
+<span class="nc" id="L515">	}</span>
+
+	private void deleteOrgRequestValidationParams(ValidationRule validationRule, String propName, Collection&lt;ID&gt; childOrgIDList,
+			List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs) throws JdmoException {
+
+<span class="fc" id="L520">		ValidationRule rule = validationRule;</span>
+<span class="pc bpc" id="L521" title="2 of 4 branches missed.">		if (rule.getParamMap() == null || rule.getParamMap().size() &lt; 1) {</span>
+<span class="nc" id="L522">			return;</span>
+		}
+
+		// We can't delete any that are multi-enabled (&quot;*&quot;)--since we
+		// will not update these rows either. The user has not modified them
+		// if &quot;*&quot; is the value.
+		// Store the ones we want to delete in a list, then batch delete them
+
+<span class="fc" id="L530">		List&lt;String&gt; paramNames = new ArrayList&lt;String&gt;();</span>
+
+<span class="fc" id="L532">		Iterator propItr = rule.getParamMap().keySet().iterator();</span>
+
+<span class="fc bfc" id="L534" title="All 2 branches covered.">		while (propItr.hasNext()) {</span>
+
+<span class="fc" id="L536">			Object paramName = propItr.next();</span>
+
+<span class="fc" id="L538">			boolean isTimeOffType = ValidationRule.isRuleTimeOffType(propName);</span>
+
+			// Do not save (or delete) multivalues
+<span class="fc" id="L541">			Object paramValue = rule.getParamMap().get(paramName);</span>
+<span class="pc bpc" id="L542" title="5 of 6 branches missed.">			if (this.isRMAdvancedLicense &amp;&amp; isTimeOffType &amp;&amp; &quot;*&quot;.equals(paramValue.toString())){</span>
+<span class="nc" id="L543">				continue;</span>
+			}
+
+<span class="fc" id="L546">			paramNames.add((String) paramName);</span>
+<span class="fc" id="L547">		}</span>
+
+		// No params to delete
+<span class="pc bpc" id="L550" title="1 of 2 branches missed.">		if (paramNames.isEmpty()) {</span>
+<span class="nc" id="L551">			return;</span>
+		}
+		
+<span class="fc" id="L554">		String sql = getSQLDeleteOrgRequestValidationParams(paramNames, rule, childOrgIDList, listSelectedTimeOffTypeActivityIDs);</span>
+
+<span class="fc" id="L556">		m_dmo.execute(sql);</span>
+
+<span class="fc" id="L558">	}</span>
+
+	private String getSQLDeleteOrgRequestValidationParams(List&lt;String&gt; paramNames, ValidationRule rule, Collection&lt;ID&gt; childOrgIDList,
+			List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs) throws JdmoException {
+<span class="fc" id="L562">		String paramInClause = DAOUtil.formatStringList(paramNames);</span>
+		// @formatter:off
+<span class="fc" id="L564">		String sql = &quot; DELETE from ORGREQUESTVALIDATIONPARAM &quot;</span>
+				+ &quot;  WHERE PARAMNAME in &quot;
+				+ paramInClause
+				+ &quot; AND ORGANIZATIONVALIDATIONID IN (select ID from ORGANIZATIONVALIDATION &quot;
+<span class="fc" id="L568">				+ &quot; WHERE VALIDATIONRULEID = &quot; + rule.getID().toString()</span>
+				+ &quot; AND ORGANIZATIONID IN &quot;
+<span class="fc" id="L570">				+ m_dmo.createInClause(childOrgIDList)</span>
+				+ &quot; AND  ( ACTIVITYID IS NULL &quot;;
+
+<span class="pc bpc" id="L573" title="3 of 4 branches missed.">		if (this.isRMAdvancedLicense &amp;&amp; listSelectedTimeOffTypeActivityIDs != null</span>
+<span class="nc bnc" id="L574" title="All 2 branches missed.">				&amp;&amp; !listSelectedTimeOffTypeActivityIDs.isEmpty()) {</span>
+<span class="nc" id="L575">			sql += &quot; OR ACTIVITYID IN &quot;</span>
+<span class="nc" id="L576">					+ m_dmo.createInClause(listSelectedTimeOffTypeActivityIDs);</span>
+		}
+
+<span class="fc" id="L579">		sql += (&quot; ) ) &quot;);</span>
+		
+<span class="fc" id="L581">		return sql;</span>
+	}
+
+	protected Map&lt;String, Integer&gt; getValidationRuleParams(ID orgID,
+			ID validationRuleID, ID activityID) throws JdmoException {
+
+<span class="fc bfc" id="L587" title="All 2 branches covered.">		if (!ThreadLocalCache.isEnabled()) {</span>
+<span class="fc" id="L588">			return getValidationRuleParamsFromDB(orgID, validationRuleID, activityID);</span>
+		}
+
+<span class="pc bpc" id="L591" title="1 of 2 branches missed.">		String key = String.format(&quot;[%s][%s][%s]&quot;, orgID, validationRuleID,</span>
+				activityID==null? &quot;null&quot;:activityID);
+
+<span class="fc" id="L594">		Map&lt;String, Map&lt;String, Integer&gt;&gt; cache = ThreadLocalCache</span>
+<span class="fc" id="L595">				.getMap(&quot;OrgValidationDAO.getValidationRuleParams&quot;);</span>
+<span class="pc bpc" id="L596" title="1 of 2 branches missed.">		if (cache.containsKey(key)) {</span>
+<span class="nc" id="L597">			return cache.get(key);</span>
+		}
+
+<span class="fc" id="L600">		Map&lt;String, Integer&gt; result = getValidationRuleParamsFromDB(orgID,</span>
+				validationRuleID, activityID);
+<span class="fc" id="L602">		cache.put(key, result);</span>
+<span class="fc" id="L603">		return result;</span>
+	}
+
+	/**
+	 * Get Validation Rule Params from the ORGREQUESTVALIDATIONPARAM param table
+	 * for one particular validation rule type, for the given org.
+	 * 
+	 * @param orgID
+	 *            - The orgID to plug into the query.
+	 * @param validationRuleID
+	 *            - The validationRuleID to plug into the query.
+	 * @param activityID
+	 *           The activity we select on (if time-off type only currently)
+	 * 
+	 * @return A HashMap of PARAMNAME-&gt;PARAMVALUE from the
+	 *         ORGREQUESTVALIDATIONPARAM table.
+	 */
+
+	private Map&lt;String, Integer&gt; getValidationRuleParamsFromDB(ID orgID,
+			ID validationRuleID, ID activityID) throws JdmoException {
+<span class="fc" id="L623">		HashMap&lt;String, Integer&gt; paramMap = new HashMap&lt;String, Integer&gt;(5);</span>
+
+		try {
+			
+<span class="pc bpc" id="L627" title="1 of 2 branches missed.">			String strActivity = activityID == null ? &quot;&quot; : activityID</span>
+<span class="pc" id="L628">					.toString();</span>
+
+<span class="fc" id="L630">			JdmoQuery jdmoQuery = m_dmo.createQuery(</span>
+					&quot;RM_GET_VALIDATION_RULE_PARAMETERS&quot;, Jdmo.STORPROC_QUERY);
+<span class="fc" id="L632">			jdmoQuery.setParID(1, orgID);</span>
+<span class="fc" id="L633">			jdmoQuery.setParString(2, strActivity);</span>
+<span class="fc" id="L634">			jdmoQuery.setParString(3, &quot;&quot;);</span>
+<span class="fc" id="L635">			jdmoQuery.setParID(4, validationRuleID);</span>
+<span class="fc" id="L636">			jdmoQuery.setParBoolean(5, this.isRMAdvancedLicense);</span>
+			
+
+<span class="fc" id="L639">			JdmoRowset rs = m_dmo.createRowset(jdmoQuery, Jdmo.FORWARD_ONLY,</span>
+					Jdmo.READ_ONLY);
+
+<span class="pc bpc" id="L642" title="2 of 6 branches missed.">				while (rs != null &amp;&amp; !rs.isEmpty() &amp;&amp; rs.next()) {</span>
+
+<span class="fc" id="L644">					String paramName = rs.getString(2);</span>
+<span class="fc" id="L645">					String paramValue = rs.getString(3);</span>
+<span class="fc" id="L646">					Integer intValue = 0;</span>
+
+					// multi-value == &quot;*&quot; due to timeoff being by activity
+					// convert to max int to signal UI that this is
+					// multi-value
+
+<span class="pc bpc" id="L652" title="1 of 2 branches missed.">					if (!&quot;*&quot;.equals(paramValue)){</span>
+<span class="fc" id="L653">						intValue = Integer.parseInt(paramValue);</span>
+					} 
+
+<span class="fc" id="L656">					paramMap.put(paramName, intValue);</span>
+
+<span class="fc" id="L658">			}</span>
+		} finally {
+
+<span class="pc" id="L661">			m_dmo.cleanUp();</span>
+<span class="fc" id="L662">		}</span>
+	
+<span class="fc" id="L664">	return paramMap;</span>
+}
+	
+	
+
+	
+
+	/**
+	 * Convert a propertyMap of BUNDLEKEY-&gt;ISENABLED to a
+	 * BUNDLEKEY-&gt;ValidationRule map, for a particular requestType. The search
+	 * starts at the specified org and can move up the org tree based on the
+	 * 'shallow' parameter. The shallow setting is used for getting the
+	 * validation rules and the rule parameters for the org.
+	 * 
+	 * @param orgId
+	 *            - Organisation ID object.
+	 * @param propertyMap
+	 *            - A Map that of BUNDLEKEY-&gt;ISENABLED
+	 * @param pAncestorMap
+	 *            - A Map that contains PROPERTY-KEYs mapped to ancestor org IDs
+	 * @param shallow
+	 *            - if true then only the properties defined at the org is
+	 *            returned. If false then properties that are not defined at the
+	 *            org but defined at parent orgs are added in. The inherited
+	 *            values used based on the closeness to given org. If A is
+	 *            parent of B is parent of C then C will return properties
+	 *            defined a B if they are not defined as C and will ignore those
+	 *            same properties if they are also defined at A.
+	 * @param List
+	 *            &lt;ID&gt; listSelectedTimeOffTypeActivityIDs A list of activy types
+	 *            we are updating for Timeoff Requests
+	 * @return We modify pPropertyMap and pAncestorMap, so you can get the
+	 *         return values from them.
+	 */
+	protected void populatePropertyMap(ID orgID, Map propertyMap,
+			boolean shallow, List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs)
+			throws Exception {
+<span class="pc bpc" id="L701" title="1 of 2 branches missed.">		if(!this.isRMAdvancedLicense){</span>
+<span class="fc" id="L702">			listSelectedTimeOffTypeActivityIDs = Collections.emptyList();</span>
+		}
+<span class="fc" id="L704">		populatePropertyMap(orgID, propertyMap, new HashMap(), shallow,</span>
+				listSelectedTimeOffTypeActivityIDs);
+<span class="fc" id="L706">	}</span>
+
+	/**
+	 * Convert a propertyMap of BUNDLEKEY-&gt;ISENABLED to a
+	 * BUNDLEKEY-&gt;ValidationRule map, for a particular requestType. The search
+	 * starts at the specified org and can move up the org tree based on the
+	 * 'shallow' parameter. The shallow setting is used for getting the
+	 * validation rules and the rule parameters for the org.
+	 * 
+	 * @param orgId
+	 *            - Organisation ID object.
+	 * @param propertyMap
+	 *            - A Map that of BUNDLEKEY-&gt;ISENABLED
+	 * @param pAncestorMap
+	 *            - A Map that contains PROPERTY-KEYs mapped to ancestor org IDs
+	 * @param shallow
+	 *            - if true then only the properties defined at the org is
+	 *            returned. If false then properties that are not defined at the
+	 *            org but defined at parent orgs are added in. The inherited
+	 *            values used based on the closeness to given org. If A is
+	 *            parent of B is parent of C then C will return properties
+	 *            defined a B if they are not defined as C and will ignore those
+	 *            same properties if they are also defined at A.
+	 * @return We modify pPropertyMap and pAncestorMap, so you can get the
+	 *         return values from them.
+	 */
+
+	protected void populatePropertyMap(ID orgID, Map propertyMap, Map ancestorMap,
+			boolean shallow, List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs)
+			throws Exception { // NOSONAR
+
+<span class="fc" id="L737">		HashSet wantedPropList = new HashSet(propertyMap.keySet());</span>
+
+<span class="fc" id="L739">		String stringSelectedActivities = &quot;&quot;;</span>
+<span class="pc bpc" id="L740" title="1 of 2 branches missed.">		if(!this.isRMAdvancedLicense) {</span>
+<span class="fc" id="L741">			listSelectedTimeOffTypeActivityIDs.clear();</span>
+		} else {
+<span class="nc" id="L743">			stringSelectedActivities = StringUtil.join(</span>
+					listSelectedTimeOffTypeActivityIDs, &quot;,&quot;);
+		}
+		
+<span class="fc" id="L747">		String stringProperties = StringUtil.join(wantedPropList, &quot;,&quot;);</span>
+		
+<span class="fc" id="L749">		List&lt;BundleKeyParams&gt; paramList = loadValidationParams(orgID,</span>
+				wantedPropList, listSelectedTimeOffTypeActivityIDs);
+
+<span class="fc" id="L752">		JdmoQuery jdmoQuery = m_dmo.createQuery(</span>
+				&quot;RM_IS_VALIDATION_RULE_ENABLED&quot;, Jdmo.STORPROC_QUERY);
+<span class="fc" id="L754">		jdmoQuery.setParID(1, orgID);</span>
+<span class="fc" id="L755">		jdmoQuery.setParString(2, stringSelectedActivities);</span>
+<span class="fc" id="L756">		jdmoQuery.setParString(3, stringProperties);</span>
+<span class="fc" id="L757">		jdmoQuery.setParBoolean(4, this.isRMAdvancedLicense);</span>
+		
+<span class="fc" id="L759">		JdmoRowset rs = m_dmo.createRowset(jdmoQuery, Jdmo.FORWARD_ONLY,</span>
+				Jdmo.READ_ONLY);
+
+		// we get the properties we want from the current org in the
+		// hierarchy. If we can't
+		// find all we need then we go to the parent org until we've gotten
+		// everything.
+<span class="pc bpc" id="L766" title="3 of 8 branches missed.">		while (rs != null &amp;&amp; !rs.isEmpty() &amp;&amp; rs.next() &amp;&amp; !wantedPropList.isEmpty()) {</span>
+
+<span class="fc" id="L768">			String bundleKey = rs.getString(&quot;BUNDLEKEY&quot;);</span>
+<span class="fc" id="L769">			Integer enabledState = rs.getInt(&quot;ISENABLED&quot;);</span>
+<span class="fc" id="L770">			Integer orgIDFound = rs.getInt(&quot;ORGANIZATIONID&quot;);</span>
+
+
+<span class="pc bpc" id="L773" title="1 of 2 branches missed.">			if (!wantedPropList.contains(bundleKey)) {</span>
+<span class="nc" id="L774">				continue;</span>
+			}
+			
+			// bundlekey, isEnabled has 3 STATES for timeoff types:
+<span class="fc" id="L778">			propertyMap.put(bundleKey, enabledState.intValue()); // NOSONAR</span>
+
+			// true: params must be at same org as rule
+			// return the org we find it at?
+<span class="fc" id="L782">			createValidationRule(orgID, propertyMap, bundleKey, paramList);</span>
+					
+			
+			// for each found validation rule, we store the
+			// ancestor organization at which it was found
+<span class="pc bpc" id="L787" title="2 of 4 branches missed.">			if (orgIDFound!=null &amp;&amp; orgIDFound !=  orgID.toInt()) {</span>
+<span class="nc" id="L788">				ancestorMap.put(bundleKey, getOrgName(new ID(orgIDFound)));</span>
+			}
+
+			// now that we have what we want, we can remove this
+			// property from the list.
+<span class="fc" id="L793">			wantedPropList.remove(bundleKey);</span>
+<span class="fc" id="L794">		}</span>
+
+		// If we still haven't found all rules, then we will create
+		// ValidationRule's for them, and assign the
+		// rules to the initial org.
+<span class="pc bpc" id="L799" title="2 of 4 branches missed.">		if (!shallow &amp;&amp; !wantedPropList.isEmpty()) {</span>
+<span class="fc" id="L800">			String yourCompanyName = getOrgName(Organization.YOUR_COMPANY_ID_OBJ);</span>
+<span class="fc" id="L801">			Iterator it = wantedPropList.iterator();</span>
+<span class="fc bfc" id="L802" title="All 2 branches covered.">			while (it.hasNext()) {</span>
+<span class="fc" id="L803">				String bundleKey = (String) it.next();</span>
+<span class="fc" id="L804">				createValidationRule(orgID, propertyMap, bundleKey,paramList);</span>
+
+				// We cannot leave the ancestors empty for them, because that
+				// would imply that the values were overridden
+				// rather than &quot;inherited&quot;. In this case, no org had a value for
+				// them, so technically, they are the default values,
+				// but for the sake of the user, we'll say that these values are
+				// inheritted from the top level organization.
+<span class="fc" id="L812">				ancestorMap.put(bundleKey, yourCompanyName);</span>
+<span class="fc" id="L813">			}</span>
+		}
+
+<span class="fc" id="L816">	}</span>
+
+	/**
+	 * Get the name of an organization.
+	 * 
+	 * @param orgID
+	 *            The organization ID.
+	 * @return the name of an organization.
+	 * @throws Exception
+	 */
+	private String getOrgName(ID orgID) throws Exception { // NOSONAR
+<span class="pc bpc" id="L827" title="1 of 2 branches missed.">		if (orgID == null){</span>
+<span class="nc" id="L828">			return null;</span>
+		}
+<span class="fc" id="L830">		Organization org = BbmManagerFactory.getWorkResourceManager().getOrganizationByID(orgID);</span>
+<span class="pc bpc" id="L831" title="1 of 2 branches missed.">		if(org==null){</span>
+<span class="nc" id="L832">			return null;</span>
+		}
+<span class="fc" id="L834">		return org.getName();</span>
+	}
+
+	/**
+	 * Save PROPERTY-KEY and PROPERTY-VALUE specified in the propertyMap for the
+	 * OrganizationId passed as arguments.
+	 * 
+	 * Revised version. Rather than hit the database to load up the existing
+	 * properties then do a complicated comparison to update or tests to create,
+	 * it is simpler to just delete and insert and possibly no more expensive.
+	 * Likely that this won't be called very often in any case.
+	 * 
+	 * If * 'shallow' is true, then only the orgId is affected, if false, then
+	 * the the properties of all children are removed.
+	 * 
+	 * @param orgId
+	 *            - Organisation ID object.
+	 * @param propertyMap
+	 *            - A Map that contains PROPERTY-KEY and PROPERTY-VALUE
+	 * @param shallow
+	 *            - If true, we will update only the specified org. If false,
+	 *            then we update the child orgs too, if any. In other words, ALL
+	 *            of the child orgs' rules and params of ALL types will be
+	 *            removed, and they will inherit their settings from this org.
+	 * 
+	 * @param List
+	 *            &lt;ID&gt; listSelectedTimeOffTypeActivityIDs - Timeoff Types are
+	 *            saved by org and activity types as of 15.1.0 RM_AA_PSR
+	 */
+
+	public void savePropertyList(ID orgId, Map&lt;String, Object&gt; propertyMap,
+			boolean shallow, List&lt;ID&gt; listSelectedTimeOffTypeActivityIDs)
+			throws Exception { // NOSONAR
+		
+<span class="fc" id="L868">		enterMethod(&quot;savePropertyList: &quot;, propertyMap );</span>
+		
+		try {
+			
+<span class="pc bpc" id="L872" title="1 of 2 branches missed.">			if(!this.isRMAdvancedLicense) {</span>
+<span class="fc" id="L873">				listSelectedTimeOffTypeActivityIDs.clear();</span>
+			}
+
+<span class="fc" id="L876">			Set&lt;String&gt; set = propertyMap.keySet();</span>
+
+			// figure out which settings to update and which to create
+			// if there is no change in the value then we skip it.
+<span class="fc" id="L880">			Map&lt;String, Object&gt; propertyMapCreate = new HashMap&lt;String, Object&gt;(</span>
+					34);
+
+<span class="fc bfc" id="L883" title="All 2 branches covered.">			for(String propName : set){</span>
+<span class="fc" id="L884">				Object newValue = propertyMap.get(propName);</span>
+
+<span class="pc bpc" id="L886" title="1 of 2 branches missed.">				if (newValue != null) {</span>
+<span class="fc" id="L887">					ValidationRule rule = (ValidationRule) newValue;</span>
+					// Not valid
+<span class="pc bpc" id="L889" title="1 of 2 branches missed.">					if (rule.getEnabledState() != ValidationRule.VALIDATION_PARTIALLY_ENABLED){</span>
+<span class="fc" id="L890">						propertyMapCreate.put(propName, newValue);</span>
+					}
+				}
+<span class="fc" id="L893">			}</span>
+
+<span class="pc bpc" id="L895" title="1 of 2 branches missed.">			if (propertyMapCreate.size() &gt; 0) {</span>
+<span class="fc" id="L896">				insertUpdateProperties(orgId, propertyMapCreate,</span>
+						listSelectedTimeOffTypeActivityIDs);
+			}
+
+			// If not shallow, then we need to delete all rules &amp; params from
+			// all children of this org.
+			// The child orgs will therefore be inheriting the parent org's
+			// rules &amp; params.
+<span class="pc bpc" id="L904" title="1 of 2 branches missed.">			if (!shallow) {</span>
+<span class="nc" id="L905">				Collection&lt;ID&gt; childOrgIDList = getChildOrgIdList(orgId, false, false);</span>
+
+				// delete validation rule parameters for the child orgs. Do this
+				// first due to reference to OrganizationValidation table
+				
+<span class="nc bnc" id="L910" title="All 4 branches missed.">				if( listSelectedTimeOffTypeActivityIDs!=null &amp;&amp; !listSelectedTimeOffTypeActivityIDs.isEmpty() ){</span>
+<span class="nc" id="L911">				String deleteOrgRequestValidationParamSql = 				</span>
+						&quot;DELETE from ORGREQUESTVALIDATIONPARAM  WHERE ORGANIZATIONVALIDATIONID IN ( &quot; +
+								&quot;select ID from ORGANIZATIONVALIDATION where ORGANIZATIONID IN ? &quot; +
+								&quot; AND (ACTIVITYID IS NULL OR ACTIVITYID IN ?) ) &quot;;
+				
+				// For Advanced RM License, this will not remove the activities only assigned to child orgs
+<span class="nc" id="L917">				JdmoPreparedStatement.executeSql(m_dmo, deleteOrgRequestValidationParamSql, childOrgIDList, listSelectedTimeOffTypeActivityIDs);</span>
+				
+				
+				// delete validation rules for the child orgs. For Advanced RM License, this will not remove the activities only assigned to child orgs
+<span class="nc" id="L921">				String deleteOrgRequestValidationSql =  &quot;DELETE from ORGANIZATIONVALIDATION  WHERE ORGANIZATIONID IN ? &quot; +</span>
+					&quot; AND (ACTIVITYID IS NULL OR ACTIVITYID IN ?) &quot;;
+				
+<span class="nc" id="L924">				JdmoPreparedStatement.executeSql(m_dmo, deleteOrgRequestValidationSql, childOrgIDList, listSelectedTimeOffTypeActivityIDs);</span>
+				
+				
+<span class="nc" id="L927">				} else {</span>
+<span class="nc" id="L928">					String deleteOrgRequestValidationParamSql = 				</span>
+							&quot;DELETE from ORGREQUESTVALIDATIONPARAM  WHERE ORGANIZATIONVALIDATIONID IN ( &quot; +
+									&quot;select ID from ORGANIZATIONVALIDATION where ORGANIZATIONID IN ? &quot; +
+									&quot; AND ( ACTIVITYID IS NULL ) ) &quot;;
+					
+					// For Advanced RM License, this will not remove the activities only assigned to child orgs
+<span class="nc" id="L934">					JdmoPreparedStatement.executeSql(m_dmo, deleteOrgRequestValidationParamSql, childOrgIDList);</span>
+					
+					// delete validation rules for the child orgs. For Advanced RM License, this will not remove the activities only assigned to child orgs
+<span class="nc" id="L937">					String deleteOrgRequestValidationSql =  &quot;DELETE from ORGANIZATIONVALIDATION  WHERE ORGANIZATIONID IN ? &quot; +</span>
+						&quot; AND ( ACTIVITYID IS NULL ) &quot;;
+					
+<span class="nc" id="L940">					JdmoPreparedStatement.executeSql(m_dmo, deleteOrgRequestValidationSql, childOrgIDList);</span>
+				}
+
+			}
+		} finally {
+<span class="pc" id="L945">			exitMethod( &quot;savePropertyList&quot;, null); </span>
+<span class="pc" id="L946">			m_dmo.cleanUp();</span>
+<span class="fc" id="L947">		}</span>
+<span class="fc" id="L948">	}</span>
+
+	public Map&lt;Integer, List&lt;String&gt;&gt; getEnabledTimeOffRuleKeys(ID organizationId) throws JdmoException {
+<span class="nc" id="L951">		Map&lt;Integer, List&lt;String&gt;&gt; result = new HashMap&lt;Integer, List&lt;String&gt;&gt;();</span>
+
+<span class="nc" id="L953">		JdmoQuery jdmoQuery = m_dmo.createQuery(&quot;RM_GET_ENABLED_VALIDATIONS_BY_TIMEOFF_TYPE&quot;, Jdmo.STORPROC_QUERY);</span>
+<span class="nc" id="L954">		jdmoQuery.setParID(1, organizationId);</span>
+<span class="nc" id="L955">		JdmoRowset res = m_dmo.createRowset(jdmoQuery, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="nc bnc" id="L956" title="All 2 branches missed.">		while (res.next()) {</span>
+<span class="nc" id="L957">			String ruleKey = res.getString(1);</span>
+<span class="nc" id="L958">			Integer activityID = res.getInt(2);</span>
+
+<span class="nc" id="L960">			List&lt;String&gt; rules = result.get(activityID);</span>
+<span class="nc bnc" id="L961" title="All 2 branches missed.">			if (rules == null) {</span>
+<span class="nc" id="L962">				rules = new ArrayList&lt;String&gt;();</span>
+<span class="nc" id="L963">				result.put(activityID, rules);</span>
+			}
+
+<span class="nc" id="L966">			rules.add(ruleKey);</span>
+
+<span class="nc" id="L968">		}</span>
+
+<span class="nc" id="L970">		return result;</span>
+
+	}
+
+	private void enterMethod(String methodName, Object object) {
+<span class="pc bpc" id="L975" title="1 of 2 branches missed.">		if (LOG.isDebugEnabled()) {</span>
+<span class="fc" id="L976">			LOG.debug(RmUtil.dumpEnterMethod(methodName, object));</span>
+		}
+<span class="fc" id="L978">	}</span>
+
+	private void exitMethod(String methodName, Object object) {
+<span class="pc bpc" id="L981" title="1 of 2 branches missed.">		if (LOG.isDebugEnabled()) {</span>
+<span class="fc" id="L982">			LOG.debug(RmUtil.dumpExitMethod(methodName, object));</span>
+		}
+
+<span class="fc" id="L985">	}</span>
+
+	/**
+	 * Gets a collection of the effective ValidationRules for the org.  If there are multiple rules for different activity
+	 * (validation by time off type), a rule is returned for each rule and activity.
+	 * This also loads the parameters and their values.
+	 */
+	public Collection&lt;ValidationRule&gt; getEffectiveOrgValidationRules(ID orgID, boolean isValidationByTimeOffType) throws JdmoException {
+<span class="nc" id="L993">		Collection&lt;ValidationRule&gt; rules = new ArrayList&lt;ValidationRule&gt;();</span>
+<span class="nc" id="L994">		JdmoQuery jdmoQuery = m_dmo.createQuery(&quot;select * from RM_EffectiveOrgValidationRules(?,?) order by VALIDATIONRULEID&quot;,</span>
+				Jdmo.PARAM_QUERY);
+<span class="nc" id="L996">		jdmoQuery.setParID(1, orgID);</span>
+<span class="nc" id="L997">		jdmoQuery.setParBoolean(2, isValidationByTimeOffType); // NOSONAR</span>
+
+<span class="nc" id="L999">		JdmoRowset rs = m_dmo.createRowset(jdmoQuery, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+<span class="nc" id="L1000">		ValidationRule rule = null;</span>
+<span class="nc bnc" id="L1001" title="All 4 branches missed.">		while (rs != null &amp;&amp; rs.next()) {</span>
+<span class="nc" id="L1002">			ID validationRuleID = rs.getID(&quot;VALIDATIONRULEID&quot;);</span>
+<span class="nc" id="L1003">			Integer activityID = null;</span>
+<span class="nc bnc" id="L1004" title="All 2 branches missed.">			if(rs.getObject(&quot;ActivityID&quot;) != null){</span>
+<span class="nc" id="L1005">				activityID = rs.getInt(&quot;ActivityID&quot;);</span>
+			}
+<span class="nc bnc" id="L1007" title="All 4 branches missed.">			if(rule == null || !isSameEffectiveValidationRule(rule, validationRuleID, activityID)) {</span>
+<span class="nc" id="L1008">				rule = new ValidationRule();</span>
+<span class="nc" id="L1009">				rule.setID(validationRuleID);</span>
+<span class="nc" id="L1010">				rule.setRequestType(rs.getString(&quot;RequestType&quot;));</span>
+<span class="nc" id="L1011">				rule.setKey(rs.getString(&quot;BundleKey&quot;));</span>
+<span class="nc" id="L1012">				rule.setParamMap(new HashMap&lt;String, Integer&gt;());</span>
+
+<span class="nc" id="L1014">				OrgValidation orgValidation = new OrgValidation();</span>
+<span class="nc" id="L1015">				orgValidation.setEnabled(rs.getBoolean(&quot;ISENABLED&quot;));</span>
+<span class="nc" id="L1016">				orgValidation.setOrganizationID(rs.getID(&quot;RuleOrganizationID&quot;));</span>
+<span class="nc bnc" id="L1017" title="All 2 branches missed.">				if(activityID != null) {</span>
+<span class="nc" id="L1018">					orgValidation.setActivityID(activityID);</span>
+				}
+<span class="nc" id="L1020">				rule.setOrgValidation(orgValidation);</span>
+
+<span class="nc" id="L1022">				rules.add(rule);</span>
+			}
+<span class="nc" id="L1024">			String paramName = rs.getString(&quot;PARAMNAME&quot;);</span>
+<span class="nc bnc" id="L1025" title="All 2 branches missed.">			if(paramName != null) {</span>
+<span class="nc" id="L1026">				Integer value = null;</span>
+<span class="nc bnc" id="L1027" title="All 2 branches missed.">				if(rs.getObject(&quot;PARAMVALUE&quot;) != null) {</span>
+<span class="nc" id="L1028">					value = rs.getInt(&quot;PARAMVALUE&quot;);</span>
+				}
+<span class="nc" id="L1030">				rule.getParamMap().put(paramName, value);</span>
+			}
+<span class="nc" id="L1032">		}</span>
+<span class="nc" id="L1033">		return rules;</span>
+	}
+
+	private boolean isSameEffectiveValidationRule(ValidationRule rule, ID validationRuleID, Integer activityID) {
+<span class="nc bnc" id="L1037" title="All 2 branches missed.">		if(!rule.getID().equals(validationRuleID)) {</span>
+<span class="nc" id="L1038">			return false;</span>
+		}
+<span class="nc" id="L1040">		Integer ruleActivityID = rule.getOrgValidation().getActivityID();</span>
+<span class="nc bnc" id="L1041" title="All 4 branches missed.">		if(ruleActivityID == null || activityID == null) {</span>
+<span class="nc" id="L1042">			return true;</span>
+		}
+<span class="nc" id="L1044">		return ruleActivityID.equals(activityID);</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

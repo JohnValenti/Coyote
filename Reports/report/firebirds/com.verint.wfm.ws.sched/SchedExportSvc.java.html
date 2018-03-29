@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SchedExportSvc.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.wfm.ws.sched</a> &gt; <span class="el_source">SchedExportSvc.java</span></div><h1>SchedExportSvc.java</h1><pre class="source lang-java linenums">package com.verint.wfm.ws.sched;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.TimeZone;
+
+import javax.jws.WebMethod;
+import javax.jws.WebService;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.activity.ejb.ActivityManager;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityFilter;
+import com.bluepumpkin.ejb.bbm.activity.model.EventUtils;
+import com.bluepumpkin.ejb.bbm.activity.model.SimpleEvent;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.PublishingPeriod;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.SortEvents;
+import com.bluepumpkin.ejb.core.Log;
+import com.bluepumpkin.ejb.core.base.SupportNavigation;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.verint.wfm.ws.sched.model.Event;
+
+
+/**
+ * @author Robert Granat, Copyright (c) 2011 by Verint Systems, Inc. All Rights Reserved.
+ * Schedule Export Web Service
+ *    -- Secure method invocation is expected.
+ */
+@WebService(serviceName=&quot;SchedExportSvc&quot;, targetNamespace = &quot;http://verint.com/wfm/ws/sched/SchedExportSvc&quot;)
+<span class="fc" id="L44">public class SchedExportSvc {</span>
+<span class="fc" id="L45">	private static Category m_cat = Log.initCategory(SchedExportSvc.class.getName());</span>
+	
+	/**
+	 * Return a flattened list of scheduled published events for one employee. Shift Assignments, 
+	 * Shift Activities, and Calendar Events including TimeOff Events will be returned. All events which
+	 * which start between startTime and endTime will be returned.
+	 *  
+	 * @param employeeID the agent's unique employee ID 
+	 * @param startTime the start of the period for exporting events in GMT.
+	 * @param endTime the end of the period for exporting events in GMT.
+	 * @param sinceTime only return events modified since this time. Reserved for future use. 
+	 * @return An ordered list of Events, or no Events if the agent has no published schedule 
+	 * 			between startTime and endTime
+	 */
+	@WebMethod  
+	public ArrayList&lt;Event&gt; getEmployeeSchedule(int employeeID,  Date startTime, Date endTime, Date sinceTime)
+	throws SchedExportSvcException {
+<span class="nc" id="L62">		ArrayList&lt;Event&gt; schedule = new ArrayList&lt;Event&gt;();</span>
+<span class="nc" id="L63">		ID idEmployee = new ID(employeeID);</span>
+
+		// verify date range
+<span class="nc" id="L66">		String msg = &quot;&quot;;</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">		if (startTime==null) </span>
+<span class="nc" id="L68">			throw new SchedExportSvcException(&quot;startTime is null&quot;);</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">		else if (endTime == null )</span>
+<span class="nc" id="L70">			throw new SchedExportSvcException(&quot;endTime is null&quot;);</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">		else if (!startTime.before(endTime)) {</span>
+<span class="nc" id="L72">			throw new SchedExportSvcException(&quot;Starttime is after endtime&quot;);</span>
+		}
+		
+		try {
+<span class="nc" id="L76">			ScheduleAccessManager schedAccessMgr = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">			if (!publishedAfter(schedAccessMgr, idEmployee, startTime, endTime, sinceTime))</span>
+<span class="nc" id="L78">				return schedule;</span>
+			
+<span class="nc" id="L80">			Calendar startCal = Calendar.getInstance(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="nc" id="L81">			startCal.setTime(startTime);</span>
+<span class="nc" id="L82">			Calendar endCal = Calendar.getInstance(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="nc" id="L83">			endCal.setTime(endTime);</span>
+			
+			// add &amp; subtract 1 day from start and end dates
+<span class="nc" id="L86">			startCal.add(Calendar.DATE, -1);</span>
+<span class="nc" id="L87">			endCal.add(Calendar.DATE, 1);</span>
+		
+		
+	        //-- get activities map
+<span class="nc" id="L91">	        HashMap&lt;ID, Activity&gt; activitiesMap = getActivitiesMap(); </span>
+	 
+<span class="nc" id="L93">			Collection&lt;SimpleEvent&gt; flattenedSchedule = null;</span>
+<span class="nc" id="L94">			flattenedSchedule = getFlattenedSchedule(schedAccessMgr, idEmployee, startCal.getTime(), endCal.getTime());</span>
+<span class="nc" id="L95">			schedule = buildEventList(idEmployee.toInt(), flattenedSchedule, activitiesMap, startTime, endTime);</span>
+<span class="nc" id="L96">		} catch (Exception e) {</span>
+<span class="nc" id="L97">			m_cat.l7dError(null, e);</span>
+<span class="nc" id="L98">			throw new SchedExportSvcException(e);</span>
+<span class="nc" id="L99">		}</span>
+
+<span class="nc" id="L101">		return schedule;</span>
+	}
+
+	// return true if any portion of the schedule has been published after sinceTime; otherwise return false
+	private boolean publishedAfter(ScheduleAccessManager schedAccessMgr, ID idEmployee, Date startTime, Date endTime, Date sinceTime) 
+	throws RemoteException, BbmFinderException {
+<span class="nc" id="L107">		boolean wasPublishedAfter = false;</span>
+		
+<span class="nc bnc" id="L109" title="All 2 branches missed.">		if (sinceTime == null) return true;</span>
+		
+		//--- load published periods for the employee, from, to
+<span class="nc" id="L112">		ArrayList eIDs = new ArrayList(1);  </span>
+<span class="nc" id="L113">        eIDs.add(idEmployee);</span>
+
+<span class="nc" id="L115">		Collection ppTimeRanges = new ArrayList(1);</span>
+<span class="nc" id="L116">        Collection pubPeriodsForEmps = schedAccessMgr.getPublishedPeriods(eIDs, startTime, endTime);</span>
+
+<span class="nc bnc" id="L118" title="All 4 branches missed.">		if (pubPeriodsForEmps!=null &amp;&amp; !pubPeriodsForEmps.isEmpty()){</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">			for (Iterator it1= pubPeriodsForEmps.iterator(); it1.hasNext();) {</span>
+<span class="nc" id="L120">				Collection pubPeriods = (Collection) it1.next();</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">				if (pubPeriods == null) break;</span>
+
+<span class="nc" id="L123">				ArrayList ranges = new ArrayList();</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">				if (pubPeriods != null) {</span>
+<span class="nc bnc" id="L125" title="All 2 branches missed.">					for (Iterator it2 = pubPeriods.iterator(); it2.hasNext();) </span>
+		            {
+<span class="nc" id="L127">						PublishingPeriod tp = (PublishingPeriod) it2.next();</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">		                if (tp.getPublishTime().after(sinceTime)) {</span>
+<span class="nc" id="L129">		                	wasPublishedAfter = true;</span>
+<span class="nc" id="L130">		                	break;</span>
+		                }
+<span class="nc" id="L132">					}</span>
+				}
+<span class="nc" id="L134">			}</span>
+		}
+        
+<span class="nc" id="L137">        return wasPublishedAfter;</span>
+	}
+
+	private HashMap&lt;ID, Activity&gt; getActivitiesMap() throws BbmException, RemoteException {
+<span class="nc" id="L141">		ActivityManager actMgr = WfmManagerFactory.getActivityManager(false);</span>
+		
+		//Get all active and deleted activities
+<span class="nc" id="L144">		ActivityFilter activityFilter = new ActivityFilter(ActivityFilter.FILTER_NONE);</span>
+		
+<span class="nc" id="L146">		Collection activities = actMgr.findActivities(activityFilter);</span>
+<span class="nc" id="L147">		HashMap activityMap = new HashMap();</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">		for (Iterator i = activities.iterator(); i.hasNext();){</span>
+<span class="nc" id="L149">			Activity activity = (Activity)i.next();</span>
+<span class="nc" id="L150">			activityMap.put(activity.getID(), activity);</span>
+<span class="nc" id="L151">		}</span>
+<span class="nc" id="L152">		return activityMap;</span>
+	}
+	
+	// build the list of Events
+	private ArrayList&lt;Event&gt; buildEventList(int employeeId, Collection&lt;SimpleEvent&gt; flattenedSchedule, HashMap&lt;ID,Activity&gt; activitiesMap,
+											Date startTime, Date endTime) {
+<span class="nc" id="L158">		ArrayList&lt;Event&gt; rtnList = new ArrayList&lt;Event&gt;();</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">		for (SimpleEvent sEvent: flattenedSchedule ) {</span>
+			// ensure that events overlap with start and end times
+<span class="nc bnc" id="L161" title="All 4 branches missed.">			if (sEvent.getStartTime().before(endTime) &amp;&amp; sEvent.getEndTime().after(startTime)) {</span>
+<span class="nc" id="L162">				Event evt = new Event();</span>
+				
+<span class="nc" id="L164">				evt.setStartTime(sEvent.getStartTime());</span>
+<span class="nc" id="L165">				evt.setEndTime(sEvent.getEndTime());</span>
+<span class="nc" id="L166">				evt.setIsPaid(sEvent.getPaid());</span>
+	
+<span class="nc" id="L168">				ID idAct = sEvent.getActivityID();</span>
+<span class="nc" id="L169">				Activity activity = activitiesMap.get(idAct);</span>
+<span class="nc bnc" id="L170" title="All 2 branches missed.">				if (activity != null) {</span>
+<span class="nc" id="L171">					evt.setActivityName(activity.getName());</span>
+<span class="nc" id="L172">					evt.setActivityColor(activity.getColor());</span>
+				}
+				
+<span class="nc" id="L175">				evt.setEmployeeId(employeeId);</span>
+				
+<span class="nc" id="L177">				rtnList.add(evt);</span>
+			}
+<span class="nc" id="L179">		}</span>
+		
+<span class="nc" id="L181">		return rtnList;</span>
+	}
+	
+	private Collection getFlattenedSchedule(ScheduleAccessManager schedAccessMgr, ID idEmployee, Date startTime, Date endTime) 
+	throws BbmEJBCreateException, BbmFinderException, RemoteException {
+<span class="nc" id="L186">		int eventTypeMask = com.bluepumpkin.ejb.bbm.activity.model.Event.EVENT_TYPE_ALL_CALENDAR_EVENTS</span>
+						| com.bluepumpkin.ejb.bbm.activity.model.Event.EVENT_TYPE_SHIFT_ASSIGNMENT
+						| com.bluepumpkin.ejb.bbm.activity.model.Event.EVENT_TYPE_SHIFT_EVENT_ASSIGNMENT;
+<span class="nc" id="L189">        Collection scheduleEvents = schedAccessMgr.getPublishedEventsForWorkResourceByType(eventTypeMask,idEmployee,startTime,endTime);</span>
+<span class="nc" id="L190">		Collection scheduleShifts = selectOnlyShiftAssignments(scheduleEvents);</span>
+        
+<span class="nc" id="L192">		Collection flatSchedule = EventUtils.convertEventsToTimelineForSingleEmployee(scheduleEvents);</span>
+<span class="nc" id="L193">		Collection mergedSchedule = mergeSameEvents(flatSchedule);</span>
+		//--- mark events covered by shift extensions as overtime		
+<span class="nc" id="L195">		Collection markedSchedule = markOvertimeEvents(mergedSchedule, scheduleShifts);</span>
+		
+<span class="nc" id="L197">		return markedSchedule;</span>
+	}
+	
+	private static Collection selectOnlyShiftAssignments(Collection scheduleEvents){
+<span class="nc" id="L201">		ArrayList shifts = new ArrayList();</span>
+<span class="nc bnc" id="L202" title="All 4 branches missed.">		if (scheduleEvents != null &amp;&amp; scheduleEvents.size() &gt; 0) {</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">			for (Iterator i = scheduleEvents.iterator(); i.hasNext();){</span>
+<span class="nc" id="L204">				com.bluepumpkin.ejb.bbm.activity.model.Event event = (com.bluepumpkin.ejb.bbm.activity.model.Event) i.next();</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">				if( event != null){</span>
+<span class="nc bnc" id="L206" title="All 2 branches missed.">					if(event.getEventType() == com.bluepumpkin.ejb.bbm.activity.model.Event.EVENT_TYPE_SHIFT_ASSIGNMENT)</span>
+<span class="nc" id="L207">						shifts.add(event);</span>
+				}
+<span class="nc" id="L209">			}</span>
+		}
+<span class="nc" id="L211">		return shifts;</span>
+	}//selectOnlyShiftAssignments
+	/**
+	 * merge adjacent events on the timeline, which have the same properties
+	 */
+	private Collection mergeSameEvents(Collection events){
+<span class="nc" id="L217">		ArrayList mergedEvents = new ArrayList();</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">		if (events == null) return mergedEvents;</span>
+<span class="nc" id="L219">		SimpleEvent curEvent = null;</span>
+<span class="nc bnc" id="L220" title="All 2 branches missed.">		for (Iterator it = events.iterator(); it.hasNext();){</span>
+<span class="nc" id="L221">			SimpleEvent nextEvent = (SimpleEvent) it.next();</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">			if (curEvent == null) { //handle first event case</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">				if(nextEvent != null) {</span>
+<span class="nc" id="L224">					curEvent = nextEvent;</span>
+				}
+			} else { //have cur, which is previous and got next
+<span class="nc bnc" id="L227" title="All 2 branches missed.">				if (nextEvent != null) {</span>
+					// QA54539 - Cal Events together show as one event in WFO
+					//As per Jason, merging events are not required. But it is not user friendly
+					// to show adjacent unavailability events as separate events. So changing it ignore
+					// Any calendar event assignments and time offs
+<span class="nc bnc" id="L232" title="All 2 branches missed.">					if (curEvent.getActivityID().equals(nextEvent.getActivityID())</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">							&amp;&amp; curEvent.getEndTime().equals(nextEvent.getStartTime())</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">							&amp;&amp; curEvent.getDescription().equals(nextEvent.getDescription())</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">							&amp;&amp; (curEvent.getEventType()!= com.bluepumpkin.ejb.bbm.activity.model.Event.EVENT_TYPE_ADH_CALENDAR_EVENTS)</span>
+							)
+					{ //next is the same
+<span class="nc" id="L238">						curEvent.setEndTime(nextEvent.getEndTime());</span>
+					} else { //next is different
+<span class="nc" id="L240">						mergedEvents.add(curEvent);</span>
+<span class="nc" id="L241">						curEvent = nextEvent;</span>
+					}
+				}//else skip next as null
+			}
+<span class="nc" id="L245">		}</span>
+<span class="nc bnc" id="L246" title="All 2 branches missed.">		if (curEvent != null)</span>
+<span class="nc" id="L247">			mergedEvents.add(curEvent);</span>
+
+<span class="nc" id="L249">		return mergedEvents;</span>
+	}//mergeSameEvents
+
+	/**
+	 * mark events within shift extensions as overtime
+	 * @param scheduleData - collection of SimpleEvent objects in chronological order
+	 * @param scheduleShifts - collection of SimpleEvent shift assignments in chronological order
+	 * @return
+	 */
+	private Collection markOvertimeEvents(Collection scheduleData, Collection scheduleShifts){
+<span class="nc" id="L259">		ArrayList overtimePeriods = (ArrayList)findOvertimePeriods(scheduleShifts);</span>
+		//if no overtime return original collection of flattened events
+<span class="nc bnc" id="L261" title="All 2 branches missed.">		if(overtimePeriods.size()&lt;=0) return scheduleData;</span>
+		//else repackage scheduleData collection since may have to split some events
+<span class="nc" id="L263">		ArrayList markedEvents = new ArrayList();</span>
+		//for each event in scheduleData process event
+<span class="nc bnc" id="L265" title="All 2 branches missed.">		for (Iterator it = scheduleData.iterator(); it.hasNext();){</span>
+<span class="nc" id="L266">			markEventOvertime(overtimePeriods,(SimpleEvent)it.next(),markedEvents);</span>
+		}
+		//
+<span class="nc" id="L269">		return markedEvents;</span>
+	}//markOvertimeEvents
+	
+	/**
+	 * find shift assignments overitme periods
+	 * @param scheduleShifts
+	 * @return collection of overtime TimeRanges or empty
+	 */
+	private static Collection findOvertimePeriods(Collection scheduleShifts){
+<span class="nc" id="L278">		ArrayList overtimeRanges = new ArrayList();</span>
+<span class="nc bnc" id="L279" title="All 4 branches missed.">		if (scheduleShifts != null &amp;&amp; scheduleShifts.size() &gt; 0){</span>
+<span class="nc" id="L280">			SortEvents se = new SortEvents();</span>
+<span class="nc" id="L281">			Collections.sort((List)scheduleShifts,</span>
+<span class="nc" id="L282">					se.getEventSorter(SortEvents.SORT_BY_START,SupportNavigation.SORT_ASCENDING));</span>
+<span class="nc bnc" id="L283" title="All 2 branches missed.">			for(Iterator it = scheduleShifts.iterator();it.hasNext();) {</span>
+<span class="nc" id="L284">				ShiftAssignment sa = (ShiftAssignment)it.next();</span>
+<span class="nc bnc" id="L285" title="All 2 branches missed.">				if (sa != null){</span>
+<span class="nc bnc" id="L286" title="All 2 branches missed.">					if (sa.getExtensionBefore() &gt; 0){</span>
+<span class="nc" id="L287">						TimeRange ot = new TimeRange(sa.getStartTime(),sa.getExtensionBefore()*60000);</span>
+<span class="nc" id="L288">						overtimeRanges.add(ot);</span>
+					}
+<span class="nc bnc" id="L290" title="All 2 branches missed.">					if (sa.getExtensionAfter() &gt; 0){</span>
+<span class="nc" id="L291">						TimeRange ot = new TimeRange(new Date(sa.getEndTime().getTime()- sa.getExtensionAfter()*60000),sa.getEndTime());</span>
+<span class="nc" id="L292">						overtimeRanges.add(ot);</span>
+					}
+				}
+<span class="nc" id="L295">			}</span>
+		}
+<span class="nc" id="L297">		return overtimeRanges;</span>
+	}//findOvertimePeriods
+
+	/**
+	 * process one SimpleEvent marking overtime and adding to marked collection
+	 */
+	private static void markEventOvertime(ArrayList OTPeriods, SimpleEvent event, Collection markedEvents ){
+<span class="nc bnc" id="L304" title="All 2 branches missed.">		if (OTPeriods.size()&lt;=0){</span>
+<span class="nc" id="L305">			markedEvents.add(event);</span>
+<span class="nc" id="L306">			return;</span>
+		}
+<span class="nc" id="L308">		TimeRange overtimeRange = (TimeRange)OTPeriods.get(0);</span>
+<span class="nc" id="L309">		TimeRange eventRange = new TimeRange(event.getStartTime(),event.getEndTime());</span>
+<span class="nc" id="L310">		int overlapType = eventRange.getRelativeLocationTo(overtimeRange);</span>
+<span class="nc bnc" id="L311" title="All 4 branches missed.">		if (overlapType == TimeRange.INTERVAL_IN || overlapType == TimeRange.INTERVAL_EQUALS || </span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">			event.getActivityID().compareTo(Activity.ACTIVITY_SHIFT_OVERTIME_GAP) == 0){	//consider Overtime GAP belongs to Overtime</span>
+<span class="nc" id="L313">			event.setIsOvertime(true);</span>
+<span class="nc" id="L314">			markedEvents.add(event);</span>
+<span class="nc bnc" id="L315" title="All 2 branches missed.">		} else if (overlapType == TimeRange.INTERVAL_BEFORE){</span>
+			//keep the same overtime period in the future on the timeline
+<span class="nc" id="L317">			markedEvents.add(event);</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">		} else if (overlapType == TimeRange.INTERVAL_AFTER) {</span>
+			//try next overtime period recursively
+<span class="nc" id="L320">			markEventWithNextOvertime(OTPeriods, event, markedEvents );</span>
+<span class="nc bnc" id="L321" title="All 4 branches missed.">		} else if (overlapType == TimeRange.INTERVAL_BEFORE_AND_IN</span>
+				||overlapType == TimeRange.INTERVAL_COVERS
+<span class="nc bnc" id="L323" title="All 2 branches missed.">				&amp;&amp; overtimeRange.getEndDate().getTime() == eventRange.getEndDate().getTime()){</span>
+			//split event (eventStart,overtimeStart)(overtimeStart,eventEnd) and mark the second overtime
+<span class="nc" id="L325">			addSplitPartOfEvent(event, null, overtimeRange.getStartDate(), false, markedEvents);</span>
+			//second event is adjusted event;
+<span class="nc" id="L327">			event.setStartTime(overtimeRange.getStartDate());</span>
+<span class="nc" id="L328">			event.setIsOvertime(true);</span>
+<span class="nc" id="L329">			markedEvents.add(event);</span>
+<span class="nc bnc" id="L330" title="All 4 branches missed.">		} else if (overlapType == TimeRange.INTERVAL_AFTER_AND_IN</span>
+				||overlapType == TimeRange.INTERVAL_COVERS
+<span class="nc bnc" id="L332" title="All 2 branches missed.">				&amp;&amp; overtimeRange.getStartDate().getTime() == eventRange.getStartDate().getTime()){</span>
+			//split event (eventStart,overlapEnd) (overlapEnd,eventEnd), mark first overtime and add to marked
+<span class="nc" id="L334">			addSplitPartOfEvent(event, null, overtimeRange.getEndDate(), true, markedEvents);</span>
+			//try next overtime recursively with second event which is adjusted event
+<span class="nc" id="L336">			event.setStartTime(overtimeRange.getEndDate());</span>
+<span class="nc" id="L337">			event.setIsOvertime(false);</span>
+<span class="nc" id="L338">			markEventWithNextOvertime(OTPeriods, event, markedEvents );</span>
+		} else { //event covers overtime, and overtime starts after event start and ends before event end
+			//	split event to three events (eventStart,overtimeStart),(overtimeStart,overtimeEnd),(overtimeEnd,eventEnd)
+			//	mark second overtime, move two first to marked
+<span class="nc" id="L342">			addSplitPartOfEvent(event, null, overtimeRange.getStartDate(), false, markedEvents);</span>
+<span class="nc" id="L343">			addSplitPartOfEvent(event, overtimeRange.getStartDate(), overtimeRange.getEndDate(), true, markedEvents);</span>
+			//try next overtime recursively with third event which is adjusted event
+<span class="nc" id="L345">			event.setStartTime(overtimeRange.getEndDate());</span>
+<span class="nc" id="L346">			event.setIsOvertime(false);</span>
+<span class="nc" id="L347">			markEventWithNextOvertime(OTPeriods, event, markedEvents );</span>
+		}
+<span class="nc" id="L349">		return;</span>
+	}//markEventOvertime
+
+	/**
+	 * process one SimpleEvent marking overtime and adding to marked collection
+	 * 	trying with consecutive overtime periods
+	 */
+	private static void markEventWithNextOvertime(ArrayList OTPeriods, SimpleEvent event, Collection markedEvents ){
+<span class="nc bnc" id="L357" title="All 2 branches missed.">		if (OTPeriods.size()&gt;0){</span>
+<span class="nc" id="L358">			OTPeriods.remove(0);</span>
+<span class="nc" id="L359">			markEventOvertime(OTPeriods, event, markedEvents);</span>
+		} else {//no overtime left - move second event to marked
+<span class="nc" id="L361">			markedEvents.add(event);</span>
+		}
+<span class="nc" id="L363">		return;</span>
+	}//markEventWithNextOvertime
+
+	/**
+	 * @param event
+	 * @param startOrNull
+	 * @param endOrNull
+	 * @param bOvertime
+	 */
+	private static void addSplitPartOfEvent(SimpleEvent event, Date startOrNull, Date endOrNull, boolean bOvertime, Collection markedEvents){
+<span class="nc" id="L373">		SimpleEvent newEvent = new SimpleEvent(event);</span>
+<span class="nc bnc" id="L374" title="All 2 branches missed.">		if (startOrNull!=null) newEvent.setStartTime(startOrNull);</span>
+<span class="nc bnc" id="L375" title="All 2 branches missed.">		if (endOrNull != null) newEvent.setEndTime(endOrNull);</span>
+<span class="nc" id="L376">		newEvent.setIsOvertime(bOvertime);</span>
+<span class="nc" id="L377">		markedEvents.add(newEvent);</span>
+<span class="nc" id="L378">	}//addSplitPartOfEvent</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

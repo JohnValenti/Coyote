@@ -1,0 +1,303 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>DailyBillingUsageDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.facade.hosted.billing.ejb</a> &gt; <span class="el_source">DailyBillingUsageDAO.java</span></div><h1>DailyBillingUsageDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.facade.hosted.billing.ejb;
+
+import java.io.StringReader;
+import java.util.*;
+
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
+
+import org.xml.sax.InputSource;
+
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.jdmo.*;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.base.FacadeException;
+import com.bluepumpkin.ejb.bbm.dao.DAOBase;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.facade.Log;
+import com.bluepumpkin.ejb.facade.hosted.billing.model.HostedBillingDailyComp;
+import com.bluepumpkin.ejb.facade.hosted.billing.model.HostedBillingDailyCompFieldInfo;
+
+public class DailyBillingUsageDAO
+		extends DAOBase&lt;HostedBillingDailyComp&gt; {
+<span class="nc" id="L27">	private static Category m_cat = Log.initCategory(DailyBillingUsageDAO.class.getName());</span>
+	// a date far in the future
+	private static final String ISNULLENDDATE = &quot;21000101&quot;;
+	private static final String WFMCONSUMPTIONSOURCEID = &quot;-401005&quot;;
+	private static final int STRINGBUILDERINITIALCAPACITY = 512;
+<span class="nc" id="L32">	private static FieldInfo m_fieldInfo = new HostedBillingDailyCompFieldInfo();</span>
+	private Date firstOfTheMonthDate;
+
+	public DailyBillingUsageDAO() {
+<span class="nc" id="L36">		super();</span>
+<span class="nc" id="L37">	}</span>
+
+	public DailyBillingUsageDAO(Jdmo dmo) {
+<span class="nc" id="L40">		super(dmo);</span>
+<span class="nc" id="L41">	}</span>
+
+	@Override
+	protected FieldInfo getFieldInfo() {
+<span class="nc" id="L45">		return m_fieldInfo;</span>
+	}
+
+	@Override
+	protected HostedBillingDailyComp createValueObject() {
+<span class="nc" id="L50">		return new HostedBillingDailyComp();</span>
+	}
+
+	/**
+	 * Initiates the daily dump for the BPMAINDB.HOSTEDBILLINGDAILYUSERS and BPMAINDB.HOSTEDBILLINGDAILYENCRYPT tables. These tables
+	 * are used in calculating the billing for tenant system users.
+	 * &lt;p&gt;
+	 * @param startDate a start date/time to use in dumping data, typically 12:00 AM for today's date
+	 * @param endDate an end date/time to use in dumping data, typically 11:59 PM for today's date
+	 * @param tz the timezone for the system performing the dump
+	 * &lt;p&gt;
+	 * @throws FacadeException
+	 */
+	public void dumpDailyUsage(Date startDate, Date endDate, TimeZone tz)
+			throws FacadeException {
+		// Use input dates for querying
+<span class="nc" id="L66">		m_cat.info(&quot;dumpDailyUsage&quot;);</span>
+<span class="nc" id="L67">		m_cat.info(&quot;startDate: &quot; + startDate);</span>
+<span class="nc" id="L68">		m_cat.info(&quot;endDate: &quot; + endDate);</span>
+<span class="nc" id="L69">		m_cat.info(&quot;timezone: &quot; + tz);</span>
+<span class="nc" id="L70">		String strStartDate = JdmoUtil.formatDBString(startDate);</span>
+<span class="nc" id="L71">		String strEndDate = JdmoUtil.formatDBString(endDate);</span>
+
+<span class="nc" id="L73">		firstOfTheMonthDate = getFirstOfTheMonthDate(endDate);</span>
+<span class="nc" id="L74">		String strFirstOfTheMonthDate = JdmoUtil.formatDBString(firstOfTheMonthDate);</span>
+<span class="nc" id="L75">		m_cat.info(&quot;strFirstOfTheMonthDate: &quot; + strFirstOfTheMonthDate);</span>
+
+<span class="nc" id="L77">		dumpDailyBillingPrivilegeUsers(strStartDate, strEndDate, strFirstOfTheMonthDate);</span>
+<span class="nc" id="L78">		dumpDailyBillingWFMConsumptionUsers(strStartDate, strEndDate, strFirstOfTheMonthDate);</span>
+<span class="nc" id="L79">		dumpDailyBillingEncryptionSet(strFirstOfTheMonthDate);</span>
+<span class="nc" id="L80">	}</span>
+
+	public Date getFirstOfTheMonthDate(Date endDate)
+			throws FacadeException {
+<span class="nc" id="L84">		WorkResourceManager mgr = null;</span>
+<span class="nc" id="L85">		TimeZone yourCompanyTZ = null;</span>
+		try {
+<span class="nc" id="L87">			mgr = BbmManagerFactory.getWorkResourceManager();</span>
+
+<span class="nc" id="L89">			Organization yourCompanyOrg = mgr.getOrganizationByID(Organization.YOUR_COMPANY_ID_OBJ);</span>
+<span class="nc" id="L90">			yourCompanyTZ = yourCompanyOrg.getTimeZone();</span>
+<span class="nc" id="L91">		} catch (Exception e) {</span>
+<span class="nc" id="L92">			throw new FacadeException(e);</span>
+<span class="nc" id="L93">		}</span>
+
+<span class="nc" id="L95">		Calendar cal = Calendar.getInstance(yourCompanyTZ);</span>
+		// using the end time since that value will hold today's date (modified for timezone) and the start time will hold a value
+		// of (end time - 24 hours)
+<span class="nc" id="L98">		cal.setTime(endDate);</span>
+		// setting day of month to 1, so all values entered into the hosted billing daily users table will have the same day value
+		// this is done for performance and to snap the report to month ranges
+<span class="nc" id="L101">		LocalDate ld = new LocalDate(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), 1, 0, 0);</span>
+<span class="nc" id="L102">		return ld.getTime(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+	}
+
+	/**
+	 * This method will dump the required data to the db for users with the permissions to components associated with hosted site billing.
+	 * &lt;p&gt;
+	 * @param strStartDate the start time frame for which to run the dump, typically set by the integration server when the dump is
+	 * scheduled to run
+	 * @param strEndDate the end time frame for which to run the dump, typically set by the integration server when the dump is scheduled
+	 * to run
+	 * @param strFirstOfTheMonthDate the date for the first day of the current month
+	 * &lt;p&gt;
+	 * @throws FacadeException
+	 */
+	protected void dumpDailyBillingPrivilegeUsers(String strStartDate, String strEndDate, String strFirstOfTheMonthDate)
+			throws FacadeException {
+<span class="nc" id="L118">		StringBuilder buf = new StringBuilder(STRINGBUILDERINITIALCAPACITY);</span>
+
+<span class="nc" id="L120">		buf.append(&quot;SELECT DISTINCT org.ID orgID, billingSource.ID billingSourceID, employee.ID empID&quot;).</span>
+<span class="nc" id="L121">				append(&quot; FROM ORGANIZATION org, HOSTEDBILLINGSOURCE billingSource, AUTHPRIVILEGE authPriv, EMPLOYEEAM employee,&quot;).</span>
+<span class="nc" id="L122">				append(&quot;AUTHROLEPRIVILEGE authRolePriv, AUTHACCESSRIGHT authAccRights, WORKRESOURCEORGANIZATION workResOrg, BPUSER bpuser&quot;).</span>
+<span class="nc" id="L123">				append(&quot; WHERE workResOrg.ORGANIZATIONID = org.ID&quot;).</span>
+<span class="nc" id="L124">				append(&quot; AND workResOrg.STARTTIME&lt;&quot;).append(JdmoUtil.asSqlLiteral(strEndDate)).</span>
+<span class="nc" id="L125">				append(&quot; AND isnull(workResOrg.ENDTIME,&quot;).append(JdmoUtil.asSqlLiteral(ISNULLENDDATE)).append(&quot;)&gt;=&quot;).</span>
+<span class="nc" id="L126">				append(JdmoUtil.asSqlLiteral(strStartDate)).</span>
+<span class="nc" id="L127">				append(&quot; AND workResOrg.WORKRESOURCEID = employee.ID&quot;).</span>
+<span class="nc" id="L128">				append(&quot; AND workResOrg.WORKRESOURCEID = bpuser.EMPLOYEEID&quot;).</span>
+<span class="nc" id="L129">				append(&quot; AND bpuser.ID = authAccRights.BPUSERID&quot;).</span>
+<span class="nc" id="L130">				append(&quot; AND authAccRights.AUTHROLEID = authRolePriv.AUTHROLEID&quot;).</span>
+<span class="nc" id="L131">				append(&quot; AND authRolePriv.AUTHPRIVILEGEID = authPriv.ID&quot;).</span>
+<span class="nc" id="L132">				append(&quot; AND authPriv.ID = billingSource.SOURCEID&quot;).</span>
+<span class="nc" id="L133">				append(&quot; ORDER BY org.ID&quot;);</span>
+
+		try {
+<span class="nc" id="L136">			Map insertHashMap = new HashMap();</span>
+<span class="nc" id="L137">			JdmoRowset rs = m_dmo.createRowset(buf.toString());</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">			while (rs.next()) {</span>
+				// if the values aren't already in the table, add them
+<span class="nc bnc" id="L140" title="All 2 branches missed.">				if (!isDuplicateHOSTEDBILLINGDAILYUSERS(rs, strFirstOfTheMonthDate)) {</span>
+<span class="nc" id="L141">					insertHashMap.put(&quot;DAYDATE&quot;, firstOfTheMonthDate);</span>
+<span class="nc" id="L142">					insertHashMap.put(&quot;ORGANIZATIONID&quot;, rs.getID(1));</span>
+<span class="nc" id="L143">					insertHashMap.put(&quot;HOSTEDBILLINGSOURCEID&quot;, rs.getInt(2));</span>
+<span class="nc" id="L144">					insertHashMap.put(&quot;EMPLOYEEID&quot;, rs.getInt(3));</span>
+
+<span class="nc" id="L146">					m_dmo.addBatchInsert(&quot;HOSTEDBILLINGDAILYUSERS&quot;, (HashMap)insertHashMap);</span>
+				}
+<span class="nc" id="L148">				insertHashMap.clear();</span>
+			}
+<span class="nc" id="L150">			m_dmo.executeBatch();</span>
+<span class="nc" id="L151">		} catch (Exception e) {</span>
+<span class="nc" id="L152">			throw new FacadeException(e);</span>
+<span class="nc" id="L153">		}</span>
+<span class="nc" id="L154">	}</span>
+
+	/**
+	 * This method will dump the required data to the db for users that have been consumed by components associated with hosted site
+	 * billing.
+	 * &lt;p&gt;
+	 * @param strStartDate the start time frame for which to run the dump, typically set by the integration server when the dump is
+	 * scheduled to run
+	 * @param strEndDate the end time frame for which to run the dump, typically set by the integration server when the dump is scheduled
+	 * to run
+	 * @param strFirstOfTheMonthDate the days date for which the report is run
+	 * &lt;p&gt;
+	 * @throws FacadeException
+	 */
+	protected void dumpDailyBillingWFMConsumptionUsers(String strStartDate, String strEndDate, String strFirstOfTheMonthDate)
+			throws FacadeException {
+<span class="nc" id="L170">		StringBuilder buf = new StringBuilder(STRINGBUILDERINITIALCAPACITY);</span>
+
+<span class="nc" id="L172">		buf.append(&quot;SELECT DISTINCT org.ID orgID, &quot; + WFMCONSUMPTIONSOURCEID + &quot; billingSourceID, employee.ID empID&quot;).</span>
+<span class="nc" id="L173">				append(&quot; FROM ORGANIZATION org, PLANNEDEVENTTIMELINE plannedEventTL, EMPLOYEEAM employee,&quot;).</span>
+<span class="nc" id="L174">				append(&quot; WORKRESOURCEORGANIZATION workResOrg&quot;).</span>
+<span class="nc" id="L175">				append(&quot; WHERE workResOrg.ORGANIZATIONID = org.ID&quot;).</span>
+<span class="nc" id="L176">				append(&quot; AND workResOrg.STARTTIME&lt;&quot;).append(JdmoUtil.asSqlLiteral(strEndDate)).</span>
+<span class="nc" id="L177">				append(&quot; AND isnull(workResOrg.ENDTIME,&quot;).append(JdmoUtil.asSqlLiteral(ISNULLENDDATE)).</span>
+<span class="nc" id="L178">				append(&quot;)&gt;=&quot;).append(JdmoUtil.asSqlLiteral(strStartDate)).</span>
+<span class="nc" id="L179">				append(&quot; AND workResOrg.WORKRESOURCEID = plannedEventTL.WORKRESOURCEID&quot;).</span>
+<span class="nc" id="L180">				append(&quot; AND plannedEventTL.STARTTIME &gt;=&quot;).append(JdmoUtil.asSqlLiteral(strFirstOfTheMonthDate)).</span>
+<span class="nc" id="L181">				append(&quot; AND plannedEventTL.STARTTIME &lt;&quot;).append(JdmoUtil.asSqlLiteral(strEndDate)).</span>
+<span class="nc" id="L182">				append(&quot; AND workResOrg.WORKRESOURCEID = employee.ID&quot;).</span>
+<span class="nc" id="L183">				append(&quot; ORDER BY org.ID&quot;);</span>
+
+		try {
+<span class="nc" id="L186">			Map insertHashMap = new HashMap();</span>
+<span class="nc" id="L187">			JdmoRowset rs = m_dmo.createRowset(buf.toString());</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">			while (rs.next()) {</span>
+				// if the values aren't already in the table, add them
+<span class="nc bnc" id="L190" title="All 2 branches missed.">				if (!isDuplicateHOSTEDBILLINGDAILYUSERS(rs, strFirstOfTheMonthDate)) {</span>
+<span class="nc" id="L191">					insertHashMap.put(&quot;DAYDATE&quot;, firstOfTheMonthDate);</span>
+<span class="nc" id="L192">					insertHashMap.put(&quot;ORGANIZATIONID&quot;, rs.getID(1));</span>
+<span class="nc" id="L193">					insertHashMap.put(&quot;HOSTEDBILLINGSOURCEID&quot;, rs.getInt(2));</span>
+<span class="nc" id="L194">					insertHashMap.put(&quot;EMPLOYEEID&quot;, rs.getInt(3));</span>
+
+<span class="nc" id="L196">					m_dmo.addBatchInsert(&quot;HOSTEDBILLINGDAILYUSERS&quot;, (HashMap)insertHashMap);</span>
+				}
+<span class="nc" id="L198">				insertHashMap.clear();</span>
+			}
+<span class="nc" id="L200">			m_dmo.executeBatch();</span>
+<span class="nc" id="L201">		} catch (Exception e) {</span>
+<span class="nc" id="L202">			throw new FacadeException(e);</span>
+<span class="nc" id="L203">		}</span>
+<span class="nc" id="L204">	}</span>
+
+	/**
+	 * This method will dump the required data to the db associated with the system's security setting &quot;Data-At-Rest Encryption&quot;,
+	 * currently found at System Management -&gt; Security: Data-At-Rest Encryption.
+	 * &lt;p&gt;
+	 * @param strFirstOfTheMonthDate the date for which to dump data, typically set by the integration server when the dump is scheduled to run
+	 * &lt;p&gt;
+	 * @throws FacadeException
+	 */
+	protected void dumpDailyBillingEncryptionSet(String strFirstOfTheMonthDate)
+			throws FacadeException {
+		try {
+			// delete any tables entries for this date
+<span class="nc" id="L218">			deleteFromHostedBillingDailyEncryptWhereDaydateIs(strFirstOfTheMonthDate);</span>
+			// create and execute a batch insert
+<span class="nc" id="L220">			exectuteBatchForHostedBillingDailyEncrypt();</span>
+<span class="nc" id="L221">		} catch (Exception e) {</span>
+<span class="nc" id="L222">			throw new FacadeException(e);</span>
+<span class="nc" id="L223">		}</span>
+<span class="nc" id="L224">	}</span>
+
+	/**
+	 * Deletes any entries from the BPMAINDB.HOSTEDBILLINGDAILYENCRYPT table for the date provided: this date would typically be for today's
+	 * date.
+	 * &lt;p&gt;
+	 * @param strFirstOfTheMonthDate the date for which to delete entries in the HOSTEDBILLINGDAILYENCRYPT table
+	 * &lt;p&gt;
+	 * @throws JdmoException
+	 */
+	private void deleteFromHostedBillingDailyEncryptWhereDaydateIs(String strFirstOfTheMonthDate)
+			throws JdmoException {
+<span class="nc" id="L236">		StringBuilder strQuery = new StringBuilder();</span>
+<span class="nc" id="L237">		strQuery.append(&quot;delete from HOSTEDBILLINGDAILYENCRYPT where DAYDATE=&quot;).append(JdmoUtil.asSqlLiteral(strFirstOfTheMonthDate));</span>
+<span class="nc" id="L238">		m_dmo.execute(strQuery.toString());</span>
+<span class="nc" id="L239">	}</span>
+
+	/**
+	 * Executes a batch insert to the BPMAINDB.HOSTEDBILLINGDAILYENCRYPT table using a globally defined date: this date would typically be
+	 * for today's date.
+	 * &lt;p&gt;
+	 * @throws JdmoException
+	 * @throws XPathExpressionException
+	 */
+	private void exectuteBatchForHostedBillingDailyEncrypt()
+			throws JdmoException, XPathExpressionException {
+<span class="nc" id="L250">		Map insertHashMap = new HashMap();</span>
+<span class="nc" id="L251">		insertHashMap.put(&quot;DAYDATE&quot;, firstOfTheMonthDate);</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">		insertHashMap.put(&quot;ENCRYPTIONSET&quot;, getAtRestEncryption() ? 1 : 0);</span>
+<span class="nc" id="L253">		m_dmo.addBatchInsert(&quot;HOSTEDBILLINGDAILYENCRYPT&quot;, (HashMap)insertHashMap);</span>
+<span class="nc" id="L254">		m_dmo.executeBatch();</span>
+<span class="nc" id="L255">	}</span>
+
+	/**
+	 * For 11.2, the value should be retrieved via web service, after EM team creates the web service to retrieve the value.
+	 * &lt;p&gt;
+	 * @param partialXml
+	 * &lt;p&gt;
+	 * @return true if the ATREST_ENCRYPTION value is true, false otherwise
+	 * &lt;p&gt;
+	 * @throws JdmoException
+	 * @throws XPathExpressionException
+	 */
+	private boolean getAtRestEncryption()
+			throws JdmoException, XPathExpressionException {
+<span class="nc" id="L269">		String strSelect = &quot;select SECTIONSETTINGSXML from INSTALLDATAXML where INSTALLHIERARCHYID = -442001 and&quot;</span>
+				+ &quot; INSTALLSCREENMETADATAID = -6003&quot;;
+<span class="nc" id="L271">		JdmoRowset rs = m_dmo.createRowset(strSelect);</span>
+<span class="nc" id="L272">		rs.next();</span>
+<span class="nc" id="L273">		String partialXml = rs.getString(1);</span>
+
+<span class="nc" id="L275">		StringBuilder buf = new StringBuilder(&quot;&lt;root&gt;&quot;);</span>
+<span class="nc" id="L276">		buf.append(partialXml).append(&quot;&lt;/root&gt;&quot;);</span>
+
+<span class="nc" id="L278">		InputSource inputSource = new InputSource(new StringReader(buf.toString()));</span>
+<span class="nc" id="L279">		XPathFactory factory = XPathFactory.newInstance();</span>
+<span class="nc" id="L280">		XPath xpath = factory.newXPath();</span>
+
+<span class="nc" id="L282">		String value = xpath.evaluate(&quot;//Setting[@Name=\&quot;ATREST_ENCRYPTION\&quot;]/@Value&quot;, inputSource);</span>
+<span class="nc" id="L283">		return Boolean.valueOf(value);</span>
+	}
+
+	private boolean isDuplicateHOSTEDBILLINGDAILYUSERS(JdmoRowset rs, String strFirstOfTheMonthDate)
+			throws FacadeException {
+<span class="nc" id="L288">		StringBuilder buf = new StringBuilder(STRINGBUILDERINITIALCAPACITY);</span>
+		try {
+<span class="nc" id="L290">			buf.append(&quot;SELECT * FROM HOSTEDBILLINGDAILYUSERS&quot;).</span>
+<span class="nc" id="L291">					append(&quot; WHERE DATEPART(yyyy, DAYDATE) = DATEPART(yyyy, &quot;).append(JdmoUtil.asSqlLiteral(strFirstOfTheMonthDate)).append(&quot;)&quot;).</span>
+<span class="nc" id="L292">					append(&quot; AND DATEPART(mm, DAYDATE) = DATEPART(mm, &quot;).append(JdmoUtil.asSqlLiteral(strFirstOfTheMonthDate)).append(&quot;)&quot;).</span>
+<span class="nc" id="L293">					append(&quot; AND ORGANIZATIONID = &quot;).append(JdmoUtil.asSqlLiteral(rs.getID(1))).</span>
+<span class="nc" id="L294">					append(&quot; AND HOSTEDBILLINGSOURCEID = &quot;).append(JdmoUtil.asSqlLiteral(rs.getInt(2))).</span>
+<span class="nc" id="L295">					append(&quot; AND EMPLOYEEID = &quot;).append(JdmoUtil.asSqlLiteral(rs.getInt(3)));</span>
+<span class="nc" id="L296">			JdmoRowset rs2 = m_dmo.createRowset(buf.toString());</span>
+<span class="nc" id="L297">			return rs2.next();</span>
+<span class="nc" id="L298">		} catch (Exception e) {</span>
+<span class="nc" id="L299">			throw new FacadeException(e);</span>
+		}
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

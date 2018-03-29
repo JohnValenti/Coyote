@@ -1,0 +1,967 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SkillImportPageModel.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.bbm.organization.setup.skill</a> &gt; <span class="el_source">SkillImportPageModel.java</span></div><h1>SkillImportPageModel.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.bbm.organization.setup.skill;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.ResourceBundle;
+import java.util.StringTokenizer;
+import javax.servlet.http.HttpServletRequest;
+import org.apache.commons.fileupload.FileItem;
+import com.bluepumpkin.common.base.BPException;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateDuplicateKeyException;
+import com.bluepumpkin.ejb.bbm.workresource.OrganizationScopeManagerProxy;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.web.bbm.Log;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.l10n.BbmWebLogBundleKey;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.core.pagemodel.PopupDialogPageModel;
+import com.bluepumpkin.web.core.setup.mediatypes.MediaTypesSetupModelHandler;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.form.FormInputPC;
+import com.witness.web.uif.pagecomponent.form.FormTwoColumnPC;
+import com.witness.web.uif.pagecomponent.list.MultiColListPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarTextButton;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.IOUtil;
+import com.witness.web.uif.util.reflection.ParameterUtil;
+import com.bluepumpkin.web.bbm.skill.SkillModelHandler;
+import com.bluepumpkin.ejb.bbm.skill.model.Skill;
+import com.bluepumpkin.ejb.core.CoreManagerFactory;
+import com.witness.ejb.core.mediatypes.model.MediaType;
+import com.bluepumpkin.web.core.setup.mediatypes.MediaTypesSetupPageModel;
+import com.witness.ejb.core.licensing.ejb.LicenseManager;
+
+/**
+ * Title:        SkillImportPageModel
+ * Description:  Model for selecting fields to import
+ * Copyright:    Copyright (c) 2010
+ * Company:      Verint, inc
+ * @author       Gonzalo Quintanar
+ */
+public class SkillImportPageModel extends PopupDialogPageModel 
+{
+    public static final String SUCCESS = &quot;UPLOAD_SUCCESS&quot;;
+    private static final String DEFAULT_PROP = &quot;*&quot;;
+
+    //hidden fields
+    public static final String SELECTED_ORG_ID_FN = &quot;selectedOrgID&quot;;
+    
+    //form field names
+    private static final String DELIMITER_FN = &quot;delimiter&quot;;
+    private static final String NUM_LINES_FN = &quot;numLines&quot;;
+    
+    private static final String SKILL_NAME_FN = &quot;skillName&quot;;
+    private static final String MEDIA_TYPE_FN = &quot;mediaType&quot;;
+    private static final String DESCRIPTION = &quot;description&quot;;
+    private static final String ORGANIZATION_FN = &quot;organization&quot;;
+    
+<span class="fc" id="L74">    private static final FieldData[] fieldData = {</span>
+        new FieldData(SKILL_NAME_FN, BbmWebBundleKey.ORG_SKILL_NAME, true, false),
+        new FieldData(MEDIA_TYPE_FN, BbmWebBundleKey.ORG_SKILL_MEDIA_TYPE_LABEL, true, false),
+        new FieldData(DESCRIPTION, BbmWebBundleKey.ORG_SKILL_DESC_LABEL, false, false),
+        new FieldData(ORGANIZATION_FN, BbmWebBundleKey.Organization, false, false)
+    };
+    private static final int NUM_COLUMNS = 4;
+
+    protected ResourceBundle m_bbmBundle;
+
+<span class="fc" id="L84">    private static Category log = Log.initCategory(SkillImportPageModel.class.getName());</span>
+<span class="nc" id="L85">    private boolean m_isInitiated = false;</span>
+<span class="nc" id="L86">    private boolean m_initFailure = false;</span>
+<span class="nc" id="L87">    private boolean m_hasInvalidChars = false;</span>
+<span class="nc" id="L88">    private String m_invalidChars = &quot;&quot;;</span>
+<span class="nc" id="L89">    private boolean m_showDoneButton = false;</span>
+<span class="nc" id="L90">    private ID m_selectedOrgID = Organization.YOUR_COMPANY_ID_OBJ;</span>
+    
+    private FormTwoColumnPC m_formPC;
+    private FormTwoColumnPC m_formPC1;
+    private MultiColListPC m_list;
+    private FormInputPC m_inputPC;
+<span class="nc" id="L96">    private Map m_orgMap = Collections.EMPTY_MAP;</span>
+    
+    //private HashMap m_ImportFileRecordNumMap = new HashMap(); //Used to associate each skill with record number in input import file.
+<span class="nc" id="L99">    private HashMap m_UserIndicesMap = null;</span>
+<span class="nc" id="L100">    private ArrayList m_msgsList = new ArrayList();</span>
+    
+<span class="nc" id="L102">    private HashMap allMediaMap = new HashMap(9); //map containing all Media.name -&gt; Media.SID</span>
+    
+    
+    /**
+     * Constructor
+     */
+    public SkillImportPageModel(RequestContext context) {
+<span class="nc" id="L109">        super(context, true);</span>
+
+<span class="nc" id="L111">        m_bbmBundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+
+        // Initialize Form PC==
+<span class="nc" id="L114">        m_formPC = new FormTwoColumnPC(context);</span>
+<span class="nc" id="L115">        addChildComponent(m_formPC);</span>
+
+        // Initialize second Form PC==
+<span class="nc" id="L118">        m_formPC1 = new FormTwoColumnPC(context);</span>
+<span class="nc" id="L119">        addChildComponent(m_formPC1);</span>
+
+        // Initialize list PC==
+<span class="nc" id="L122">        m_list = new MultiColListPC(context);</span>
+<span class="nc" id="L123">        m_list.setFirstColumnWidth(&quot;30%&quot;);</span>
+<span class="nc" id="L124">        addChildComponent(m_list);</span>
+        
+<span class="nc" id="L126">        m_inputPC = new FormInputPC(context);</span>
+<span class="nc" id="L127">        addChildComponent(m_inputPC);</span>
+
+        //--- Add Toolbar
+<span class="nc" id="L130">        m_toolbar = new ToolbarPC(context);</span>
+<span class="nc" id="L131">        addChildComponent(m_toolbar);</span>
+        
+        // Initialize invalid characters
+<span class="nc" id="L134">        m_invalidChars = getInvalidEntryChars();</span>
+<span class="nc" id="L135">    }</span>
+
+    /**
+     * Return instance of Model which is ready to be rendered
+     */
+    public static SkillImportPageModel getInstance(RequestContext context) {
+<span class="nc" id="L141">        SkillImportPageModel model = (SkillImportPageModel) context.getPageModel();</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">        if (model == null) {</span>
+            //create a new model
+<span class="nc" id="L144">            model = new SkillImportPageModel(context);</span>
+<span class="nc" id="L145">            context.setPageModel(model);</span>
+        }
+<span class="nc" id="L147">        model.populateModel();</span>
+
+<span class="nc" id="L149">        return model;</span>
+    }
+
+    /**
+     * Initialize Component For Display
+     */
+    public void initForDisplay() {
+<span class="nc bnc" id="L156" title="All 2 branches missed.">        if (m_isInitializedForDisplay)</span>
+<span class="nc" id="L157">            return;</span>
+        else {
+<span class="nc" id="L159">            super.initForDisplay();</span>
+
+            // Component specific required JavaScript Files
+<span class="nc" id="L162">            addRequiredJavaScriptFile(JavaScriptFileID.MEDIATOR_WORKPANE_GENERIC);</span>
+        }
+<span class="nc" id="L164">    }</span>
+
+    /**
+     * Return the HTML for this Page Model
+     */
+    //public String getDisplayString() 
+    public String getHtmlDisplay()
+    {
+<span class="nc" id="L172">        StringBuffer aBuf = new StringBuffer();</span>
+<span class="nc" id="L173">        aBuf.append(m_formPC);</span>
+        //row with text fields below
+<span class="nc" id="L175">        aBuf.append(&quot;&lt;table width=\&quot;100%\&quot;&gt;&lt;tr&gt;&lt;td class=\&quot;inputText\&quot; style=\&quot;height:22px\&quot; colspan=\&quot;2\&quot; bgcolor=\&quot;#A5BAE7\&quot;&gt;&quot;);</span>
+<span class="nc" id="L176">        aBuf.append(i18n(m_bbmBundle, BbmWebBundleKey.CheckFields));</span>
+<span class="nc" id="L177">        aBuf.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L178">        aBuf.append(&quot;&lt;/table&gt;&quot;);</span>
+
+<span class="nc" id="L180">        aBuf.append(m_list.getHtmlDisplay());</span>
+<span class="nc" id="L181">        return aBuf.toString(); //super.getHtmlDisplay() + &quot; &quot; + </span>
+    }
+
+    /**
+     * Make sure that the model is populated
+     */
+    private void populateModel() 
+    {
+<span class="nc bnc" id="L189" title="All 2 branches missed.">        if (m_isInitiated) </span>
+<span class="nc" id="L190">            return; </span>
+        else 
+<span class="nc" id="L192">            m_isInitiated = true;</span>
+        
+<span class="nc" id="L194">        setFormEncType(HtmlUtil.FORM_ENCTYPE_MULTIPART);</span>
+
+<span class="nc" id="L196">        initTitle();</span>
+<span class="nc" id="L197">        initForm();</span>
+<span class="nc" id="L198">        initToolbar();</span>
+<span class="nc" id="L199">    }</span>
+
+    /**
+     * Prepare content title for rendering
+     */
+    private void initTitle() {
+<span class="nc" id="L205">        m_contentTitlePC.setPageTitle(i18n(m_bbmBundle,</span>
+                BbmWebBundleKey.IMPORT_SKILLS));
+<span class="nc" id="L207">    }</span>
+
+    /**
+     * Initialize Form Display
+     */
+    protected void initForm() {
+        try {
+            //populate upper part
+<span class="nc" id="L215">            populateSelection();</span>
+            
+            //set list to be unselectable
+<span class="nc" id="L218">            m_list.setRowSelectable(false);</span>
+
+<span class="nc" id="L220">            setUserIndices(m_UserIndicesMap);</span>
+
+<span class="nc" id="L222">        } catch (Exception ex) {</span>
+<span class="nc" id="L223">            handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L224">        }</span>
+<span class="nc bnc" id="L225" title="All 2 branches missed.">        if (!m_initFailure) {</span>
+<span class="nc" id="L226">            setSubmitString(i18n(m_bbmBundle, BbmWebBundleKey.SHIFT_SET));</span>
+        }
+<span class="nc" id="L228">    }</span>
+
+    private void populateSelection() {
+<span class="nc" id="L231">        m_formPC.setTitle(i18n(m_bbmBundle, BbmWebBundleKey.FileSetup));</span>
+<span class="nc" id="L232">        m_formPC.setCssClasses(&quot;formRowDark40&quot;, &quot;formRowLight60&quot;);</span>
+        
+        //append the file dialog
+<span class="nc" id="L235">        m_formPC.addRow(i18n(m_bbmBundle, BbmWebBundleKey.FileToImport),</span>
+                &quot;&lt;INPUT name=\&quot;file\&quot; type=\&quot;file\&quot; value=\&quot;&quot;
+<span class="nc" id="L237">                + i18n(m_bbmBundle, BbmWebBundleKey.Browse) + &quot;\&quot; size=\&quot;25\&quot;&gt;&quot;);</span>
+        
+        //append delimiter picker
+<span class="nc" id="L240">        m_formPC.addRow(i18n(m_bbmBundle, BbmWebBundleKey.Delimiter),</span>
+<span class="nc" id="L241">                getDelimiterDropDown());</span>
+        
+        //append number of lines selection
+<span class="nc" id="L244">        m_inputPC.reset(NUM_LINES_FN, &quot;0&quot;, FormInputPC.TYPE_INTEGER, true);</span>
+<span class="nc" id="L245">        m_inputPC.setLowerLimit(0);</span>
+<span class="nc" id="L246">        m_inputPC.setSize(3);</span>
+<span class="nc" id="L247">        m_inputPC.setMaxLength(5);</span>
+<span class="nc" id="L248">        m_formPC.addRow(i18n(m_bbmBundle, BbmWebBundleKey.LinesToIgnore), m_inputPC.getHtmlDisplay());</span>
+<span class="nc" id="L249">    }</span>
+    
+    private DefaultMultiColumnNodeData getNodeData(FieldData lData, int lIndex, FieldData rData, int rIndex, Map map) {
+<span class="nc" id="L252">        DefaultMultiColumnNodeData row_data = new DefaultMultiColumnNodeData();</span>
+<span class="nc" id="L253">        getColData(row_data, lData, lIndex, map);</span>
+<span class="nc" id="L254">        row_data.add(HtmlUtil.NBSP);</span>
+<span class="nc" id="L255">        getColData(row_data, rData, rIndex, map);</span>
+<span class="nc" id="L256">        return row_data;</span>
+    }
+
+    private void getColData(DefaultMultiColumnNodeData row_data, FieldData data, int dataIndex, Map map) 
+    {
+<span class="nc" id="L261">        String str = data.getFName();</span>
+<span class="nc" id="L262">        String label = i18n(m_bbmBundle, data.getRbKey());</span>
+<span class="nc bnc" id="L263" title="All 2 branches missed.">        if (data.hasDefaultProp()) label += DEFAULT_PROP;</span>
+        
+<span class="nc" id="L265">        boolean colDisabled = data.isDisabled();</span>
+<span class="nc" id="L266">        String index = (String)map.get(str);</span>
+<span class="nc bnc" id="L267" title="All 2 branches missed.">        if (StringUtil.isEmptyOrWhiteSpace(index)) index = String.valueOf(dataIndex+1);</span>
+        
+<span class="nc bnc" id="L269" title="All 2 branches missed.">        if (str != null) </span>
+        {
+<span class="nc" id="L271">            row_data.add(HtmlUtil.makeChkBoxInput(str + &quot;Cb&quot;, str + &quot;Cb&quot;, null, colDisabled, colDisabled)</span>
+                    + HtmlUtil.NBSP + label);
+            
+<span class="nc bnc" id="L274" title="All 2 branches missed.">            if (colDisabled)</span>
+<span class="nc" id="L275">                m_context.addGenericHTML(HtmlUtil.makeHiddenInput(str + &quot;Cb&quot;, str + &quot;Cb&quot;));</span>
+            
+<span class="nc" id="L277">            m_inputPC.reset(str, index, FormInputPC.TYPE_INTEGER, true);</span>
+<span class="nc" id="L278">            m_inputPC.setLowerLimit(1);</span>
+<span class="nc" id="L279">            m_inputPC.setSize(3);</span>
+<span class="nc" id="L280">            m_inputPC.setMaxLength(5);</span>
+<span class="nc" id="L281">            row_data.add(m_inputPC.getHtmlDisplay());</span>
+        } 
+        else 
+        {
+<span class="nc" id="L285">            row_data.add(HtmlUtil.NBSP);</span>
+<span class="nc" id="L286">            row_data.add(HtmlUtil.NBSP);</span>
+        }
+<span class="nc" id="L288">    }</span>
+
+    /**
+     * Initialize Toolbar
+     */
+    protected void initToolbar() 
+    {
+<span class="nc" id="L295">        m_toolbar.setAlignment(ToolbarPC.ALIGN_RIGHT);</span>
+
+        //Done
+<span class="nc bnc" id="L298" title="All 2 branches missed.">        if (showDoneButton())</span>
+        {
+<span class="nc" id="L300">            m_toolbar.addSubmitTextButton(PageAction.DONE,</span>
+<span class="nc" id="L301">                    i18n(m_bbmBundle, BbmWebBundleKey.PEOPLE_ROLE_EDIT_DONE_ACTION), true);</span>
+        }
+        else
+        {
+            //Import
+<span class="nc" id="L306">            ToolbarTextButton aButton0 = new ToolbarTextButton(m_toolbar,</span>
+<span class="nc" id="L307">                    &quot;POPUP_JSFUNCTION&quot;, i18n(m_bbmBundle, BbmWebBundleKey.Import), true);</span>
+<span class="nc" id="L308">            aButton0.getButtonTable().setAttribute(&quot;jsFunction&quot;, &quot;handleUpload();&quot;);</span>
+<span class="nc" id="L309">            m_toolbar.addToolbarElement(aButton0);</span>
+            
+            //Cancel 
+<span class="nc" id="L312">            m_toolbar.addSubmitTextButton(PageAction.DONE,</span>
+<span class="nc" id="L313">                    i18n(m_bbmBundle, BbmWebBundleKey.CANCEL), true);</span>
+        }
+<span class="nc" id="L315">    }</span>
+
+    /**
+     * Return the JavaScript init code required by Page model.
+     *
+     * Default behavior is to retrieve sub-component JavaScript Init code
+     */
+    public String getJavaScriptInitCode() {
+<span class="nc" id="L323">        StringBuffer jsInitCode = new StringBuffer(512);</span>
+
+        // Add sub-component JavaScript code first
+<span class="nc" id="L326">        jsInitCode.append(super.getJavaScriptInitCode()).append(&quot;\n&quot;);</span>
+
+<span class="nc bnc" id="L328" title="All 4 branches missed.">        if (this.getPageAction() != null &amp;&amp; this.getPageAction().equals(SUCCESS)) </span>
+        {
+<span class="nc" id="L330">            jsInitCode.append(&quot;// set values\n&quot;)</span>
+<span class="nc" id="L331">                    .append(&quot;window.refreshOpener = true;\n&quot;)</span>
+<span class="nc" id="L332">                    .append(&quot;top.popupMediator.setValue(\&quot;refreshSelection\&quot;, \&quot;true\&quot;);\n&quot;);</span>
+        }
+<span class="nc" id="L334">        return jsInitCode.toString();</span>
+    }
+
+    /**
+     * Checks the input for invalid characters.
+     * @param fileContent
+     * @throws Exception
+     */
+    private void checkForInvalidChars(String str) throws Exception{
+<span class="nc bnc" id="L343" title="All 2 branches missed.">        if(StringUtil.isEmpty(str))</span>
+<span class="nc" id="L344">            return; </span>
+<span class="nc bnc" id="L345" title="All 2 branches missed.">        for(int i=0; i&lt; m_invalidChars.length(); i++){</span>
+<span class="nc bnc" id="L346" title="All 2 branches missed.">            if(str.indexOf(m_invalidChars.charAt(i)) != -1){</span>
+<span class="nc" id="L347">                String msg =  m_context.getLocalizer().i18n(UIFWebBundleKey.BUNDLE_NAME,</span>
+                        UIFWebBundleKey.INVALID_ENTRY_CHARS_MF, new Object[] { m_invalidChars });
+<span class="nc" id="L349">                addPageMessage(Message.ERROR_TYPE, msg);</span>
+<span class="nc" id="L350">                m_hasInvalidChars = true;</span>
+<span class="nc" id="L351">                throw new Exception(msg);</span>
+            }
+        }
+<span class="nc" id="L354">    }</span>
+    
+    public void processUpload(RequestContext context)
+            throws Exception 
+    {
+<span class="nc" id="L359">        String pageAction = PageAction.IMPORT;</span>
+<span class="nc" id="L360">        m_hasInvalidChars = false;</span>
+        
+        try 
+        {
+            // @todo: No need to manually call extraction of param since framework now supports
+            // multipart form just use regular setter methods.  See LicenseUploadPopupPM for example
+<span class="nc" id="L366">            HttpServletRequest request = context.getRequest();</span>
+<span class="nc" id="L367">            Map paramMap = ParameterUtil.getParameterMap(request);</span>
+<span class="nc" id="L368">            Map fileMap = ParameterUtil.getExtractedFileMap(request);</span>
+
+<span class="nc" id="L370">            FileItem file = (FileItem)fileMap.get(&quot;file&quot;);</span>
+<span class="nc" id="L371">            String fileContent = IOUtil.readStringFromTextFile(file, 10 * 1024 * 1024, context);</span>
+            
+<span class="nc" id="L373">            HashMap map = new HashMap();</span>
+            //TimeZone viewingTZ = context.getViewingTimeZone();
+            
+<span class="nc bnc" id="L376" title="All 2 branches missed.">            for (Iterator it=paramMap.keySet().iterator(); it.hasNext(); ) </span>
+            {
+<span class="nc" id="L378">                String key = (String)it.next();</span>
+<span class="nc" id="L379">                map.put(key, ParameterUtil.getParameter(paramMap, key));</span>
+<span class="nc" id="L380">            }</span>
+
+<span class="nc bnc" id="L382" title="All 4 branches missed.">            if (map != null &amp;&amp; map.size() &gt; 0) </span>
+            {
+<span class="nc" id="L384">                m_UserIndicesMap = map;</span>
+<span class="nc" id="L385">                setUserIndices(m_UserIndicesMap);</span>
+
+<span class="nc" id="L387">                pageAction = (String) map.get(PageAction.PAGE_ACTION);</span>
+
+                //now process the info to save data
+<span class="nc" id="L390">                String delimiter = (String) map.get(DELIMITER_FN);</span>
+<span class="nc" id="L391">                int ignoreNumLines = 0;</span>
+                try {
+<span class="nc" id="L393">                    ignoreNumLines = Integer.parseInt((String) map.get(NUM_LINES_FN));</span>
+<span class="nc" id="L394">                } catch (Exception ex) {}</span>
+
+<span class="nc bnc" id="L396" title="All 2 branches missed.">                if (delimiter.equals(&quot;tab&quot;)) {</span>
+<span class="nc" id="L397">                    delimiter = &quot;\t&quot;;</span>
+                }
+
+<span class="nc" id="L400">                String str = null;</span>
+<span class="nc" id="L401">                int count = 0; // counter to keep track of record number in input file.</span>
+<span class="nc" id="L402">                int importFailNum = 0;</span>
+<span class="nc" id="L403">                ArrayList skillColl = new ArrayList();</span>
+
+                //prepare maps for ids from names
+<span class="nc" id="L406">                prepareMaps(fileContent, map, delimiter);</span>
+                
+<span class="nc" id="L408">                StringTokenizer aToken = new StringTokenizer(fileContent, &quot;\r\n&quot;);</span>
+<span class="nc bnc" id="L409" title="All 2 branches missed.">                while (aToken.hasMoreTokens()) </span>
+                {
+<span class="nc" id="L411">                    count++; </span>
+<span class="nc" id="L412">                    String data = aToken.nextToken();</span>
+<span class="nc bnc" id="L413" title="All 2 branches missed.">                    if (count &lt;= ignoreNumLines) </span>
+                    { 
+<span class="nc" id="L415">                        continue; //To ignore specified number of lines</span>
+                    }
+                    
+                    //also pass the index of supervisor string
+                    //int supIndex = Integer.parseInt((String) map.get(SUPERVISOR_FN)) - 1;
+                    //int tlIndex = Integer.parseInt((String) map.get(TEAMLEAN_FN)) - 1;                    
+<span class="nc" id="L421">                    ArrayList dataList = parseData(data, delimiter); //, supIndex, tlIndex);</span>
+
+                    //get orgID to get correct employee template
+<span class="nc" id="L424">                    ID curOrgID = getSelectedOrgID();</span>
+<span class="nc" id="L425">                    String parsedID = getDataToSave(map, ORGANIZATION_FN, dataList);</span>
+                    
+<span class="nc bnc" id="L427" title="All 2 branches missed.">                    if(m_hasInvalidChars)</span>
+<span class="nc" id="L428">                        throw new Exception();</span>
+                    
+<span class="nc bnc" id="L430" title="All 2 branches missed.">                    if (!parsedID.equals(&quot;-1&quot;))</span>
+<span class="nc" id="L431">                        curOrgID = (ID) m_orgMap.get(parsedID);</span>
+                    
+<span class="nc" id="L433">                    String skillName = getDataToSave(map, SKILL_NAME_FN, dataList); //getSkillNameFromFile(context, map, dataList);</span>
+                    //remove any leading or trailing whitespcae from Skill name
+<span class="nc" id="L435">                    skillName = skillName.trim();</span>
+                    
+<span class="nc bnc" id="L437" title="All 2 branches missed.">                    if (curOrgID == null)</span>
+                    {
+                        // Add pagemessage to indicate this Skill was not imported.
+<span class="nc" id="L440">                        String pageMessage = context.getLocalizer().i18n(BbmWebBundleKey.BUNDLE_NAME, </span>
+                                BbmWebBundleKey.ImportEmployeeFailureNonExistentOrg, 
+                                new Object[]{parsedID});
+<span class="nc" id="L443">                        Message msg = new Message(Message.ERROR_TYPE, BbmWebBundleKey.SkillImportMessageFormat,</span>
+<span class="nc" id="L444">                                BbmWebBundleKey.BUNDLE_NAME, new String[]{String.valueOf(count - ignoreNumLines), </span>
+                                skillName, pageMessage});
+<span class="nc" id="L446">                        m_msgsList.add(msg);</span>
+<span class="nc" id="L447">                        importFailNum++;</span>
+<span class="nc" id="L448">                        continue;</span>
+                    }
+
+                    //only create employee if valid org and access rights
+                    //create a new employee and set the fields as got from the file
+                    //Employee anEmployee = SkillModelHandler.getUserEmployeePrivilege(curOrgID);
+                    
+<span class="nc bnc" id="L455" title="All 2 branches missed.">                    if (!isAuthorizedToConfigure(curOrgID)) </span>
+                    {
+                        // If the logged in user does not have access rights to the organization
+                        // add page message and skip the current skill.
+<span class="nc bnc" id="L459" title="All 2 branches missed.">                        String orgName = (!parsedID.equals(&quot;-1&quot;))? parsedID : OrganizationModelHandler.getOrganizationName(context, curOrgID);</span>
+<span class="nc" id="L460">                        String pageMessage = context.getLocalizer().i18n(BbmWebBundleKey.BUNDLE_NAME, </span>
+                                BbmWebBundleKey.ImportEmployeeFailureNoAccessToOrg, 
+                                new Object[]{orgName});
+<span class="nc" id="L463">                        Message msg = new Message(Message.ERROR_TYPE,  </span>
+                                BbmWebBundleKey.SkillImportMessageFormat, BbmWebBundleKey.BUNDLE_NAME,
+<span class="nc" id="L465">                                new String[]{String.valueOf(count - ignoreNumLines), skillName, pageMessage});</span>
+<span class="nc" id="L466">                        m_msgsList.add(msg);</span>
+<span class="nc" id="L467">                        importFailNum++;</span>
+<span class="nc" id="L468">                        continue;</span>
+                    }
+                    
+                    //Create a Skill object and populate it as per column specified
+<span class="nc" id="L472">                    Skill saveSkill = new Skill();</span>
+<span class="nc" id="L473">                    saveSkill.setSkillActive(true);</span>
+
+                    //SKILL_NAME
+                    {
+                        try {
+<span class="nc" id="L478">                            str = getDataToSave(map, SKILL_NAME_FN, dataList);</span>
+<span class="nc bnc" id="L479" title="All 2 branches missed.">                            if (!str.equals(&quot;-1&quot;)) {</span>
+<span class="nc" id="L480">                                saveSkill.setName(str.trim());</span>
+                            } else {
+<span class="nc" id="L482">                                String pageMessage = context.getLocalizer().i18n(BbmWebBundleKey.BUNDLE_NAME, </span>
+                                        BbmWebBundleKey.SkillImportFailureNoName);
+<span class="nc" id="L484">                                Message msg = new Message(Message.ERROR_TYPE,  </span>
+                                        BbmWebBundleKey.SkillImportMessageFormat, BbmWebBundleKey.BUNDLE_NAME,
+<span class="nc" id="L486">                                        new String[]{String.valueOf(count - ignoreNumLines), skillName, pageMessage});</span>
+<span class="nc" id="L487">                                m_msgsList.add(msg);</span>
+<span class="nc" id="L488">                                importFailNum++;</span>
+<span class="nc" id="L489">                                continue;</span>
+                            }
+<span class="nc" id="L491">                        } catch (Exception ex) {</span>
+<span class="nc bnc" id="L492" title="All 2 branches missed.">                            if(m_hasInvalidChars)</span>
+<span class="nc" id="L493">                                throw new Exception();</span>
+<span class="nc" id="L494">                        }</span>
+                    }
+
+                    //SKILL_MEDIAID
+                    {
+                        try {
+<span class="nc" id="L500">                            str = getDataToSave(map, MEDIA_TYPE_FN, dataList);</span>
+<span class="nc bnc" id="L501" title="All 2 branches missed.">                            if (!str.equals(&quot;-1&quot;)) </span>
+                            {
+<span class="nc" id="L503">                                str = str.trim();</span>
+<span class="nc" id="L504">                                ID mediaID = getMediaIDFromMediaName(str);</span>
+<span class="nc" id="L505">                                LicenseManager licManager = CoreManagerFactory.getLicenseManager();</span>
+<span class="nc bnc" id="L506" title="All 4 branches missed.">                                if (mediaID != null &amp;&amp; MediaTypesSetupPageModel.isLicensedForMedia(licManager, mediaID))</span>
+                                {
+<span class="nc" id="L508">                                    saveSkill.setMediaID(mediaID);</span>
+                                }
+                                else
+                                {
+<span class="nc" id="L512">                                    String pageMessage = context.getLocalizer().i18n(BbmWebBundleKey.BUNDLE_NAME, </span>
+                                            BbmWebBundleKey.SkillImportFailureMediaTypeNameNotFound);
+<span class="nc" id="L514">                                    Message msg = new Message(Message.ERROR_TYPE,  </span>
+                                            BbmWebBundleKey.SkillImportMessageFormat, BbmWebBundleKey.BUNDLE_NAME,
+<span class="nc" id="L516">                                            new String[]{String.valueOf(count - ignoreNumLines), skillName, pageMessage});</span>
+<span class="nc" id="L517">                                    m_msgsList.add(msg);</span>
+<span class="nc" id="L518">                                    importFailNum++;</span>
+<span class="nc" id="L519">                                    continue;</span>
+                                }
+<span class="nc" id="L521">                            } </span>
+                            else 
+                            {
+<span class="nc" id="L524">                                String pageMessage = context.getLocalizer().i18n(BbmWebBundleKey.BUNDLE_NAME, </span>
+                                        BbmWebBundleKey.SkillImportFailureNoMediaType);
+<span class="nc" id="L526">                                Message msg = new Message(Message.ERROR_TYPE,  </span>
+                                        BbmWebBundleKey.SkillImportMessageFormat, BbmWebBundleKey.BUNDLE_NAME,
+<span class="nc" id="L528">                                        new String[]{String.valueOf(count - ignoreNumLines), skillName, pageMessage});</span>
+<span class="nc" id="L529">                                m_msgsList.add(msg);</span>
+<span class="nc" id="L530">                                importFailNum++;</span>
+<span class="nc" id="L531">                                continue;</span>
+                            }
+<span class="nc" id="L533">                        } catch (Exception ex) {</span>
+<span class="nc bnc" id="L534" title="All 2 branches missed.">                            if(m_hasInvalidChars)</span>
+<span class="nc" id="L535">                                throw new Exception();</span>
+<span class="nc" id="L536">                        }</span>
+                    }
+
+                    //SKILL_DESCRIPTION
+                    {
+                        try {
+<span class="nc" id="L542">                            str = getDataToSave(map, DESCRIPTION, dataList);</span>
+<span class="nc bnc" id="L543" title="All 2 branches missed.">                            if (!str.equals(&quot;-1&quot;)) {</span>
+<span class="nc" id="L544">                                saveSkill.setDescription(str.trim());</span>
+                            } 
+<span class="nc" id="L546">                        } catch (Exception ex) {</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">                            if(m_hasInvalidChars)</span>
+<span class="nc" id="L548">                                throw new Exception();</span>
+<span class="nc" id="L549">                        }</span>
+                    }
+
+                    //SKILL_ORGANIZATIONID
+                    {
+                        try {
+<span class="nc" id="L555">                            saveSkill.setOrganizationID(curOrgID);</span>
+<span class="nc" id="L556">                        } catch (Exception ex) {</span>
+<span class="nc bnc" id="L557" title="All 2 branches missed.">                            if(m_hasInvalidChars)</span>
+<span class="nc" id="L558">                                throw new Exception();</span>
+<span class="nc" id="L559">                        }</span>
+                    }
+
+<span class="nc" id="L562">                    skillColl.add(saveSkill);</span>
+                    
+                    // Associate each skill name+media with record number in import file. Used for error message display.
+                    //m_ImportFileRecordNumMap.put(saveSkill.getName()+&quot;_&quot;+saveSkill.getMediaID().toString(), new Integer(count-ignoreNumLines));
+                    
+<span class="nc" id="L567">                }//end while</span>
+
+                // Add page message(s) for all of the problems found above. 
+<span class="nc bnc" id="L570" title="All 2 branches missed.">                if(importFailNum &gt; 0)</span>
+                {
+<span class="nc" id="L572">                    addPageMessage(new Message(Message.WARNING_TYPE, BbmWebBundleKey.SkillImportFailureMessage, BbmWebBundleKey.BUNDLE_NAME));</span>
+<span class="nc bnc" id="L573" title="All 2 branches missed.">                    for(Iterator it = m_msgsList.iterator(); it.hasNext();)</span>
+                    {
+<span class="nc" id="L575">                        addPageMessage((Message)it.next());</span>
+                    }
+<span class="nc" id="L577">                    throw new Exception();</span>
+                }
+                
+                //setShowDoneButton(true);
+                
+                
+                ///////////////////////////////////////
+                //now try to save all of the new Skills
+                ///////////////////////////////////////
+                
+<span class="nc" id="L587">                Collection IDs = SkillModelHandler.createSkills(skillColl);</span>
+<span class="nc bnc" id="L588" title="All 2 branches missed.">                if (IDs == null)</span>
+                {
+<span class="nc" id="L590">                    throw new Exception(); //save failed</span>
+                } 
+                else
+                {
+<span class="nc" id="L594">                    this.setPageAction(SUCCESS);</span>
+                }
+
+                //Map of created skill IDs and skill objects from file (skillColl).
+                //HashMap skillIDMap = addSkillIDsToSkillColl(IDs, skillColl);
+                
+<span class="nc bnc" id="L600" title="All 2 branches missed.">                if ((count - ignoreNumLines - importFailNum) &gt; 0)</span>
+                {
+<span class="nc" id="L602">                    addPageMessage(Message.RESPONSE_TYPE,context.getLocalizer().i18n(BbmWebBundleKey.BUNDLE_NAME, </span>
+                        BbmWebBundleKey.SkillImportSuccessMessage, new Object[] {new Integer(count - ignoreNumLines - importFailNum)}));
+                }
+                
+<span class="nc bnc" id="L606" title="All 2 branches missed.">                for(Iterator it = m_msgsList.iterator(); it.hasNext();)</span>
+<span class="nc" id="L607">                    addPageMessage((Message)it.next());</span>
+                
+            } //end if map (user input data) is not null
+        } 
+<span class="nc" id="L611">        catch (Exception ex) </span>
+        {
+<span class="nc bnc" id="L613" title="All 2 branches missed.">            if (!pageAction.equals(SUCCESS))</span>
+            {
+<span class="nc" id="L615">                log.l7dError(BbmWebLogBundleKey.UNABLE_TO_UPLOAD_DATA_FROM_FILE, ex);</span>
+                
+<span class="nc bnc" id="L617" title="All 2 branches missed.">                if (ex instanceof BPException) </span>
+                {
+<span class="nc" id="L619">                    BPException fEx = (BPException) ex;</span>
+<span class="nc" id="L620">                    fEx = fEx.getFirstException();</span>
+
+<span class="nc bnc" id="L622" title="All 4 branches missed.">                    if (fEx instanceof BbmCreateDuplicateKeyException || ex instanceof BbmCreateDuplicateKeyException) </span>
+                    {
+<span class="nc" id="L624">                        fEx = (BbmCreateDuplicateKeyException)ex;</span>
+<span class="nc" id="L625">                        String skillName = &quot;&quot;;</span>
+<span class="nc" id="L626">                        String mediaName = &quot;&quot;;</span>
+<span class="nc" id="L627">                        Object[] params = ((BbmCreateDuplicateKeyException)fEx).getParamObject();</span>
+<span class="nc bnc" id="L628" title="All 4 branches missed.">                        if (params != null &amp;&amp; params.length&gt;0)</span>
+                        {
+<span class="nc" id="L630">                            String message = (String)params[0]; </span>
+<span class="nc" id="L631">                            String[] skillAndMedia = message.split(&quot;:&quot;);</span>
+<span class="nc bnc" id="L632" title="All 2 branches missed.">                            if (skillAndMedia.length &gt; 1)</span>
+                            {
+<span class="nc" id="L634">                                skillName = skillAndMedia[0]; //Skill Name</span>
+<span class="nc" id="L635">                                mediaName = skillAndMedia[1]; //Media ID</span>
+<span class="nc" id="L636">                                mediaName = getMediaNameFromID(mediaName);</span>
+<span class="nc" id="L637">                                fEx = new BbmCreateDuplicateKeyException(skillName + &quot;:&quot; + mediaName);</span>
+                            }
+                            //String localizedMessage = ((BbmCreateDuplicateKeyException)fEx).getLocalizedMessage();
+<span class="nc" id="L640">                            String localizedMessage = context.getLocalizer().i18n(BbmWebBundleKey.BUNDLE_NAME, </span>
+                                    BbmWebBundleKey.ORG_SKILL_ERROR_IMPORT_DUPLICATED_KEY, new Object[] {skillName, mediaName});
+<span class="nc" id="L642">                            addPageMessage(Message.ERROR_TYPE, localizedMessage);</span>
+<span class="nc" id="L643">                        }</span>
+                        else
+                        {
+<span class="nc" id="L646">                            addPageMessage(Message.ERROR_TYPE, BbmWebBundleKey.ORG_SKILL_ERROR_IMPORT_DUPLICATED_KEY,</span>
+                                    BbmWebBundleKey.BUNDLE_NAME);                            
+                        }                   
+<span class="nc" id="L649">                    } </span>
+                    else 
+                    {
+<span class="nc" id="L652">                        Object[] params = fEx.getParamObject();</span>
+                        String[] args;
+<span class="nc bnc" id="L654" title="All 2 branches missed.">                        if (params == null)</span>
+                        {
+<span class="nc" id="L656">                            args = new String[0];</span>
+                        }
+                        else 
+                        {
+<span class="nc" id="L660">                            args = new String[params.length];</span>
+<span class="nc bnc" id="L661" title="All 2 branches missed.">                            for (int i=0; i&lt;params.length; i++) </span>
+                            {
+<span class="nc bnc" id="L663" title="All 2 branches missed.">                                if (params[i] instanceof String)</span>
+<span class="nc" id="L664">                                    args[i] = (String) params[i];</span>
+                                else
+<span class="nc" id="L666">                                    args[i] = &quot;&quot;;</span>
+                            }
+                        }
+<span class="nc" id="L669">                        addPageMessage(Message.ERROR_TYPE, fEx.getMsgID(), fEx.getBundleName(), args);</span>
+                    }
+<span class="nc" id="L671">                }</span>
+                else
+                {
+<span class="nc" id="L674">                    throw ex;</span>
+                }
+            }//end if
+<span class="nc" id="L677">        }//end catch</span>
+<span class="nc" id="L678">    }//end method</span>
+    
+    private String getMediaNameFromID(String sid)
+    {
+<span class="nc" id="L682">        String mediaName = &quot;&quot;;</span>
+<span class="nc" id="L683">        Iterator iterator = (allMediaMap.keySet()).iterator();</span>
+<span class="nc bnc" id="L684" title="All 2 branches missed.">        while(iterator.hasNext()) </span>
+        {
+<span class="nc" id="L686">            String key = iterator.next().toString();</span>
+<span class="nc" id="L687">            String value = allMediaMap.get(key).toString();</span>
+<span class="nc bnc" id="L688" title="All 2 branches missed.">            if(value.equals(sid))</span>
+            {
+<span class="nc" id="L690">                return key;</span>
+            }
+<span class="nc" id="L692">        }      </span>
+<span class="nc" id="L693">        return mediaName;</span>
+    }
+
+    /**
+     * This code was copied from ProfileImportPageModel, which uses 2 columns, but
+     * we only need 1 column, so some code is commented out.
+     */
+    private void setUserIndices(Map map) 
+    {
+<span class="nc bnc" id="L702" title="All 2 branches missed.">        if (map==null) </span>
+<span class="nc" id="L703">            map = Collections.EMPTY_MAP;</span>
+        
+<span class="nc" id="L705">        ArrayList listModel = new ArrayList(fieldData.length);</span>
+        
+<span class="nc" id="L707">        int loopTotal=fieldData.length; //  fieldData.length/2 + fieldData.length%2;</span>
+        
+<span class="nc bnc" id="L709" title="All 2 branches missed.">        for(int i=0; i&lt;loopTotal; i++) </span>
+        {
+<span class="nc" id="L711">            int offSet = loopTotal + i;</span>
+<span class="nc" id="L712">            FieldData lData = fieldData[i];</span>
+<span class="nc" id="L713">            FieldData rData = new FieldData(null, null, false, false); // (offSet &lt; fieldData.length)? fieldData[offSet] : new FieldData(null, null, false, false);</span>
+<span class="nc" id="L714">            listModel.add(getNodeData(lData, i, rData, offSet, map));</span>
+        }
+
+<span class="nc" id="L717">        m_list.setListModel(listModel);</span>
+<span class="nc" id="L718">    }</span>
+
+    private String getDataToSave(HashMap map, String fieldName, ArrayList dataList) throws Exception{
+<span class="nc" id="L721">        int colIndex = 0;</span>
+<span class="nc" id="L722">        String dataStr = &quot;-1&quot;;</span>
+<span class="nc" id="L723">        String str = null;</span>
+        
+<span class="nc bnc" id="L725" title="All 6 branches missed.">        if (((String) map.get(fieldName + &quot;Cb&quot;) != null &amp;&amp;</span>
+                (fieldName != SKILL_NAME_FN || fieldName != MEDIA_TYPE_FN)) ||
+<span class="nc bnc" id="L727" title="All 6 branches missed.">                (String) map.get(fieldName + &quot;Cb&quot;) == null &amp;&amp;</span>
+                (fieldName == SKILL_NAME_FN || fieldName == MEDIA_TYPE_FN)) 
+        {
+<span class="nc" id="L730">            colIndex = Integer.parseInt((String) map.get(fieldName));</span>
+<span class="nc" id="L731">            str = (String) dataList.get(colIndex - 1);</span>
+            
+<span class="nc bnc" id="L733" title="All 2 branches missed.">            if (!str.equals(&quot;-1&quot;)) </span>
+            {
+<span class="nc" id="L735">                dataStr = str;</span>
+            }
+        }
+        
+<span class="nc bnc" id="L739" title="All 4 branches missed.">        if((fieldName != SKILL_NAME_FN &amp;&amp; fieldName != MEDIA_TYPE_FN))</span>
+<span class="nc" id="L740">            checkForInvalidChars(dataStr);</span>
+        
+<span class="nc" id="L742">        return dataStr;</span>
+    }
+    
+    
+    private void prepareMaps(String fileContent, HashMap paramMap, String delimiter) throws Exception
+    {
+<span class="nc" id="L748">        HashSet orgName = new HashSet();</span>
+        
+        //iterate thru the file list to get names
+<span class="nc" id="L751">        int count = 1;</span>
+<span class="nc" id="L752">        int numLines = 0;</span>
+        try {
+<span class="nc" id="L754">            numLines = Integer.parseInt((String) paramMap.get(NUM_LINES_FN));</span>
+<span class="nc" id="L755">        } catch (Exception ex) {</span>
+<span class="nc" id="L756">        }</span>
+        
+        //decide index of data: organization, supervisor, teamlead, job title
+<span class="nc" id="L759">        int orgNameIndex = Integer.parseInt((String) paramMap.get(ORGANIZATION_FN)) - 1;</span>
+        
+<span class="nc" id="L761">        StringTokenizer aToken = new StringTokenizer(fileContent, &quot;\r\n&quot;);</span>
+<span class="nc bnc" id="L762" title="All 2 branches missed.">        while (aToken.hasMoreTokens()) </span>
+        {
+<span class="nc" id="L764">            String data = aToken.nextToken();</span>
+<span class="nc bnc" id="L765" title="All 2 branches missed.">            if (count &gt; numLines) </span>
+            {
+<span class="nc" id="L767">                ArrayList dataList = parseData(data, delimiter);</span>
+                
+<span class="nc bnc" id="L769" title="All 2 branches missed.">                if (!StringUtil.isEmpty((String) dataList.get(orgNameIndex)) &amp;&amp;</span>
+<span class="nc bnc" id="L770" title="All 2 branches missed.">                        !orgName.contains(dataList.get(orgNameIndex)) &amp;&amp;</span>
+<span class="nc bnc" id="L771" title="All 2 branches missed.">                        !dataList.get(orgNameIndex).equals(&quot;-1&quot;))</span>
+                {
+<span class="nc" id="L773">                    orgName.add(dataList.get(orgNameIndex));</span>
+                }
+<span class="nc" id="L775">            } </span>
+            else 
+            {
+<span class="nc" id="L778">                count++;</span>
+            }
+<span class="nc" id="L780">        }</span>
+
+<span class="nc" id="L782">        String secureLabel = m_localizer.i18n(m_bbmBundle,BbmWebBundleKey.NotViewable);</span>
+<span class="nc bnc" id="L783" title="All 6 branches missed.">        if (!orgName.isEmpty() &amp;&amp; orgName.size() &gt; 0 &amp;&amp; !orgName.contains(secureLabel)) </span>
+        {
+            try 
+            {
+<span class="nc" id="L787">                m_orgMap =  OrganizationModelHandler.getOrganizationIDsByNames(m_context, orgName);</span>
+            } 
+<span class="nc" id="L789">            catch (Exception ex) </span>
+            {
+<span class="nc" id="L791">                throw ex;</span>
+<span class="nc" id="L792">            }</span>
+        }
+        
+<span class="nc" id="L795">        Collection allMediaTypes = MediaTypesSetupModelHandler.getAllMediaTypes();</span>
+<span class="nc bnc" id="L796" title="All 4 branches missed.">        if (allMediaTypes != null &amp;&amp; allMediaTypes.size()&gt;0)</span>
+        {
+<span class="nc bnc" id="L798" title="All 2 branches missed.">            for (Iterator it=allMediaTypes.iterator(); it.hasNext();)</span>
+            {
+<span class="nc" id="L800">                MediaType media = (MediaType)it.next();</span>
+<span class="nc" id="L801">                allMediaMap.put(media.getName(), media.getSID());                </span>
+<span class="nc" id="L802">            }</span>
+        }
+<span class="nc" id="L804">    }</span>
+    
+    /**
+     * Return the DropDown display of delimitter types.
+     */
+    private String getDelimiterDropDown() {
+<span class="nc" id="L810">        Collection delimiterStringsPair = new ArrayList();</span>
+
+<span class="nc" id="L812">        delimiterStringsPair.add(new StringsPair(&quot;tab&quot;,</span>
+<span class="nc" id="L813">                i18n(m_bbmBundle, BbmWebBundleKey.ImportTab)));</span>
+<span class="nc" id="L814">        delimiterStringsPair.add(new StringsPair(&quot;,&quot;,</span>
+<span class="nc" id="L815">                i18n(m_bbmBundle, BbmWebBundleKey.ImportComma)));</span>
+<span class="nc" id="L816">        delimiterStringsPair.add(new StringsPair(&quot;;&quot;,</span>
+<span class="nc" id="L817">                i18n(m_bbmBundle, BbmWebBundleKey.ImportSemiColon)));</span>
+
+<span class="nc" id="L819">        return HtmlUtil.makeSelectInput(DELIMITER_FN,</span>
+                &quot;&quot;, &quot;&quot;, delimiterStringsPair);
+    }
+
+    /**
+     * Convert the string to the correct format and return ArrayList of data
+     */
+    private ArrayList parseData(String rawStr, String delimiter) //, int supIndex, int tlIndex) 
+    {
+<span class="nc" id="L828">        ArrayList arrList = new ArrayList();</span>
+<span class="nc" id="L829">        StringTokenizer strTok = new StringTokenizer(rawStr, delimiter, true);</span>
+
+<span class="nc bnc" id="L831" title="All 2 branches missed.">        while (strTok.hasMoreTokens()) {</span>
+<span class="nc" id="L832">            String currentToken = strTok.nextToken();</span>
+<span class="nc" id="L833">            arrList.add(currentToken);</span>
+<span class="nc" id="L834">        }</span>
+<span class="nc bnc" id="L835" title="All 2 branches missed.">        if (arrList.get(0).equals(delimiter)) {</span>
+<span class="nc" id="L836">            arrList.add(0, &quot;-1&quot;);</span>
+        }
+<span class="nc bnc" id="L838" title="All 2 branches missed.">        if (arrList.get(arrList.size() - 1).equals(delimiter)) {</span>
+<span class="nc" id="L839">            arrList.add(&quot;-1&quot;);</span>
+        }
+<span class="nc bnc" id="L841" title="All 2 branches missed.">        for (int index = 0; index &lt; arrList.size() - 1; index++) {</span>
+<span class="nc bnc" id="L842" title="All 4 branches missed.">            if (arrList.get(index).equals(delimiter) &amp;&amp; arrList.get(index + 1).equals(delimiter)) {</span>
+<span class="nc" id="L843">                arrList.add(index + 1, &quot;-1&quot;);</span>
+            }
+        }
+
+<span class="nc bnc" id="L847" title="All 2 branches missed.">        for (int index = 0; index &lt; arrList.size(); index++) {</span>
+<span class="nc bnc" id="L848" title="All 2 branches missed.">            if (arrList.get(index).equals(delimiter)) {</span>
+<span class="nc" id="L849">                arrList.remove(index);</span>
+            }
+        }
+
+        //make sure the arraylist size is equal to the number of required columns
+<span class="nc bnc" id="L854" title="All 2 branches missed.">        if (arrList.size() &lt; NUM_COLUMNS) {</span>
+<span class="nc" id="L855">            int lessCols = NUM_COLUMNS - arrList.size();</span>
+<span class="nc bnc" id="L856" title="All 2 branches missed.">            for (int i = 0; i &lt; lessCols; i++) {</span>
+<span class="nc" id="L857">                arrList.add(&quot;-1&quot;);</span>
+            }
+        }
+<span class="nc" id="L860">        return arrList;</span>
+    }
+
+    /**
+     * Return URL for HTML Form Action
+     */
+    public String getFormAction() {
+<span class="nc" id="L867">        return &quot;skills_import&quot;;</span>
+    }
+    
+    private static class FieldData 
+    {
+        private String fName;
+        private String rbKey;
+        private boolean isDisabled;
+        private boolean hasDefaultProp;
+        
+<span class="fc" id="L877">        public FieldData(String fName, String rbKey, boolean isDisabled, boolean hasDefaultProp) {</span>
+<span class="fc" id="L878">            this.fName = fName;</span>
+<span class="fc" id="L879">            this.rbKey = rbKey;</span>
+<span class="fc" id="L880">            this.isDisabled = isDisabled;</span>
+<span class="fc" id="L881">            this.hasDefaultProp = hasDefaultProp;</span>
+<span class="fc" id="L882">        }</span>
+        
+<span class="nc" id="L884">        public String getFName() { return this.fName; }</span>
+<span class="nc" id="L885">        public String getRbKey() { return this.rbKey; }</span>
+<span class="nc" id="L886">        public boolean isDisabled() { return this.isDisabled; } </span>
+<span class="nc" id="L887">        public boolean hasDefaultProp() { return this.hasDefaultProp; }</span>
+    }
+    
+    /**
+     * Return true if Current User is authorized to configure specified Organization
+     */
+    protected boolean isAuthorizedToConfigure(ID orgID) 
+    {
+<span class="nc" id="L895">        return m_context.getUser().isAuthorized(PrivilegeKeys.CORE_CONFIGURESKILLS,</span>
+<span class="nc" id="L896">                OrganizationScopeManagerProxy.getScopeID(orgID));</span>
+    }
+    
+    public String getCustomJavaScript()
+    {
+<span class="nc" id="L901">        StringBuffer sb = new StringBuffer();        </span>
+<span class="nc" id="L902">        String sNeedFilename = i18n(m_bbmBundle, BbmWebBundleKey.SelectFileToImport);</span>
+        
+<span class="nc" id="L904">        sb.append(&quot;function handleUpload() \n{&quot;);</span>
+<span class="nc" id="L905">        sb.append(&quot;\n    if (!validateForm(document.oFormMain))&quot;);        </span>
+<span class="nc" id="L906">        sb.append(&quot;\n        return false;&quot;);        </span>
+<span class="nc" id="L907">        sb.append(&quot;\n    if (document.oFormMain.file.value == null || document.oFormMain.file.value==''){&quot;);        </span>
+<span class="nc" id="L908">        sb.append(&quot;\n        alert(\&quot;&quot; + sNeedFilename + &quot;\&quot;);&quot;);  </span>
+<span class="nc" id="L909">        sb.append(&quot;\n        return false;&quot;);        </span>
+<span class="nc" id="L910">        sb.append(&quot;\n    }&quot;);        </span>
+<span class="nc" id="L911">        sb.append(&quot;\n    document.oFormMain.pageAction.value = \&quot;&quot; + PageAction.UPLOAD + &quot;\&quot;;&quot;);        </span>
+<span class="nc" id="L912">        sb.append(&quot;\n    notifyOpener = false;&quot;);        </span>
+<span class="nc" id="L913">        sb.append(&quot;\n    document.oFormMain.submit();&quot;);        </span>
+<span class="nc" id="L914">        sb.append(&quot;\n}&quot;);        </span>
+<span class="nc" id="L915">        return sb.toString();        </span>
+    }
+    
+    /**
+     * Return Required HTML for this component
+     */
+    public String getRequiredHTML() 
+    {
+<span class="nc" id="L923">        return super.getRequiredHTML() +</span>
+<span class="nc" id="L924">            HtmlUtil.makeHiddenInput(SELECTED_ORG_ID_FN, getSelectedOrgID());</span>
+    }
+    
+    /**
+     * Get the ID of the organization that is selected in the org list of the parent window.
+     * @return
+     */
+    public ID getSelectedOrgID()
+    {
+<span class="nc" id="L933">        return m_selectedOrgID;</span>
+    }
+    
+    /**
+     * Set the ID of the organization that is selected in the org list of the parent window.
+     * @return
+     */
+    public void setSelectedOrgID(String id)
+    {
+<span class="nc bnc" id="L942" title="All 4 branches missed.">        if (id != null &amp;&amp; id.length()!=0)</span>
+<span class="nc" id="L943">            m_selectedOrgID = new ID(id);</span>
+<span class="nc" id="L944">    }</span>
+    
+    
+    /**
+     * @return Returns the m_showDoneButton.
+     */
+    public boolean showDoneButton() {
+<span class="nc" id="L951">        return m_showDoneButton;</span>
+    }
+    
+    /**
+     * @param doneButton The m_showDoneButton to set.
+     */
+    public void setShowDoneButton(boolean doneButton) {
+<span class="nc" id="L958">        m_showDoneButton = doneButton;</span>
+<span class="nc" id="L959">    }</span>
+    
+    private ID getMediaIDFromMediaName(String mediaName)
+    {
+<span class="nc" id="L963">        return (ID)allMediaMap.get(mediaName);</span>
+    }
+    
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

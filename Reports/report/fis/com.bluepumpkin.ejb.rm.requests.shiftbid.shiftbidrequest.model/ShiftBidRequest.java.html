@@ -1,0 +1,901 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftBidRequest.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model</a> &gt; <span class="el_source">ShiftBidRequest.java</span></div><h1>ShiftBidRequest.java</h1><pre class="source lang-java linenums">/*
+ * ShiftBidRequest.java
+ *
+ * Copyright (c) 2002, Blue Pumpkin Software, Inc.
+ * All rights reserved.
+ */
+package com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model;
+
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestDetailLevel;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.model.ShiftBidAuction;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.ejb.ShiftBidRequestDAO;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.validation.ShiftBidRequestValidationCache;
+import com.bluepumpkin.ejb.rm.util.ShiftBidAuctionUtil;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+
+/**
+ * Class represents a ShiftBidRequest.
+ *
+ * see {@link com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.ejb.ShiftBidAuctionManager ShiftBidAuctionManager}
+ * for a description of the shift bidding process.
+ *
+ */
+<span class="pc bpc" id="L43" title="1 of 2 branches missed.">public class ShiftBidRequest extends RequestAggregate</span>
+{
+    //TODO: ShiftBidRequest depends on its DAO. Remove dependency.
+<span class="fc" id="L46">    private final static String m_DAOClassName = ShiftBidRequestDAO.class.getName();</span>
+
+    private transient ShiftBidRequestValidationCache m_cachedSBRValidationCache;
+
+    /**
+     * ID, shiftBidderID, Preference, Name, usePoints, auctionID
+     */
+    public static final long DL_BASIC = RequestDetailLevel.DL_BASIC;
+
+    /**
+     * Fetches:
+     * &lt;li&gt; Collection of BiddableSchedule(s) associated with this request.
+     * &lt;li&gt; Collection of Shift Assignments associated with the BiddableSchedule(s)
+     * for this request.
+     *
+     * &lt;p&gt; see {@link com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.model.ShiftBidAuction ShiftBidAuction}
+     * for the association between auctions, biddableScheduleInstances and shiftAssignments.
+     */
+    public static final long DL_SHIFT_ASSIGNMENTS_COLL = RequestDetailLevel.DL_SHIFT_ASSIGNMENTS_COLL_ROOTED_SHIFTBIDREQUEST;
+
+    /**
+     * Employee object (employee name)
+     */
+    public static final long DL_EMPLOYEE = RequestDetailLevel.DL_EMPLOYEE_SHIFTBIDDER_CHILD;
+
+    /**
+     * Shift Bidder object (Personal deadline)
+     */
+    public static final long DL_SHIFTBIDDER = RequestDetailLevel.DL_SHIFTBIDDER;
+
+    /**
+     * auction object (auction deadline, schedule period)
+     */
+    public static final long DL_SHIFTBID_AUCTION = RequestDetailLevel.DL_SHIFTBID_AUCTION;
+
+    /**
+     * @see RequestDetailLevel#DL_BIDDABLESCHEDULE_IDS
+     */
+    public static final long DL_BIDDABLESCHEDULE_IDS = RequestDetailLevel.DL_BIDDABLESCHEDULE_IDS;
+
+    /**
+     * Need DL_EMPLOYEE to get the accumulated score for shift bidder towards computation of the score.
+     *
+     * @see RequestDetailLevel#DL_SCORECOMPUTED_FOR_SHIFTBID_REQUEST
+     */
+    public static final long DL_SCORECOMPUTED_FOR_SHIFTBID_REQUEST =
+        RequestDetailLevel.DL_SCORECOMPUTED_FOR_SHIFTBID_REQUEST;
+
+    /**
+     * @see RequestDetailLevel#DL_BONUSTOBEAWARDED_FOR_SHIFTBIDREQUEST
+     */
+    public static final long DL_BONUSTOBEAWARDED_FOR_SHIFTBID_REQUEST =
+        RequestDetailLevel.DL_BONUSTOBEAWARDED_FOR_SHIFTBIDREQUEST;
+
+    /**
+     * Need DL_EMPLOYEE to get the accumulated score for shift bidder towards computation of the score.
+     *
+     * @see RequestDetailLevel#DL_BIDRANK_FOR_SHIFTBIDREQUEST_SHIFTBIDREQUEST_ROOTED
+     */
+    public static final long DL_BIDRANK_FOR_SHIFTBIDREQUEST =
+        RequestDetailLevel.DL_BIDRANK_FOR_SHIFTBIDREQUEST_SHIFTBIDREQUEST_ROOTED;
+
+    ////////////////////
+<span class="fc" id="L109">	private static final ShiftBidRequestFieldInfo m_fieldInfo = new ShiftBidRequestFieldInfo();</span>
+
+    private static final long serialVersionUID = 6452019921167641752L;
+
+    /**
+     * see {@link ShiftBidRequestOptMethods#getBonusToBeAwarded()}
+     */
+<span class="nc" id="L116">    private int m_bidSchedBonusesSum = -1;</span>
+
+    /**
+     * see {@link ShiftBidRequestOptMethods#getBonusComputed()}
+     */
+<span class="nc" id="L121">    private int m_bidderBonusAndEmpPointsSum = 0;</span>
+
+    /**
+     * see {@link ShiftBidRequestOptMethods#getScoreWithoutBonus() getScoreWithoutBonus}
+     */
+<span class="nc" id="L126">    private int m_scoreWithoutEmpPoints = 0;</span>
+
+    /**
+     * see {@link ShiftBidRequestOptMethods#getScoreWithBonus() getScoreWithBonus}
+     */
+<span class="nc" id="L131">    private int m_scoreWithEmpPoints = 0;</span>
+
+    /**
+     * see {@link ShiftBidRequestOptMethods#getRankWithoutBonus() getRankWithoutBonus}
+     */
+<span class="nc" id="L136">    private Pair m_rankWithoutEmpPoints = new Pair(new Integer(0), new Integer(0));</span>
+
+    /**
+     * see {@link ShiftBidRequestOptMethods#getRankWithBonus() getRankWithBonus}
+     */
+<span class="nc" id="L141">    private Pair m_rankWithEmpPoints = new Pair(new Integer(0), new Integer(0));</span>
+
+<span class="nc" id="L143">    private transient ShiftBidRequestOptMethods m_shiftBidRequestOptMethods = null;</span>
+
+<span class="nc" id="L145">    private transient ShiftBidRequestSetters m_shiftBidRequestSetters = null;</span>
+
+<span class="nc" id="L147">    private transient Collection m_cachedEmpIDTimeRangePairs = null;</span>
+    //  cache doesn't need to be invalidated when certain methods are called since it is read only.
+<span class="nc" id="L149">    private transient List m_cachedBiddableSchedules = null;</span>
+    //  cache doesn't need to be invalidated when certain methods are called since it is read only.
+<span class="nc" id="L151">    private transient List&lt;ShiftAssignment&gt; m_cachedShiftAssignments = null;</span>
+
+<span class="nc" id="L153">    private transient List m_cachedBiddableScheduleIDs = null;</span>
+
+<span class="nc" id="L155">    private transient List m_cachedShiftBidRequestBiddableSchedules = null;</span>
+
+<span class="nc" id="L157">    private transient ShiftBidder m_cachedShiftBidder = null;</span>
+
+    /**
+     * During request creation, webtier sets the employee ID instead of the shift bidder ID as it is not avaialble.
+     * This ID is translated to the shiftBidder ID by the back-end.
+     *
+     * When the request is fetched, this is set to the employee ID associated with this request,
+     * provided the ID is avaliable (request loaded with proper detailLevel).
+     */
+    //Use RequestAggregte.getEmployeeID() instead.
+    //private ID m_employeeID = null;
+
+<span class="nc bnc" id="L169" title="All 2 branches missed.">    public class ShiftBidRequestOptMethods  {</span>
+
+        public List getShiftBidRequestBiddableSchedules()  {
+<span class="nc bnc" id="L172" title="All 2 branches missed.">            if (m_cachedShiftBidRequestBiddableSchedules != null)</span>
+<span class="nc" id="L173">                return m_cachedShiftBidRequestBiddableSchedules;</span>
+
+<span class="nc" id="L175">            m_cachedShiftBidRequestBiddableSchedules = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L176">            Collection sbrBSColl = getChildObjects(</span>
+                ShiftBidRequestFieldInfo.SHIFTBIDREQUESTBIDDABLESCHEDULE_CHILDTYPE);
+
+            //if ( (getDetailLevel() &amp; DL_SHIFT_ASSIGNMENTS_COLL) != 0 )  { //detailLevel is accurate only for fetched requests.  Not accurate for requets passed by webTier (since setXXX() methods do not support detailLevel yet).
+<span class="nc bnc" id="L180" title="All 2 branches missed.">            if ( !sbrBSColl.isEmpty() )  {</span>
+                // sort the associated shiftbidReqBiddableSchedules using the item order.
+<span class="nc" id="L182">                m_cachedShiftBidRequestBiddableSchedules = RequestUtil.getListFromCollection(sbrBSColl);</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">                if (m_cachedShiftBidRequestBiddableSchedules.size() &gt; 1)</span>
+<span class="nc" id="L184">                    Collections.sort(m_cachedShiftBidRequestBiddableSchedules, new ShiftBidAuctionUtil.ShiftBidRequestBiddableScheduleComparator());</span>
+            }
+
+<span class="nc" id="L187">            return m_cachedShiftBidRequestBiddableSchedules;</span>
+        }
+
+        /**
+         * Note: Use *** caution *** when using the returned collection since one or more biddableSChedule(s)
+         * in the collection may be null. Returns the biddableSchedules associated with this request.
+         *
+         * &lt;p&gt; TODO: when the biddbaleSchedules list for this request is validated ( by
+         * {@link com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.validation.RequestBiddableSchedulesAreValidHV RequestBiddableSchedulesAreValidHV}
+         * using the method {@link ShiftBidAuctionUtil#validateBiddableScheds(BiddableScheduleDAO, Collection, long, int, boolean) validateBiddableScheds} ),
+         * the ordering of the bidScheds in the list could be invalidated as validateBiddableScheds() method
+         * may modify the biddableSchedules in the system.
+         *
+         *
+         * @return The biddableSchedule(s) in the collection may be 'null' if the associated
+         * biddableSchedules have numOfAvailInstances == 0.
+         * See {@link ShiftBidRequestBiddableSchedule#getBiddableSchedule() ShiftBidRequestBiddableSchedule.getBiddableSchedule()}
+         * for further details.
+         */
+        public List getBiddableSchedules() {
+<span class="nc bnc" id="L207" title="All 2 branches missed.">            if (m_cachedBiddableSchedules != null) return m_cachedBiddableSchedules;</span>
+
+<span class="nc" id="L209">            m_cachedBiddableSchedules = Collections.EMPTY_LIST;</span>
+
+<span class="nc" id="L211">            List sbrBSList = getShiftBidRequestBiddableSchedules();</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">            if (!sbrBSList.isEmpty())   {</span>
+<span class="nc" id="L213">                m_cachedBiddableSchedules = new ArrayList(5);</span>
+<span class="nc bnc" id="L214" title="All 2 branches missed.">                for (Iterator sbrBSIter = sbrBSList.iterator(); sbrBSIter.hasNext(); ) {</span>
+<span class="nc" id="L215">                    ShiftBidRequestBiddableSchedule shiftBidRequestBiddableSchedule = (ShiftBidRequestBiddableSchedule) sbrBSIter.next();</span>
+
+                    // Note: bidSched can be null. see JavaDoc for shiftBidRequestBiddableSchedule.getBiddableSchedule().
+<span class="nc" id="L218">                    BiddableSchedule bidSched = shiftBidRequestBiddableSchedule.getBiddableSchedule();</span>
+<span class="nc" id="L219">                    m_cachedBiddableSchedules.add(bidSched);</span>
+<span class="nc" id="L220">                }</span>
+            }
+
+<span class="nc" id="L223">            return m_cachedBiddableSchedules;</span>
+        }
+
+        public List getBiddableScheduleIDs() {
+            // if value already cached, return.
+<span class="nc bnc" id="L228" title="All 2 branches missed.">            if (m_cachedBiddableScheduleIDs != null) return m_cachedBiddableScheduleIDs;</span>
+
+            // get the shiftBidREqBiddableSCheds associated with this request.
+<span class="nc" id="L231">            m_cachedBiddableScheduleIDs = Collections.EMPTY_LIST;</span>
+<span class="nc" id="L232">            List sbrBSList = getShiftBidRequestBiddableSchedules();</span>
+
+            // extract the biddable schedule IDs from this list and cache.
+<span class="nc bnc" id="L235" title="All 2 branches missed.">            if (!sbrBSList.isEmpty())   {</span>
+<span class="nc" id="L236">                m_cachedBiddableScheduleIDs = RequestUtil.getListOfFieldValuesFromVOBases(sbrBSList,</span>
+                    ShiftBidRequestBiddableScheduleFieldInfo.SHIFTBIDREQUESTBIDDABLESCHEDULE_I_BIDDABLESCHEDULEID);
+            }
+
+            // return biddableSched IDs.
+<span class="nc" id="L241">            return m_cachedBiddableScheduleIDs;</span>
+        }
+
+        /**
+         * Returns a &lt;b&gt;sorted&lt;/b&gt; list of shift assignments associated with this request.
+         *
+         * @return
+         */
+        public List&lt;ShiftAssignment&gt; getShiftAssignments() {
+<span class="nc bnc" id="L250" title="All 2 branches missed.">            if (m_cachedShiftAssignments != null) return m_cachedShiftAssignments;</span>
+
+<span class="nc" id="L252">            m_cachedShiftAssignments = Collections.EMPTY_LIST;</span>
+            // if shift assignments were not loaded, return.
+<span class="nc bnc" id="L254" title="All 4 branches missed.">            assert (getDetailLevel() &amp; DL_SHIFT_ASSIGNMENTS_COLL) != 0:&quot;(getDetailLevel() &amp; DL_SHIFT_ASSIGNMENTS_COLL) != 0: &quot; + getDetailLevel();</span>
+
+            // at most 7 shift assignments/week.
+<span class="nc" id="L257">            m_cachedShiftAssignments = new ArrayList(7);</span>
+
+            // collect shift assignments from biddableSchedules
+<span class="nc" id="L260">            List biddableSchedules = getBiddableSchedules();</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">            for (int bidSchedIdx = 0; bidSchedIdx &lt; biddableSchedules.size(); bidSchedIdx++)  {</span>
+<span class="nc" id="L262">                BiddableSchedule bidSched = (BiddableSchedule) biddableSchedules.get(bidSchedIdx);</span>
+
+                // bidSched associated with this request can be null if the associated bidSched has
+                // bidSched.numOfAvailInstances == 0.  A request with this condition is an invalid request.
+<span class="nc bnc" id="L266" title="All 2 branches missed.">                if (bidSched != null) {</span>
+<span class="nc" id="L267">                    m_cachedShiftAssignments.addAll(bidSched.getOptMethods().getShiftAssignments());</span>
+                }
+            }
+
+            // sort if necessary.
+<span class="nc bnc" id="L272" title="All 2 branches missed.">            if (m_cachedShiftAssignments.size() &gt; 1)</span>
+<span class="nc" id="L273">                Collections.sort(m_cachedShiftAssignments, new ShiftBidAuctionUtil.ShiftAssignmentComparator());</span>
+
+<span class="nc" id="L275">            return m_cachedShiftAssignments;</span>
+        }
+
+        /**
+         * If an approved shift bid is multi shift and stitched, will return the shifts
+         * without the stitching to display in the details screen of the request.
+         * @return
+         * @throws Exception
+         */
+        public List&lt;ShiftAssignment&gt; getStitchedShiftAssignments() throws Exception{
+            // if shift assignments were not loaded, return.
+<span class="nc bnc" id="L286" title="All 4 branches missed.">            assert (getDetailLevel() &amp; DL_SHIFT_ASSIGNMENTS_COLL) != 0:&quot;(getDetailLevel() &amp; DL_SHIFT_ASSIGNMENTS_COLL) != 0: &quot; + getDetailLevel();</span>
+
+            // at most 7 shift assignments/week.
+<span class="nc" id="L289">            List&lt;ShiftAssignment&gt; shiftList = new ArrayList&lt;ShiftAssignment&gt;(7);</span>
+
+            // collect shift assignments from biddableSchedules
+<span class="nc" id="L292">            List&lt;BiddableSchedule&gt; biddableSchedules = getBiddableSchedules();</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">            for (int bidSchedIdx = 0; bidSchedIdx &lt; biddableSchedules.size(); bidSchedIdx++)  {</span>
+<span class="nc" id="L294">                BiddableSchedule bidSched = biddableSchedules.get(bidSchedIdx);</span>
+
+<span class="nc bnc" id="L296" title="All 2 branches missed.">                if (bidSched != null) {</span>
+<span class="nc" id="L297">                    Collection&lt;BiddableScheduleInstance&gt; scheduleInstances = bidSched.getOptMethods().getBiddableScheduleInstances();</span>
+                    BiddableScheduleInstance biddableScheduleInstance;
+<span class="nc bnc" id="L299" title="All 4 branches missed.">                    if (scheduleInstances != null &amp;&amp; scheduleInstances.size() == 1) {</span>
+<span class="nc" id="L300">                        biddableScheduleInstance = scheduleInstances.iterator().next();</span>
+                    } else {
+<span class="nc" id="L302">                        biddableScheduleInstance = null;</span>
+                    }
+<span class="nc bnc" id="L304" title="All 4 branches missed.">                    if (biddableScheduleInstance == null || biddableScheduleInstance.getPhantomStartTime() == null) {</span>
+<span class="nc" id="L305">                        shiftList.addAll(bidSched.getOptMethods().getShiftAssignments());</span>
+                    } else {
+                        //When multi shift, starttime is set and it may be a stitched shift
+<span class="nc" id="L308">                        shiftList.addAll(unStitchAssignments((Collection&lt;ShiftAssignment&gt;)bidSched.getOptMethods().getShiftAssignments(),biddableScheduleInstance));</span>
+                    }
+                }
+            }
+
+            // sort if necessary.
+<span class="nc bnc" id="L314" title="All 2 branches missed.">            if (shiftList.size() &gt; 1)</span>
+<span class="nc" id="L315">                Collections.sort(shiftList, new ShiftBidAuctionUtil.ShiftAssignmentComparator());</span>
+
+<span class="nc" id="L317">            return shiftList;</span>
+        }
+
+        /**
+         * unStitchAssignments - Take original shift and create new shift that fits in BiddableScheuduleInstance startime and endtime
+         * @param origShifts - Original Shift Assignments collection
+         * @param bsi - Biddable ScheduleInstance that has the start and end date before stitching
+         * @return - Collection of modified shifts
+         * @throws Exception
+         */
+        public Collection&lt;ShiftAssignment&gt; unStitchAssignments(Collection&lt;ShiftAssignment&gt; origShifts, BiddableScheduleInstance bsi) throws Exception{
+<span class="nc" id="L328">        	Collection&lt;ShiftAssignment&gt; s = new HashSet&lt;ShiftAssignment&gt;();</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">        	for(ShiftAssignment sa: origShifts){</span>
+<span class="nc bnc" id="L330" title="All 4 branches missed.">        		if(bsi.getPhantomStartTime().compareTo(sa.getStartTime())==0 &amp;&amp; bsi.getPhantomEndTime().compareTo(sa.getEndTime())==0){</span>
+        			//Stitching start end equals shift. continue.
+<span class="nc" id="L332">        			s.add(sa);</span>
+<span class="nc" id="L333">        			continue;</span>
+        		}
+        		//Clone required because we are taking a single stitched shift and creating multiple shifts for display
+<span class="nc" id="L336">				ShiftAssignment sac = (ShiftAssignment)sa.clone();</span>
+<span class="nc" id="L337">				sac.setStartTime(bsi.getPhantomStartTime());</span>
+<span class="nc" id="L338">				sac.setDuration((int)((bsi.getPhantomEndTime().getTime()-bsi.getPhantomStartTime().getTime())/60000));</span>
+<span class="nc bnc" id="L339" title="All 2 branches missed.">				for(ShiftEventAssignment sea: sa.getChildren()){</span>
+					//Remove events that are not in the original shift time frame
+<span class="nc bnc" id="L341" title="All 4 branches missed.">					if(sea.getStartTime().before(sac.getStartTime()) || sea.getStartTime().compareTo(sac.getEndTime())&gt;=0){</span>
+<span class="nc" id="L342">						sac.removeShiftEventAssignment(sea.getID());</span>
+					}
+<span class="nc" id="L344">				}</span>
+<span class="nc" id="L345">				s.add(sac);</span>
+<span class="nc" id="L346">			}</span>
+<span class="nc" id="L347">        	return s;</span>
+        }
+
+
+        public Employee getEmployee()  {
+<span class="nc bnc" id="L352" title="All 4 branches missed.">            assert (getDetailLevel() &amp; DL_EMPLOYEE) != 0:&quot;(getDetailLevel() &amp; DL_EMPLOYEE) != 0: &quot; + getDetailLevel();</span>
+
+<span class="nc" id="L354">            ShiftBidder shiftBidder = getShiftBidder();</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">            return (shiftBidder == null)?null:shiftBidder.getOptMethods().getEmployee();</span>
+        }
+
+        /**
+         * @see ShiftBidRequest#m_employeeID
+         *
+         * @param empID
+         */
+        //Use RequestAggregte.getEmployeeID() instead.
+//        public ID getEmployeeID()  {
+//            return m_employeeID;
+//        }
+
+        public ShiftBidder getShiftBidder()  {
+<span class="nc bnc" id="L369" title="All 2 branches missed.">            if (m_cachedShiftBidder != null) return m_cachedShiftBidder;</span>
+
+            // we check for DL_EMPLOYEE since DL_SHIFTBIDDER is not defined.  DL_EMPLOYEE loads
+            // shiftBidder and employee.
+<span class="nc bnc" id="L373" title="All 4 branches missed.">            assert (getDetailLevel() &amp; DL_EMPLOYEE) != 0:&quot;(getDetailLevel() &amp; DL_EMPLOYEE) != 0: &quot; + getDetailLevel();</span>
+
+<span class="nc" id="L375">            Collection shiftBidders = getChildObjects(ShiftBidRequestFieldInfo.SHIFTBIDDER_CHILDTYPE);</span>
+<span class="nc bnc" id="L376" title="All 2 branches missed.">            if (shiftBidders.size() != 1)</span>
+<span class="nc" id="L377">                throw new IllegalArgumentException(&quot;shiftBidders.size() != 1&quot; + shiftBidders.size());</span>
+
+<span class="nc" id="L379">            m_cachedShiftBidder = (ShiftBidder) shiftBidders.iterator().next();</span>
+<span class="nc bnc" id="L380" title="All 4 branches missed.">            assert m_cachedShiftBidder.getEmployeeID().equals(getEmployeeID()):&quot;m_cachedShiftBidder.getEmployeeID().equals(getEmployeeID()): &quot; + m_cachedShiftBidder.getEmployeeID() + ',' + getEmployeeID();</span>
+
+<span class="nc" id="L382">            return m_cachedShiftBidder;</span>
+        }
+
+
+        public ShiftBidAuction getShiftBidAuction()  {
+<span class="nc bnc" id="L387" title="All 4 branches missed.">            assert (getDetailLevel() &amp; DL_SHIFTBID_AUCTION) != 0:&quot;(getDetailLevel() &amp; DL_SHIFTBID_AUCTION) != 0: &quot; + getDetailLevel();</span>
+
+<span class="nc" id="L389">            Collection auctions = getChildObjects(ShiftBidRequestFieldInfo.SHIFTBIDAUCTION_CHILDTYPE);</span>
+<span class="nc bnc" id="L390" title="All 4 branches missed.">            assert auctions.size() == 1:&quot;auctions.size() == 1: &quot; + auctions.size();</span>
+
+<span class="nc" id="L392">            return (ShiftBidAuction) auctions.iterator().next();</span>
+        }
+
+
+        /**
+         * Rank of this request is computed using the score without bonus as follows:
+         * &lt;li&gt; For FullPeriod auctions, rank of this request, among the set of all requests associated with
+         * the biddable schedule for this request.
+         * &lt;li&gt; For SingleShift auctions, a request is associated with one or more biddable schedules.  In
+         * this case, compute rank of this request, among the set of all requests associated with each biddable
+         * schedule.  Then choose the lowest rank among the set of computed ranks.
+         *
+         * @return
+         * @see ShiftBidAuctionUtil#computeBonusAndScoreWithAndWithoutPoints(ShiftBidRequest, ShiftBidder, ShiftBidAuction, ID, OrganizationSetting, Map, Map)
+         */
+        public Pair getRankWithoutBonus() {
+<span class="nc" id="L408">            return m_rankWithoutEmpPoints;</span>
+        }
+
+
+        /**
+         * Rank of this request is computed using the score with bonus as follows:
+         * &lt;li&gt; For FullPeriod auctions, rank of this request, among the set of all requests associated with
+         * the biddable schedule for this request.
+         * &lt;li&gt; For SingleShift auctions, a request is associated with one or more biddable schedules.  In
+         * this case, compute rank of this request, among the set of all requests associated with each biddable
+         * schedule.  Then choose the lowest rank among the set of computed ranks.
+         *
+         * @return
+         * @see ShiftBidAuctionUtil#computeBonusAndScoreWithAndWithoutPoints(ShiftBidRequest, ShiftBidder, ShiftBidAuction, ID, OrganizationSetting, Map, Map)
+         */
+        public Pair getRankWithBonus() {
+<span class="nc" id="L424">            return m_rankWithEmpPoints;</span>
+        }
+
+        /**
+         * Score for this request without bonus: weighted sum of seniority + rank.
+         *
+         * @return
+         * @see ShiftBidAuctionUtil#computeBonusAndScoreWithAndWithoutPoints(ShiftBidRequest, ShiftBidder, ShiftBidAuction, ID, OrganizationSetting, Map, Map)
+         */
+        public int getScoreWithoutBonus() {
+<span class="nc" id="L434">            return m_scoreWithoutEmpPoints;</span>
+        }
+
+        /**
+         * Score for this request with bonus: weighted sum of bonus + seniority + rank
+         *
+         * @return
+         * @see ShiftBidAuctionUtil#computeBonusAndScoreWithAndWithoutPoints(ShiftBidRequest, ShiftBidder, ShiftBidAuction, ID, OrganizationSetting, Map, Map)
+         */
+        public int getScoreWithBonus() {
+<span class="nc" id="L444">            return m_scoreWithEmpPoints;</span>
+        }
+
+        /**
+         * score for this request based on the isBonusUsed flag for the request.
+         * if isBonusUsed == true, returns value from {@link #getScoreWithBonus() getScoreWithBonus()}.
+         * if isBonusUsed == false, returns value from {@link #getScoreWithoutBonus() getScoreWithoutBonus()}
+         *
+         * @return
+         * @see ShiftBidAuctionUtil#computeBonusAndScoreWithAndWithoutPoints(ShiftBidRequest, ShiftBidder, ShiftBidAuction, ID, OrganizationSetting, Map, Map)
+         */
+        public int getScoreUsingIsBonusFlag() {
+<span class="nc bnc" id="L456" title="All 2 branches missed.">             return getIsBonusUsed()?getScoreWithBonus():getScoreWithoutBonus();</span>
+        }
+
+        /**
+         * computedBonus = shiftBidder's bonus for this auction + accumulated points (for employee).
+         *
+         * Note: This bonus does not take into account the 'use points' option associated
+         * with the bid request.
+         *
+         * @return
+         * @see ShiftBidAuctionUtil#computeBonusAndScoreWithAndWithoutPoints(ShiftBidRequest, ShiftBidder, ShiftBidAuction)
+         */
+        public int getBonusComputed() {
+<span class="nc" id="L469">            return m_bidderBonusAndEmpPointsSum;</span>
+        }
+
+        /**
+         * BonusToBeAwarded: The total bonus points added to the accumulated bonus points for
+         * this shiftBidder.  Computed by adding the bonus points for all biddableSchedules associated
+         * with the request (bidder).
+         *
+         * @return
+         * @see ShiftBidAuctionUtil#computeBonusAndScoreWithAndWithoutPoints(ShiftBidRequest, ShiftBidder, ShiftBidAuction, ID, OrganizationSetting, Map, Map)
+         */
+        public int getBonusToBeAwarded() {
+            // if value was already computed, return the cached value.
+<span class="nc bnc" id="L482" title="All 2 branches missed.">            if (m_bidSchedBonusesSum &gt;= 0) return m_bidSchedBonusesSum;</span>
+
+            // initialize
+<span class="nc" id="L485">            m_bidSchedBonusesSum = 0;</span>
+            // get biddable schedules associated with this request.
+<span class="nc" id="L487">            List bidSchedsForReq = getBiddableSchedules();</span>
+<span class="nc bnc" id="L488" title="All 2 branches missed.">            for (Iterator bidSchedsForReqIter = bidSchedsForReq.iterator();bidSchedsForReqIter.hasNext(); ) {</span>
+<span class="nc" id="L489">                BiddableSchedule bidSchedFromReq = (BiddableSchedule) bidSchedsForReqIter.next();</span>
+
+                // bidSched associated with this request can be null if the associated bidSched has
+                // bidSched.numOfAvailInstances == 0.  A request with this condition is an invalid request.
+                // add the bonus points assocaited with the biddabe schedule.
+<span class="nc bnc" id="L494" title="All 2 branches missed.">                if (bidSchedFromReq != null) {</span>
+<span class="nc" id="L495">                    m_bidSchedBonusesSum += bidSchedFromReq.getBonusPoints();</span>
+                }
+<span class="nc" id="L497">            }</span>
+
+            // return computed bonus point
+<span class="nc" id="L500">            return m_bidSchedBonusesSum;</span>
+        }
+    }
+
+<span class="nc bnc" id="L504" title="All 2 branches missed.">    public class ShiftBidRequestSetters  {</span>
+        /**
+         * @see ShiftBidRequestOptMethods#getRankWithoutBonus()
+         * @param rankWithoutBonus
+         */
+        public void setRankWithoutBonus(Pair rankWithoutBonus) {
+<span class="nc" id="L510">            m_rankWithoutEmpPoints = rankWithoutBonus;</span>
+<span class="nc" id="L511">        }</span>
+
+
+        /**
+         * @see ShiftBidRequestOptMethods#getRankWithBonus()
+         * @param rankWithBonus
+         */
+        public void setRankWithBonus(Pair rankWithBonus) {
+<span class="nc" id="L519">            m_rankWithEmpPoints = rankWithBonus;</span>
+<span class="nc" id="L520">        }</span>
+
+
+        /**
+         * @see ShiftBidRequestOptMethods#getScoreWithoutBonus()
+         * @param scoreWithoutBonus
+         */
+        public void setScoreWithoutBonus(int scoreWithoutBonus) {
+<span class="nc" id="L528">            m_scoreWithoutEmpPoints = scoreWithoutBonus;</span>
+<span class="nc" id="L529">        }</span>
+
+
+        /**
+         * @see ShiftBidRequestOptMethods#getScoreWithBonus()
+         * @param scoreWithBonus
+         */
+        public void setScoreWithBonus(int scoreWithBonus) {
+<span class="nc" id="L537">            m_scoreWithEmpPoints = scoreWithBonus;</span>
+<span class="nc" id="L538">        }</span>
+
+
+        /**
+         * @param sbAuction
+         */
+        public void setShiftBidAuction(ShiftBidAuction sbAuction) {
+<span class="nc" id="L545">            m_cachedEmpIDTimeRangePairs = null; //invalidate as value cached was obtained from shiftBidAuction.</span>
+<span class="nc" id="L546">            fillChildObject(ShiftBidRequestFieldInfo.SHIFTBIDAUCTION_CHILDTYPE, sbAuction);</span>
+<span class="nc" id="L547">            addDetailLevel(DL_SHIFTBID_AUCTION);</span>
+<span class="nc" id="L548">        }</span>
+
+
+        /**
+         * @param shiftBidder
+         */
+        public void setShiftBidder(ShiftBidder shiftBidder) {
+<span class="nc" id="L555">            fillChildObject(ShiftBidRequestFieldInfo.SHIFTBIDDER_CHILDTYPE, shiftBidder);</span>
+<span class="nc" id="L556">            addDetailLevel(DL_SHIFTBIDDER);</span>
+<span class="nc" id="L557">            addDetailLevel(DL_EMPLOYEE);</span>
+<span class="nc" id="L558">        }</span>
+
+
+        /**
+         * This is a computed column: the score for this request if scoring is enabled for the auction.
+         * @param score
+         */
+        public void setScore(int score) {
+<span class="nc" id="L566">            setFieldValue(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_N_SCORE, score);</span>
+<span class="nc" id="L567">        }</span>
+
+        /**
+         * @param bonusComputed
+         *
+         * @see ShiftBidRequestOptMethods#getBonusComputed()
+         */
+        public void setBonusComputed(int bonusComputed) {
+<span class="nc" id="L575">            m_bidderBonusAndEmpPointsSum = bonusComputed;</span>
+<span class="nc" id="L576">        }</span>
+
+
+		/**
+		 * replace the existing bidScheds associated with this shiftBidRequest with
+		 * the given collection.
+		 *
+		 * @param sbrBidScheds
+		 */
+		public void replaceBidScheds(List newBidScheds) {
+<span class="nc bnc" id="L586" title="All 4 branches missed.">			assert (getDetailLevel() &amp; DL_BIDRANK_FOR_SHIFTBIDREQUEST) != 0 ||</span>
+<span class="nc bnc" id="L587" title="All 2 branches missed.">				(getDetailLevel() &amp; DL_SHIFT_ASSIGNMENTS_COLL) != 0:new Long(getDetailLevel());</span>
+
+			// Assert ShiftBidRequestBidScheds.size() == sbrBidScheds.size()
+<span class="nc" id="L590">			List sbReqBidScheds = getOptMethods().getShiftBidRequestBiddableSchedules();</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">			if (sbReqBidScheds.size() == newBidScheds.size()) {</span>
+<span class="nc" id="L592">				throw RequestUtil.createIllegalArgumentException(</span>
+<span class="nc" id="L593">					sbReqBidScheds.size() + &quot; != &quot; + newBidScheds.size(), null);</span>
+			}
+
+<span class="nc" id="L596">			Map newBSIDToBidSchedMap = RequestUtil.getMapOfIDsForVOBases(newBidScheds);</span>
+
+			// replace the bidScheds in each bidSchedInstance.
+<span class="nc bnc" id="L599" title="All 2 branches missed.">			for (Iterator sbReqBidSchedsIter = sbReqBidScheds.iterator(); sbReqBidSchedsIter.hasNext();) {</span>
+<span class="nc" id="L600">				ShiftBidRequestBiddableSchedule sbReqBidSched = (ShiftBidRequestBiddableSchedule) sbReqBidSchedsIter.next();</span>
+
+<span class="nc" id="L602">				boolean replaced = sbReqBidSched.replaceBidSched(newBSIDToBidSchedMap);</span>
+<span class="nc bnc" id="L603" title="All 2 branches missed.">				if (!replaced) {</span>
+<span class="nc" id="L604">					throw RequestUtil.createIllegalArgumentException(sbReqBidSched.getBiddableScheduleID().toString(), null);</span>
+				}
+<span class="nc" id="L606">			}</span>
+
+			// clear all relevant caches.
+<span class="nc" id="L609">			m_cachedBiddableScheduleIDs = null;</span>
+<span class="nc" id="L610">			m_cachedBiddableSchedules = null;</span>
+<span class="nc" id="L611">			m_cachedShiftAssignments = null;</span>
+<span class="nc" id="L612">			m_cachedSBRValidationCache = null;</span>
+<span class="nc" id="L613">			m_cachedShiftAssignments = null;</span>
+<span class="nc" id="L614">			m_cachedShiftBidRequestBiddableSchedules = null;</span>
+<span class="nc" id="L615">		}</span>
+
+        /**
+         * see {@link ShiftBidRequestOptMethods#getBonusToBeAwarded()}
+         * @param bonusToBeAwarded
+         */
+//        public void setBonusToBeAwarded(int bonusToBeAwarded) {
+//            m_bonusToBeAwarded = bonusToBeAwarded;
+//        }
+    }
+
+	/*public ShiftBidRequest(int parentIDFieldIndex) {
+		super();
+	}*/
+
+    public static long getDetailLevelForValidation()   {
+<span class="fc" id="L631">        return DL_BASIC | DL_SHIFTBIDDER | DL_EMPLOYEE | DL_SHIFTBID_AUCTION | DL_SHIFT_ASSIGNMENTS_COLL;</span>
+    }
+
+    public ShiftBidRequest(long detailLevel) {
+        //TODO: use super() in other requestAgg VOs
+<span class="nc" id="L636">        super(Request.REQUESTTYPE_SHIFTBID, detailLevel);</span>
+<span class="nc" id="L637">    }</span>
+
+	public String getName() {
+<span class="nc" id="L640">		return getFormattedFieldValue(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_S_NAME);</span>
+	}
+
+	public ID getShiftBidderID() {
+<span class="nc" id="L644">		return getFieldValueID(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_I_SHIFTBIDDERID);</span>
+	}
+
+	public int getPreference() {
+<span class="nc" id="L648">		return getFieldValueInt(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_N_PREFERENCE);</span>
+	}
+
+    public boolean getIsBonusUsed()  {
+<span class="nc" id="L652">        return getFieldValueBoolean(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_B_ISBONUSUSED);</span>
+    }
+
+    public ID getShiftBidAuctionID() {
+<span class="nc" id="L656">        return getFieldValueID(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_I_SHIFTBIDAUCTIONID);</span>
+    }
+
+    /**
+     * Returns a {@link Pair Pair} object as an element of the collection. The Pair
+     * contains the empID (not the shiftBidder ID) and time range which encompasses all
+     * shift assignments associated with this request. Presently this time range is the
+     * start and end of the SP associated with the auction.
+     *
+     * For this method to return valid results,
+     * use {@link #DL_SHIFTBIDDER DL_SHIFTBIDDER} and
+     * {@link #DL_SHIFT_ASSIGNMENTS_COLL DL_SHIFT_ASSIGNMENTS_COLL} for detailLevel.
+     *
+     * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getEmpIDTimeRangePairs()
+     */
+    public Collection getEmpIDTimeRangePairs() {
+<span class="nc bnc" id="L672" title="All 2 branches missed.">        if (m_cachedEmpIDTimeRangePairs != null) return m_cachedEmpIDTimeRangePairs;</span>
+
+<span class="nc" id="L674">        long detailLevel = getDetailLevel();</span>
+        //if ( (detailLevel &amp; DL_SHIFTBID_AUCTION) != 0 )  {
+        // For QA 38932 - to consider the emp time range as shift assignment start time and end time rather auction start and end time
+        // The below time map is used for obtaining existing unpublished shift events already existing
+        // for validation. In the case where auction shift events are schduled overnight, it fails in timemap
+        // because existing shift events time map end before the auction shift events end date
+<span class="nc" id="L680">            ID empID = getEmployeeID();</span>
+           /* ShiftBidAuction sbAuction = getOptMethods().getShiftBidAuction();
+
+            Pair empIDTimeRangePair = new Pair( empID,
+                new TimeRange(sbAuction.getStartTime(), sbAuction.getEndTime()));
+
+            m_cachedEmpIDTimeRangePairs = Collections.singletonList(empIDTimeRangePair);*/
+
+//            //TODO: For finding the dateRange, should the shift assignments be used insead of the auction's SP?
+//            // this returns the sorted list.
+<span class="nc" id="L690">    	       List shiftAssns = getOptMethods().getShiftAssignments();</span>
+            
+<span class="nc" id="L692">            Pair empIDTimeRangePair = null;</span>
+
+<span class="nc bnc" id="L694" title="All 2 branches missed.">            if (shiftAssns.isEmpty()){</span>
+                // When there is no shift assignment ( for approved request, it may be the case)
+                //get the dates from auction
+<span class="nc" id="L697">                ShiftBidAuction sbAuction = getOptMethods().getShiftBidAuction();</span>
+<span class="nc" id="L698">                empIDTimeRangePair = new Pair( empID,</span>
+<span class="nc" id="L699">                    new TimeRange(sbAuction.getStartTime(), sbAuction.getEndTime()));</span>
+<span class="nc" id="L700">            }</span>
+            else{
+<span class="nc" id="L702">	            empIDTimeRangePair = new Pair( empID, new TimeRange(</span>
+<span class="nc" id="L703">	                ((ShiftAssignment) shiftAssns.get(0)).getStartTime(),</span>
+<span class="nc" id="L704">	                ((ShiftAssignment) shiftAssns.get(shiftAssns.size()-1)).getEndTime()));</span>
+            };
+
+            // QC46055 some approved shiftbidrequests do not get published
+<span class="nc" id="L708">            ShiftBidAuction sbAuction = getOptMethods().getShiftBidAuction();</span>
+<span class="nc" id="L709">            TimeRange timeRange = (TimeRange)empIDTimeRangePair.getSecond();</span>
+<span class="nc bnc" id="L710" title="All 2 branches missed.">            if ( sbAuction.getStartTime().before(timeRange.getStartDate()))</span>
+<span class="nc" id="L711">            	timeRange.setStartDate(sbAuction.getStartTime());</span>
+<span class="nc bnc" id="L712" title="All 2 branches missed.">            if ( sbAuction.getEndTime().after(timeRange.getEndDate()))</span>
+<span class="nc" id="L713">            	timeRange.setEndDate(sbAuction.getEndTime());</span>
+<span class="nc" id="L714">            empIDTimeRangePair.setSecond(timeRange);</span>
+
+<span class="nc" id="L716">            m_cachedEmpIDTimeRangePairs = Collections.singletonList(empIDTimeRangePair);</span>
+        //}
+
+<span class="nc" id="L719">        return m_cachedEmpIDTimeRangePairs;</span>
+    }
+
+    public ShiftBidRequestOptMethods getOptMethods()  {
+<span class="nc bnc" id="L723" title="All 2 branches missed.">        return (m_shiftBidRequestOptMethods = (m_shiftBidRequestOptMethods == null)?</span>
+            new ShiftBidRequestOptMethods():m_shiftBidRequestOptMethods);
+    }
+
+    public ShiftBidRequestSetters getSetters()  {
+<span class="nc bnc" id="L728" title="All 2 branches missed.">        return (m_shiftBidRequestSetters = (m_shiftBidRequestSetters == null)?</span>
+            new ShiftBidRequestSetters():m_shiftBidRequestSetters);
+    }
+
+//    /* (non-Javadoc)
+//     * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getRequestNotificationDetail(java.lang.String)
+//     */
+//    public RequestNotificationDetail getRequestNotificationDetail(String statusChangeType) {
+//        RequestNotificationDetail notifDetail = new RequestNotificationDetail();
+//
+//        fillRequestNotificationDetail(notifDetail, statusChangeType);
+//
+//        // set shiftbid request related fields in the notification detail object.
+//        notifDetail.setSBAuctionID(getShiftBidAuctionID());
+//        notifDetail.setSBBidderID(getShiftBidderID());
+//        notifDetail.setSBIsBonusUsed(getIsBonusUsed());
+//        notifDetail.setSBPreference(getPreference());
+//        notifDetail.setSBReqName(getName());
+//
+//        List shiftAssns = getOptMethods().getShiftAssignments();
+//        TimeRange[] shiftAssnTimeRanges = new TimeRange[shiftAssns.size()];
+//        for (int i = 0; i &lt; shiftAssnTimeRanges.length; i++) {
+//            ShiftAssignment shiftAssn = (ShiftAssignment) shiftAssns.get(i);
+//            shiftAssnTimeRanges[i] = new TimeRange(shiftAssn.getStartTime(), shiftAssn.getEndTime());
+//        }
+//
+//        notifDetail.setSBShiftAssignmentTimeRangeArr(shiftAssnTimeRanges);
+//
+//        return notifDetail;
+//    }
+
+    public void setName(String name) {
+<span class="nc" id="L760">        setFieldValue(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_S_NAME, name);</span>
+<span class="nc" id="L761">    }</span>
+
+    public void setShiftBidderID(ID id) {
+<span class="nc" id="L764">        setFieldValue(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_I_SHIFTBIDDERID, id);</span>
+<span class="nc" id="L765">    }</span>
+
+    public void setPreference(int preference) {
+<span class="nc" id="L768">        setFieldValue(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_N_PREFERENCE, preference);</span>
+<span class="nc" id="L769">    }</span>
+
+    public void setIsBonusUsed(boolean isBonusUsed)  {
+<span class="nc" id="L772">        setFieldValue(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_B_ISBONUSUSED, isBonusUsed);</span>
+<span class="nc" id="L773">    }</span>
+
+    /**
+     * &lt;b&gt;Note&lt;/b&gt;:  The passed biddableScheduleIDs, for single shift biddable schedule auctions,
+     * must be sorted by shift start times.  For FullPeriod auctions, there can only be a single biddable
+     * schedule and sorting is not necessary.
+     *
+     * Note: This creates ShiftBidRequestBiddableSchedule child objects and adds them to the 'create
+     * child list' of this object.
+     *
+     * @param biddableScheduleIDs
+     */
+    public void setBiddableScheduleIDs(List biddableScheduleIDs) {
+        // invalidate cache
+<span class="nc" id="L787">        m_cachedBiddableScheduleIDs = null;</span>
+<span class="nc" id="L788">        m_cachedBiddableSchedules = null;</span>
+
+        // add given biddable schedule ids to the shift bid request.
+<span class="nc bnc" id="L791" title="All 2 branches missed.">        for (int i=0; i &lt; biddableScheduleIDs.size(); i++) {</span>
+<span class="nc" id="L792">            ID bidSchedID = (ID) biddableScheduleIDs.get(i);</span>
+
+<span class="nc" id="L794">            ShiftBidRequestBiddableSchedule sbReqBidSched =</span>
+                new ShiftBidRequestBiddableSchedule(m_DAOClassName, ShiftBidRequestBiddableSchedule.DL_BASIC);
+<span class="nc" id="L796">            sbReqBidSched.setBiddableScheduleID(bidSchedID);</span>
+            //'itemorder' initialization is deferred until the shift assignments for
+            // the biddable schedules are loaded during request creation time.
+            //sbReqBidSched.setOrder(i+1);
+
+<span class="nc" id="L801">            createChildObject(ShiftBidRequestFieldInfo.SHIFTBIDREQUESTBIDDABLESCHEDULE_CHILDTYPE, sbReqBidSched);</span>
+        }
+
+<span class="nc" id="L804">        addDetailLevel(ShiftBidRequest.DL_BIDDABLESCHEDULE_IDS);</span>
+<span class="nc" id="L805">    }</span>
+
+    public void setShiftBidAuctionID(ID auctionID) {
+<span class="nc" id="L808">        setFieldValue(ShiftBidRequestFieldInfo.SHIFTBIDREQUEST_I_SHIFTBIDAUCTIONID, auctionID);</span>
+<span class="nc" id="L809">    }</span>
+
+    public FieldInfo getFieldInfo() {
+<span class="nc" id="L812">        return m_fieldInfo;</span>
+    }
+
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.validation.Validatable#getValidationCache()
+     */
+    public ValidationCache getValidationCache() {
+<span class="nc" id="L820">        return getValidationCacheSBR();</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getValidationTimeRanges()
+     */
+    public Collection getValidationTimeRanges() {
+<span class="nc" id="L827">        Collection empIDTimeRangePairs = getEmpIDTimeRangePairs();</span>
+<span class="nc bnc" id="L828" title="All 4 branches missed.">        assert empIDTimeRangePairs.size() == 1:&quot;empIDTimeRangePairs.size() = &quot; + empIDTimeRangePairs.size();</span>
+
+<span class="nc" id="L830">        return Collections.singletonList(((Pair) empIDTimeRangePairs.iterator().next()).getSecond());</span>
+    }
+
+    /**
+     * Convenience method to get the associated shiftBidRequestValidationCache.  Returns
+     * a ShiftBidValidationCache and not a ValidationCache.  Avoids the penalty of casting
+     * the latter to the former every time getValidationCache() is used.
+     */
+    public ShiftBidRequestValidationCache getValidationCacheSBR() {
+<span class="nc bnc" id="L839" title="All 2 branches missed.">        if (m_cachedSBRValidationCache != null) return m_cachedSBRValidationCache;</span>
+
+<span class="nc" id="L841">        return (m_cachedSBRValidationCache = new ShiftBidRequestValidationCache(this));</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate#getRequestSubType()
+     */
+    public ID getRequestSubType() {
+        // TODO Auto-generated method stub
+<span class="nc" id="L849">        return null;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.bbm.vo.ValueObjectBase#toString()
+     */
+    public String toString() {
+<span class="nc" id="L856">        String voBaseStr = super.toString();</span>
+
+<span class="nc" id="L858">        StringBuffer sb = new StringBuffer(voBaseStr.length() + 128);</span>
+<span class="nc" id="L859">        sb.append(voBaseStr);</span>
+
+<span class="nc" id="L861">        sb.append(&quot;m_bidderBonusAndEmpPointsSum = &quot;).append(m_bidderBonusAndEmpPointsSum).append('\n');</span>
+<span class="nc" id="L862">        sb.append(&quot;m_scoreWithoutEmpPoints = &quot;).append(m_scoreWithoutEmpPoints).append('\n');</span>
+<span class="nc" id="L863">        sb.append(&quot;m_scoreWithEmpPoints = &quot;).append(m_scoreWithEmpPoints).append('\n');</span>
+<span class="nc" id="L864">        sb.append(&quot;m_rankWithoutEmpPoints = &quot;).append(m_rankWithoutEmpPoints).append('\n');</span>
+<span class="nc" id="L865">        sb.append(&quot;m_rankWithEmpPoints = &quot;).append(m_rankWithEmpPoints).append('\n');</span>
+<span class="nc" id="L866">        sb.append(&quot;m_bidSchedBonusesSum = &quot;).append(m_bidSchedBonusesSum).append('\n');</span>
+
+<span class="nc" id="L868">        return sb.toString();</span>
+    }
+
+    /**
+     * Is 'GetRequestPostProcessing' (processing request after it has been fetched
+     * with one of the getRequestByXXXX() methods in the request manager) necessary.  Currently
+     * this is decided based on the request's status
+     *
+     * need to override base class method since Shift Bidding also allows display of
+     * invalid requests
+     *
+	 * @return
+	 */
+	public boolean isGetRequestPostProcNeeded() {
+<span class="nc bnc" id="L882" title="All 2 branches missed.">    	return !RequestAuditTrail.STATUS_WITHDRAWN.equals(getRequestStatus());</span>
+    }
+
+	/*public String toString() {
+		StringBuffer sb = new StringBuffer(1024);
+		sb.append(&quot;ShiftBidRequest@&quot;);
+		sb.append(Integer.toHexString(hashCode()));
+		sb.append('[');
+		FieldInfoEntry fieldEntries[] = m_fieldInfo.getFieldInfo();
+		for (int j = 0; j &lt; fieldEntries.length; j++) {
+			sb.append(fieldEntries[j].getFieldName()).;
+			sb.append(&quot; = &quot;);
+			sb.append(getFieldValue(j));
+			sb.append('\n');
+		}
+		sb.append(']');
+		return sb.toString();
+	}*/
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

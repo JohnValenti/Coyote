@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ProfileEntryHistoryPeriod.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.ejb.bbm.forecast.model.history</a> &gt; <span class="el_source">ProfileEntryHistoryPeriod.java</span></div><h1>ProfileEntryHistoryPeriod.java</h1><pre class="source lang-java linenums">/*
+ * � 2011-2012 Verint Systems, Inc.
+ */
+package com.verint.ejb.bbm.forecast.model.history;
+
+import java.util.*;
+
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.datatypes.TimeContext;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmTimeSeriesException;
+import com.bluepumpkin.ejb.bbm.pulse.model.PulseNoteBO;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
+import com.bluepumpkin.ejb.bbm.time.TimeIntervalAtTime;
+import com.bluepumpkin.ejb.bbm.time.TimeIntervalFactory;
+import com.verint.ejb.bbm.forecast.model.history.provider.IHistoryProvider;
+
+/**
+ * ProfileEntryHistoryPeriod is an abstract class which represents
+ * a period of history as part of a Forecast Profile.  History periods
+ * used to be solely weeks, but with the advent of Monthly Forecasting
+ * there are now two additional types of periods: Monthly and Custom Weeks.
+ * 
+ * Known subclasses: CustomWeekHistoryPeriod, MonthlyHistoryPeriod, WeeklyHistoryPeriod.
+ */
+public abstract class ProfileEntryHistoryPeriod {
+	
+	protected final TimeContext timeContext;
+	//Every history period has an ordered list of time interval at times which represent the days
+	//contained within the history period.  Monthly and custom week period types can have missing
+	//days (i.e. the history period is not contiguous), in this case those days are represented as
+	//null in this List.
+	protected final List&lt;TimeIntervalAtTime&gt; daysInPeriod;
+	//The start date of the sp week for which this history period's forecast profile belongs.
+	protected final Date spWeekStartDate;
+	protected final TimeIntervalFactory timeIntervalFactory;
+	protected final TimeIntervalAtTime intervalRepresentingPeriod;
+	
+<span class="nc" id="L41">	public ProfileEntryHistoryPeriod(List&lt;TimeIntervalAtTime&gt; daysInPeriod, Date spWeekStartDate, TimeContext timeContext) {</span>
+<span class="nc" id="L42">		this.timeContext = timeContext;</span>
+<span class="nc" id="L43">		this.daysInPeriod = daysInPeriod;</span>
+<span class="nc" id="L44">		this.spWeekStartDate = spWeekStartDate;</span>
+<span class="nc" id="L45">		this.timeIntervalFactory = new TimeIntervalFactory(timeContext);</span>
+<span class="nc" id="L46">		intervalRepresentingPeriod = initIntervalRepresentingPeriod();</span>
+<span class="nc" id="L47">	}</span>
+	
+	/**
+	 * Returns the time context associated to this history period.
+	 */
+	public TimeContext getTimeContext() {
+<span class="nc" id="L53">		return timeContext;</span>
+	}
+	
+	/**
+	 * Returns an ordered list of history days (represented as TimeIntervalsAtTime) contained within
+	 * this profile entry history period. Note that this might not match with the dates contained
+	 * within intervalRepresentingPeriod, see getTimeIntervalRepresentingPeriod() for more information.
+	 */
+	public List&lt;TimeIntervalAtTime&gt; getIntervalsInPeriod() {
+<span class="nc" id="L62">		return new ArrayList&lt;TimeIntervalAtTime&gt;(daysInPeriod);</span>
+	}
+	
+	/**
+	 * Returns an ordered list of history days (represented as Dates) contained within
+	 * this profile entry history period. Note that this might not match with the dates contained
+	 * within intervalRepresentingPeriod, see getTimeIntervalRepresentingPeriod() for more information.
+	 * 
+	 * The dates that are returned have a time of midnight (GMT).
+	 */
+	public List&lt;Date&gt; getDatesInPeriod() {
+<span class="nc" id="L73">		List&lt;Date&gt; retVal = new ArrayList&lt;Date&gt;();</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">		for (TimeIntervalAtTime interval : daysInPeriod) {</span>
+<span class="nc bnc" id="L75" title="All 2 branches missed.">			if (interval != null) {</span>
+<span class="nc" id="L76">				LocalDate ld = new LocalDate(interval.getStartTime(), interval.getTimeContext().getTimeZone());</span>
+				//Adjust the date to midnight, as the day intervals in daysInPeriod are set to the day boundary
+<span class="nc" id="L78">				ld.set(Calendar.MINUTE, -timeContext.getDayBoundary());</span>
+<span class="nc" id="L79">				retVal.add(ld.getTime(TimeZoneUtil.GMT_TIMEZONE));</span>
+<span class="nc" id="L80">			} else {</span>
+<span class="nc" id="L81">				retVal.add(null);</span>
+			}
+<span class="nc" id="L83">		}</span>
+<span class="nc" id="L84">		return retVal;</span>
+	}
+	
+	/**
+	 * Returns the first day of the SP week of the forecast profile for which
+	 * this history period belongs.
+	 */
+	public Date getSpWeekStartDate() {
+<span class="nc" id="L92">		return spWeekStartDate;</span>
+	}
+	
+	/**
+	 * Returns the enumerated type (ProfileEntryType) of this ProfileEntryHistoryPeriod.
+	 */
+	public abstract ProfileEntryIntervalType getIntervalType();
+	
+	/**
+	 * Returns a TraceCube representing the history data of this ProfileEntryHistoryPeriod as it would
+	 * apply to the given SP week specified with start date spWeekStartDate.  The
+	 * given IHistoryProvider is required so that the history period has a mechanism for retrieving
+	 * its history data.  The TraceCube that is returned has a start and end date that matches
+	 * intervalRepresentingPeriod, but the actual history data contained within may not actually match
+	 * that date range.  The data in the TraceCube matches the dates of the individual days in the ordered
+	 * list daysInPeriod.  This discrepancy is an unfortunate consequence of the need to render non-contiguous
+	 * time series data together in one chart.
+	 */
+	public abstract TraceCube getHistoryTraceCube(IHistoryProvider historyProvider) throws BbmException;
+
+	public abstract Collection&lt;PulseNoteBO&gt; getNotesForPeriod(IHistoryProvider historyProvider) throws BbmException;
+	
+	/**
+	 * Returns a localized string of the history period for display purposes.
+	 */
+	public abstract String getLocalizedDescription(Localizer localizer);
+
+	/**
+	 * Subclasses override this so that they can construct their own time interval at time
+	 * that represents the interval of the history period.
+	 */
+	protected abstract TimeIntervalAtTime initIntervalRepresentingPeriod();
+	
+	/**
+	 * Only weekly periods have an actual absolute start date; monthly and
+	 * custom week periods can have missing days of history.  Weekly periods
+	 * will return the first day of history, but monthly and custom week periods
+	 * will return the start date of the SP week.
+	 * TODO: this method needs a better name.
+	 */
+	public abstract Date getAbsoluteStartDate();
+	
+	/**
+	 * Returns the number of periods (weeks or months, depending on
+	 * the history period type) that this period is offset from the
+	 * start of its SP week's start date.  Custom week periods do
+	 * not have relative offsets, so this method will always return 0
+	 * for that type.
+	 */
+	public abstract int getRelativeOffsetFromSPWeek();
+	
+	/**
+	 * Returns the time interval at time which represents the history period as it would be applied to its associated SP week.
+	 * This is mainly used for rendering purposes.  Some history periods may not be contiguous (monthly and custom week periods) and this unfortunately
+	 * causes a problem with how the history period is rendered in a chart (JFreeChart assumes the data of the time series
+	 * coming in is contiguous).  In order to get around this, history periods can construct a &quot;fake&quot; time interval to
+	 * represent their data so that they can be rendered on a chart and the data in the period will appear to be contiguous.
+	 * If this is done, certain aspects of the chart rendering will need to be hidden (mainly the date, which will definitely
+	 * appear incorrect as the chosen time interval to represent the history period may not actually contain any dates within
+	 * the history period itself).
+	 *
+	 * For SP weeks that are partial weeks, this interval may not represent the full range of the history that is stored in
+	 * daysInPeriod.  This is because partial SP weeks only need history for the weeks that are in the SP, while daysInPeriod
+	 * covers a full 7 days (to match the profile component definition).
+	 */
+	public TimeIntervalAtTime getTimeIntervalRepresentingPeriod() {
+<span class="nc" id="L158">		return intervalRepresentingPeriod;</span>
+	}
+
+	@Override
+	public boolean equals(Object o) {
+<span class="nc bnc" id="L163" title="All 2 branches missed.">		if (this == o) {</span>
+<span class="nc" id="L164">			return true;</span>
+		}
+<span class="nc bnc" id="L166" title="All 2 branches missed.">		if (!(o instanceof ProfileEntryHistoryPeriod)) {</span>
+<span class="nc" id="L167">			return false;</span>
+		}
+<span class="nc" id="L169">		ProfileEntryHistoryPeriod other = (ProfileEntryHistoryPeriod)o;</span>
+<span class="nc bnc" id="L170" title="All 2 branches missed.">		return this.getIntervalType().equals(other.getIntervalType()) &amp;&amp;</span>
+<span class="nc bnc" id="L171" title="All 4 branches missed.">				this.timeContext.equals(other.timeContext) &amp;&amp; this.daysInPeriod.equals(other.daysInPeriod) &amp;&amp;</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">				this.spWeekStartDate.equals(other.spWeekStartDate);</span>
+	}
+	
+	@Override
+	public int hashCode() {
+<span class="nc" id="L177">		int result = 17;</span>
+<span class="nc" id="L178">		result = 37 * result + timeContext.hashCode();</span>
+<span class="nc" id="L179">		result = 37 * result + daysInPeriod.hashCode();</span>
+<span class="nc" id="L180">		result = 37 * result + getIntervalType().hashCode();</span>
+<span class="nc" id="L181">		result = 37 * result + spWeekStartDate.hashCode();</span>
+<span class="nc" id="L182">		return result;</span>
+	}
+	
+	@Override
+	public String toString() {
+<span class="nc" id="L187">		StringBuffer sb = new StringBuffer(100);</span>
+<span class="nc" id="L188">		sb.append(&quot;ProfileEntryHistoryPeriod type is: &quot;+ getIntervalType());</span>
+<span class="nc" id="L189">		sb.append(&quot;, Time Context is: &quot; + timeContext);</span>
+<span class="nc" id="L190">		sb.append(&quot;, Days In Period: &quot; + daysInPeriod);</span>
+<span class="nc" id="L191">		sb.append(&quot;, SP Week Start Date: &quot; + spWeekStartDate);</span>
+<span class="nc" id="L192">		return sb.toString();</span>
+	}
+	
+	/**
+	 * Returns the earliest day interval (chronologically) in the set of day
+	 * intervals comprising this history period.
+	 */
+	public TimeIntervalAtTime getEarliestDayIntervalInPeriod() {
+<span class="nc" id="L200">		TimeIntervalAtTime earliestInterval = null;</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">		for (TimeIntervalAtTime dayInterval : daysInPeriod) {</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">			if (dayInterval != null) {</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">				if (earliestInterval == null) {</span>
+<span class="nc" id="L204">					earliestInterval = dayInterval;</span>
+				} else {
+<span class="nc bnc" id="L206" title="All 2 branches missed.">					if (dayInterval.compareTo(earliestInterval) &lt; 0) {</span>
+<span class="nc" id="L207">						earliestInterval = dayInterval;</span>
+					}
+				}
+			}
+<span class="nc" id="L211">		}</span>
+		
+<span class="nc" id="L213">		return earliestInterval;</span>
+	}
+	
+	/**
+	 * Returns the latest day interval (chronologically) in the set of day
+	 * intervals comprising this history period.
+	 */
+	public TimeIntervalAtTime getLatestDayIntervalInPeriod() {
+<span class="nc" id="L221">		TimeIntervalAtTime latestInterval = null;</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">		for (TimeIntervalAtTime dayInterval : daysInPeriod) {</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">			if (dayInterval != null) {</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">				if (latestInterval == null) {</span>
+<span class="nc" id="L225">					latestInterval = dayInterval;</span>
+				} else {
+<span class="nc bnc" id="L227" title="All 2 branches missed.">					if (dayInterval.compareTo(latestInterval) &gt; 0) {</span>
+<span class="nc" id="L228">						latestInterval = dayInterval;</span>
+					}
+				}
+			}
+<span class="nc" id="L232">		}</span>
+		
+<span class="nc" id="L234">		return latestInterval;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

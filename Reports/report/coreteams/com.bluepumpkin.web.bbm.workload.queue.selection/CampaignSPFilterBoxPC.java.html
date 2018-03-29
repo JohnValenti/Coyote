@@ -1,0 +1,628 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CampaignSPFilterBoxPC.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.bbm.workload.queue.selection</a> &gt; <span class="el_source">CampaignSPFilterBoxPC.java</span></div><h1>CampaignSPFilterBoxPC.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.bbm.workload.queue.selection;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
+import java.util.ResourceBundle;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.DayOfWeek;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.l10n.RegionalFormatBundleKey;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.web.bbm.Log;
+import com.bluepumpkin.web.bbm.campaign.CampaignModelHandler;
+import com.bluepumpkin.web.bbm.campaign.selection.CampaignSchedulingPeriodSelectionUtil;
+import com.bluepumpkin.web.bbm.hoo.Hoo;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
+import com.bluepumpkin.web.core.cache.SelectionCacheUtil;
+import com.bluepumpkin.web.core.pagecomponent.time.WeekSelectorPC;
+import com.bluepumpkin.web.core.setup.general.GeneralSetupModelHandler;
+import com.witness.web.uif.jsp.HtmlTable;
+import com.witness.web.uif.jsp.HtmlTableCell;
+import com.witness.web.uif.jsp.HtmlTableRow;
+import com.witness.web.uif.pagecomponent.filterbox.FilterBoxPC;
+import com.witness.web.uif.pagecomponent.list.ListBoxPC;
+import com.witness.web.uif.pagecomponent.list.OptionData;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+
+public class CampaignSPFilterBoxPC extends FilterBoxPC {
+	private static final long serialVersionUID = -8941258178158426893L;
+
+<span class="fc" id="L47">	private static final Category m_log = Log.initCategory(CampaignSPFilterBoxPC.class.getName());</span>
+
+	protected ResourceBundle m_bbmBundle;
+	
+	//Sets whether or not the campaign dropdown is populated with a &quot;No Campaign&quot; option.
+	// If this option is selected, then the Scheduling Period dropdown will be replaced with a week picker
+	// that allows the user to select any week.  A Scheduling Period ID will not be stored in the session cache
+	// if this option is selected; instead, start and end dates for the selected week will be stored.
+<span class="fc" id="L55">	protected boolean m_isNoCampaignModeOptionAvailable = false;</span>
+	//The organization of the current user is used to determine the week start date for the week selector.
+	private Organization m_currentUserOrg;
+	//This control will be displayed in place of the Scheduling Period dropdown when the &quot;No Campaign&quot; option is selected.
+	protected WeekSelectorPC m_weekSelectorPC;
+	
+	private static final String SCHEDULING_PERIOD_ID_FN = &quot;schedulingPeriodID&quot;;
+<span class="fc" id="L62">	private Collection&lt;OptionData&gt; m_schedulingPeriodList = Collections.emptyList();</span>
+	protected ListBoxPC m_schedulingPeriodListBox;
+	
+	private ID m_schedulingPeriodID;
+
+	//If the &quot;bottom row&quot; of this component actually consists of multiple rows, the subclass
+	// should set this value to true.  When the component is getting rendered the multiple rows
+	// will then get rendered appropriately.
+<span class="fc" id="L70">	protected boolean m_hasMultipleBottomRows = false;</span>
+	
+<span class="fc" id="L72">	protected static final ID BLANK_ID = new ID(0);</span>
+	//This is the name of a hidden variable that we will use to store the start of week (as a Calendar.DAY_OF_WEEK constant)
+	private static final String START_OF_WEEK_CALENDAR_CONSTANT_FN = &quot;START_OF_WEEK_CALENDAR_CONSTANT_FN&quot;;
+	
+	// Making SP show limt to configurable it was 50 earlier and default will be 50 but user can set any  ESR#4218544	
+	public static final int MAX_SP_SHOW_LIMIT;
+	static {
+<span class="fc" id="L79">		int showLimit = 102;</span>
+		try {
+<span class="fc" id="L81">			String dbVal = GeneralSetupModelHandler.getGenericDbValue(ConfigKey.CALENDAR_SP_SHOW_LIMIT);</span>
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">			if (!StringUtil.isEmpty(dbVal)) {</span>
+<span class="fc" id="L83">				showLimit = Integer.parseInt(dbVal);</span>
+			} 
+<span class="nc" id="L85">		} catch (Exception e) {</span>
+<span class="nc" id="L86">			e.printStackTrace();</span>
+		} finally {
+<span class="pc" id="L88">			MAX_SP_SHOW_LIMIT = showLimit;</span>
+<span class="pc" id="L89">		}</span>
+<span class="fc" id="L90">	}</span>
+	
+	public CampaignSPFilterBoxPC(RequestContext context, String name) {
+<span class="fc" id="L93">		super(context);</span>
+<span class="fc" id="L94">		setName(name);</span>
+		
+<span class="fc" id="L96">		m_filterWidth = getListBoxDisplayMaxWidth();</span>
+		
+<span class="fc" id="L98">		m_bbmBundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+
+<span class="fc" id="L100">		m_schedulingPeriodID = QueueFilterUtil.retrieveSchedulingPeriodID(m_context);</span>
+<span class="fc" id="L101">		m_schedulingPeriodListBox = new ListBoxPC(context);</span>
+<span class="fc" id="L102">		m_schedulingPeriodListBox.setName(getName() + &quot;_schedulingPeriodListbox&quot;);</span>
+<span class="fc" id="L103">		m_schedulingPeriodListBox.setHtmlName(SCHEDULING_PERIOD_ID_FN);</span>
+<span class="fc" id="L104">		addSiblingComponent(m_schedulingPeriodListBox);</span>
+		
+		// Do not add the default filter options to the list.
+<span class="fc" id="L107">		setIsActionOptionsEnabled(false);</span>
+<span class="fc" id="L108">	}</span>
+
+	protected short getListBoxDisplayMaxWidth() {
+<span class="fc" id="L111">		return (short)170;</span>
+	}
+	
+	/**
+	 * Initialize Component For Display
+	 */
+	public void initForDisplay() {
+
+<span class="pc bpc" id="L119" title="1 of 2 branches missed.">		if (m_isInitializedForDisplay) return;</span>
+		else {   		
+<span class="fc" id="L121">			super.initForDisplay();</span>
+
+			try {			
+				// Initialize Campaign/Scheduling Period Properties (filter box default filter is campaign).
+
+<span class="fc" id="L126">				String header =</span>
+<span class="fc" id="L127">                m_context.getSystemManagerFactory().getVerticalizationManager().getVerticalizedString(m_context.getLocalizer(),</span>
+                        m_bbmBundle,
+                        BbmWebBundleKey.FILTERBOX_CAMPAIGN);
+<span class="fc" id="L130">				setHeader(header);</span>
+
+<span class="fc" id="L132">				m_listbox.setMaxDisplayWidth(getListBoxDisplayMaxWidth());</span>
+				
+				// Initialize Scheduling Period List Properties.
+<span class="pc bpc" id="L135" title="1 of 2 branches missed.">				if (showGenericWeekSelector() == false) {</span>
+<span class="fc" id="L136">					m_schedulingPeriodListBox.setMaxDisplayWidth(getListBoxDisplayMaxWidth());</span>
+<span class="fc" id="L137">					m_schedulingPeriodListBox.getSelect().setAttribute(&quot;width&quot;, getListBoxDisplayMaxWidth() + &quot;px&quot;);</span>
+<span class="fc" id="L138">					m_schedulingPeriodListBox.setOptions(m_schedulingPeriodList);</span>
+				} else {
+<span class="nc" id="L140">					Date startDate = SelectionCacheUtil.getStartDate(m_context);</span>
+					
+<span class="nc" id="L142">					boolean haveSelectedDatesBeenCached = true;</span>
+					
+<span class="nc bnc" id="L144" title="All 2 branches missed.">					if (startDate == null) {</span>
+<span class="nc" id="L145">						startDate = new Date();</span>
+<span class="nc" id="L146">						haveSelectedDatesBeenCached = false;</span>
+					}
+<span class="nc" id="L148">					m_weekSelectorPC = new WeekSelectorPC(getRequestContext(),</span>
+<span class="nc" id="L149">							getName() + &quot;_weekSelectorPC&quot;,</span>
+<span class="nc" id="L150">							m_currentUserOrg.getWeekStartDay(),</span>
+<span class="nc" id="L151">							new LocalDate(startDate, m_currentUserOrg.getTimeZone()));</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">					if (haveSelectedDatesBeenCached == false) {</span>
+<span class="nc" id="L153">						LocalDate weekSelectorDate = m_weekSelectorPC.getSelectedWeekStart();</span>
+<span class="nc" id="L154">						SelectionCacheUtil.setStartDate(m_context, weekSelectorDate.getTime(TimeZoneUtil.GMT_TIMEZONE));</span>
+<span class="nc" id="L155">						weekSelectorDate.add(Calendar.DAY_OF_YEAR, 7);</span>
+<span class="nc" id="L156">						SelectionCacheUtil.setEndDate(m_context, weekSelectorDate.getTime(TimeZoneUtil.GMT_TIMEZONE));</span>
+					}
+<span class="nc" id="L158">					addSiblingComponent(m_weekSelectorPC);</span>
+<span class="nc" id="L159">					m_weekSelectorPC.setInputWidth(getListBoxDisplayMaxWidth() + HtmlUtil.DROP_DOWN_BUTTON_WIDTH);</span>
+<span class="nc" id="L160">					m_weekSelectorPC.setDisabledDays(getDisabledDays(m_currentUserOrg.getWeekStartDay().get0SundayCount()));</span>
+<span class="nc" id="L161">					m_weekSelectorPC.setOnChangeJS(getOnDateChangeJS());</span>
+				}
+			}
+<span class="nc" id="L164">			catch (Exception ex)</span>
+			{
+<span class="nc" id="L166">				handleUnableToLoadDataError(m_log, ex);</span>
+<span class="fc" id="L167">			}</span>
+		}
+<span class="fc" id="L169">	}</span>
+	
+	/**
+	 * Initialize Filter Drown Down of Campaigns
+	 */
+	public void initSPFilter(boolean isDistributedCampaignEnabled, boolean isDistributedCampaignOnly) throws Exception {
+<span class="fc" id="L175">		ArrayList&lt;OptionData&gt; filters = new ArrayList&lt;OptionData&gt;();</span>
+		
+		// Create Campaign List
+<span class="fc" id="L178">		Collection&lt;Campaign&gt; campList = CampaignModelHandler.getCampaignsForUser(m_context, m_context.getUser());</span>
+		
+
+		// Remove distributed campaigns if they are not enabled.
+<span class="pc bpc" id="L182" title="1 of 2 branches missed.">		if (isDistributedCampaignEnabled == false) {</span>
+			// list of ids removed so that any children can be removed as well.
+<span class="nc" id="L184">			ArrayList&lt;ID&gt; removedIDs = new ArrayList&lt;ID&gt;();</span>
+			
+<span class="nc" id="L186">			ArrayList&lt;Campaign&gt; filteredCampaignList = new ArrayList&lt;Campaign&gt;();</span>
+<span class="nc bnc" id="L187" title="All 2 branches missed.">			for(Campaign c : campList) {</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">				if (!c.getIsDistributed()) {</span>
+<span class="nc" id="L189">					filteredCampaignList.add(c);</span>
+				}
+				else {
+<span class="nc" id="L192">					removedIDs.add(c.getID());</span>
+				}
+<span class="nc" id="L194">			}</span>
+<span class="nc" id="L195">			campList = filteredCampaignList;</span>
+			
+			// Second pass to remove any children of distributed campaigns,
+			// can't do it during the first pass because ordering could mean
+			// you process the child before eliminating the parent so the child
+			// would not be removed.
+<span class="nc" id="L201">			filteredCampaignList = new ArrayList&lt;Campaign&gt;();</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">			for(Campaign c : campList) {</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">				if (!removedIDs.contains(c.getParentID())) {</span>
+<span class="nc" id="L204">					filteredCampaignList.add(c);</span>
+				}
+<span class="nc" id="L206">			}</span>
+<span class="nc" id="L207">			campList = filteredCampaignList;</span>
+		}
+		/* for later use.
+		if(isDistributedCampaignOnly) {
+			// If it is a distributed campaign only filter, then we only display distributed campaigns.
+			ArrayList&lt;Campaign&gt; distributedCampaigns = new ArrayList&lt;Campaign&gt;();
+			for(Object o : campList) {
+				Campaign c = (Campaign)o;
+				if(c.getIsDistributed()) distributedCampaigns.add(c);
+			}
+			campList = distributedCampaigns;
+		}*/
+		
+<span class="fc bfc" id="L220" title="All 2 branches covered.">		if(isDistributedCampaignOnly) {</span>
+			// If it is a distributed campaign only filter, then we only display distributed campaigns.
+<span class="fc" id="L222">			ArrayList&lt;Campaign&gt; distributedCampaigns = new ArrayList&lt;Campaign&gt;();</span>
+<span class="fc bfc" id="L223" title="All 2 branches covered.">			for(Object o : campList) {</span>
+<span class="fc" id="L224">				Campaign c = (Campaign)o;</span>
+<span class="fc bfc" id="L225" title="All 2 branches covered.">				if(c.getIsDistributed()) distributedCampaigns.add(c);</span>
+<span class="fc" id="L226">			}</span>
+<span class="fc" id="L227">			campList = distributedCampaigns;</span>
+		}
+		
+		// Retrieve the previously selected campaign ID
+		// Some special scenarios:
+		// 	- null (no selection)
+		//  - the campaign id is no longer in the campaign list.
+<span class="fc" id="L234">		ID campaignID = getCampaignID();</span>
+		
+		// If the selected campaign does not exist in the user campaign list
+		// (because it was possibly deleted), reset the campaign selection to nothing.
+<span class="fc" id="L238">		boolean campaignExistsInList = false;</span>
+<span class="fc bfc" id="L239" title="All 2 branches covered.">		if (campaignID != null) {</span>
+<span class="fc bfc" id="L240" title="All 2 branches covered.">			for(Campaign c : campList) {</span>
+<span class="fc bfc" id="L241" title="All 2 branches covered.">				if (campaignID.compareTo(c.getID()) == 0) {</span>
+<span class="fc" id="L242">					campaignExistsInList = true;</span>
+				}
+<span class="fc" id="L244">			}</span>
+		}
+		//If the selected campaign is not in the user's list of visible campaigns and we are not in campaign mode,
+		// then clear the selected campaign (this may happen if the campaign gets deleted, for example).
+<span class="pc bpc" id="L248" title="1 of 4 branches missed.">		if(!campaignExistsInList &amp;&amp;</span>
+<span class="pc bpc" id="L249" title="3 of 4 branches missed.">				(m_isNoCampaignModeOptionAvailable &amp;&amp; !SelectionCacheUtil.isNoCampaignMode(m_context) ||</span>
+						!m_isNoCampaignModeOptionAvailable)) { 
+<span class="fc" id="L251">			campaignID = null;</span>
+<span class="fc" id="L252">			SelectionCacheUtil.setCampaignID(m_context, null);</span>
+		}
+
+<span class="fc" id="L255">		ID selectedID = campaignID;</span>
+
+		// Make the first selection no campaign option.
+<span class="fc" id="L258">		List&lt;OptionData&gt; options = new ArrayList&lt;OptionData&gt;();</span>
+
+<span class="fc bfc" id="L260" title="All 2 branches covered.">		if (m_isNoCampaignModeOptionAvailable) {</span>
+
+<span class="fc" id="L262">            String noCampaignOptionText =  m_context.getSystemManagerFactory().getVerticalizationManager().getVerticalizedString(m_context.getLocalizer(),</span>
+                    BbmWebBundleKey.BUNDLE_NAME,
+                    BbmWebBundleKey.CAMPAIGN_SP_SELECTOR_NO_CAMPAIGN_OPTION);
+
+<span class="fc" id="L266">			OptionData noCampaignOption = new OptionData(</span>
+<span class="fc" id="L267">					HtmlUtil.escapeAttributeValue(noCampaignOptionText),</span>
+<span class="fc" id="L268">					String.valueOf(SelectionCacheUtil.NO_CAMPAIGN_ID)</span>
+					);
+<span class="pc bpc" id="L270" title="2 of 4 branches missed.">			noCampaignOption.setSelected(selectedID == null || selectedID.equals(SelectionCacheUtil.NO_CAMPAIGN_ID));</span>
+<span class="fc" id="L271">			options.add(noCampaignOption);</span>
+		}
+		
+<span class="fc bfc" id="L274" title="All 2 branches covered.">		Collection optionList = CampaignModelHandler.createDropDownValueList(campList,</span>
+<span class="fc" id="L275">				selectedID == null ? null : selectedID.toString(), m_localizer, false);</span>
+<span class="fc bfc" id="L276" title="All 2 branches covered.">		for(Object o : optionList) {</span>
+<span class="fc" id="L277">			options.add((OptionData)o);</span>
+<span class="fc" id="L278">		}</span>
+<span class="fc" id="L279">		filters.addAll(options);</span>
+
+<span class="fc" id="L281">		initFilterWithOptions(filters);</span>
+		
+		// If there is still not campaign id selected and the 
+		// campaign list has at least one item, default the selection to the
+		// first item since that is what the filter will represent.
+<span class="fc bfc" id="L286" title="All 2 branches covered.">		if(campaignID == null) {</span>
+<span class="pc bpc" id="L287" title="1 of 2 branches missed.">			if(filters.size() &gt; 0) {</span>
+<span class="fc" id="L288">				OptionData option = (OptionData)filters.get(0);</span>
+<span class="fc" id="L289">				option.setSelected(true);</span>
+<span class="fc" id="L290">				campaignID = new ID(option.getKey());</span>
+<span class="fc" id="L291">				QueueFilterUtil.storeCampaignID(m_context, campaignID);</span>
+<span class="pc bpc" id="L292" title="1 of 2 branches missed.">				if (SelectionCacheUtil.NO_CAMPAIGN_ID.equals(campaignID)) {</span>
+<span class="nc" id="L293">					SelectionCacheUtil.setIsNoCampaignMode(m_context, true);</span>
+				} else {
+<span class="fc" id="L295">					SelectionCacheUtil.setIsNoCampaignMode(m_context, false);</span>
+				}
+<span class="fc" id="L297">			}</span>
+			else {  // Stop populating the subsequent period filter, it has no valid values.
+<span class="nc" id="L299">				SelectionCacheUtil.setSchedulingPeriodID(m_context, null);</span>
+<span class="nc" id="L300">				QueueFilterUtil.storeMediaID(m_context, null);</span>
+			}
+		}
+
+<span class="fc bfc" id="L304" title="All 2 branches covered.">		if (getRequestContext().getUser().isSuperUser()) {</span>
+<span class="fc" id="L305">			m_currentUserOrg = OrganizationModelHandler.getOrganization(getRequestContext(),</span>
+					OrganizationModelHandler.ROOT_ORG_ID);
+		} else {
+<span class="fc" id="L308">			m_currentUserOrg = OrganizationModelHandler.getEmployeeOrg(getRequestContext(),</span>
+<span class="fc" id="L309">					getRequestContext().getUser().getEmployeeID());</span>
+		}
+
+		// We will show the generic week selector if &quot;no campaign mode&quot; is true and that option has been selected.
+		// Otherwise we will show a scheduling period drop down populated with the SPs of the selected campaign.
+<span class="pc bpc" id="L314" title="1 of 2 branches missed.">		if (showGenericWeekSelector() == false) {</span>
+<span class="fc" id="L315">			ArrayList&lt;OptionData&gt; schedulingPeriodOptions = new ArrayList&lt;OptionData&gt;();</span>
+			
+<span class="fc" id="L317">			OptionData data = null;</span>
+			
+<span class="fc" id="L319">			Collection&lt;SchedulingPeriod&gt; schedulingPeriods = new ArrayList&lt;SchedulingPeriod&gt;();</span>
+			
+			// Making SP show limt to configurable it was 50 earlier and default will be 50 but user can set any  ESR#4218544
+			
+<span class="pc bpc" id="L323" title="1 of 2 branches missed.">			if (campaignID != null) {</span>
+<span class="fc" id="L324">				schedulingPeriods = CampaignModelHandler.getSchedulingPeriods(m_context,</span>
+						campaignID, new Date(), MAX_SP_SHOW_LIMIT, SchedulingPeriod.PastAndFuture);
+			}
+			
+			// Identify the previous scheduling period display selection.  If the newly selected campaign
+			// also contains this selection, pre-select the same scheduling period range.  (this helps when
+			// switching between sub-campaigns).
+<span class="fc" id="L331">			String previousPeriodDisplay = null;</span>
+<span class="fc bfc" id="L332" title="All 2 branches covered.">			if(m_schedulingPeriodID != null) {</span>
+<span class="fc" id="L333">				SchedulingPeriod previousPeriod = CampaignModelHandler.getSchedPeriod(m_context, m_schedulingPeriodID);</span>
+<span class="pc bpc" id="L334" title="1 of 2 branches missed.">				if (previousPeriod != null) {</span>
+<span class="fc" id="L335">					previousPeriodDisplay = formatSchedulingPeriodDisplay(previousPeriod);</span>
+				}
+			}
+			
+			// Sort the scheduling periods because the SchedulingPeriod.PastAndFuture state for retrieving
+			// scheduling periods combines the results of two SQL statements ordered differently and without
+			// an overall sort.
+<span class="fc" id="L342">			List&lt;SchedulingPeriod&gt; sortedSPs = new ArrayList&lt;SchedulingPeriod&gt;();</span>
+			
+<span class="fc bfc" id="L344" title="All 2 branches covered.">			for (SchedulingPeriod sp : schedulingPeriods) {</span>
+<span class="fc" id="L345">				sortedSPs.add(sp);</span>
+<span class="fc" id="L346">			}</span>
+			
+<span class="fc" id="L348">			Collections.sort(sortedSPs, new Comparator&lt;SchedulingPeriod&gt;() {</span>
+				public int compare(SchedulingPeriod sp1, SchedulingPeriod sp2) {
+<span class="fc" id="L350">					return -sp1.getStartTimeLocal().compareTo(sp2.getStartTimeLocal());</span>
+				}
+			});
+			
+<span class="fc bfc" id="L354" title="All 2 branches covered.">			for (Iterator&lt;SchedulingPeriod&gt; it = sortedSPs.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L355">				SchedulingPeriod sp = it.next();</span>
+				
+<span class="fc" id="L357">				String spDisplay = formatSchedulingPeriodDisplay(sp);</span>
+				
+<span class="fc" id="L359">				data = new OptionData(spDisplay, sp.getID().toString(), spDisplay.equals(previousPeriodDisplay));</span>
+<span class="fc bfc" id="L360" title="All 2 branches covered.">				if(spDisplay.equals(previousPeriodDisplay)) {</span>
+<span class="fc" id="L361">					SelectionCacheUtil.setSchedulingPeriodID(m_context, sp.getID());</span>
+				}
+<span class="fc" id="L363">				schedulingPeriodOptions.add(data);</span>
+				
+<span class="fc" id="L365">			}</span>
+			
+<span class="fc" id="L367">			boolean isOptionSelected = false;</span>
+<span class="fc bfc" id="L368" title="All 2 branches covered.">			for (Iterator&lt;OptionData&gt; it = schedulingPeriodOptions.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L369">				OptionData option = it.next();</span>
+<span class="fc bfc" id="L370" title="All 2 branches covered.">				if (option.getSelected()) {</span>
+<span class="fc" id="L371">					isOptionSelected = true; </span>
+<span class="fc" id="L372">					setSchedulingPeriodID(option.getKey());</span>
+<span class="fc" id="L373">					break;</span>
+				}
+<span class="fc" id="L375">			}</span>
+			
+<span class="fc bfc" id="L377" title="All 2 branches covered.">			if (!isOptionSelected) {</span>
+<span class="pc bpc" id="L378" title="1 of 2 branches missed.">				if (schedulingPeriodOptions.size() &gt; 0) { </span>
+					// are there any values to default selection to?
+<span class="fc" id="L380">					OptionData option = schedulingPeriodOptions.get(0);</span>
+<span class="fc" id="L381">					option.setSelected(true);</span>
+<span class="fc" id="L382">					setSchedulingPeriodID(option.getKey());</span>
+<span class="fc" id="L383">				} else { </span>
+					// clear any saved ids
+<span class="nc" id="L385">					SelectionCacheUtil.setSchedulingPeriodID(m_context, null);</span>
+<span class="nc" id="L386">					QueueFilterUtil.storeMediaID(m_context, null);</span>
+				}
+			}
+			
+<span class="fc" id="L390">			m_schedulingPeriodList = schedulingPeriodOptions;</span>
+		}
+<span class="fc" id="L392">	}</span>
+	
+	private String formatSchedulingPeriodDisplay(SchedulingPeriod sp) {
+<span class="fc" id="L395">		LocalDate startTime = sp.getStartTimeLocal();</span>
+<span class="fc" id="L396">		LocalDate endTime = new LocalDate(sp.getEndTimeLocal());</span>
+<span class="fc" id="L397">		endTime.add(Calendar.DATE, -1);</span>
+		
+<span class="fc" id="L399">		return m_localizer.formatDate(startTime, RegionalFormatBundleKey.DATE_FORMAT) + </span>
+<span class="fc" id="L400">		&quot; - &quot; + m_localizer.formatDate(endTime, RegionalFormatBundleKey.DATE_FORMAT);</span>
+	}
+	
+	public void setSchedulingPeriodID(String id) {
+<span class="pc bpc" id="L404" title="1 of 2 branches missed.">		if (!StringUtil.isEmpty(id)) {</span>
+<span class="fc" id="L405">			m_schedulingPeriodID = ID.fromInt(Integer.parseInt(id));</span>
+<span class="fc" id="L406">			SelectionCacheUtil.setSchedulingPeriodID(m_context, ID.fromInt(Integer.parseInt(id)));</span>
+<span class="fc" id="L407">			CampaignSchedulingPeriodSelectionUtil.setSelectedAutoCachedCampaignSPID(m_context, getCampaignID(), getSchedulingPeriodID());</span>
+		}
+<span class="fc" id="L409">	}</span>
+	
+	public ID getSchedulingPeriodID() {
+<span class="fc" id="L412">		return SelectionCacheUtil.getSchedulingPeriodID(m_context);</span>
+	}
+	
+	public ID getCampaignID() {
+<span class="fc" id="L416">		return SelectionCacheUtil.getCampaignID(m_context);</span>
+	}
+	
+	/**
+	 * Return Middle Row: Scheduling Period Box
+	 */
+	public HtmlTableRow createSpacerRow() {
+<span class="fc" id="L423">		List rowcells = new ArrayList();</span>
+		
+<span class="pc bpc" id="L425" title="1 of 2 branches missed.">		if (showGenericWeekSelector()) {</span>
+<span class="nc bnc" id="L426" title="All 4 branches missed.">			if (m_isFullDisplayMode &amp;&amp; m_displayLabels) {</span>
+<span class="nc" id="L427">				String label = m_context.getLocalizer().i18n(BbmWebBundleKey.BUNDLE_NAME,</span>
+						BbmWebBundleKey.CAMPAIGN_SP_SELECTOR_WEEK_PROMPT);
+				
+<span class="nc" id="L430">				HtmlTableCell cell = new HtmlTableCell(label + &quot;&amp;nbsp;&quot;);</span>
+<span class="nc" id="L431">				cell.setHeight(&quot;18&quot;);</span>
+<span class="nc" id="L432">				cell.setStyleClass(&quot;headerText&quot;);</span>
+<span class="nc" id="L433">		        cell.setStyle(&quot;white-space:nowrap;&quot;);</span>
+		        
+<span class="nc" id="L435">		        rowcells.add(cell);</span>
+			}
+<span class="nc" id="L437">			HtmlTableCell weekPickerCell = new HtmlTableCell(m_weekSelectorPC);</span>
+<span class="nc" id="L438">			weekPickerCell.setStyle(&quot;white-space:nowrap;&quot;);</span>
+<span class="nc bnc" id="L439" title="All 2 branches missed.">			String colSpan = createBottomRow().getRowCells().size()==0?&quot;2&quot;:createBottomRow().getRowCells().size()+&quot;&quot;;</span>
+<span class="nc" id="L440">			weekPickerCell.setColspan(colSpan);</span>
+<span class="nc" id="L441">			rowcells.add(weekPickerCell);	</span>
+<span class="nc" id="L442">		} else {</span>
+<span class="pc bpc" id="L443" title="2 of 4 branches missed.">			if (m_isFullDisplayMode &amp;&amp; m_displayLabels) {</span>
+<span class="fc" id="L444">				String label = i18n(m_bbmBundle, BbmWebBundleKey.FILTERBOX_SCHEDULING_PERIOD);</span>
+				
+<span class="fc" id="L446">				HtmlTableCell cell = new HtmlTableCell(label + &quot;&amp;nbsp;&quot;);</span>
+<span class="fc" id="L447">				cell.setHeight(&quot;18&quot;);</span>
+<span class="fc" id="L448">				cell.setStyleClass(&quot;headerText&quot;);</span>
+<span class="fc" id="L449">		        cell.setStyle(&quot;white-space:nowrap;&quot;);</span>
+		        
+<span class="fc" id="L451">		        rowcells.add(cell);</span>
+			}
+<span class="fc" id="L453">			rowcells.add(m_schedulingPeriodListBox);</span>
+		}
+		 
+<span class="fc" id="L456">		return new HtmlTableRow(rowcells);</span>
+	}
+	
+	/**
+	 * If the subclass has multiple rows for its &quot;bottom row&quot;, then it should override
+	 * this method so it can return the set of rows.
+	 */
+	protected ArrayList&lt;HtmlTableRow&gt; createBottomRows() {
+<span class="nc" id="L464">		return new ArrayList&lt;HtmlTableRow&gt;();</span>
+	}
+	
+	public String getHtmlDisplay() {
+		// initialize the filters in the listbox
+<span class="fc" id="L469">		m_listbox.setOptions(getFilters());</span>
+
+<span class="fc" id="L471">		HtmlTable outer_table = new HtmlTable(&quot;0&quot;, &quot;0&quot;, &quot;0&quot;);</span>
+<span class="fc" id="L472">		outer_table.setWidth(getOuterTableWidth());</span>
+<span class="fc" id="L473">		outer_table.add( createTopRow() );</span>
+<span class="fc" id="L474">		outer_table.add( createSpacerRow() );</span>
+
+		// Show bottom is it is in Full Display Mode
+<span class="pc bpc" id="L477" title="1 of 2 branches missed.">		if (m_isFullDisplayMode) {</span>
+<span class="pc bpc" id="L478" title="1 of 2 branches missed.">			if (m_isBottomRowEnabled) {</span>
+<span class="fc bfc" id="L479" title="All 2 branches covered.">				if (m_hasMultipleBottomRows) {</span>
+<span class="fc bfc" id="L480" title="All 2 branches covered.">					for (HtmlTableRow row : createBottomRows()) {</span>
+<span class="fc" id="L481">						outer_table.add(row);</span>
+<span class="fc" id="L482">					}</span>
+				}
+<span class="fc" id="L484">				else outer_table.add( createBottomRow() );</span>
+			}
+<span class="nc" id="L486">			else outer_table.add( createEmptyBottomRow() );</span>
+		}
+
+		//Length specified in the FilterBoxPC class
+<span class="fc" id="L490">		String height = &quot;2&quot;;</span>
+		
+		// Generate HTML output
+<span class="fc" id="L493">		StringBuffer buff = new StringBuffer(1024);</span>
+<span class="pc bpc" id="L494" title="1 of 2 branches missed.">		if (useWrapper()) {</span>
+<span class="fc" id="L495">			buff.append(&quot;\n&lt;div style=\&quot;margin-top:&quot;);</span>
+<span class="fc" id="L496">			buff.append(height);</span>
+<span class="fc" id="L497">			buff.append(&quot;px; margin-bottom:7px;\&quot;&gt;&quot;);</span>
+		}
+		
+<span class="fc" id="L500">		buff.append(outer_table);</span>
+<span class="fc" id="L501">		buff.append(HtmlUtil.makeHiddenInput(getName(), &quot;&quot;));</span>
+		//Store the org's start of business week in a hidden field on the page.  This
+		//will be used in extractParameters to determine the selected date when the page
+		//refreshes.
+<span class="pc bpc" id="L505" title="1 of 2 branches missed.">		if (m_currentUserOrg != null) {</span>
+<span class="fc" id="L506">			buff.append(HtmlUtil.makeHiddenInput(START_OF_WEEK_CALENDAR_CONSTANT_FN,</span>
+<span class="fc" id="L507">					m_currentUserOrg.getWeekStartDay().getCalendarConstant()));</span>
+		}
+<span class="pc bpc" id="L509" title="1 of 2 branches missed.">		if (useWrapper()) buff.append(&quot;\n&lt;/div&gt;&quot;);</span>
+
+<span class="fc" id="L511">		return buff.toString();</span>
+	}
+	
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="fc" id="L515">		boolean success = super.extractParameters(request);</span>
+		
+		// Cache Campaign ID
+<span class="fc" id="L518">		String sTmpID = getSelectedFilterName();</span>
+<span class="fc bfc" id="L519" title="All 2 branches covered.">		if (!StringUtil.isEmpty(sTmpID)) {</span>
+<span class="pc bpc" id="L520" title="1 of 2 branches missed.">			if (BLANK_ID.toString().equals(sTmpID)) {</span>
+				// User Blank Campaign (All Queues Selected)
+<span class="nc" id="L522">				SelectionCacheUtil.setCampaignID(m_context, null);</span>
+			} else {
+<span class="fc" id="L524">				ID campaignID = ID.fromInt(Integer.parseInt(sTmpID));</span>
+				
+				//If the newly selected campaign differs from the previous campaign, clear
+				//out the selected SP ID as it is no longer valid for the new campaign.
+				//FIXME:  The ideal way to handle this would be to determine what the default SP
+				//should be for the newly selected campaign, and then cache that new SP ID here.
+				//This way, WorkRulesEmployeeAssignmentUtil.checkIfEmployeeSelectionIsValid could determine
+				//employee overlap between the old and new campaigns/sps.  As it stands, currently if the user
+				//selects a new campaign then there is no hope of automatically selecting any overlapping
+				//employees that were previously selected in the old campaign/sp.
+<span class="fc" id="L534">				ID previousCampaignID = SelectionCacheUtil.getCampaignID(m_context);</span>
+<span class="pc bpc" id="L535" title="1 of 4 branches missed.">				if (previousCampaignID == null || !previousCampaignID.equals(campaignID)) {</span>
+<span class="fc" id="L536">					SelectionCacheUtil.setSchedulingPeriodID(m_context, null);</span>
+<span class="fc" id="L537">					SelectionCacheUtil.setEmployeeIDs(m_context, null);</span>
+				}
+				
+<span class="fc" id="L540">				SelectionCacheUtil.setCampaignID(m_context, campaignID);</span>
+<span class="pc bpc" id="L541" title="1 of 2 branches missed.">				if (SelectionCacheUtil.NO_CAMPAIGN_ID.equals(campaignID)) {	//&quot;No campaign&quot; mode</span>
+<span class="nc" id="L542">					SelectionCacheUtil.setIsNoCampaignMode(m_context, true);</span>
+<span class="nc" id="L543">					SelectionCacheUtil.setSchedulingPeriodID(m_context, null);</span>
+					
+					//Load the saved start of week, and determine the start/end dates based on the start of week
+					//and the selected date in the date picker
+<span class="nc" id="L547">					String startOfWeekCalendarConstantStr = getParameter(request, START_OF_WEEK_CALENDAR_CONSTANT_FN);</span>
+<span class="nc bnc" id="L548" title="All 2 branches missed.">					if (StringUtil.isEmpty(startOfWeekCalendarConstantStr) == false) {</span>
+<span class="nc" id="L549">						m_weekSelectorPC = new WeekSelectorPC(getRequestContext(),</span>
+<span class="nc" id="L550">								getName() + &quot;_weekSelectorPC&quot;,</span>
+<span class="nc" id="L551">								DayOfWeek.fromCalendarConstant(Integer.parseInt(startOfWeekCalendarConstantStr)),</span>
+								new LocalDate(new Date(), TimeZoneUtil.GMT_TIMEZONE));
+						
+						//Extract date from week picker
+<span class="nc" id="L555">						LocalDate startOfWeek = m_weekSelectorPC.getSelectedWeekStart();</span>
+<span class="nc" id="L556">						SelectionCacheUtil.setStartDate(m_context, startOfWeek.getTime(TimeZoneUtil.GMT_TIMEZONE));</span>
+<span class="nc" id="L557">						LocalDate endOfWeek = m_weekSelectorPC.getSelectedWeekStart();</span>
+<span class="nc" id="L558">						endOfWeek.add(Calendar.DAY_OF_YEAR, 7);</span>
+<span class="nc" id="L559">						SelectionCacheUtil.setEndDate(m_context, endOfWeek.getTime(TimeZoneUtil.GMT_TIMEZONE));</span>
+					}
+<span class="nc" id="L561">				} else {	//valid campaign ID</span>
+					//Clear the start + end dates for no campaign mode if we have selected a campaign ID
+<span class="fc" id="L563">					SelectionCacheUtil.setStartDate(m_context, null);</span>
+<span class="fc" id="L564">					SelectionCacheUtil.setEndDate(m_context, null);</span>
+<span class="fc" id="L565">					SelectionCacheUtil.setIsNoCampaignMode(m_context, false);</span>
+				}
+			}
+		}
+		
+<span class="fc" id="L570">		return success;</span>
+	}
+	
+	public ListBoxPC getSPListBox() {
+<span class="fc" id="L574">		return m_schedulingPeriodListBox;</span>
+	}
+	
+	/**
+	 * If &quot;No Campaign&quot; mode is available and the &quot;No Campaign&quot; option is selected, this returns true.
+	 */
+	protected boolean showGenericWeekSelector() {
+<span class="pc bpc" id="L581" title="2 of 6 branches missed.">		return m_isNoCampaignModeOptionAvailable &amp;&amp; (getCampaignID() == null || SelectionCacheUtil.isNoCampaignMode(m_context));</span>
+	}
+
+	/**
+	 * The week picker has only the week start days enabled.  This array of disabled days is handed into
+	 * the week picker so that they can become greyed out and unselectable. 
+	 */
+	private int[] getDisabledDays(int theOnlyEnabledDay) {
+<span class="nc" id="L589">		int[] disabledDays = new int[6];</span>
+<span class="nc" id="L590">		int index = 0;</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">		if (theOnlyEnabledDay != Hoo.MONDAY)</span>
+<span class="nc" id="L592">			disabledDays[index++] = Calendar.MONDAY;</span>
+<span class="nc bnc" id="L593" title="All 2 branches missed.">		if (theOnlyEnabledDay != Hoo.TUESDAY)</span>
+<span class="nc" id="L594">			disabledDays[index++] = Calendar.TUESDAY;</span>
+<span class="nc bnc" id="L595" title="All 2 branches missed.">		if (theOnlyEnabledDay != Hoo.WEDNESDAY)</span>
+<span class="nc" id="L596">			disabledDays[index++] = Calendar.WEDNESDAY;</span>
+<span class="nc bnc" id="L597" title="All 2 branches missed.">		if (theOnlyEnabledDay != Hoo.THURSDAY)</span>
+<span class="nc" id="L598">			disabledDays[index++] = Calendar.THURSDAY;</span>
+<span class="nc bnc" id="L599" title="All 2 branches missed.">		if (theOnlyEnabledDay != Hoo.FRIDAY)</span>
+<span class="nc" id="L600">			disabledDays[index++] = Calendar.FRIDAY;</span>
+<span class="nc bnc" id="L601" title="All 2 branches missed.">		if (theOnlyEnabledDay != Hoo.SATURDAY)</span>
+<span class="nc" id="L602">			disabledDays[index++] = Calendar.SATURDAY;</span>
+<span class="nc bnc" id="L603" title="All 2 branches missed.">		if (theOnlyEnabledDay != Hoo.SUNDAY)</span>
+<span class="nc" id="L604">			disabledDays[index++] = Calendar.SUNDAY;</span>
+<span class="nc" id="L605">		return disabledDays;</span>
+	}
+
+	/**
+	 * We will resubmit when the user changes the selected date via the week picker.
+	 */
+	protected String getOnDateChangeJS() {
+<span class="nc" id="L612">		return &quot;if (&quot; + getName() + &quot;.confirmLoseChanges()) {&quot;</span>
+<span class="nc" id="L613">			+ getName() + &quot;.setPageDirty(false); &quot;</span>
+<span class="nc" id="L614">			+ getName() + &quot;.submitForm(); }&quot;;</span>
+	}
+	
+	public boolean hasNoCampaignMode() {
+<span class="nc" id="L618">		return m_isNoCampaignModeOptionAvailable;</span>
+	}
+
+	/**
+	 * Needs to be set before initDisplay and initFilter.
+	 */
+	public void setHasNoCampaignMode(boolean hasNoCampaignMode) {
+<span class="fc" id="L625">		m_isNoCampaignModeOptionAvailable = hasNoCampaignMode;</span>
+<span class="fc" id="L626">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

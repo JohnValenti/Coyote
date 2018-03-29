@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CalendarTimeOffDayDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.setup.calendartimeoff.ejb</a> &gt; <span class="el_source">CalendarTimeOffDayDAO.java</span></div><h1>CalendarTimeOffDayDAO.java</h1><pre class="source lang-java linenums">/*
+ * CalendarTimeOffDayDAO.java
+ * Copyright (c) 2002, Blue Pumpkin Software, Inc.
+ * All rights reserved.
+ */
+package com.bluepumpkin.ejb.rm.setup.calendartimeoff.ejb;
+
+import java.util.*;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.dao.DAOBase;
+import com.bluepumpkin.ejb.bbm.dao.DAOUtil;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectBase;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectUtil;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.CalendarTimeOffDay;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.CalendarTimeOffDayFieldInfo;
+import com.bluepumpkin.ejb.rm.util.TORequestUtil;
+
+/**
+ * DAO class for CalendarTimeOffDay
+ */
+public class CalendarTimeOffDayDAO extends DAOBase {
+<span class="fc" id="L32">	private static FieldInfo m_fieldInfo = new CalendarTimeOffDayFieldInfo();</span>
+
+<span class="fc" id="L34">	private static TimeZone s_gmt = TimeZone.getTimeZone(&quot;GMT&quot;);</span>
+
+	@Override
+<span class="fc" id="L37">	protected FieldInfo getFieldInfo() { return m_fieldInfo; }</span>
+
+	public CalendarTimeOffDayDAO() {
+<span class="nc" id="L40">		super();</span>
+<span class="nc" id="L41">	}</span>
+
+	public CalendarTimeOffDayDAO(Jdmo dmo) {
+<span class="fc" id="L44">		super(dmo);</span>
+<span class="fc" id="L45">	}</span>
+
+	@Override
+	protected ValueObjectBase createValueObject() {
+<span class="fc" id="L49">		return (new CalendarTimeOffDay());</span>
+	}
+
+	/**
+	 * Find the available time off hours for a given TO Pool and month range.
+	 * If there are records defined at the given TO Pool then those will be used.
+	 * If not this method will check the parent org and so on.
+	 * All records for a month will be defined at a single TO Pool!
+	 * &lt;p/&gt;
+	 * This method returns an array with an element for each day of the month.
+	 * Days without timeoff allocation are set to null.  Days with timeoff allocation
+	 * are set to the CalendarTimeOffDay object.
+	 */
+	public CalendarTimeOffDay[] findWithinMonth(ID pTOPoolID, MonthRange monthRange) throws Exception {
+<span class="fc" id="L63">		StringBuffer strQuery = new StringBuffer();</span>
+<span class="fc" id="L64">		strQuery.append(&quot; A.TOPOOLID = &quot;)</span>
+<span class="fc" id="L65">		        .append(JdmoUtil.asSqlLiteral(pTOPoolID))</span>
+<span class="fc" id="L66">		        .append(&quot; AND A.DAYDATE &gt;= '&quot;)</span>
+<span class="fc" id="L67">		        .append(JdmoUtil.formatDBString(monthRange.startDate))</span>
+<span class="fc" id="L68">		        .append(&quot;' AND A.DAYDATE &lt; '&quot;)</span>
+<span class="fc" id="L69">		        .append(JdmoUtil.formatDBString(monthRange.endDate))</span>
+<span class="fc" id="L70">		        .append(&quot;' ORDER BY A.DAYDATE ASC&quot;);</span>
+
+<span class="fc" id="L72">		Collection items = null;</span>
+<span class="fc" id="L73">		items = getObjects(strQuery.toString());</span>
+<span class="fc" id="L74">		Calendar cal = new GregorianCalendar();</span>
+<span class="fc" id="L75">		CalendarTimeOffDay[] arr = new CalendarTimeOffDay[31];</span>
+<span class="fc bfc" id="L76" title="All 2 branches covered.">		for (Iterator itr = items.iterator(); itr.hasNext();) {</span>
+			// obtain the next timeOffCalendarDay object
+<span class="fc" id="L78">			CalendarTimeOffDay item = (CalendarTimeOffDay) itr.next();</span>
+			// convert the time in the timeOffCalendarDay to day of month
+<span class="fc" id="L80">			cal.setTime(item.getTimeOffDate());</span>
+<span class="fc" id="L81">			int dayOfMonth = cal.get(Calendar.DAY_OF_MONTH) - cal.getMinimum(Calendar.DAY_OF_MONTH);</span>
+			// set the element at index 'day of month' to the timeOffCalendarDay object.
+<span class="fc" id="L83">			arr[dayOfMonth] = item;</span>
+<span class="fc" id="L84">		}</span>
+<span class="fc" id="L85">		return arr;</span>
+	}
+
+	/**
+	 * Get an Collection of CalendarTimeOffDay objects in the given local date range,
+	 * inclusively.
+	 */
+	public Collection findInRange(ID pTOPoolID, LocalDate start, LocalDate end) throws Exception {
+		// Make sure that both start and end or not null and that end is after start
+<span class="pc bpc" id="L94" title="3 of 6 branches missed.">		if (start == null || end == null || !end.after(start)) {</span>
+<span class="nc" id="L95">			throw new IllegalArgumentException(&quot;invalid start or end date: &quot; + start + &quot; - &quot; + end);</span>
+		}
+<span class="fc" id="L97">		StringBuffer strQuery = new StringBuffer();</span>
+<span class="fc" id="L98">		strQuery.append(&quot; A.TOPOOLID = &quot;)</span>
+<span class="fc" id="L99">		        .append(JdmoUtil.asSqlLiteral(pTOPoolID))  //Fix QC196696</span>
+<span class="fc" id="L100">		        .append(&quot; AND A.DAYDATE &gt;= '&quot;)</span>
+<span class="fc" id="L101">		        .append(JdmoUtil.formatDBString(start.getTime(s_gmt)))</span>
+<span class="fc" id="L102">		        .append(&quot;' AND A.DAYDATE &lt;= '&quot;)</span>
+<span class="fc" id="L103">		        .append(JdmoUtil.formatDBString(end.getTime(s_gmt)))</span>
+<span class="fc" id="L104">		        .append(&quot;' ORDER BY A.DAYDATE ASC&quot;);</span>
+
+<span class="fc" id="L106">		return getObjects(strQuery.toString());</span>
+	}
+
+
+	/**
+	 * Save a month's worth of time off days for a group of TO Pools.
+	 * The array must reference a complete month's worth of data.
+	 *
+	 * @param pTOPoolID      - the  TO Pool id of the change
+	 * @param monthRange     - the start and end time for the month
+	 * @param newTimeOffDays - the time off hours per day to save.
+	 */
+	public void saveTimeOffDays(ID pTOPoolID, MonthRange monthRange, CalendarTimeOffDay newTimeOffDays[]) throws Exception {
+<span class="fc" id="L119">		ArrayList updateList = new ArrayList(31);</span>
+<span class="fc" id="L120">		ArrayList createList = new ArrayList(31);</span>
+<span class="fc" id="L121">		HashMap oldTimeOffDaysMap = new HashMap(31);</span>
+<span class="fc" id="L122">		CalendarTimeOffDay oldTimeOffDays[] = findWithinMonth(pTOPoolID, monthRange);</span>
+<span class="pc bpc" id="L123" title="1 of 2 branches missed.">		int l = oldTimeOffDays != null ? oldTimeOffDays.length : 0;</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">		for (int i = 0; i &lt; l; i++) {</span>
+<span class="fc" id="L125">			CalendarTimeOffDay oldItem = oldTimeOffDays[i];</span>
+<span class="pc bpc" id="L126" title="1 of 4 branches missed.">			if (oldItem != null &amp;&amp; oldItem.getTimeOffLocalDate() != null) {</span>
+<span class="fc" id="L127">				oldTimeOffDaysMap.put(oldItem.getTimeOffLocalDate(), oldItem);</span>
+			}
+		}
+<span class="pc bpc" id="L130" title="1 of 2 branches missed.">		l = newTimeOffDays != null ? newTimeOffDays.length : 0;</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">		for (int i = 0; i &lt; l; i++) {</span>
+<span class="fc" id="L132">			CalendarTimeOffDay newTimeOffDay = newTimeOffDays[i];</span>
+<span class="pc bpc" id="L133" title="1 of 4 branches missed.">			if (newTimeOffDay != null &amp;&amp; newTimeOffDay.getTimeOffLocalDate() != null) {</span>
+<span class="fc" id="L134">				CalendarTimeOffDay oldCalendarTimeOffDay = (CalendarTimeOffDay) oldTimeOffDaysMap.get(newTimeOffDay.getTimeOffLocalDate());</span>
+<span class="fc bfc" id="L135" title="All 2 branches covered.">				if (oldCalendarTimeOffDay == null) {//item exists only in new so create it</span>
+<span class="fc" id="L136">					newTimeOffDay.setTOPoolID(pTOPoolID);</span>
+<span class="fc" id="L137">					newTimeOffDay.setID(null);</span>
+<span class="fc" id="L138">					createList.add(newTimeOffDay);</span>
+				} else {
+					//Item exists in new and old so the that day needs to be updated only
+					//********** Be sure to remove it from the OLD List because we will use the old list that remains
+					// after the newTimeOffDays iteration for deletion purposes.
+<span class="fc" id="L143">					oldTimeOffDaysMap.remove(newTimeOffDay.getTimeOffLocalDate());</span>
+<span class="fc" id="L144">					oldCalendarTimeOffDay.setAllocatedHours(newTimeOffDay.getAllocatedHours());</span>
+<span class="fc" id="L145">					updateList.add(oldCalendarTimeOffDay);</span>
+				}
+			}
+		}
+<span class="fc bfc" id="L149" title="All 2 branches covered.">		if (!updateList.isEmpty()) {</span>
+<span class="fc" id="L150">			updateObjects(updateList);</span>
+		}
+<span class="fc bfc" id="L152" title="All 2 branches covered.">		if (!createList.isEmpty()) {</span>
+<span class="fc" id="L153">			createObjects(createList);</span>
+		}
+<span class="pc bpc" id="L155" title="2 of 4 branches missed.">		if (oldTimeOffDaysMap != null &amp;&amp; !oldTimeOffDaysMap.isEmpty()) {</span>
+<span class="nc" id="L156">			deleteObjects(ValueObjectUtil.getIDObjectMap(oldTimeOffDaysMap.values()).keySet());</span>
+		}
+<span class="fc" id="L158">	}</span>
+
+	public void deleteCalendarTimeOffDays(ID toPoolId, Date startDate, Date endDate)
+			throws JdmoException, BbmFinderException
+	{
+<span class="nc" id="L163">		StringBuffer queryBuffer = new StringBuffer();</span>
+<span class="nc" id="L164">		queryBuffer.append(&quot;delete &quot;);</span>
+<span class="nc" id="L165">		queryBuffer.append(&quot; from &quot;);</span>
+<span class="nc" id="L166">		queryBuffer.append(m_fieldInfo.getTableName());</span>
+<span class="nc" id="L167">		queryBuffer.append(&quot; where &quot;);</span>
+<span class="nc" id="L168">		queryBuffer.append(&quot;TOPOOLID&quot;);</span>
+<span class="nc" id="L169">		queryBuffer.append(&quot; = &quot;);</span>
+<span class="nc" id="L170">		queryBuffer.append(toPoolId);</span>
+<span class="nc" id="L171">		queryBuffer.append(&quot; and &quot;);</span>
+<span class="nc" id="L172">		queryBuffer.append(&quot;DAYDATE&quot;);</span>
+<span class="nc" id="L173">		queryBuffer.append(&quot; &lt; &quot;);</span>
+<span class="nc" id="L174">		JdmoUtil.asSqlLiteral(endDate, queryBuffer);</span>
+<span class="nc" id="L175">		queryBuffer.append(&quot; and not &quot;);</span>
+<span class="nc" id="L176">		queryBuffer.append(&quot;DAYDATE&quot;);</span>
+<span class="nc" id="L177">		queryBuffer.append(&quot; &lt; &quot;);</span>
+<span class="nc" id="L178">		JdmoUtil.asSqlLiteral(startDate, queryBuffer);</span>
+<span class="nc" id="L179">		m_dmo.execute(queryBuffer.toString());</span>
+
+<span class="nc" id="L181">	}</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

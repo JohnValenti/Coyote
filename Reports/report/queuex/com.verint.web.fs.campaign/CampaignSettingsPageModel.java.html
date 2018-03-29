@@ -1,0 +1,809 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CampaignSettingsPageModel.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.campaign</a> &gt; <span class="el_source">CampaignSettingsPageModel.java</span></div><h1>CampaignSettingsPageModel.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.campaign;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.ResourceBundle;
+import java.util.TimeZone;
+
+import javax.servlet.http.HttpServletRequest;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.ScopeID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.keys.DBInfo;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.campaign.ejb.CampaignManager;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.core.CoreManagerFactory;
+import com.bluepumpkin.web.bbm.campaign.selection.CampaignSchedulingPeriodSelectionUtil;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.campaign.sp.SchedulingPeriodUtil;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.witness.ejb.core.licensing.LicenseKeys;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.Scope;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.l10n.CommonWebBundleKey;
+import com.witness.web.uif.pagecomponent.form.FormInputPC;
+import com.witness.web.uif.pagecomponent.form.FormTwoColumnPC;
+import com.witness.web.uif.pagecomponent.picker.time.TimePickerPC;
+import com.witness.web.uif.pagemodel.SettingPM;
+import com.witness.web.uif.pagemodel.WorkpaneFieldNames;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.html.HtmlBooleanCheckbox;
+import com.witness.web.uif.util.html.HtmlChoiceInput;
+import com.witness.web.uif.util.js.JSUtil;
+import com.witness.web.uif.validator.IsEnteredFieldValidator;
+
+@SuppressWarnings(&quot;serial&quot;)
+public class CampaignSettingsPageModel extends SettingPM {
+	public static final String CAMP_DESC_FN = &quot;description&quot;;
+	public static final String CAMP_NAME_FN = &quot;campaignName&quot;;
+	public static final String CAMP_WEEK_START_DAY_FN = &quot;weekStartDay&quot;;
+	public static final String CAMP_TIMEZONE_ID_FN = &quot;timezoneID&quot;;
+	public static final String CAMP_DAY_BOUNDARY_OFFSET_FN = &quot;dayBoundaryOffset&quot;;
+	public static final String CAMP_IS_CREATE = &quot;campaigniscreate&quot;;
+	public static final String CAMP_IS_SUB_CAMPAIGN = &quot;campaignissub&quot;;
+	public static final String CAMP_DISTRIBUTED = &quot;distributed&quot;;
+	private FormTwoColumnPC m_formPC;
+	private FormInputPC m_formInputPC;
+	private String m_selectedCampaignIDs;
+	private String m_selectedSchedulingPeriodIDs;
+	private ResourceBundle m_bundle;
+	private TimePickerPC m_timePickerPC;
+
+	private String m_campaignName;
+	private String m_description;
+<span class="fc" id="L62">	private short m_weekStartDay = -1;</span>
+<span class="fc" id="L63">	private int m_dayBoundaryOffset = -1;</span>
+<span class="fc" id="L64">	private boolean m_distributed = false;</span>
+<span class="fc" id="L65">	private boolean m_fullyEditable = false;</span>
+
+	private Campaign m_campaign;
+<span class="fc" id="L68">	private Campaign m_parentCampaign = null;</span>
+<span class="fc" id="L69">	private boolean m_isSub = false;</span>
+
+	// Monthly Scheduling member variables
+	public static final String PERIODICITY_ID_FN = &quot;periodicityID&quot;;
+<span class="fc" id="L73">	private int m_periodicityID = SchedulingPeriodUtil.getWeeklyPeriodicityValue();</span>
+	private HtmlChoiceInput m_weeklyPeriodicityChoice;
+	private HtmlChoiceInput m_monthlyPeriodicityChoice;
+	public static final String CAMP_MONTH_START_DAY_FN = &quot;monthStartDay&quot;;
+<span class="fc" id="L77">	private short m_monthStartDay = 0;</span>
+
+	public CampaignSettingsPageModel(RequestContext context) {
+<span class="fc" id="L80">		super(context);</span>
+<span class="fc" id="L81">		m_bundle = m_localizer.getBundle(FsWebBundleKey.BUNDLE_NAME);</span>
+
+<span class="fc" id="L83">		m_campaign = new Campaign();</span>
+
+<span class="fc" id="L85">		String selectId = context.getParameter(WorkpaneFieldNames.SELECTED_ID_FN);</span>
+<span class="fc" id="L86">		String strIsSub = context.getParameter(CampaignSettingsPageModel.CAMP_IS_SUB_CAMPAIGN);</span>
+<span class="pc bpc" id="L87" title="1 of 4 branches missed.">		m_isSub = strIsSub != null &amp;&amp; strIsSub.equals(&quot;true&quot;);</span>
+
+<span class="fc" id="L89">		m_campaign.setTimeZone(m_context.getViewingTimeZone());</span>
+
+		// handling create sub campaign
+<span class="fc" id="L92">		ID campaignID = null;</span>
+<span class="pc bpc" id="L93" title="1 of 4 branches missed.">		if (selectId != null &amp;&amp; selectId.startsWith(CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX)) {</span>
+<span class="nc" id="L94">			campaignID =</span>
+					StringUtil
+<span class="nc" id="L96">							.parseIDStringToCollection(</span>
+<span class="nc" id="L97">									CampaignSchedulingPeriodSelectionUtil.extractIDs(selectId,</span>
+<span class="nc" id="L98">											CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX)).iterator().next();</span>
+		}
+
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">		if (campaignID != null) {</span>
+			try {
+<span class="nc" id="L103">				CampaignManager camManager = WfmManagerFactory.getCampaignManager(context.isInWhatIfMode());</span>
+<span class="nc" id="L104">				m_parentCampaign = camManager.getCampaignByID(campaignID);</span>
+<span class="nc bnc" id="L105" title="All 4 branches missed.">				if (m_isSub &amp;&amp; m_parentCampaign.getIsDistributed()) {</span>
+<span class="nc" id="L106">					m_campaign.setParentID(campaignID);</span>
+<span class="nc" id="L107">					m_campaign.setTimeZone(m_parentCampaign.getTimeZone());</span>
+<span class="nc" id="L108">					m_campaign.setTimeZoneID(m_parentCampaign.getTimeZoneID());</span>
+<span class="nc" id="L109">					m_campaign.setDefaultViewTimeZone(m_context.getViewingTimeZone());</span>
+<span class="nc" id="L110">					m_campaign.setWeekStart(m_parentCampaign.getWeekStart());</span>
+<span class="nc" id="L111">					m_campaign.setMonthStartDay(m_parentCampaign.getMonthStartDay());</span>
+<span class="nc" id="L112">					m_campaign.setPeriodicityID(m_parentCampaign.getPeriodicityID());</span>
+
+				}
+<span class="nc" id="L115">			} catch (Exception ex) {</span>
+<span class="nc" id="L116">				addPageMessage(Message.ERROR_TYPE, FsWebBundleKey.UNABLE_TO_LOAD_DATA, FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L117">			}</span>
+
+		}
+
+<span class="fc" id="L121">		m_formPC = new FormTwoColumnPC(context);</span>
+<span class="fc" id="L122">		addChildComponent(m_formPC);</span>
+
+		// Add Date Time Picker for Day Boundary
+<span class="fc" id="L125">		m_timePickerPC = new TimePickerPC(context);</span>
+<span class="fc" id="L126">		m_timePickerPC.setInputFieldName(CAMP_DAY_BOUNDARY_OFFSET_FN);</span>
+<span class="fc" id="L127">		m_timePickerPC.setTimeInterval(15);</span>
+<span class="fc" id="L128">		addChildComponent(m_timePickerPC);</span>
+
+<span class="fc" id="L130">		m_formInputPC = new FormInputPC(context);</span>
+<span class="fc" id="L131">		addChildComponent(m_formInputPC);</span>
+
+		// Initialize Periodicity Radio Buttons
+<span class="fc" id="L134">		initWeeklyPeriodicityChoice();</span>
+<span class="fc" id="L135">		initMonthlyPeriodicityChoice();</span>
+<span class="fc" id="L136">	}</span>
+
+	public static CampaignSettingsPageModel getInstance(RequestContext context) {
+<span class="fc" id="L139">		return (CampaignSettingsPageModel) getInstance(context, CampaignSettingsPageModel.class);</span>
+	}
+
+	@Override
+	public boolean extractParameters(HttpServletRequest request) {
+<span class="fc" id="L144">		boolean success = super.extractParameters(request);</span>
+<span class="pc bpc" id="L145" title="1 of 2 branches missed.">		if (m_timePickerPC.hasValueToExtract(request)) {</span>
+<span class="fc" id="L146">			int min = m_timePickerPC.getTimeInMinutes();</span>
+<span class="fc" id="L147">			m_dayBoundaryOffset = min;</span>
+		}
+
+		// extract the Periodicity radio button value
+<span class="fc" id="L151">		String periodicityParameter = request.getParameter(PERIODICITY_ID_FN);</span>
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">		if (periodicityParameter != null) {</span>
+<span class="pc bpc" id="L153" title="1 of 2 branches missed.">			if (periodicityParameter.equals(new Integer(SchedulingPeriodUtil.getWeeklyPeriodicityValue()).toString())) {</span>
+<span class="fc" id="L154">				m_weeklyPeriodicityChoice.setIsChecked(true);</span>
+<span class="fc" id="L155">				m_monthlyPeriodicityChoice.setIsChecked(false);</span>
+<span class="fc" id="L156">				m_periodicityID = SchedulingPeriodUtil.getWeeklyPeriodicityValue();</span>
+			} else {
+<span class="nc" id="L158">				m_weeklyPeriodicityChoice.setIsChecked(false);</span>
+<span class="nc" id="L159">				m_monthlyPeriodicityChoice.setIsChecked(true);</span>
+<span class="nc" id="L160">				m_periodicityID = SchedulingPeriodUtil.getMonthlyPeriodicityValue();</span>
+			}
+		}
+
+<span class="fc" id="L164">		m_campaign.setPeriodicityID(m_periodicityID);</span>
+<span class="fc" id="L165">		m_campaign.setMonthStartDay(m_monthStartDay);</span>
+
+<span class="fc" id="L167">		return success;</span>
+	}
+
+	@Override
+	protected void initToolbar() {
+<span class="fc" id="L172">		boolean createEnabled = m_context.getUser().isAuthorized(PrivilegeKeys.FS_CREATECAMPAIGN);</span>
+<span class="fc" id="L173">		boolean deleteEnabled = m_context.getUser().isAuthorized(PrivilegeKeys.FS_DELETECAMPAIGN);</span>
+<span class="fc" id="L174">		boolean configEnabled = m_context.getUser().isAuthorized(PrivilegeKeys.FS_CONFIGURECAMPAIGN);</span>
+<span class="pc bpc" id="L175" title="3 of 4 branches missed.">		boolean editEnabled = createEnabled || configEnabled;</span>
+<span class="fc bfc" id="L176" title="All 2 branches covered.">		if (!m_isAddMode) {</span>
+<span class="fc" id="L177">			String strCreate = i18n(m_bundle, FsWebBundleKey.CAMPAIGN_SP_CREATE_CAMPAIGN);</span>
+<span class="fc" id="L178">			m_toolbar.addSubmitTextButton(PageAction.NEW, strCreate, createEnabled);</span>
+<span class="pc bpc" id="L179" title="3 of 6 branches missed.">			if (isCampaignSelected() &amp;&amp; m_campaign != null &amp;&amp; m_campaign.getIsDistributed()) {</span>
+<span class="nc" id="L180">				strCreate = i18n(m_bundle, FsWebBundleKey.CAMPAIGN_SP_CREATE_SUB_CAMPAIGN);</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">				m_toolbar.addSubmitTextButton(PageAction.SP_CREATE_SUB_CAMPAIGN, strCreate,</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">						createEnabled &amp;&amp; m_campaign.getParentID() == null);</span>
+			}
+
+			// get into this situation with empty db, then user create campaign
+			// but cancel.
+<span class="pc bpc" id="L187" title="1 of 2 branches missed.">			if (!isCampaignSelected()) {</span>
+<span class="nc" id="L188">				return;</span>
+			}
+
+<span class="fc" id="L191">			String addDisplay = i18n(m_bundle, FsWebBundleKey.CAMPAIGN_SP_CREATE_SP);</span>
+
+			try {
+<span class="pc bpc" id="L194" title="1 of 2 branches missed.">				if (m_campaign.getIsDistributed()) {</span>
+<span class="nc" id="L195">					CampaignManager camManager = WfmManagerFactory.getCampaignManager(m_context.isInWhatIfMode());</span>
+<span class="nc" id="L196">					Collection&lt;ID&gt; subIDs = camManager.getSubCampaignIDs(m_campaign.getID());</span>
+<span class="nc bnc" id="L197" title="All 4 branches missed.">					createEnabled = createEnabled &amp;&amp; subIDs.size() &gt;= 2;</span>
+				}
+<span class="nc" id="L199">			} catch (Exception ex) {</span>
+<span class="nc" id="L200">				addPageMessage(Message.ERROR_TYPE, FsWebBundleKey.UNABLE_TO_LOAD_DATA, FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="fc" id="L201">			}</span>
+
+<span class="pc bpc" id="L203" title="2 of 4 branches missed.">			m_toolbar.addSubmitTextButton(PageAction.ADD, addDisplay, createEnabled &amp;&amp; m_campaign.getParentID() == null);</span>
+		}
+
+<span class="fc" id="L206">		m_toolbar.addValidateSubmitTextButton(PageAction.CAMPAIGN_SAVE,</span>
+<span class="fc" id="L207">				i18n(m_common_bundle, CommonWebBundleKey.TOOLBAR_SAVE), editEnabled);</span>
+<span class="fc bfc" id="L208" title="All 2 branches covered.">		if (!m_isAddMode) {</span>
+<span class="fc" id="L209">			m_toolbar.addDeleteTextButton(PageAction.DELETE, i18n(m_common_bundle, CommonWebBundleKey.TOOLBAR_DELETE),</span>
+					deleteEnabled);
+		}
+
+<span class="fc bfc" id="L213" title="All 2 branches covered.">		if (!m_isAddMode) {</span>
+<span class="fc" id="L214">			toolbarAddResetButton(i18n(m_common_bundle, CommonWebBundleKey.TOOLBAR_RESET), editEnabled);</span>
+		} else {
+<span class="fc" id="L216">			m_toolbar.addConfirmSubmitTextButton(PageAction.CANCEL,</span>
+<span class="fc" id="L217">					i18n(m_common_bundle, CommonWebBundleKey.TOOLBAR_CANCEL), true);</span>
+		}
+
+<span class="fc" id="L220">	}</span>
+
+	@Override
+	protected void initContentTitle() {
+<span class="fc" id="L224">		super.initContentTitle();</span>
+<span class="fc bfc" id="L225" title="All 2 branches covered.">		if (m_isAddMode) {</span>
+<span class="fc" id="L226">			m_contentTitlePC.setPageTitle(m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.CAMPAIGN_CREATE));</span>
+		} else {
+<span class="fc" id="L228">			m_contentTitlePC.setPageTitle(m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+					FsWebBundleKey.CAMPAIGNS_SETTINGS_TITLE));
+<span class="pc bpc" id="L230" title="1 of 2 branches missed.">			if (m_campaign != null) {</span>
+<span class="fc" id="L231">				m_contentTitlePC.setItemName(m_campaign.getName());</span>
+			}
+		}
+<span class="fc" id="L234">	}</span>
+
+	@Override
+	protected boolean isDeleteActionEnabled() {
+		// TODO Auto-generated method stub
+<span class="nc" id="L239">		return true;</span>
+	}
+
+	@Override
+	protected void initForm() {
+<span class="fc" id="L244">		setForm(m_formPC);</span>
+<span class="fc" id="L245">		m_formPC.setTitle(getFormTitle());</span>
+
+		// Only display form field when there is a selected campaignID or it is
+		// in add mode
+<span class="pc bpc" id="L249" title="1 of 4 branches missed.">		if (isCampaignSelected() || m_isAddMode) {</span>
+<span class="fc bfc" id="L250" title="All 2 branches covered.">			if (!m_isAddMode) {</span>
+<span class="pc bpc" id="L251" title="1 of 2 branches missed.">				if (!m_context.getUser().isAuthorized(PrivilegeKeys.FS_VIEWCAMPAIGN_ID,</span>
+<span class="fc" id="L252">						new ScopeID(m_campaign.getID(), Scope.CAMPAIGN_SCOPE))) {</span>
+<span class="nc" id="L253">					addPageMessage(Message.INFO_TYPE, FsWebBundleKey.FS_NOT_AUTHORIZED_TO_VIEW_CAMPAIGN_SCOPE,</span>
+							FsWebBundleKey.BUNDLE_NAME);
+<span class="nc" id="L255">					return;</span>
+				}
+			}
+
+<span class="fc" id="L259">			boolean isEditable = isAuthorizedToConfigure();</span>
+
+<span class="fc bfc" id="L261" title="All 2 branches covered.">			String orgName = m_isAddMode ? &quot;&quot; : m_campaign.getName();</span>
+<span class="fc" id="L262">			String orgNameUI =</span>
+<span class="fc" id="L263">					getInput(CAMP_NAME_FN, orgName, FormInputPC.TYPE_STRING, FsWebBundleKey.CAMPAIGN_NAME, isEditable, true,</span>
+							DBInfo.CAMPAIGN_NAME_MAXLENGTH);
+<span class="fc" id="L265">			m_formPC.addRow(getCampaignNameLabel(), orgNameUI);</span>
+
+<span class="fc bfc" id="L267" title="All 2 branches covered.">			String description = m_isAddMode ? &quot;&quot; : m_campaign.getDescription();</span>
+<span class="fc" id="L268">			String descUI =</span>
+<span class="fc" id="L269">					getInput(CAMP_DESC_FN, description, FormInputPC.TYPE_STRING, FsWebBundleKey.SCHEDULINGPERIOD_DESC,</span>
+							isEditable, false, -1);
+<span class="fc" id="L271">			m_formPC.addRow(getDescriptionLabel(), descUI);</span>
+
+<span class="fc" id="L273">			m_formPC.addRow(getTimezoneLabel(), getTimezoneDropDown(JSUtil.ON_CHANGE));</span>
+<span class="fc" id="L274">			m_formPC.addRow(getWeekStartDayLabel(), getDaysOfWeekDropDown(JSUtil.ON_CHANGE));</span>
+
+			try {
+<span class="pc bpc" id="L277" title="1 of 2 branches missed.">				if (CoreManagerFactory.getLicenseManager().isLicensed(LicenseKeys.APP_MONTHLY_FORECAST_AND_RULES)) {</span>
+<span class="nc" id="L278">					m_formPC.addRow(getPeriodicityLabel(), getPeriodicityChoiceHTML());</span>
+<span class="nc" id="L279">					m_formPC.addRow(getMonthStartDayLabel(), getDaysOfMonthDropDown(JSUtil.ON_CHANGE));</span>
+				}
+
+<span class="fc" id="L282">				m_formPC.addRow(getDayBoundaryOffsetLabel(), getDayBoundaryOffsetTimeUI(JSUtil.ON_CHANGE));</span>
+
+<span class="pc bpc" id="L284" title="2 of 4 branches missed.">				if (m_campaign.getParentID() == null &amp;&amp; !m_isSub) {</span>
+<span class="fc" id="L285">					String licenseKey = LicenseKeys.APP_MULTISIDE;</span>
+<span class="fc" id="L286">					boolean hasLicense = CoreManagerFactory.getLicenseManager().isLicensed(licenseKey);</span>
+<span class="pc bpc" id="L287" title="1 of 2 branches missed.">					if (hasLicense) {</span>
+<span class="fc" id="L288">						HtmlBooleanCheckbox cbDist = new HtmlBooleanCheckbox();</span>
+<span class="fc" id="L289">						cbDist.setInputName(CAMP_DISTRIBUTED);</span>
+<span class="fc" id="L290">						cbDist.setIsChecked(m_campaign.getIsDistributed());</span>
+
+<span class="pc bpc" id="L292" title="2 of 6 branches missed.">						cbDist.setIsDisabled(!isEditable || !m_isAddMode || isMonthlyCampaign());</span>
+<span class="fc" id="L293">						m_formPC.addRow(i18n(m_bundle, FsWebBundleKey.CAMPAIGN_IS_DISTRIBUTED), cbDist);</span>
+					}
+				}
+<span class="nc" id="L296">			} catch (Exception ex) {</span>
+<span class="nc" id="L297">				addPageMessage(Message.ERROR_TYPE, FsWebBundleKey.UNABLE_TO_LOAD_DATA, FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="fc" id="L298">			}</span>
+
+<span class="fc" id="L300">			addValidator(new IsEnteredFieldValidator(this, CAMP_NAME_FN, FsWebBundleKey.CAMPAIGN_NAME,</span>
+					FsWebBundleKey.BUNDLE_NAME));
+		}
+<span class="fc" id="L303">	}</span>
+
+	/**
+	 * Return true if Periodicity radio button is set Weekly
+	 */
+	public boolean isWeeklyPeriodicity() {
+<span class="pc bpc" id="L309" title="1 of 2 branches missed.">		return m_periodicityID == SchedulingPeriodUtil.getWeeklyPeriodicityValue();</span>
+	}
+
+	/**
+	 * Return true if Periodicity radio button is set to Monthly
+	 */
+	public boolean isMonthlyPeriodicity() {
+<span class="pc bpc" id="L316" title="1 of 2 branches missed.">		return m_periodicityID == SchedulingPeriodUtil.getMonthlyPeriodicityValue();</span>
+	}
+
+	private boolean isMonthlyCampaign() {
+<span class="fc" id="L320">		return SchedulingPeriodUtil.isMonthlyCampaign(m_campaign);</span>
+	}
+
+	@Override
+	protected boolean isAuthorizedToConfigure() {
+<span class="fc" id="L325">		boolean createEnabled = m_context.getUser().isAuthorized(PrivilegeKeys.FS_CREATECAMPAIGN);</span>
+<span class="fc" id="L326">		boolean configEnabled = m_context.getUser().isAuthorized(PrivilegeKeys.FS_CONFIGURECAMPAIGN);</span>
+<span class="pc bpc" id="L327" title="3 of 4 branches missed.">		boolean editEnabled = createEnabled || configEnabled;</span>
+<span class="fc" id="L328">		return editEnabled;</span>
+	}
+
+	private String getInput(String fn, String value, int type, String rbKey, boolean isEditable, boolean isRequired,
+			int maxLength) {
+<span class="fc" id="L333">		m_formInputPC.reset();</span>
+<span class="fc" id="L334">		m_formInputPC.setInputFN(fn);</span>
+<span class="fc" id="L335">		m_formInputPC.setInputValue(value);</span>
+<span class="fc" id="L336">		m_formInputPC.setInputType(type);</span>
+<span class="pc bpc" id="L337" title="1 of 2 branches missed.">		m_formInputPC.setIsReadOnly(!isEditable);</span>
+<span class="fc" id="L338">		m_formInputPC.setInputFieldDesc(rbKey, BbmWebBundleKey.BUNDLE_NAME);</span>
+<span class="fc" id="L339">		m_formInputPC.initForDisplay();</span>
+<span class="fc bfc" id="L340" title="All 2 branches covered.">		m_formInputPC.setMaxLength(maxLength &lt; 0 ? 100 : maxLength);</span>
+<span class="fc" id="L341">		return m_formInputPC.getHtmlDisplay();</span>
+	}
+
+	@Override
+	protected void loadData() throws Exception {
+<span class="fc bfc" id="L346" title="All 4 branches covered.">		if (isCampaignSelected() &amp;&amp; !m_isAddMode) {</span>
+<span class="fc" id="L347">			Collection&lt;ID&gt; campIDs = getSelectedCampaignIDs();</span>
+<span class="fc" id="L348">			CampaignManager camManager = WfmManagerFactory.getCampaignManager(m_context.isInWhatIfMode());</span>
+<span class="fc" id="L349">			m_campaign = camManager.getCampaignByID(campIDs.iterator().next());</span>
+
+<span class="fc" id="L351">			m_periodicityID = m_campaign.getPeriodicityID();</span>
+<span class="fc" id="L352">			m_monthStartDay = m_campaign.getMonthStartDay();</span>
+
+<span class="fc" id="L354">			Collection&lt;SchedulingPeriod&gt; sps = camManager.getSchedulingPeriods(m_campaign);</span>
+<span class="pc bpc" id="L355" title="3 of 6 branches missed.">			if (sps.size() &gt; 0 || m_campaign.getParentID() != null || m_campaign.getIsDistributed() == true) {</span>
+<span class="nc" id="L356">				m_fullyEditable = false;</span>
+			} else {
+<span class="fc" id="L358">				m_fullyEditable = true;</span>
+			}
+		}
+<span class="fc" id="L361">	}</span>
+
+	public String getFormTitle() {
+<span class="pc bpc" id="L364" title="1 of 4 branches missed.">		if (!hasSelectedID() &amp;&amp; !m_isAddMode) {</span>
+<span class="nc" id="L365">			return &quot;&quot;;</span>
+<span class="fc bfc" id="L366" title="All 2 branches covered.">		} else if (m_isAddMode) {</span>
+<span class="fc" id="L367">			return i18n(m_bundle, FsWebBundleKey.CAMPAIGN_CREATE);</span>
+<span class="pc bpc" id="L368" title="1 of 2 branches missed.">		} else if (m_campaign != null) {</span>
+<span class="fc" id="L369">			return m_campaign.getName();</span>
+		}
+
+<span class="nc" id="L372">		return &quot;&quot;;</span>
+	}
+
+	public boolean isCampaignSelected() {
+<span class="fc bfc" id="L376" title="All 2 branches covered.">		return getSelectedCampaignIDs().size() &gt; 0;</span>
+	}
+
+	public Campaign getCampaign() {
+<span class="fc" id="L380">		return m_campaign;</span>
+	}
+
+	/**
+	 * Return the DropDown display of supported Time Zones with the current selected Time Zone choosen
+	 */
+	public String getTimezoneDropDown(String onChangeJS) {
+<span class="fc" id="L387">		String timezoneID = getTimezoneID();</span>
+<span class="pc bpc" id="L388" title="1 of 2 branches missed.">		String selectedTimezoneID = (timezoneID != null) ? timezoneID : &quot;&quot;;</span>
+
+<span class="pc bpc" id="L390" title="1 of 4 branches missed.">		if (m_isAddMode || m_fullyEditable) {</span>
+<span class="fc" id="L391">			return HtmlUtil.getTimeZoneDropDown(CAMP_TIMEZONE_ID_FN, selectedTimezoneID, onChangeJS, m_localizer);</span>
+		} else {
+<span class="nc" id="L393">			return m_localizer.formatTimeZone(selectedTimezoneID)</span>
+<span class="nc" id="L394">					+ HtmlUtil.makeHiddenInput(CAMP_TIMEZONE_ID_FN, selectedTimezoneID);</span>
+		}
+	}
+
+	public String getDaysOfWeekDropDown(String onChangeJS) {
+<span class="fc" id="L399">		int weekStart = 0;</span>
+<span class="pc bpc" id="L400" title="3 of 6 branches missed.">		if (m_isAddMode &amp;&amp; m_isSub &amp;&amp; m_parentCampaign != null) {</span>
+<span class="nc" id="L401">			weekStart = m_parentCampaign.getWeekStart();</span>
+		} else {
+<span class="fc" id="L403">			weekStart = m_campaign.getWeekStart();</span>
+		}
+
+<span class="fc" id="L406">		int timezoneOffSetForStart = 0;</span>
+<span class="fc bfc" id="L407" title="All 2 branches covered.">		if (m_campaign.getDefaultViewTimeZone() != null) {</span>
+<span class="fc" id="L408">			Date date = new Date(1980, 1, 1);</span>
+<span class="fc" id="L409">			long dateLong = date.getTime();</span>
+<span class="fc" id="L410">			timezoneOffSetForStart =</span>
+<span class="fc" id="L411">					(m_campaign.getDefaultViewTimeZone().getOffset(dateLong) - m_campaign.getTimeZone().getOffset(dateLong))</span>
+							/ (60 * 1000);
+		}
+<span class="fc" id="L414">		weekStart = weekStart + timezoneOffSetForStart;</span>
+
+<span class="fc" id="L416">		int selectedDay = weekStart / 1440 + 1;</span>
+<span class="pc bpc" id="L417" title="1 of 2 branches missed.">		if (weekStart &lt; 0) {</span>
+<span class="nc" id="L418">			selectedDay = 7;</span>
+		}
+
+<span class="pc bpc" id="L421" title="1 of 2 branches missed.">		if (isEnableElements()) {</span>
+<span class="fc" id="L422">			return HtmlUtil.getDayOfWeekDropDown(CAMP_WEEK_START_DAY_FN, selectedDay, onChangeJS, false, m_localizer);</span>
+		} else {
+<span class="nc" id="L424">			return m_localizer.getWeekdayNames(true)[selectedDay]</span>
+<span class="nc" id="L425">					+ HtmlUtil.makeHiddenInput(CAMP_WEEK_START_DAY_FN, Integer.toString(selectedDay));</span>
+		}
+	}
+
+	/**
+	 * Get the HTML for the Day of Month row. It will be a dropdown containing the values 1..28. In read-only mode, or when
+	 * periodicity is Weekly, it will be disabled.
+	 */
+	public String getDaysOfMonthDropDown(String onChangeJS) {
+		int monthStartDay;
+<span class="nc bnc" id="L435" title="All 6 branches missed.">		if (m_isAddMode &amp;&amp; m_isSub &amp;&amp; m_parentCampaign != null) {</span>
+			// inherit the month start day from the parent campaign
+<span class="nc" id="L437">			monthStartDay = m_parentCampaign.getMonthStartDay();</span>
+		} else {
+<span class="nc" id="L439">			monthStartDay = m_campaign.getMonthStartDay();</span>
+		}
+<span class="nc bnc" id="L441" title="All 2 branches missed.">		if (monthStartDay &lt;= 0) {</span>
+<span class="nc" id="L442">			monthStartDay = 1;</span>
+		}
+
+<span class="nc" id="L445">		boolean isEnabled = false;</span>
+<span class="nc bnc" id="L446" title="All 4 branches missed.">		if (isEnableElements() &amp;&amp; isMonthlyPeriodicity()) {</span>
+<span class="nc" id="L447">			isEnabled = true;</span>
+		}
+
+<span class="nc" id="L450">		ArrayList&lt;StringsPair&gt; options = new ArrayList&lt;StringsPair&gt;(28);</span>
+<span class="nc bnc" id="L451" title="All 2 branches missed.">		for (int i = 1; i &lt;= 28; i++) {</span>
+<span class="nc" id="L452">			StringsPair option = new StringsPair(Integer.toString(i), Integer.toString(i));</span>
+<span class="nc" id="L453">			options.add(option);</span>
+		}
+<span class="nc" id="L455">		String selectedDayStr = Integer.toString(monthStartDay);</span>
+<span class="nc" id="L456">		return HtmlUtil.makeSelectInput(CAMP_MONTH_START_DAY_FN, &quot;&quot;, new String[] { selectedDayStr }, onChangeJS, options,</span>
+				null, false, false, isEnabled);
+	}
+
+	/**
+	 * Set the Organization Time Zone ID
+	 */
+	public void setTimezoneID(String timezoneID) {
+<span class="fc" id="L464">		TimeZone timezone = TimeZone.getTimeZone(timezoneID);</span>
+<span class="pc bpc" id="L465" title="1 of 2 branches missed.">		if (m_campaign.getParentID() != null) {</span>
+<span class="nc" id="L466">			m_campaign.setDefaultViewTimeZone(timezone);</span>
+<span class="nc" id="L467">			m_campaign.setDefaultViewTimeZoneID(new ID(timezone.getID()));</span>
+		} else {
+<span class="fc" id="L469">			m_campaign.setTimeZone(timezone);</span>
+<span class="fc" id="L470">			m_campaign.setTimeZoneID(new ID(timezone.getID()));</span>
+		}
+<span class="fc" id="L472">	}</span>
+
+	/**
+	 * Return the Organization Time Zone ID
+	 */
+	public String getTimezoneID() {
+<span class="fc" id="L478">		TimeZone timezone = null;</span>
+<span class="pc bpc" id="L479" title="1 of 2 branches missed.">		if (m_campaign.getParentID() != null) {</span>
+<span class="nc" id="L480">			timezone = m_campaign.getDefaultViewTimeZone();</span>
+		} else {
+<span class="fc" id="L482">			timezone = m_campaign.getTimeZone();</span>
+		}
+<span class="pc bpc" id="L484" title="1 of 2 branches missed.">		return (timezone != null) ? timezone.getID() : &quot;&quot;;</span>
+	}
+
+	/**
+	 * Return the TimeZone from the timezoneId
+	 */
+	public TimeZone getTimeZone() {
+<span class="nc" id="L491">		return TimeZone.getTimeZone(getTimezoneID());</span>
+	}
+
+	/**
+	 * Set the Organization Description
+	 */
+	public void setDescription(String desc) {
+<span class="fc" id="L498">		m_description = desc;</span>
+<span class="fc" id="L499">		m_campaign.setDescription(desc);</span>
+<span class="fc" id="L500">	}</span>
+
+	public String getDescription() {
+<span class="nc bnc" id="L503" title="All 2 branches missed.">		if (m_description == null) {</span>
+<span class="nc" id="L504">			return m_campaign.getDescription();</span>
+		} else {
+<span class="nc" id="L506">			return m_description;</span>
+		}
+	}
+
+	/**
+	 * Set Organization Name
+	 */
+	public void setCampaignName(String name) {
+<span class="fc" id="L514">		m_campaignName = name.trim();</span>
+<span class="fc" id="L515">		m_campaign.setName(m_campaignName);</span>
+<span class="fc" id="L516">	}</span>
+
+	public void setDistributed(boolean distributed) {
+<span class="pc bpc" id="L519" title="3 of 4 branches missed.">		m_distributed = distributed &amp;&amp; !isMonthlyCampaign();</span>
+<span class="fc" id="L520">		m_campaign.setIsDistributed(m_distributed);</span>
+<span class="fc" id="L521">	}</span>
+
+	public boolean getDistributed() {
+<span class="nc bnc" id="L524" title="All 4 branches missed.">		return m_campaign.getIsDistributed() &amp;&amp; !isMonthlyCampaign();</span>
+	}
+
+	/**
+	 * Set the Week Start Day
+	 */
+	public void setWeekStartDay(short day) {
+<span class="fc" id="L531">		m_weekStartDay = day;</span>
+<span class="fc" id="L532">	}</span>
+
+	/**
+	 * Return the Week Start day
+	 */
+	public short getWeekStartDay() {
+<span class="pc bpc" id="L538" title="1 of 2 branches missed.">		if (m_weekStartDay == -1) {</span>
+<span class="nc" id="L539">			return (short) m_campaign.getWeekStart();</span>
+		} else {
+<span class="fc" id="L541">			return m_weekStartDay;</span>
+		}
+	}
+
+	/**
+	 * Set the Month Start Day
+	 */
+	public void setMonthStartDay(short day) {
+<span class="fc" id="L549">		m_monthStartDay = day;</span>
+<span class="fc" id="L550">	}</span>
+
+	/**
+	 * Return the Month Start day
+	 */
+	public short getMonthStartDay() {
+		try {
+<span class="nc bnc" id="L557" title="All 2 branches missed.">			if (!CoreManagerFactory.getLicenseManager().isLicensed(LicenseKeys.APP_MONTHLY_FORECAST_AND_RULES)) {</span>
+<span class="nc" id="L558">				return 1;</span>
+			}
+<span class="nc" id="L560">		} catch (Exception ex) {</span>
+<span class="nc" id="L561">			addPageMessage(Message.ERROR_TYPE, FsWebBundleKey.UNABLE_TO_LOAD_DATA, FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L562">		}</span>
+
+<span class="nc bnc" id="L564" title="All 2 branches missed.">		if (m_monthStartDay &lt;= 0) {</span>
+<span class="nc" id="L565">			short monthStartDay = m_campaign.getMonthStartDay();</span>
+<span class="nc bnc" id="L566" title="All 2 branches missed.">			return monthStartDay &lt;= 0 ? 1 : monthStartDay;</span>
+		} else {
+<span class="nc" id="L568">			return m_monthStartDay;</span>
+		}
+	}
+
+	/**
+	 * Return the periodicityID
+	 * @return one of Campaign.Periodicity.PERIODICITY_WEEKLY_ID.value(), Campaign.Periodicity.PERIODICITY_MONTHLY_ID.value()
+	 */
+	public int getPeriodicityID() {
+		try {
+<span class="nc bnc" id="L578" title="All 2 branches missed.">			if (CoreManagerFactory.getLicenseManager().isLicensed(LicenseKeys.APP_MONTHLY_FORECAST_AND_RULES)) {</span>
+<span class="nc" id="L579">				return m_periodicityID;</span>
+			}
+<span class="nc" id="L581">		} catch (Exception ex) {</span>
+<span class="nc" id="L582">			addPageMessage(Message.ERROR_TYPE, FsWebBundleKey.UNABLE_TO_LOAD_DATA, FsWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L583">		}</span>
+<span class="nc" id="L584">		return SchedulingPeriodUtil.getWeeklyPeriodicityValue();</span>
+	}
+
+	/**
+	 * Set the periodicityID param periodicityID, one of:
+	 * Campaign.Periodicity.PERIODICITY_WEEKLY_ID.value(), Campaign.Periodicity.PERIODICITY_MONTHLY_ID.value()
+	 */
+	public void setPeriodicityID(int periodicityID) {
+<span class="fc" id="L592">		m_periodicityID = periodicityID;</span>
+<span class="fc" id="L593">	}</span>
+
+	/**
+	 * Return the localized Timezone label
+	 */
+	public String getTimezoneLabel() {
+<span class="fc" id="L599">		return i18n(m_bundle, FsWebBundleKey.CAMPAIGN_TIMEZONE);</span>
+	}
+
+	/**
+	 * Return the localized Week Start Day label
+	 */
+	public String getWeekStartDayLabel() {
+<span class="fc" id="L606">		return i18n(m_bundle, FsWebBundleKey.CAMPAIGN_WEEK_START_DAY);</span>
+	}
+
+	/**
+	 * Return the localized Month Start Day label
+	 */
+	public String getMonthStartDayLabel() {
+<span class="nc" id="L613">		return i18n(m_bundle, FsWebBundleKey.CAMPAIGN_MONTH_START_DAY);</span>
+	}
+
+	public String getCampaignNameLabel() {
+<span class="fc" id="L617">		return i18n(m_bundle, FsWebBundleKey.SCHEDULINGPERIOD_NAME);</span>
+	}
+
+	/**
+	 * Return the localized Day Boundary Offset label
+	 */
+	public String getDayBoundaryOffsetLabel() {
+<span class="fc" id="L624">		return i18n(m_bundle, FsWebBundleKey.CAMPAIGN_DAY_BOUNDARY_OFFSET);</span>
+	}
+
+	public String getDescriptionLabel() {
+<span class="fc" id="L628">		return i18n(m_bundle, FsWebBundleKey.SCHEDULINGPERIOD_DESC);</span>
+	}
+
+	/**
+	 * Return the Periodicity label
+	 */
+	public String getPeriodicityLabel() {
+<span class="nc" id="L635">		return i18n(m_bundle, FsWebBundleKey.CAMPAIGN_PERIODICITY);</span>
+	}
+
+	// Getters and Setters
+
+	// Overriding this so that cached IDs are set properly
+	@Override
+	public void setSelectedID(String ids) {
+<span class="fc" id="L643">		super.setSelectedID(ids);</span>
+<span class="fc" id="L644">		setSelectedCampaignIDs(CampaignSchedulingPeriodSelectionUtil.extractIDs(getSelectedID(),</span>
+				CampaignSchedulingPeriodSelectionUtil.CAMPAIGN_ID_PREFIX));
+<span class="fc" id="L646">		setSelectedSchedulingPeriodIDs(CampaignSchedulingPeriodSelectionUtil.extractIDs(getSelectedID(),</span>
+				CampaignSchedulingPeriodSelectionUtil.SP_ID_PREFIX));
+<span class="fc" id="L648">	}</span>
+
+	public Collection&lt;ID&gt; getSelectedCampaignIDs() {
+<span class="fc" id="L651">		return StringUtil.parseIDStringToCollection(m_selectedCampaignIDs);</span>
+	}
+
+	public void setSelectedCampaignIDs(String selectedCampaignIDs) {
+<span class="fc" id="L655">		m_selectedCampaignIDs = selectedCampaignIDs;</span>
+<span class="fc" id="L656">	}</span>
+
+	public Collection&lt;ID&gt; getSelectedSchedulingPeriodIDs() {
+<span class="nc" id="L659">		return StringUtil.parseIDStringToCollection(m_selectedSchedulingPeriodIDs);</span>
+	}
+
+	public void setSelectedSchedulingPeriodIDs(String selectedSchedulingPeriodIDs) {
+<span class="fc" id="L663">		m_selectedSchedulingPeriodIDs = selectedSchedulingPeriodIDs;</span>
+<span class="fc" id="L664">	}</span>
+
+	/**
+	 * Return Day Boundary Offset Time UI
+	 */
+	public String getDayBoundaryOffsetTimeUI(String onChange) {
+<span class="fc" id="L670">		int offset = 0;</span>
+<span class="fc" id="L671">		int weekStart = 0;</span>
+<span class="fc bfc" id="L672" title="All 2 branches covered.">		if (!m_isAddMode) {</span>
+<span class="fc" id="L673">			weekStart = m_campaign.getWeekStart();</span>
+<span class="pc bpc" id="L674" title="4 of 6 branches missed.">		} else if (m_isAddMode &amp;&amp; m_isSub &amp;&amp; m_parentCampaign != null) {</span>
+<span class="nc" id="L675">			weekStart = m_parentCampaign.getWeekStart();</span>
+		}
+
+<span class="fc" id="L678">		int timezoneOffSetForStart = 0;</span>
+<span class="fc bfc" id="L679" title="All 2 branches covered.">		if (m_campaign.getDefaultViewTimeZone() != null) {</span>
+<span class="fc" id="L680">			Date date = new Date(1980, 1, 1);</span>
+<span class="fc" id="L681">			long dateLong = date.getTime();</span>
+<span class="fc" id="L682">			timezoneOffSetForStart =</span>
+<span class="fc" id="L683">					(m_campaign.getDefaultViewTimeZone().getOffset(dateLong) - m_campaign.getTimeZone().getOffset(dateLong))</span>
+							/ (60 * 1000);
+		}
+<span class="fc" id="L686">		weekStart = weekStart + timezoneOffSetForStart;</span>
+
+<span class="fc" id="L688">		offset = weekStart % 1440;</span>
+
+<span class="fc" id="L690">		m_timePickerPC.setTime(offset * 60); // seconds</span>
+<span class="fc" id="L691">		m_timePickerPC.setOnChangeJS(onChange);</span>
+<span class="fc" id="L692">		m_timePickerPC.setIsControlEnabled(isEnableElements());</span>
+<span class="fc" id="L693">		return m_timePickerPC.getHtmlDisplay();</span>
+	}
+
+	@Override
+	public String getRequiredHTML() {
+<span class="pc bpc" id="L698" title="1 of 4 branches missed.">		return super.getRequiredHTML() + HtmlUtil.makeHiddenInput(CAMP_IS_CREATE, m_isAddMode ? &quot;true&quot; : &quot;false&quot;)</span>
+<span class="fc" id="L699">				+ HtmlUtil.makeHiddenInput(CAMP_IS_SUB_CAMPAIGN, m_isSub ? &quot;true&quot; : &quot;false&quot;);</span>
+	}
+
+	public int getDayBoundaryOffSet() {
+<span class="fc" id="L703">		return m_dayBoundaryOffset;</span>
+	}
+
+	public void resetSelectedID() {
+<span class="nc" id="L707">		clearCachedSelectedID();</span>
+<span class="nc" id="L708">		setSelectedCampaignIDs(&quot;&quot;);</span>
+<span class="nc" id="L709">	}</span>
+
+	@Override
+	public void initForDisplay() {
+<span class="pc bpc" id="L713" title="1 of 2 branches missed.">		if (m_isInitializedForDisplay) {</span>
+<span class="nc" id="L714">			return;</span>
+		} else {
+<span class="pc bpc" id="L716" title="1 of 4 branches missed.">			if (!isCampaignSelected() &amp;&amp; !m_isAddMode) {</span>
+<span class="nc" id="L717">				addPageMessage(Message.INSTRUCTION_TYPE,</span>
+<span class="nc" id="L718">						m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.PLEASE_SELECT_A_CAMPAIGN));</span>
+			}
+<span class="fc" id="L720">			super.initForDisplay();</span>
+		}
+<span class="fc" id="L722">	}</span>
+
+	public void setIsSub(boolean bValue) {
+<span class="fc" id="L725">		m_isSub = bValue;</span>
+<span class="fc" id="L726">	}</span>
+
+	/**
+	 * Return true if Page Model is in add mode
+	 */
+	public boolean getIsSub() {
+<span class="nc" id="L732">		return m_isSub;</span>
+	}
+
+	boolean isEnableElements() {
+<span class="pc bpc" id="L736" title="2 of 6 branches missed.">		return (m_isAddMode || m_fullyEditable) &amp;&amp; !m_isSub;</span>
+	}
+
+	/**
+	 * Initialize the Weekly Periodicity Radio Button
+	 */
+	private void initWeeklyPeriodicityChoice() {
+<span class="fc" id="L743">		String label = i18n(m_bundle, FsWebBundleKey.WEEKLY_CAMPAIGN);</span>
+<span class="fc" id="L744">		boolean isChecked = isWeeklyPeriodicity();</span>
+<span class="fc" id="L745">		boolean isCheckBox = false;</span>
+
+<span class="fc" id="L747">		m_weeklyPeriodicityChoice =</span>
+<span class="fc" id="L748">				HtmlChoiceInput.newInstance(PERIODICITY_ID_FN,</span>
+<span class="fc" id="L749">						new Integer(SchedulingPeriodUtil.getWeeklyPeriodicityValue()).toString(), label, isChecked, JSUtil.ON_CHANGE,</span>
+						isCheckBox);
+<span class="fc" id="L751">		m_weeklyPeriodicityChoice.setIsValueSubmittedWhenDisabled(true);</span>
+<span class="fc" id="L752">	}</span>
+	
+	
+
+	/**
+	 * Initialize the Monthly Periodicity Radio Button
+	 */
+	private void initMonthlyPeriodicityChoice() {
+<span class="fc" id="L760">		String label = i18n(m_bundle, FsWebBundleKey.MONTHLY_CAMPAIGN);</span>
+<span class="fc" id="L761">		boolean isChecked = isMonthlyPeriodicity();</span>
+<span class="fc" id="L762">		boolean isCheckBox = false;</span>
+
+<span class="fc" id="L764">		m_monthlyPeriodicityChoice =</span>
+<span class="fc" id="L765">				HtmlChoiceInput.newInstance(PERIODICITY_ID_FN,</span>
+<span class="fc" id="L766">						new Integer(SchedulingPeriodUtil.getMonthlyPeriodicityValue()).toString(), label, isChecked,</span>
+						JSUtil.ON_CHANGE, isCheckBox);
+<span class="fc" id="L768">		m_monthlyPeriodicityChoice.setIsValueSubmittedWhenDisabled(true);</span>
+<span class="fc" id="L769">	}</span>
+
+	/**
+	 * Return the HTML for the Periodicity radio buttons
+	 */
+	private String getPeriodicityChoiceHTML() {
+<span class="nc bnc" id="L775" title="All 2 branches missed.">		if (isEnableElements()) {</span>
+			// enable the Month Start Day dropdown when the Monthly radio button is clicked
+<span class="nc" id="L777">			String monthStartDayElem = CAMP_MONTH_START_DAY_FN + &quot;_0&quot;;</span>
+<span class="nc" id="L778">			String onClickJSForMonthStartDay = &quot;DOM2.getElementById('&quot; + monthStartDayElem + &quot;').disabled='';&quot;;</span>
+
+			// disable the Distributed checkbox when the Monthly radio button is clicked
+<span class="nc" id="L781">			String distributedElem = &quot;bChk_distributed_true_0&quot;;</span>
+<span class="nc" id="L782">			String onClickJSForDist =</span>
+					&quot; DOM2.getElementById('&quot; + distributedElem + &quot;').disabled='disabled';&quot; + &quot; DOM2.getElementById('&quot;
+							+ distributedElem + &quot;').checked=''&quot;;
+
+<span class="nc" id="L786">			String onClickJS = JSUtil.ON_CHANGE + &quot; &quot; + onClickJSForMonthStartDay + onClickJSForDist;</span>
+<span class="nc" id="L787">			m_monthlyPeriodicityChoice.setOnClickJS(onClickJS);</span>
+
+			// disable the Month Start Day dropdown when the Weekly radio button is clicked
+<span class="nc" id="L790">			onClickJSForMonthStartDay = &quot;DOM2.getElementById('&quot; + monthStartDayElem + &quot;').disabled='disabled';&quot;;</span>
+
+			// enable the Distributed checkbox when the Weekly radio button is clicked
+<span class="nc bnc" id="L793" title="All 4 branches missed.">			boolean enableDistributedElem = isAuthorizedToConfigure() &amp;&amp; m_isAddMode;</span>
+<span class="nc bnc" id="L794" title="All 2 branches missed.">			onClickJSForDist = enableDistributedElem ? &quot; DOM2.getElementById('&quot; + distributedElem + &quot;').disabled=''&quot; : &quot;&quot;;</span>
+
+<span class="nc" id="L796">			onClickJS = JSUtil.ON_CHANGE + &quot; &quot; + onClickJSForMonthStartDay + onClickJSForDist;</span>
+<span class="nc" id="L797">			m_weeklyPeriodicityChoice.setOnClickJS(onClickJS);</span>
+
+<span class="nc" id="L799">		} else {</span>
+<span class="nc" id="L800">			m_weeklyPeriodicityChoice.setIsDisabled(true);</span>
+<span class="nc" id="L801">			m_monthlyPeriodicityChoice.setIsDisabled(true);</span>
+		}
+
+<span class="nc" id="L804">		m_weeklyPeriodicityChoice.setIsChecked(isWeeklyPeriodicity());</span>
+<span class="nc" id="L805">		m_monthlyPeriodicityChoice.setIsChecked(isMonthlyPeriodicity());</span>
+<span class="nc" id="L806">		return m_weeklyPeriodicityChoice.getHtmlDisplay() + &quot; &amp;nbsp; &quot; + m_monthlyPeriodicityChoice.getHtmlDisplay();</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

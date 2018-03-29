@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>EmployeeTimeOffYearlyCache.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.timeoff.validation.employeehours</a> &gt; <span class="el_source">EmployeeTimeOffYearlyCache.java</span></div><h1>EmployeeTimeOffYearlyCache.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.timeoff.validation.employeehours;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.EmployeeTimeOffYearlyDAO;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeTimeOffYearly;
+import com.bluepumpkin.ejb.rm.base.RmRuntimeException;
+import com.bluepumpkin.ejb.rm.util.ThreadLocalCache;
+
+/*
+ * Per thread cache for EmployeeTimeOffYearly by Employee, Activity/ActivityCategory, fromYear, toYear 
+ */
+public class EmployeeTimeOffYearlyCache {
+
+	private static class EmployeeActivityYearly {
+		//EmployeeTimeOffYearly is loaded from the table called EMPLOYEETIMEOFFALLOTMENT
+		//Gives by employee, year, and activity or activity category the accrual rates,remaining,carry over, scheduled, used and pending
+		//we seem to only use the accrual rate for the validation. 
+		//The scheduled is calculated by loading the scheduled time off and iterating through it. 
+
+		//Employee -&gt; Activity/ActivityCat -&gt; Year -&gt;EmployeeTimeOffYearly
+		//The key for the returned map is a string representation of an integer year, why?.
+		//In EmployeeTimeOffYearlyDAO which is in Foundation so leaving it alone. 
+		final Map&lt;Integer, Map&lt;String, Map&lt;String, EmployeeTimeOffYearly&gt;&gt;&gt; map;
+
+<span class="nc" id="L32">		EmployeeActivityYearly(Map&lt;Integer, Map&lt;String, Map&lt;String, EmployeeTimeOffYearly&gt;&gt;&gt; map) {</span>
+<span class="nc" id="L33">			this.map = map;</span>
+<span class="nc" id="L34">		}</span>
+	}
+
+<span class="nc" id="L37">	private EmployeeTimeOffYearlyCache() {</span>
+
+<span class="nc" id="L39">	}</span>
+
+	//Year -&gt;EmployeeTimeOffYearly for the given employee,activity/activity category, years. 
+	public static Map&lt;String, EmployeeTimeOffYearly&gt; getEmployeeTimeOffYearly(ID employeeID, ID activityID, ID activityCategoryID,
+			int fromYear, int toYear) {
+
+<span class="nc" id="L45">		String key = getLoadKey(employeeID, activityID, activityCategoryID, fromYear, toYear);</span>
+<span class="nc" id="L46">		Map&lt;String, EmployeeActivityYearly&gt; map = ThreadLocalCache.getMap(EmployeeTimeOffYearlyCache.class.getName());</span>
+
+<span class="nc" id="L48">		EmployeeActivityYearly activityYearly = map.get(key);</span>
+<span class="nc bnc" id="L49" title="All 2 branches missed.">		if (!map.containsKey(key)) {</span>
+<span class="nc" id="L50">			activityYearly = load(employeeID, activityID, activityCategoryID, fromYear, toYear);</span>
+<span class="nc" id="L51">			map.put(key, activityYearly);</span>
+		}
+<span class="nc" id="L53">		return getEmployeeTimeOffYearlyInternal(activityYearly, employeeID, activityID, activityCategoryID);</span>
+	}
+
+	//The key for the returned map is a string representation of an integer year. 
+	private static Map&lt;String, EmployeeTimeOffYearly&gt; getEmployeeTimeOffYearlyInternal(EmployeeActivityYearly employeeActivityYearly,
+			ID employeeID, ID activityID, ID activityCategoryID) {
+
+<span class="nc bnc" id="L60" title="All 4 branches missed.">		if (employeeActivityYearly == null || employeeActivityYearly.map == null) {</span>
+<span class="nc" id="L61">			return new HashMap&lt;String, EmployeeTimeOffYearly&gt;();</span>
+		}
+
+<span class="nc" id="L64">		Map&lt;String, Map&lt;String, EmployeeTimeOffYearly&gt;&gt; activityYearlyMap = employeeActivityYearly.map.get(employeeID);</span>
+
+<span class="nc bnc" id="L66" title="All 2 branches missed.">		if (activityYearlyMap == null) {</span>
+<span class="nc" id="L67">			return new HashMap&lt;String, EmployeeTimeOffYearly&gt;();</span>
+		}
+
+<span class="nc" id="L70">		Map&lt;String, EmployeeTimeOffYearly&gt; yearlyMap = activityYearlyMap.get(Activity.getActivity_ActCategoryComb(activityID,</span>
+				activityCategoryID));
+
+<span class="nc bnc" id="L73" title="All 2 branches missed.">		if (yearlyMap == null) {</span>
+<span class="nc" id="L74">			return new HashMap&lt;String, EmployeeTimeOffYearly&gt;();</span>
+		}
+<span class="nc" id="L76">		return yearlyMap;</span>
+
+	}
+
+	private static String getLoadKey(ID employeeID, ID activityID, ID activityCategoryID,
+			int fromYear, int toYear) {
+<span class="nc" id="L82">		return String.format(&quot;[%s]-[%s]-[%s]-[%d]-[%d]&quot;, employeeID, activityID, activityCategoryID, fromYear, toYear);</span>
+	}
+
+	//The key for the returned map is a string representation of an integer year. 
+	@SuppressWarnings(&quot;unchecked&quot;)
+	private static EmployeeActivityYearly load(ID employeeID, ID activityID, ID activityCategoryID,
+			int fromYear, int toYear) {
+
+<span class="nc" id="L90">		Jdmo dmo = null;</span>
+
+		try {
+
+<span class="nc" id="L94">			dmo = new Jdmo();</span>
+
+<span class="nc" id="L96">			EmployeeTimeOffYearlyDAO dao = new EmployeeTimeOffYearlyDAO(dmo);</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">			Collection&lt;ID&gt; actIDs = activityID != null ? Collections.singletonList(activityID) : null;</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">			Collection&lt;ID&gt; actCatIDs = activityCategoryID != null ? Collections.singletonList(activityCategoryID) : null;</span>
+
+			//  map is an Employee ID to Map&lt;String, Map&lt;String, EmployeeTimeOffYearly&gt;&gt; map
+			//	Map&lt;String, Map&lt;String, EmployeeTimeOffYearly&gt;&gt; 
+			//  the key is an activity ID, activity Category ID generated by Activity.getActivity_ActCategoryComb
+			//  Map&lt;String, EmployeeTimeOffYearly&gt;, the key is a string with the calendar year - Why is this a string and not an integer?
+			////Employee -&gt; Activity/ActivityCat -&gt; Year -&gt; EmployeeTimeOffYearly
+
+<span class="nc" id="L106">			return new EmployeeActivityYearly(dao.getEmployeeTimeOffYearlyMap(</span>
+<span class="nc" id="L107">					Collections.singletonList(employeeID), actIDs, actCatIDs, fromYear, toYear));</span>
+
+<span class="nc" id="L109">		} catch (Exception e) {</span>
+<span class="nc" id="L110">			throw new RmRuntimeException(&quot;Could not load EmployeeTimeOffYearly from the database&quot;, e);</span>
+		} finally {
+<span class="nc bnc" id="L112" title="All 4 branches missed.">			if (dmo != null) {</span>
+<span class="nc" id="L113">				dmo.cleanUp();</span>
+			}
+		}
+
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

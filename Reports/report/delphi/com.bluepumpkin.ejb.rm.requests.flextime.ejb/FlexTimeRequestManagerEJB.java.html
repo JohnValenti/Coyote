@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>FlexTimeRequestManagerEJB.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.flextime.ejb</a> &gt; <span class="el_source">FlexTimeRequestManagerEJB.java</span></div><h1>FlexTimeRequestManagerEJB.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.flextime.ejb;
+
+import java.util.Date;
+import java.util.List;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.bluepumpkin.ejb.rm.base.RmException;
+import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateDAO;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.common.model.ValidatorDescriptor;
+import com.bluepumpkin.ejb.rm.requests.common.validation.RequestNotExpiredOnCreateHV;
+import com.bluepumpkin.ejb.rm.requests.commonrequestmanager.model.IRequestType;
+import com.bluepumpkin.ejb.rm.requests.commonrequestmanager.model.RequestFilter;
+import com.bluepumpkin.ejb.rm.requests.custshift.ejb.CustShiftReqMgrEJB;
+import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.FTValidationCache;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.FlexTimeMustBeWithinShiftRule;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.FlexTimeMustNotOverlapUnpaidCalendarEventRule;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.MakeupDatesOfFlexRequestCannotBeBeforeOrAfterOTBlockRule;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.MakeupDatesOfFlexRequestCannotBeOnSameDayRule;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.MakeupExtensionsMustAdhereToOrgSettingsRule;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.MakeupHoursCannotOverlapCalendarEventsRule;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.MakeupHoursMustMatchAccountedHoursRule;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.MakeupMustNotOverlapShiftsRule;
+import com.bluepumpkin.ejb.rm.requests.flextime.validation.ShiftAssignmentOfFlexRequestIsNotChangedRule;
+import com.bluepumpkin.ejb.rm.requests.timeoff.ejb.FlexRequestMakeupDAO;
+import com.bluepumpkin.ejb.rm.requests.timeoff.ejb.TORequestManagerEJB;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.FlexRequestMakeup;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.AgentGoodStandingValidationRuleHV;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TentativeRequestHardValidationRule;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TimeOffChoiceApprOrTentAppNotZeroLengthHV;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TimeOffChoiceContainsHoliday;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TimeOffChoiceContainsOrgChange;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TimeOffChoiceHasZeroLength;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TimeOffChoiceHasZeroLengthHV;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TimeoffIntervalAllocationPublishedStatusRule;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TimeoffIntervalAllocationReferenceScheduleRule;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.ValidTimeOffChoicesValidationRule;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.WorkableTimeValidationRuleHV;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.WorkableTimeWithinScheduleTimeOffHV;
+import com.bluepumpkin.ejb.rm.util.RmFilterUtil;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.witness.ejb.core.security.PrivilegeKeys;
+
+<span class="nc" id="L54">public class FlexTimeRequestManagerEJB extends TORequestManagerEJB {</span>
+
+	private static final long serialVersionUID = 1L;
+
+	/**
+	 * Array of Flex-specific hard validation classes
+	 */
+<span class="nc" id="L61">	private static final ValidatorDescriptor[] FLEX_HARD_VALIDATOR_DESCRIPTOR_ARR = {</span>
+
+			// REUSE TIME-OFF'S RULES
+<span class="nc" id="L64">			new ValidatorDescriptor(RequestNotExpiredOnCreateHV.class.getName(), RequestUtil.METHODTYPE_CREATOR, null,</span>
+					TORequest.DL_BASIC | TORequest.DL_TIMEOFF_CHOICES),
+<span class="nc" id="L66">			new ValidatorDescriptor(WorkableTimeValidationRuleHV.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+					TORequest.DL_BASIC),
+<span class="nc" id="L68">			new ValidatorDescriptor(WorkableTimeWithinScheduleTimeOffHV.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+					TORequest.DL_BASIC),
+<span class="nc" id="L70">			new ValidatorDescriptor(AgentGoodStandingValidationRuleHV.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+					TORequest.DL_BASIC),
+<span class="nc" id="L72">			new ValidatorDescriptor(ValidTimeOffChoicesValidationRule.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+					TORequest.DL_BASIC),
+<span class="nc" id="L74">			new ValidatorDescriptor(TentativeRequestHardValidationRule.class.getName(), RequestUtil.METHODTYPE_ALL,</span>
+					null, TORequest.DL_BASIC),
+<span class="nc" id="L76">			new ValidatorDescriptor(TimeOffChoiceApprOrTentAppNotZeroLengthHV.class.getName(),</span>
+					RequestUtil.METHODTYPE_MODIFIER,
+					new String[] { RequestAuditTrail.STATUS_APPROVED, RequestAuditTrail.STATUS_TENTATIVE },
+					TORequest.DL_BASIC | TORequest.DL_TIMEOFF_CHOICES),
+<span class="nc" id="L80">			new ValidatorDescriptor(TimeoffIntervalAllocationPublishedStatusRule.class.getName(),</span>
+					RequestUtil.METHODTYPE_ALL, null, TORequest.DL_BASIC | TORequest.DL_TIMEOFF_CHOICES),
+<span class="nc" id="L82">			new ValidatorDescriptor(TimeoffIntervalAllocationReferenceScheduleRule.class.getName(),</span>
+					RequestUtil.METHODTYPE_ALL, null, TORequest.DL_BASIC),
+<span class="nc" id="L84">			new ValidatorDescriptor(TimeOffChoiceHasZeroLengthHV.class.getName(), RequestUtil.METHODTYPE_CREATOR, null,</span>
+					TORequest.DL_BASIC),
+			// END OF REUSE TIME-OFF'S RULES
+
+			// FLEX TIME RULES
+			// makeup dates cannot duplicate
+<span class="nc" id="L90">			new ValidatorDescriptor(MakeupDatesOfFlexRequestCannotBeOnSameDayRule.class.getName(),</span>
+					RequestUtil.METHODTYPE_ALL, null, TORequest.DL_BASIC | TORequest.DL_TIMEOFF_FLEXMAKEUP),
+			// makeup shifts not changed
+<span class="nc" id="L93">			new ValidatorDescriptor(ShiftAssignmentOfFlexRequestIsNotChangedRule.class.getName(),</span>
+					RequestUtil.METHODTYPE_ALL, null, TORequest.DL_BASIC | TORequest.DL_TIMEOFF_FLEXMAKEUP),
+			// makeup time &amp; events
+<span class="nc" id="L96">			new ValidatorDescriptor(MakeupHoursCannotOverlapCalendarEventsRule.class.getName(),</span>
+					RequestUtil.METHODTYPE_ALL, null, TORequest.DL_BASIC | TORequest.DL_TIMEOFF_FLEXMAKEUP),
+			// makeup time &amp; OT blocks
+<span class="nc" id="L99">			new ValidatorDescriptor(MakeupDatesOfFlexRequestCannotBeBeforeOrAfterOTBlockRule.class.getName(),</span>
+					RequestUtil.METHODTYPE_ALL, null, TORequest.DL_BASIC | TORequest.DL_TIMEOFF_FLEXMAKEUP),
+			// makeup time &amp; shifts
+<span class="nc" id="L102">			new ValidatorDescriptor(MakeupMustNotOverlapShiftsRule.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+					TORequest.DL_BASIC | TORequest.DL_TIMEOFF_FLEXMAKEUP),
+			// makeup time = TO time
+<span class="nc" id="L105">			new ValidatorDescriptor(MakeupHoursMustMatchAccountedHoursRule.class.getName(), RequestUtil.METHODTYPE_ALL,</span>
+					null, TORequest.DL_BASIC | TORequest.DL_TIMEOFF_FLEXMAKEUP),
+			// TO range must inside shift
+<span class="nc" id="L108">			new ValidatorDescriptor(FlexTimeMustBeWithinShiftRule.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+					TORequest.DL_BASIC | TORequest.DL_TIMEOFF_FLEXMAKEUP),
+			// TO time cannot overlap events
+<span class="nc" id="L111">			new ValidatorDescriptor(FlexTimeMustNotOverlapUnpaidCalendarEventRule.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+					TORequest.DL_BASIC | TORequest.DL_TIMEOFF_FLEXMAKEUP),
+			// makeup blocks vs org settings
+<span class="nc" id="L114">			new ValidatorDescriptor(MakeupExtensionsMustAdhereToOrgSettingsRule.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+					TORequest.DL_BASIC | TORequest.DL_TIMEOFF_FLEXMAKEUP)
+
+
+			// END OF FLEX TIME RULES
+	};
+	// REUSE TIME-OFF'S MANDATORY RULES
+
+<span class="nc" id="L122">	private final static ValidatorDescriptor[] FLEX_MANDATORY_SOFT_VALIDATOR_DESCRIPTOR_ARR = {</span>
+		// validator run only when fetching a request with the specified detail level.
+<span class="nc" id="L124">		new ValidatorDescriptor(TimeOffChoiceHasZeroLength.class.getName(), RequestUtil.METHODTYPE_FINDER, null, TORequest.DL_BASIC</span>
+				| TORequest.DL_TIMEOFF_CHOICES | TORequest.DL_TIMEOFF_CHOICES_LENGTH),
+<span class="nc" id="L126">		new ValidatorDescriptor(TimeOffChoiceContainsHoliday.class.getName(), RequestUtil.METHODTYPE_FINDER, null, TORequest.DL_BASIC</span>
+				| TORequest.DL_TIMEOFF_CHOICES | TORequest.DL_TIMEOFF_CHOICES_LENGTH),
+<span class="nc" id="L128">		new ValidatorDescriptor(TimeOffChoiceContainsOrgChange.class.getName(), RequestUtil.METHODTYPE_FINDER, null, TORequest.DL_BASIC</span>
+				| TORequest.DL_TIMEOFF_CHOICES | TORequest.DL_TIMEOFF_CHOICES_LENGTH) };
+
+	@Override
+	protected ValidatorDescriptor[] getHardValidatorDescriptors() {
+<span class="nc" id="L133">		return FLEX_HARD_VALIDATOR_DESCRIPTOR_ARR;</span>
+	}
+	@Override
+	protected ValidatorDescriptor[] getSoftValidatorDescriptorsMandatory() {
+<span class="nc" id="L137">		return FLEX_MANDATORY_SOFT_VALIDATOR_DESCRIPTOR_ARR;</span>
+	}
+
+    /**
+     * Return the possible states for a request of this type.
+     *
+     * @return a List of the possible states for requests of this type.
+     */
+	@Override
+    public List getPossibleStates() {
+<span class="nc" id="L147">        return RequestAuditTrail.FT_POSSIBLE_STATES;</span>
+    }
+
+	/* (non-Javadoc)
+	 * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getRequestManager()
+	 */
+	@Override
+	protected IRequestType getRequestManager() throws Exception {
+<span class="nc" id="L155">		return RequestUtil.getFlexTimeRequestMgr(null, null);</span>
+	}
+
+	/* (non-Javadoc)
+	 * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getRequestType()
+	 */
+	@Override
+	protected String getRequestType() {
+<span class="nc" id="L163">		return Request.REQUESTTYPE_FLEXTIME;</span>
+	}
+
+	/**
+	 * @return
+	 */
+	@Override
+	protected ID getPrivIDApprovePending() {
+<span class="nc" id="L171">		return PrivilegeKeys.FT_APPROVEPENDINGREQUESTS_ID;</span>
+	}
+
+	/**
+	 * @return
+	 */
+	@Override
+	protected ID getPrivIDModifyReqsForEmp() {
+<span class="nc" id="L179">		return PrivilegeKeys.FT_MODIFYREQUESTSFOREMPLOYEE_ID;</span>
+	}
+
+	/**
+	 * @return
+	 */
+	@Override
+	protected ID getPrivIDModifyPersonalReqs() {
+<span class="nc" id="L187">		return PrivilegeKeys.FT_MODIFYPERSONALREQUESTS_ID;</span>
+	}
+
+	@Override
+	protected ID getPrivIDPurge() {
+<span class="nc" id="L192">		return PrivilegeKeys.FT_PURGEREQUESTS_ID;</span>
+	}
+
+	@Override
+	public boolean isRequestEligibleForWaitlist(RequestAggregate reqAgg) throws BbmFinderException {
+<span class="nc" id="L197">		return false;</span>
+	}
+
+	/**
+	 * @param apprChoiceID if null, see {@link #getApprChoiceIDIfNull(RequestAggregate, ID) getApprChoiceIDIfNull()} method.
+	 * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#
+	 *      _approveRequest(com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate, com.bluepumpkin.common.datatypes.ID, java.lang.String, boolean)
+	 */
+	@Override
+	protected void _approveRequest(RequestAggregate reqAgg, ID apprChoiceID, String comment,
+								boolean suppressPrivilegeChecking, boolean loadedFromDB) throws Exception {
+
+		// 1. Approve Time Off section
+
+<span class="nc" id="L211">		reqAgg.addDetailLevel(TORequest.DL_TIMEOFF_FLEXMAKEUP);</span>
+
+<span class="nc" id="L213">		super._approveRequest(reqAgg, apprChoiceID, comment, suppressPrivilegeChecking, loadedFromDB);</span>
+
+		// 2. Approve Makeup section
+
+<span class="nc" id="L217">		approveMakeup((TORequest) reqAgg);</span>
+<span class="nc" id="L218">	}</span>
+
+	private void approveMakeup(TORequest toReq) throws Exception {
+<span class="nc" id="L221">		FlexRequestMakeupDAO makeupDao = new FlexRequestMakeupDAO();</span>
+		try {
+<span class="nc bnc" id="L223" title="All 2 branches missed.">			for (FlexRequestMakeup makeup : toReq.getFlexRequestMakeupList()) {</span>
+<span class="nc" id="L224">				CustShiftReq custShiftReq = (new FTValidationCache(toReq)).createCustShiftReqFromMakeup(makeup, toReq.getAggregatedRequest());</span>
+<span class="nc" id="L225">				ID shiftAssnID = CustShiftReqMgrEJB._doApproveRequest(custShiftReq);</span>
+				// update the flex request to point to the new shift assignment
+				// created during approving make up part within custom shift request approval process
+				// this update is to later pull all the approved flex requests by applying a filter
+<span class="nc" id="L229">				makeup.setShiftAssignmentID(shiftAssnID);</span>
+<span class="nc" id="L230">				makeupDao.updateFlexRequestMakeup(makeup);</span>
+<span class="nc" id="L231">			}</span>
+		} finally {
+<span class="nc" id="L233">			makeupDao.cleanUp();</span>
+<span class="nc" id="L234">		}</span>
+<span class="nc" id="L235">	}</span>
+
+
+
+	/**
+	 * Add columns necessary to process a query governed by the given filter.  The caller has already
+	 * added columns from the REQUEST (as A), EMPLOYEE (as B) and PERSON (as C) tables.  Columns from
+	 * new tables should start with D as a column synonym.  See
+	 * {@link #addToFromClause addToFromClause} for how the from clause is modified,
+	 * {@link #addToWhereClause addToWhereClause} for how the where clause is modified, and
+	 * {@link #addOrderByClause addOrderByClause} for how the order by clause is modified by
+	 * a request manager to reflect type-specific filtered queries.
+	 * Columns added by this
+	 * method should insert a leading comma.
+	 *
+	 * @param selectClause  the string buffer being constructed, the generic columns have already been
+	 *                      added, this method should append its columns.
+	 * @param requestFilter the request filter
+	 */
+	@Override
+	public void addToSelectColumns(StringBuffer query, RequestFilter requestFilter, int sortColumn) {
+<span class="nc" id="L256">		super.addToSelectColumns(query, requestFilter, sortColumn);</span>
+
+<span class="nc bnc" id="L258" title="All 2 branches missed.">		if (sortColumn == Request.SORT_CS_SHIFTID) {</span>
+<span class="nc" id="L259">			query.append(&quot;, SHIFT.NAME &quot;);</span>
+<span class="nc bnc" id="L260" title="All 2 branches missed.">		} else if (sortColumn == Request.SORT_CS_ACTIVITYID) {</span>
+<span class="nc" id="L261">			query.append(&quot;, ACTS.NAME &quot;);</span>
+<span class="nc bnc" id="L262" title="All 2 branches missed.">		} else if (sortColumn == Request.SORT_CS_STARTTIME) {</span>
+<span class="nc" id="L263">			query.append(&quot;, min(FRM.STARTTIME) &quot;);</span>
+<span class="nc bnc" id="L264" title="All 2 branches missed.">		} else if (sortColumn == Request.SORT_CS_ENDTIME) {</span>
+<span class="nc" id="L265">			query.append(&quot;, max(FRM.ENDTIME) &quot;);</span>
+		}
+<span class="nc" id="L267">	}</span>
+
+	/**
+	 * Add tables necessary to process a query governed by the given filter.  The caller has already
+	 * added the REQUEST (as A), EMPLOYEE (as B) and PERSON (as C) tables.
+	 * New tables should start with D as a column synonym.  See
+	 * {@link #addToSelectColumns addToSelectColumns} for how the column list is modified,
+	 * {@link #addToWhereClause addToWhereClause} for how the where clause is modified, and
+	 * {@link #addOrderByClause addOrderByClause} for how the order by clause is modified by
+	 * a request manager to reflect type-specific filtered queries.
+	 * Tables added by this
+	 * method should insert a leading comma.
+	 *
+	 * @param fromClause    the string buffer being constructed, the generic tables have already been
+	 *                      added, this method should append its tables with a leading comma and start with D as a synonym.
+	 * @param requestFilter the request filter
+	 */
+	@Override
+	public void addToFromClause(StringBuffer fromClause, RequestFilter requestFilter, int sortColumn) {
+<span class="nc" id="L286">		super.addToFromClause(fromClause, requestFilter, sortColumn);</span>
+
+<span class="nc" id="L288">		fromClause.append(&quot;, FLEXREQUESTMAKEUP FRM &quot;);</span>
+		//including the activity table for sorting based on makeup activity on manager's list page
+<span class="nc bnc" id="L290" title="All 2 branches missed.">		if(sortColumn == Request.SORT_CS_ACTIVITYID) {</span>
+<span class="nc" id="L291">			fromClause.append(&quot;, ACTIVITY ACTS &quot;);</span>
+		}
+
+		//joins for sorts &amp; filter
+<span class="nc bnc" id="L295" title="All 4 branches missed.">		if (sortColumn == Request.SORT_CS_SHIFTID || requestFilter.isKeySet(RequestFilter.CS_SHIFTID_KEY)) {</span>
+<span class="nc" id="L296">			fromClause.append(&quot; LEFT JOIN SHIFTASSIGNMENT SA on FRM.SHIFTASSIGNMENTID = SA.ID &quot;);</span>
+<span class="nc" id="L297">			fromClause.append(&quot; LEFT JOIN SHIFT on SHIFT.SID = SA.SHIFTID &quot;);</span>
+		}
+
+		//Joins for Sorts only
+<span class="nc bnc" id="L301" title="All 4 branches missed.">		if (sortColumn == Request.SORT_CS_EXTBEFOREACTIVITYID || sortColumn == Request.SORT_CS_EXTAFTERACTIVITYID) {</span>
+<span class="nc" id="L302">			fromClause.append(&quot; LEFT JOIN ACTIVITY ACTS on ACTS.ID = &quot;);</span>
+<span class="nc bnc" id="L303" title="All 2 branches missed.">			if (sortColumn == Request.SORT_CS_EXTBEFOREACTIVITYID) {</span>
+<span class="nc" id="L304">				fromClause.append(&quot; EXTBEFOREACTIVITYID &quot;);</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">			} else if (sortColumn == Request.SORT_CS_EXTAFTERACTIVITYID) {</span>
+<span class="nc" id="L306">				fromClause.append(&quot; EXTAFTERACTIVITYID &quot;);</span>
+			}
+		}
+
+		//joins for Filters only
+<span class="nc bnc" id="L311" title="All 2 branches missed.">		if (requestFilter.isKeySet(RequestFilter.CS_ACTIVITYID_KEY)) {</span>
+<span class="nc" id="L312">			fromClause.append(&quot;, ACTIVITY ACT &quot;);</span>
+		}
+<span class="nc" id="L314">	}</span>
+
+	/**
+	 * Add the appropriate FLEXTYPE clause to the query (either FLEXTYPE_NONE or FLEXTYPE_FLEXWITHMAKEUP).
+	 */
+	@Override
+	protected void appendFlexTypeWhereClause(StringBuffer query, RequestFilter requestFilter, int sortColumn) {
+<span class="nc" id="L321">		query.append(&quot; AND TOR.FLEXTYPE = &quot;).append(TORequest.FLEXTYPE_FLEXWITHMAKEUP).append(' ');</span>
+<span class="nc" id="L322">		query.append(&quot; AND FRM.TIMEOFFREQUESTID=REQ.ID &quot;);</span>
+
+<span class="nc bnc" id="L324" title="All 4 branches missed.">		if (sortColumn == Request.SORT_CS_SHIFTID || requestFilter.isKeySet(RequestFilter.CS_SHIFTID_KEY)) {</span>
+<span class="nc" id="L325">			query.append(&quot; AND FRM.SHIFTASSIGNMENTID=SA.ID &quot;);</span>
+		}
+
+		//Filter by date range
+<span class="nc bnc" id="L329" title="All 2 branches missed.">		if (requestFilter.isKeySet(RequestFilter.REQUEST_FLEX_MAKEUP_DATE_RANGE_KEY)) {</span>
+<span class="nc" id="L330">			StringsPair dates = RmFilterUtil.getStartAndEndDates(requestFilter, RequestFilter.REQUEST_FLEX_MAKEUP_DATE_RANGE_KEY);</span>
+<span class="nc" id="L331">			String rangeStart = dates.getKey();</span>
+<span class="nc" id="L332">			String rangeEnd = dates.getValue();</span>
+<span class="nc" id="L333">			Date dtNow = new Date();</span>
+<span class="nc" id="L334">			String strDtNow = JdmoUtil.formatDBString(dtNow);</span>
+<span class="nc" id="L335">			query.append(&quot;AND &quot;);</span>
+<span class="nc" id="L336">			RmUtil.appendRequestDateRangeClauses(query, &quot;&quot;, &quot;FRM&quot;, rangeStart, rangeEnd, strDtNow);</span>
+<span class="nc" id="L337">			query.append(&quot; &quot;);</span>
+		}
+
+		//Filter by shift Name
+<span class="nc bnc" id="L341" title="All 2 branches missed.">		if (requestFilter.isKeySet(RequestFilter.CS_SHIFTID_KEY)) {</span>
+<span class="nc" id="L342">			query.append(&quot; AND SHIFT.SID =&quot;).append(requestFilter.getValueForKey(RequestFilter.CS_SHIFTID_KEY));</span>
+		}
+
+		//FILTER BY ACTIVITY NAME
+<span class="nc bnc" id="L346" title="All 2 branches missed.">		if (requestFilter.isKeySet(RequestFilter.CS_ACTIVITYID_KEY)) {</span>
+<span class="nc" id="L347">			query.append(&quot; AND ACT.ID  IN (FRM.EXTBEFOREACTIVITYID, FRM.EXTAFTERACTIVITYID) &quot;);</span>
+<span class="nc" id="L348">			query.append(&quot; AND ACT.ID =&quot;).append(requestFilter.getValueForKey(RequestFilter.CS_ACTIVITYID_KEY));</span>
+		}
+<span class="nc" id="L350">	}</span>
+
+	/**
+	 * Add conditions necessary to process a query governed by the given filter.  The caller has already
+	 * added everthing but the order by clause.  See
+	 * {@link #aaddToSelectColumns addToSelectColumns} for how the column list is modified,
+	 * {@link #addToFromClause addToFromClause} for how the from clause is modified, and
+	 * {@link #addToWhereClause addToWhereClause} for how the where clause is modified by
+	 * a request manager to reflect type-specific filtered queries.
+	 * Conditions added by this
+	 * method should insert a leading comma.
+	 *
+	 * @param query         the string buffer being constructed, the generic where clauses have already been
+	 *                      added, this method should append its conditions with a leading AND and both front and rear pad with a space.
+	 * @param requestFilter the request filter
+	 * @param sortColumn    identifies the column to use to sort the requests.
+	 *                      The constants that define the expected values are in
+	 *                      {@link com.bluepumpkin.ejb.rm.requests.common.model.Request Request}
+	 * @param sortDir       This string is either &quot; ASC &quot; or &quot; DESC &quot; depending on whether or not the
+	 *                      sort is ascending or descending.  (Note spaces around values for convenience.)
+	 */
+	@Override
+	public void addOrderByClause(StringBuffer query, RequestFilter requestFilter, int sortColumn, String sortDir) {
+<span class="nc" id="L373">		super.addOrderByClause(query, requestFilter, sortColumn, sortDir);</span>
+
+<span class="nc bnc" id="L375" title="All 2 branches missed.">		if (sortColumn == Request.SORT_CS_SHIFTID) {</span>
+<span class="nc" id="L376">			query.append(&quot; ORDER BY SHIFT.NAME &quot;).append(sortDir);</span>
+<span class="nc bnc" id="L377" title="All 2 branches missed.">		} else if (sortColumn == Request.SORT_CS_ACTIVITYID) {</span>
+<span class="nc" id="L378">			query.append(&quot; ORDER BY ACTS.NAME &quot;).append(sortDir);</span>
+<span class="nc bnc" id="L379" title="All 2 branches missed.">		} else if (sortColumn == Request.SORT_CS_STARTTIME) {</span>
+<span class="nc" id="L380">			query.append(&quot; GROUP BY FRM.TIMEOFFREQUESTID ORDER BY min(FRM.STARTTIME) &quot;).append(sortDir);</span>
+<span class="nc bnc" id="L381" title="All 2 branches missed.">		} else if (sortColumn == Request.SORT_CS_ENDTIME) {</span>
+<span class="nc" id="L382">			query.append(&quot; GROUP BY FRM.TIMEOFFREQUESTID ORDER BY max(FRM.ENDTIME) &quot;).append(sortDir);</span>
+		}
+<span class="nc" id="L384">	}</span>
+	@Override
+	public void changeRequestStateByID(ID reqID, String newState, String objectVersionNumber, String comment)
+			throws RmHardValidationException, RmException, MultiUserException {
+<span class="nc" id="L388">		_changeRequestStateByID(reqID, newState, objectVersionNumber, comment,false);</span>
+<span class="nc" id="L389">	}</span>
+	@Override
+	protected void markRequestViolateSpecialRulesAsInValidIfNeeded(RequestAggregate reqAgg, RequestAggregateDAO reqAggDAO) throws Exception {
+		//Should do nothing since this should only apply for Time Off requests
+<span class="nc" id="L393">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

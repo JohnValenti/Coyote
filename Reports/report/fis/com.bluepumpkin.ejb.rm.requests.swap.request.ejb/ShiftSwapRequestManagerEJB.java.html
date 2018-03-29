@@ -1,0 +1,1678 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftSwapRequestManagerEJB.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.request.ejb</a> &gt; <span class="el_source">ShiftSwapRequestManagerEJB.java</span></div><h1>ShiftSwapRequestManagerEJB.java</h1><pre class="source lang-java linenums">/*
+ * ShiftSwapRequestManagerEJB.java
+ * Copyright (c) 2002, Blue Pumpkin Software, Inc
+ * All rights reserved.
+ */
+package com.bluepumpkin.ejb.rm.requests.swap.request.ejb;
+
+import java.rmi.RemoteException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import org.apache.log4j.Priority;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.JMSNotifyUtil;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.cache.threadlocal.ThreadLocalForCacheManagerHelper;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TOCalcUtil;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.base.RmException;
+import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbLogBundleKey;
+import com.bluepumpkin.ejb.rm.notification.model.RequestNotificationDetail;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateDAO;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestDAO;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestDetailLevel;
+import com.bluepumpkin.ejb.rm.requests.common.model.ValidatorDescriptor;
+import com.bluepumpkin.ejb.rm.requests.common.validation.RequestNotExpiredOnCreateHV;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.commonrequestmanager.model.IRequestType;
+import com.bluepumpkin.ejb.rm.requests.commonrequestmanager.model.RequestFilter;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.ejb.ShiftSwapPostingDAO;
+import com.bluepumpkin.ejb.rm.requests.swap.posting.model.ShiftSwapPosting;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequestItem;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.AgentsGoodStandingValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.NoShiftsOnReceivedShiftOrgDayHV;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSDiffBaseShiftActivities;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSSwappedShiftContainsGapHV;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.ShiftExistValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.ShiftSwapValidationCache;
+import com.bluepumpkin.ejb.rm.requests.swap.request.validation.TentativeRequestHardValidationRule;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.requests.swap.withdraw.model.ShiftSwapWithdraw;
+import com.bluepumpkin.ejb.rm.requests.swap.withdraw.validation.FilingRuleComplianceValidationRule;
+import com.bluepumpkin.ejb.rm.util.DAOUtil;
+import com.bluepumpkin.ejb.rm.util.RmFilterUtil;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.bluepumpkin.ejb.rm.util.ShiftSwapRequestUtil;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.ejb.core.security.model.User;
+
+
+/**
+ * EJB for ShiftSwapRequest
+ * &lt;p&gt;
+ * Caveats:
+ * &lt;p&gt; If a series of interface methods are invoked, then any method that accepts a request,
+ * instead of a request ID, needs to be used with caution.  For instance if after calling createRequest(),
+ * the same request is passed to ApproveRequest(), it will still have the deleteAllChildren flag set.
+ * Although this flag was reset during
+ * the backend processing of the request during createRequest(), the updated request is not marshalled
+ * back to the webtier and hence the request in the webtier still retains it.
+ *
+ */
+<span class="fc" id="L94">public class ShiftSwapRequestManagerEJB extends RequestAggregateManager //OUTSIDE_CONTAINER</span>
+//public class ShiftSwapRequestManagerEJB extends RequestAggregateManager implements ShiftSwapRequestManager  //OUTSIDE_CONTAINER
+{
+<span class="fc" id="L97">    private static final String m_className = ShiftSwapRequestManagerEJB.class.getName();</span>
+<span class="fc" id="L98">    private static final Category m_cat = Log.initCategory(m_className);</span>
+
+    /**
+     * Array of hard validation classes
+     */
+<span class="fc" id="L103">    protected final static ValidatorDescriptor[] m_hardValidatorDescriptorArr = {</span>
+<span class="fc" id="L104">        new ValidatorDescriptor(RequestNotExpiredOnCreateHV.class.getName(), RequestUtil.METHODTYPE_CREATOR, null,</span>
+            ShiftSwapRequest.DL_BASIC | ShiftSwapRequest.DL_SHIFTSWAP_ITEMS),
+<span class="fc" id="L106">        new ValidatorDescriptor(ShiftExistValidationRule.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+        	ShiftSwapRequest.DL_BASIC),
+<span class="fc" id="L108">		new ValidatorDescriptor(NoShiftsOnReceivedShiftOrgDayHV.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+			ShiftSwapRequest.DL_BASIC),
+<span class="fc" id="L110">        new ValidatorDescriptor(AgentsGoodStandingValidationRule.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+        	ShiftSwapRequest.DL_BASIC),
+<span class="fc" id="L112">        new ValidatorDescriptor(TentativeRequestHardValidationRule.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+        	ShiftSwapRequest.DL_BASIC),
+<span class="fc" id="L114">    	new ValidatorDescriptor(PSSSwappedShiftContainsGapHV.class.getName(), RequestUtil.METHODTYPE_ALL, null,</span>
+            	ShiftSwapRequest.DL_BASIC),
+    };
+
+<span class="fc" id="L118">    private final static ValidatorDescriptor[] m_softValidatorDescMandArr = {</span>
+<span class="fc" id="L119">    	new ValidatorDescriptor(PSSDiffBaseShiftActivities.class.getName(),</span>
+                RequestUtil.METHODTYPE_FINDER, null, ShiftSwapRequest.DL_SHIFTSWAP_ITEMS),
+    };
+
+    /**
+     * The validator lookaside, store validator instances here to reduce use
+     * of reflection and instance creation.  Initialize lazily.
+     */
+    //protected static Map s_validators = null;
+
+
+    //private ShiftSwapRequestDAO m_dao = new ShiftSwapRequestDAO();
+
+    {
+<span class="fc" id="L133">        super.init(ShiftSwapRequestManagerEJB.class.getName());</span>
+<span class="fc" id="L134">    }</span>
+
+    /** override the base class to provide the appropriate logging category */
+    @Override
+	protected Category getCategory() {
+<span class="fc" id="L139">        return m_cat;</span>
+    }
+
+    /**
+     * Get the validator map, initialize if necessary.  Don't worry about
+     * making more than one.  It's not that critical.
+     */
+    /*
+    protected final static Map getValidatorsMap() {
+        if (s_validators == null) {
+            s_validators = new HashMap(101);
+        }
+
+        return s_validators;
+    }
+     */
+
+    /**
+     * Return the possible states for a request of this type.
+     * @return a List of the possible states for requests of this type.
+     */
+    @Override
+	public List getPossibleStates() {
+<span class="nc" id="L162">        return RequestAuditTrail.SS_POSSIBLE_STATES_EXCLUDE_NEG;</span>
+    }
+
+    @Override
+	protected ValidatorDescriptor[] getHardValidatorDescriptors() {
+<span class="nc" id="L167">        return m_hardValidatorDescriptorArr;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getSoftValidatorDescriptorsMandatory()
+     */
+    @Override
+	protected ValidatorDescriptor[] getSoftValidatorDescriptorsMandatory() {
+<span class="nc" id="L175">        return m_softValidatorDescMandArr;</span>
+    }
+
+//    protected Collection getSoftValidationStates() {
+//      return ShiftSwapRequest.getSoftValidationStates();
+//    }
+
+    @Override
+	protected RequestAggregateDAO getDAO(long detailLevel) {
+<span class="fc" id="L184">        return new ShiftSwapRequestDAO(detailLevel);</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getRequestManager()
+     */
+    @Override
+	protected IRequestType getRequestManager() throws Exception {
+<span class="nc" id="L192">        return RequestUtil.getSSRequestMgr(null, null);</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getRequestType()
+     */
+    @Override
+	protected String getRequestType() {
+<span class="fc" id="L200">        return Request.REQUESTTYPE_SHIFTSWAP;</span>
+    }
+
+    /**
+    /* (non-Javadoc)
+	 * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#createRequestPreProcess(com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate, com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateDAO)
+     */
+    @Override
+	protected void createRequestPreProcess(RequestAggregate reqAgg, RequestAggregateDAO reqAggDAO) throws Exception
+    {
+<span class="nc" id="L210">        super.createRequestPreProcess(reqAgg, reqAggDAO);</span>
+
+<span class="nc" id="L212">        ShiftSwapRequest ssr = (ShiftSwapRequest) reqAgg;</span>
+
+        // status can only be PENDING or NEGOTIATION for creation
+<span class="nc" id="L215">        String status = reqAgg.getRequestStatus();</span>
+<span class="nc bnc" id="L216" title="All 6 branches missed.">        if ( (status == null) || !(reqAgg.isNegotiation() || reqAgg.isPending()) ) {</span>
+<span class="nc" id="L217">            reqAgg.setRequestStatus(RequestAuditTrail.STATUS_NEGOTIATION);</span>
+        }
+
+        // Get ShiftSwap Items associated with this request
+<span class="nc" id="L221">        List items = ssr.getShiftSwapItems();</span>
+
+        // Set the employee id of the request with the employee id of
+        // the first item if found.
+<span class="nc" id="L225">        ssr.setEmployeeID(ssr.getFirstEmployeeID());</span>
+
+<span class="nc" id="L227">        updateExpirationDateAndItemOrder(ssr, ssr.getShiftSwapItems());</span>
+<span class="nc" id="L228">    }</span>
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getRequestPostProcess(java.util.Collection)
+     */
+    @Override
+	protected void getRequestPostProcess(Collection reqAggs, long detailLevel) throws Exception {
+<span class="pc bpc" id="L235" title="1 of 2 branches missed.">    	for (Iterator iter = reqAggs.iterator(); iter.hasNext();) {</span>
+<span class="nc" id="L236">			ShiftSwapRequest ssReq = (ShiftSwapRequest) iter.next();</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">			if (ssReq.isApprovedWithdrawStatusInProgress()) {</span>
+<span class="nc" id="L238">				runSoftValidationsForApprovedSSWithdrawRequest(ssReq);</span>
+			}
+<span class="nc" id="L240">		}</span>
+<span class="fc" id="L241">    }</span>
+
+    //TODO: use the parameter loadedFromDB.
+    @Override
+	protected RequestAggregate updateRequestPreProcess(RequestAggregate reqAgg, RequestAggregateDAO reqAggDAO,
+        boolean loadedFromDB) throws Exception
+    {
+<span class="nc bnc" id="L248" title="All 2 branches missed.">        boolean needToAllocDAO = (reqAggDAO == null);</span>
+        try  {
+<span class="nc" id="L250">            ShiftSwapRequest ssr = (ShiftSwapRequest)reqAgg;</span>
+
+            // ID must be set in objValue
+<span class="nc bnc" id="L253" title="All 2 branches missed.">            if (ssr.getID() == null) {</span>
+<span class="nc" id="L254">                throw new IllegalArgumentException();</span>
+            }
+
+            // obtain old request
+<span class="nc" id="L258">            long detailLevel = ShiftSwapRequest.DL_BASIC | ShiftSwapRequest.DL_SHIFTSWAP_ITEMS;</span>
+<span class="nc" id="L259">            ShiftSwapRequest ssrFromDB = null;</span>
+<span class="nc bnc" id="L260" title="All 2 branches missed.">            reqAggDAO = (reqAggDAO == null)?getDAO(detailLevel):reqAggDAO;</span>
+<span class="nc" id="L261">            ssrFromDB = (ShiftSwapRequest) reqAggDAO.getRequestByID(ssr.getID(), detailLevel);</span>
+
+            // Validate that the request is not changing EmployeeFor
+<span class="nc bnc" id="L264" title="All 2 branches missed.">            if (!ssr.getEmployeeID().equals(ssrFromDB.getEmployeeID())) {</span>
+<span class="nc" id="L265">                throw RequestUtil.createRmException(RmEjbLogBundleKey.CANNOT_CHANGE_SSR_EMPLOYEEID,</span>
+<span class="nc" id="L266">                    ssr.getID(), ssr.getEmployeeID(),ssrFromDB.getEmployeeID(), m_cat);</span>
+            }
+
+<span class="nc" id="L269">            List ssrItems = ssr.getShiftSwapItems();</span>
+
+            //TODO: necessary only when deleteAllChildObjectsFlag() is set.
+<span class="nc" id="L272">            updateExpirationDateAndItemOrder(ssr, ssrItems);</span>
+
+            // If stautus is not set or empty, it is an error
+<span class="nc" id="L275">            String status = ssr.getRequestStatus();</span>
+<span class="nc bnc" id="L276" title="All 4 branches missed.">            if (!StringUtil.isEmpty(status) &amp;&amp; !RequestAuditTrail.SS_POSSIBLE_STATES.contains(status)) {</span>
+<span class="nc" id="L277">                throw RequestUtil.createRmException(</span>
+                    RmEjbLogBundleKey.INVALID_REQUEST_STATUS, new Object[] { status }, m_cat);
+            }
+
+            // if negotiation comment is null, then replace with comment in DB
+<span class="nc bnc" id="L282" title="All 2 branches missed.">            if (ssr.getNegotiationComment() == null) {</span>
+<span class="nc" id="L283">                ssr.setNegotiationComment(ssrFromDB.getNegotiationComment());</span>
+            }
+
+            // webtier modifies the expiration date and IsNegotiationRequired flag of the associated SSItems
+            // in the persisted child list.  Move them to the updated child list.
+<span class="nc bnc" id="L288" title="All 2 branches missed.">            if (ssr.getUpdateAllShiftSwapItems()) {</span>
+<span class="nc" id="L289">                ssr.moveChildrenFromPersistedToUpdated();</span>
+<span class="nc" id="L290">                ssr.setUpdateAllShiftSwapItems(false);</span>
+            }
+
+<span class="nc" id="L293">            return ssr;</span>
+        } finally  {
+<span class="nc bnc" id="L295" title="All 8 branches missed.">            if (needToAllocDAO &amp;&amp; reqAggDAO != null) {</span>
+<span class="nc" id="L296">				reqAggDAO.cleanUp();</span>
+			}
+        }
+    }
+
+    /**
+     * Note: This overrides RequestAggregateManager.changeRequestStateByID() and does not call
+     * the overridden method.  Instead it calls _changeRequestStateByID() directly (which is also
+     * called by ReqAggMgr.changeRequestStateByID()).
+     *
+     * Runs the request status modification and autoprocess in separate transactions.
+     * TODO: change transaction attribute to Required (currently NotRequired).
+     *
+     * {@link com.bluepumpkin.ejb.rm.requests.commonrequestmanager.model.IRequestType#changeRequestStateByID(ID, String, String, String) changeRequestStateByID}
+     */
+    @Override
+	public void changeRequestStateByID(ID reqID, String newState, String objVerNum, String comment)
+        throws  RmHardValidationException, RmException
+    {
+<span class="nc" id="L315">        String _method_ = &quot;changeRequestStateByID&quot;;</span>
+<span class="nc" id="L316">        methodStart(_method_, reqID, newState, objVerNum, comment);</span>
+
+<span class="nc" id="L318">        ShiftSwapRequestDAO ssDAO = null;</span>
+<span class="nc" id="L319">        String setterID = m_className + '.' + _method_;</span>
+<span class="nc" id="L320">        boolean cacheEnabled = false;</span>
+        try {
+<span class="nc" id="L322">            cacheEnabled = ThreadLocalForCacheManagerHelper.enableThreadLocalCacheIfNecess(setterID);</span>
+
+<span class="nc" id="L324">            ShiftSwapRequestManager ssReqMgr = RequestUtil.getSSRequestMgr(null, null);</span>
+
+            // call ReqAggMgr._changeRequestByID instead of ReqAggMgr.changeRequestByID().
+            // ReqAggMgr.changeRequestByID() internally calls ReqAggMgr._changeRequestByID().
+            // In effect this is the same as this overriding method calling the overridden method for
+            // code reuse.
+            // ********** Note: bracketed by its own transaction. *************
+            // ********* Note: This takes care of notifications as well **********
+<span class="nc" id="L332">            ssReqMgr._changeRequestStateByID(reqID, newState, objVerNum, comment);</span>
+
+            // if new state is pending, do auto processing.
+<span class="nc bnc" id="L335" title="All 4 branches missed.">            if ((newState != null) &amp;&amp; newState.equals(RequestAuditTrail.STATUS_PENDING)) {</span>
+                // After creation, refetch to refresh ValueObjectRoot.objectVersionNumber.  Otherwise
+                // a MultiUserException will be thrown during auto processing approve or deny.
+                //TODO: this runs bare without a transaction
+<span class="nc" id="L339">                long detailLevel = getDetailLevelForValidation(); //ShiftSwapRequest.DL_BASIC | ShiftSwapRequest.DL_SHIFTSWAP_ITEMS;</span>
+<span class="nc" id="L340">                ssDAO = new ShiftSwapRequestDAO(detailLevel);</span>
+<span class="nc" id="L341">                ShiftSwapRequest ssr = (ShiftSwapRequest) ssDAO.getRequestByID(reqID, detailLevel);</span>
+
+                //verify again, in case request marked invalid by _changeRequestStateByID() above.
+<span class="nc bnc" id="L344" title="All 2 branches missed.">                if (ssr.isPending()) {</span>
+                    // this is bracketed by its own transaction.
+<span class="nc" id="L346">                    ssReqMgr._autoProcess(ssr, comment, true);</span>
+                }
+            }
+<span class="nc" id="L349">        } catch (RmHardValidationException e) {</span>
+
+            // Logged with priority 'debug' since this exception is generated by RM during validations or
+            // workflow processing and happens often during normal operation.  If logged with a different
+            // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L354">            handleException(Priority.DEBUG, e, false);</span>
+<span class="nc" id="L355">            throw e;</span>
+<span class="nc" id="L356">		} catch (RmException e) {</span>
+<span class="nc" id="L357">			handleException(e, false); //not a transaction participant</span>
+<span class="nc" id="L358">			throw e;</span>
+<span class="nc" id="L359">        } catch (Exception e) {</span>
+<span class="nc" id="L360">            handleException(e, false); //not a transaction participant</span>
+<span class="nc" id="L361">            throw RequestUtil.createRmExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L363" title="All 4 branches missed.">            if (cacheEnabled) {</span>
+<span class="nc" id="L364">				ThreadLocalForCacheManagerHelper.disableThreadLocalCache(setterID);</span>
+			}
+<span class="nc bnc" id="L366" title="All 4 branches missed.">            if ( ssDAO != null) {</span>
+<span class="nc" id="L367">				ssDAO.cleanUp();</span>
+			}
+<span class="nc" id="L369">            methodFinish();</span>
+<span class="nc" id="L370">        }</span>
+<span class="nc" id="L371">    }</span>
+
+    @Override
+	protected void _approveRequest(RequestAggregate reqAgg, ID choiceID, String comment,
+            boolean suppressPrivilegeChecking, boolean loadedFromDB) throws Exception
+    {
+<span class="nc" id="L377">        String methodName = &quot;_approveRequest&quot;;</span>
+<span class="nc" id="L378">        m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqAgg, choiceID, comment,</span>
+            new Boolean(suppressPrivilegeChecking)));
+
+<span class="nc" id="L381">        ShiftSwapPostingDAO ssPostingDAO = null;</span>
+        try {
+<span class="nc" id="L383">            ShiftSwapRequest ssReq = (ShiftSwapRequest) reqAgg;</span>
+
+            // perform status transistion validation, privilege checking, hard validations and then
+            // update request status to approved.
+<span class="nc" id="L387">            String oldStatus = ssReq.getRequestStatus();</span>
+<span class="nc" id="L388">            _updateRequest(ssReq, RequestAuditTrail.STATUS_APPROVED, comment,</span>
+                RequestAuditTrail.STATUS_APPROVED, suppressPrivilegeChecking, loadedFromDB);
+
+            // if request status != tentatively approved, swap shifts in unpublished schedule
+<span class="nc" id="L392">            ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc bnc" id="L393" title="All 2 branches missed.">            if ( !oldStatus.equals(RequestAuditTrail.STATUS_TENTATIVE) ) {</span>
+<span class="nc" id="L394">            	ShiftSwapItem ssItem1 = ssReq.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L395">            	ShiftSwapItem ssItem2 = ssReq.getShiftSwapItems().get(1);</span>
+<span class="nc bnc" id="L396" title="All 4 branches missed.">            	if (ssItem1.getIsPartial() || ssItem2.getIsPartial()){</span>
+<span class="nc" id="L397">            		ShiftAssignment[] saArr = ShiftSwapRequestUtil.performPartialSwap(ssReq, true, sam, false, true);</span>
+            		// publish the swap changes
+<span class="nc" id="L399">                    ShiftSwapRequestUtil.publishPartialSwap(saArr, sam);</span>
+<span class="nc" id="L400">            	} else {</span>
+	                // setting 'fixNewShiftAssnSPID' to 'true'.  See javadoc for further details.
+<span class="nc" id="L402">	                ShiftSwapRequestUtil.performSwap(ssReq, true, true, sam);</span>
+	                // publish the swap changes
+<span class="nc" id="L404">	                ShiftSwapRequestUtil.publishSwap(ssReq, sam);</span>
+            	}
+<span class="nc" id="L406">            } else {</span>
+            	// QA 93412 - Bug for shift swap
+            	// the request has been swapped now just publish
+            	// this is not applied for partial shift swap because partial swap cannot be tentative approved
+
+            	// publish the swap changes
+<span class="nc" id="L412">                ShiftSwapRequestUtil.publishSwap(ssReq, sam);</span>
+
+                // End #93412
+            }
+
+            //Create a shift stamp for each swap to identify swaps that change in the future.
+            //required for withdrawal validation
+<span class="nc" id="L419">            ShiftSwapRequestUtil.signShiftSwapItems(ssReq,sam);</span>
+
+<span class="nc" id="L421">            Collection allPostings = new ArrayList();</span>
+
+            // remove any swap postings which correspond to the swap items.
+            // sr# 28260 use DL_SHIFTSWAP_ITEMS detail level
+<span class="nc" id="L425">            ssPostingDAO = new ShiftSwapPostingDAO(ShiftSwapPosting.DL_SHIFTSWAP_ITEMS);</span>
+<span class="nc" id="L426">            Collection ssPostingsForReq = ssPostingDAO.findSSPostingsForSSItems(</span>
+<span class="nc" id="L427">                ssReq.getShiftSwapItems(), ShiftSwapPosting.DL_BASIC);</span>
+
+<span class="nc bnc" id="L429" title="All 4 branches missed.">            if (ssPostingsForReq!=null &amp;&amp; !ssPostingsForReq.isEmpty()) {</span>
+<span class="nc" id="L430">            	allPostings.addAll(ssPostingsForReq);</span>
+            }
+
+            /*  Also find day off postings for 2-way swap- Agent A want to swap the Day Off on Day X to Day Off on Day Y of Agent B
+             *  since there  is adjustment of shifttype, start date, end date before creating shift swap items
+             *  so that  system actually swaps the shift of Agent B on Day X(the Day off of Agent A) and the shift of agent A Day Y (the Day off of Agent B)
+             * */
+
+<span class="nc bnc" id="L438" title="All 2 branches missed.">            if (ssReq.getSwapType().equals(ShiftSwapRequest.SHIFTSWAP_TYPE_TWOWAY)){</span>
+<span class="nc" id="L439">            	Collection ssDayOffPosting = ssPostingDAO.findSSDayOffPostingsForSSItems(</span>
+<span class="nc" id="L440">                        ssReq.getShiftSwapItems(), ShiftSwapPosting.DL_BASIC);</span>
+<span class="nc bnc" id="L441" title="All 4 branches missed.">            	if(ssDayOffPosting!=null &amp;&amp; !ssDayOffPosting.isEmpty()){</span>
+<span class="nc" id="L442">            		allPostings.addAll(ssDayOffPosting);</span>
+            	}
+            }
+            // if found, delete postings corresponding to the the ssItems.
+            // and delete posting of employees since time off swap item is converted to shift
+<span class="nc bnc" id="L447" title="All 2 branches missed.">            if (!allPostings.isEmpty()) {</span>
+<span class="nc" id="L448">                Collection ssPostingIDs = RequestUtil.getListOfIDsFromVOBases(allPostings);</span>
+<span class="nc" id="L449">                ssPostingDAO.deleteSSPostings(ssPostingIDs);</span>
+            }
+
+<span class="nc" id="L452">            m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+        } finally {
+<span class="nc bnc" id="L454" title="All 4 branches missed.">            if (ssPostingDAO != null) {</span>
+<span class="nc" id="L455">				ssPostingDAO.cleanUp();</span>
+			}
+        }
+<span class="nc" id="L458">    }</span>
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#_approveRequestPostProcess(com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate, com.bluepumpkin.common.datatypes.ID, java.lang.String)
+     */
+    @Override
+	protected void _approveRequestPostProcess(RequestAggregate reqAgg, ID choiceID, String comment) {
+<span class="nc" id="L465">    }</span>
+
+    //
+    @Override
+	protected void _approveRequestTentatively(RequestAggregate reqAgg, ID choiceID, String comment, boolean loadedFromDB)
+        throws Exception
+    {
+<span class="nc" id="L472">        String methodName = &quot;_approveRequestTentatively&quot;;</span>
+<span class="nc" id="L473">        m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqAgg, choiceID, comment));</span>
+
+        // perform the swap in the unpublished schedule
+<span class="nc" id="L476">        ShiftSwapRequest ssReq = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc" id="L477">        ShiftSwapItem ssItem1 = ssReq.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L478">    	ShiftSwapItem ssItem2 = ssReq.getShiftSwapItems().get(1);</span>
+
+<span class="nc" id="L480">    	ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc bnc" id="L481" title="All 4 branches missed.">        if (ssItem1.getIsPartial() || ssItem2.getIsPartial()){</span>
+        	//validate that the shifts do not overlap with sssItems, since that will
+        	//make the reverse swap impossible
+<span class="nc bnc" id="L484" title="All 2 branches missed.">        	if (ShiftSwapRequestUtil.canApproveTentatively(ssReq, sam)){</span>
+<span class="nc" id="L485">        		ShiftSwapRequestUtil.performPartialSwap(ssReq, true, sam, false, true);</span>
+        	} else {
+<span class="nc" id="L487">        		throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.SS_CANNOT_APPROVE_TENTATIVELY,</span>
+        				 m_cat);
+        	}
+    	} else {
+            // setting 'fixNewShiftAssnSPID' to 'true'.  See javadoc for further details.
+<span class="nc" id="L492">            ShiftSwapRequestUtil.performSwap(ssReq, true, true, sam);</span>
+    	}
+
+        // perform status change validation, privilege checking, hard validations and then update
+        // status to tentatively approved.
+<span class="nc" id="L497">        _updateRequest(reqAgg, RequestAuditTrail.STATUS_TENTATIVE, comment,</span>
+            RequestAuditTrail.STATUS_TENTATIVE, false, loadedFromDB);
+
+<span class="nc" id="L500">        m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+<span class="nc" id="L501">    }</span>
+
+    //TESTME one and 2 way swap
+    @Override
+	protected void _denyRequest(RequestAggregate reqAgg, String comment, boolean suppressPrivilegeChecking,
+        boolean loadedFromDB) throws Exception
+    {
+<span class="nc" id="L508">        String methodName = &quot;_denyRequest&quot;;</span>
+<span class="nc" id="L509">        m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqAgg, comment,</span>
+            new Boolean(suppressPrivilegeChecking)));
+
+        // update status to denied (after status transistion validation, privilege checking and
+        // hard validations).
+<span class="nc" id="L514">        String oldStatus = reqAgg.getRequestStatus();</span>
+<span class="nc" id="L515">        _updateRequest(reqAgg, RequestAuditTrail.STATUS_DENIED, comment, null, suppressPrivilegeChecking, loadedFromDB);</span>
+
+        // if denying tentatively approved request, revert shift swap done.
+<span class="nc bnc" id="L518" title="All 2 branches missed.">        if (oldStatus.equals(RequestAuditTrail.STATUS_TENTATIVE)) {</span>
+<span class="nc" id="L519">			ShiftSwapRequestUtil.undoSwap((ShiftSwapRequest) reqAgg, null);</span>
+		}
+
+<span class="nc" id="L522">        m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+<span class="nc" id="L523">    }</span>
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#_denyRequestPostProcess(com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate, java.lang.String)
+     */
+    @Override
+	protected void _denyRequestPostProcess(RequestAggregate reqAgg, String comment) {
+<span class="nc" id="L530">    }</span>
+
+    @Override
+	protected RequestAggregate _undoTentativeApprovalByID(ID reqID, String objectVersionNumber, String comment)
+        throws Exception
+    {
+<span class="nc" id="L536">        String methodName = &quot;_undoTentativeApprovalByID&quot;;</span>
+<span class="nc" id="L537">        m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqID, objectVersionNumber, comment));</span>
+
+<span class="nc" id="L539">        RequestAggregate reqAgg = _getRequestByID(reqID, false, false, false,</span>
+<span class="nc" id="L540">            ShiftSwapRequest.getDetailLevelForValidation());</span>
+
+<span class="nc bnc" id="L542" title="All 2 branches missed.">        if ( objectVersionNumber != null ) {</span>
+<span class="nc" id="L543">			reqAgg.setObjectVersionNumber(objectVersionNumber);</span>
+		}
+<span class="nc" id="L545">        _updateRequest( reqAgg, RequestAuditTrail.STATUS_PENDING, comment, null, false, true);</span>
+
+        // undo swap before reverting status to 'pending' as otherwise undoSwap() method will fail (checks
+        // if status is tentative before undoing).
+<span class="nc" id="L549">        ShiftSwapRequestUtil.undoSwap( (ShiftSwapRequest) reqAgg, null);</span>
+
+<span class="nc" id="L551">        m_cat.debug(RmUtil.dumpExitMethod(methodName, reqAgg));</span>
+<span class="nc" id="L552">        return reqAgg;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#_undoRequestAndSchedule(com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate, com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateDAO, java.lang.Object[])
+     */
+    @Override
+	protected void _undoSchedule(RequestAggregate reqAgg, RequestAggregateDAO reqAggDAO,
+        Object[] optionalUndoData) throws Exception {
+
+<span class="nc" id="L562">        ShiftSwapRequest ssReq = (ShiftSwapRequest) reqAgg;</span>
+
+        //undo changes to the schedule.
+<span class="nc bnc" id="L565" title="All 4 branches missed.">        if (reqAgg.isApproved() || reqAgg.isTentative()) {</span>
+<span class="nc" id="L566">            ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc" id="L567">            ShiftSwapRequestUtil.undoSwap(ssReq, sam);</span>
+
+            // if swap request was approved, then undo the published schedule as well.
+<span class="nc bnc" id="L570" title="All 2 branches missed.">            if (reqAgg.isApproved()) {</span>
+<span class="nc" id="L571">				ShiftSwapRequestUtil.publishSwap(ssReq, sam);</span>
+			}
+        }
+
+//        //delete the shift swap request
+//        reqAggDAO = (reqAggDAO == null)?new ShiftSwapRequestDAO(ShiftSwapRequest.DL_BASIC):reqAggDAO;
+//        reqAggDAO.deleteObject(reqAgg.getID());
+<span class="nc" id="L578">    }</span>
+
+    @Override
+	protected List getCurrentOrgIDsForReqID(ID requestId, RequestAggregateDAO reqAggDAO) throws
+            BbmFinderException, BbmObjectNotFoundException {
+
+<span class="nc bnc" id="L584" title="All 2 branches missed.">        boolean needToAllocDAO = (reqAggDAO == null);</span>
+        try   {
+<span class="nc" id="L586">            long detailLevel = ShiftSwapRequest.DL_BASIC | ShiftSwapRequest.DL_SHIFTSWAP_ITEMS;</span>
+<span class="nc bnc" id="L587" title="All 2 branches missed.">            reqAggDAO = (reqAggDAO == null)?getDAO(detailLevel):reqAggDAO;</span>
+<span class="nc" id="L588">            ShiftSwapRequest  ssReq = (ShiftSwapRequest) reqAggDAO.getRequestByID(requestId,</span>
+                detailLevel);
+
+<span class="nc" id="L591">            List orgIDs = new ArrayList();</span>
+            //Presently we implement only a 2 way swap
+            //TODO: move this out of TOCalc
+<span class="nc" id="L594">            orgIDs.add(TOCalcUtil.getCurrentOrgIDForEmployeeID( ssReq.getFirstEmployeeID() ));</span>
+<span class="nc" id="L595">            orgIDs.add(TOCalcUtil.getCurrentOrgIDForEmployeeID( ssReq.getSecondEmployeeID() ));</span>
+
+<span class="nc" id="L597">            return orgIDs;</span>
+        } finally  {
+<span class="nc bnc" id="L599" title="All 8 branches missed.">            if (needToAllocDAO &amp;&amp; reqAggDAO != null) {</span>
+<span class="nc" id="L600">				reqAggDAO.cleanUp();</span>
+			}
+        }
+    }
+
+//    protected void checkPrivilegeForOrgs(Collection orgIDs, int privilege)
+//        throws Exception   {
+//
+//        // Validate that requestor has purge privilege
+//        User user = RequestUtil.getLoginUser(m_sessionContext);
+//
+//        // Check that the user has purge privilege in each organization
+//        for (Iterator it = orgIDs.iterator(); it.hasNext();) {
+//            ID orgID = (ID) it.next();
+//
+//            if (!user.isAuthorizedForOrg(orgID, PrivilegeKeys.SS_PURGEREQUESTS)) {
+//                t_hrow RequestUtil.createBbmRemoveException(RmEjbBundleKey.NOT_AUTHORIZED_TO_PURGE_SSR,
+//                    new Object[] { user.getUserName(), ValidationUtil.getOrganizationByID(orgID).getName() }, m_cat);
+//            }
+//        }
+//    }
+
+    /**
+     * Compute the expiration date given a list of swap items.
+     * The expiration date will be the minimum of the individual expiration
+     * dates.
+     */
+    //TODO: expiration date must be the earlier of the item expirations and shift assignment start
+    //TODO: Negotiaation required/not required flag of ShiftSwapRequest doesn't seem to work.
+    //TESTME: expiration date must be the earlier of the item expirations and shift assignment start
+    protected static void updateExpirationDateAndItemOrder(ShiftSwapRequest ssReq, Collection items) {
+<span class="nc" id="L631">        ssReq.updateReqAndItemExpirationDates(items);</span>
+
+        // TODO: seems shift swap items must preserve order.  After migrating to the DAO framework, do they?
+        // Note: can't replace ssReq.getChildObjects(ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE) with
+        // ssReq.getShiftSwapItems() as the returned object types are different.
+<span class="nc" id="L636">        int i = 0;</span>
+<span class="nc bnc" id="L637" title="All 2 branches missed.">        for (Iterator itr = ssReq.getShiftSwapRequestItems().iterator(); itr.hasNext(); i++) {</span>
+<span class="nc" id="L638">            ( (ShiftSwapRequestItem)itr.next() ).setItemOrder(i);</span>
+        }
+<span class="nc" id="L640">    }</span>
+
+//    /**
+//     * Returns &lt;tt&gt;true&lt;/tt&gt; if the newState is a valid state for the type of
+//     * request. Expired, Invalid, Pending, and Withdrawn are valid for any
+//     * type of request. The child's implementation for check for the other
+//     * states.
+//     */
+//    protected void validNewState(String newState) throws
+//    {
+//        if (!RequestAuditTrail.SS_POSSIBLE_STATES.contains(newState))
+//            throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.INVALID_REQUEST_STATUS,
+//                new Object[] {newState}, m_cat);
+//
+//    }
+
+//    private void checkApproveDenyPrivilege(User user, ShiftSwapRequest ssr, String newState)
+//            throws  ValidationException {
+//
+//        String oldState = ssr.getRequestStatus();
+//
+//        // if editing a request which is in one of the approve/deny states, then no
+//        // privilege check is necessary (for instance editing a tentatively approved request).
+//        if (oldState.equals(newState)) return;
+//
+//        ID reqID = ssr.getID();
+//
+//        Collection orgIDs = ssr.getCache().getOrgIDs();
+//
+//        String S_P = RequestAuditTrail.STATUS_PENDING;
+//        String S_T = RequestAuditTrail.STATUS_TENTATIVE;
+//        String S_E = RequestAuditTrail.STATUS_ESCALATED;
+//
+//        for (Iterator itr = orgIDs.iterator(); itr.hasNext();) {
+//            ID orgID = (ID) itr.next();
+//
+//            // If current state is pending or tentative, is user authorized to approve for this organization?
+//            if ( oldState.equals(S_P) || oldState.equals(S_T) ) {
+//                if ( !user.isAuthorizedForOrg(orgID, PrivilegeKeys.SS_APPROVEPENDINGREQUESTS) ) {
+//                    t_hrow RequestUtil.createRmHardValidationException(RmEjbBundleKey.USER_NOT_AUTHORIZED_FOR_PENDING_APPROVE,
+//                        new Object[] { user.getUserName(), reqID, oldState, newState }, m_cat );
+//                }
+//                continue;
+//            }
+//            // If current state is Escalated, is user authorized to approve escalated requests?
+//            else if ( oldState.equals(S_E) ) {
+//                if ( !user.isAuthorizedForOrg(orgID, PrivilegeKeys.SS_APPROVEESCALATEDREQUESTS) ) {
+//                    t_hrow RequestUtil.createRmHardValidationException(RmEjbBundleKey.USER_NOT_AUTHORIZED_FOR_ESCALATED_APPROVE,
+//                        new Object[] { user.getUserName(), reqID, oldState, newState }, m_cat );
+//                }
+//                continue;
+//            }
+//            // current state is neither of the above, which is an error.
+//            else {
+//                t_hrow RequestUtil.createRmHardValidationException(RmEjbBundleKey.CANNOT_TRANSITION_STATUS,
+//                    new Object[] { ssr.getID(), oldState, newState}, m_cat );
+//            }
+//        }
+//    }
+
+    /*
+     *
+     * @param user
+     * @param oldState can be null (for requests being created).
+     * @param newReqAgg
+     * @param vc
+     * @throws
+     */
+//    private void checkModifyPrivilege(User user, ShiftSwapRequest ssr, String newState) throws Exception
+//    {
+//        ID reqID = ssr.getID();
+//        String oldState = ssr.getRequestStatus();
+//
+//        // get list of employees participating in shift swap
+//        ShiftSwapValidationCache vc = ssr.getCache();
+//        Collection empIDs = vc.getEmployeeIDsForRequest();
+//        // check if current user is a participant in this SSRequest with SS_MODIFYPERSONALREQUESTS privelge
+//        for (Iterator itr = empIDs.iterator(); itr.hasNext();) {
+//            ID idEmp = (ID) itr.next();
+//            if ( user.getEmployeeID().equals(idEmp) ) {
+//                if ( user.isAuthorized(PrivilegeKeys.SS_MODIFYPERSONALREQUESTS)) {
+//                    return;
+//                } else {
+//                    t_hrow RequestUtil.createRmHardValidationException(RmEjbBundleKey.USER_NOT_AUTHORIZED_FOR_MODIFICATION,
+//                        new Object[] { user.getUserName(), reqID, oldState, newState}, m_cat);
+//                }
+//            }
+//        }
+//
+//        // Not  a participant of the SS Request.  Now check if current user has
+//        // SS_MODIFYREQUESTSFOREMPLOYEE (manager privileges) in all orgs this SSRequest represents.
+//        Collection orgIDs = vc.getOrgIDs();
+//        for (Iterator itr = orgIDs.iterator(); itr.hasNext();) {
+//            ID idOrg = (ID) itr.next();
+//
+//            if (!user.isAuthorizedForOrg(idOrg, PrivilegeKeys.SS_MODIFYREQUESTSFOREMPLOYEE)) {
+//                t_hrow RequestUtil.createRmHardValidationException(RmEjbBundleKey.MANAGER_NO_MODIFY_PRIVILEGE_FOR_ORG,
+//                    new Object[] { user.getUserName(), idOrg, reqID, oldState, newState}, m_cat);
+//            }
+//        }
+//
+//        // user has the privilege to change state as he/she has SS_MODIFYREQUESTSFOREMPLOYEE privelege for all orgs.
+//        // But a manager is not permitted to change status to &quot;Negotiation&quot;.  Verify.
+//        if ( newState.equals(RequestAuditTrail.STATUS_NEGOTIATION) ) {
+//            t_hrow RequestUtil.createRmHardValidationException(RmEjbBundleKey.MANAGER_CANT_CHANGE_TO_NEGOTIATE,
+//                new Object[] { user.getUserName(), reqID, oldState, newState}, m_cat);
+//        }
+//
+//        // done
+//        return;
+//    }
+
+        //TODO: support privelge checking.
+    //    public static final String SS_SETPOLICIES = &quot;SS.SETPOLICIES&quot;;
+    //    public static final String SS_SETVALIDATIONRULES = &quot;SS.SETVALIDATIONRULES&quot;;
+    //    public static final String SS_SETFILINGRULES = &quot;SS.SETFILINGRULES&quot;;
+    //    public static final String SS_SETAUTOPROCESSING = &quot;SS.SETAUTOPROCESSING&quot;;
+    //    public static final String SS_PURGEREQUESTS = &quot;SS.PURGEREQUESTS&quot;;
+    //    public static final String SS_READWRITETOSWAPBOARD = &quot;SS.READWRITETOSWAPBOARD&quot;;
+    //    public static final String SS_SWAPACROSSORGS = &quot;SS.SWAPACROSSORGS&quot;;
+    //    public static final String SS_SWAPACROSSCAMPAIGNS = &quot;SS.SWAPACROSSCAMPAIGNS&quot;;
+    //    public static final String SS_VIEWPERSONALSKILLS = &quot;SS.VIEWPERSONALSKILLS&quot;;
+    //    public static final String SS_VIEWPERSONALPROFICIENCIES = &quot;SS.VIEWPERSONALPROFICIENCIES&quot;;
+    //    public static final String SS_VIEWEMPLOYEESKILLS = &quot;SS.VIEWEMPLOYEESKILLS&quot;;
+    //    public static final String SS_VIEWEMPLOYEEPROFICIENCIES = &quot;SS.VIEWEMPLOYEEPROFICIENCIES&quot;;
+    //    public static final String SS_VIEWREQUESTSFOREMPLOYEE = &quot;SS.VIEWREQUESTSFOREMPLOYEE&quot;;
+    //    public static final String SS_MODIFYREQUESTSFOREMPLOYEE = &quot;SS.MODIFYREQUESTSFOREMPLOYEE&quot;;
+    //    public static final String SS_APPROVEPENDINGREQUESTS = &quot;SS.APPROVEPENDINGREQUESTS&quot;;
+    //    public static final String SS_APPROVEESCALATEDREQUESTS = &quot;SS.APPROVEESCALATEDREQUESTS&quot;;
+    //    public static final String SS_VIEWPERSONALREQUESTS = &quot;SS.VIEWPERSONALREQUESTS&quot;;
+    //    public static final String SS_MODIFYPERSONALREQUESTS = &quot;SS.MODIFYPERSONALREQUESTS&quot;;
+    //    public static final String SS_ESCALATEDENIEDREQUESTS = &quot;SS.ESCALATEDENIEDREQUESTS&quot;;
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#checkApproveDenyTransPriv(com.bluepumpkin.ejb.bbm.security.model.User, com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate, java.lang.String, java.lang.String, com.bluepumpkin.common.datatypes.ID)
+     */
+    @Override
+	protected void checkApproveDenyTransPriv(User userBasic, RequestAggregate reqAgg, String oldState,
+        String newState, ID orgID) throws Exception  {
+
+<span class="nc" id="L780">        ShiftSwapRequest ssr = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc" id="L781">        Collection orgIDs = ssr.getCache().getOrgIDs();</span>
+<span class="nc" id="L782">        ID reqID = reqAgg.getID();</span>
+
+<span class="nc" id="L784">        String S_P = RequestAuditTrail.STATUS_PENDING;</span>
+<span class="nc" id="L785">        String S_T = RequestAuditTrail.STATUS_TENTATIVE;</span>
+<span class="nc" id="L786">        String S_E = RequestAuditTrail.STATUS_ESCALATED;</span>
+
+<span class="nc" id="L788">        String userName = userBasic.getUserName();</span>
+<span class="nc bnc" id="L789" title="All 2 branches missed.">        for (Iterator itr = orgIDs.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L790">            orgID = (ID) itr.next();</span>
+
+            // If current state is pending or tentative, is user authorized to approve for this organization?
+<span class="nc bnc" id="L793" title="All 4 branches missed.">            if ( oldState.equals(S_P) || oldState.equals(S_T) ) {</span>
+<span class="nc" id="L794">                ID privFailedOrgID = RequestUtil.checkPrivilegeForOrgs(userName, Collections.singleton(orgID),</span>
+<span class="nc" id="L795">                    getPrivIDApprovePending());</span>
+<span class="nc bnc" id="L796" title="All 2 branches missed.">				if ( privFailedOrgID == null ) {</span>
+<span class="nc" id="L797">                    continue;</span>
+                }
+
+<span class="nc" id="L800">                throw RequestUtil.createAndLogRmHardValidationException(</span>
+										RmEjbBundleKey.REQ_USER_NOT_AUTHORIZED_FOR_PENDING_APPROVE,
+										RmEjbLogBundleKey.REQ_USER_NOT_AUTHORIZED_FOR_PENDING_APPROVE,
+                    new Object[] {userName, reqID, oldState, newState},
+										m_cat);
+            } // If current state is Escalated, is user authorized to approve escalated requests?
+<span class="nc bnc" id="L806" title="All 2 branches missed.">            else if ( oldState.equals(S_E) ) {</span>
+<span class="nc" id="L807">                ID privFailedOrgID = RequestUtil.checkPrivilegeForOrgs(userName, Collections.singleton(orgID),</span>
+<span class="nc" id="L808">                    getPrivIDApproveEscalated());</span>
+<span class="nc bnc" id="L809" title="All 2 branches missed.">				if ( privFailedOrgID == null ) {</span>
+<span class="nc" id="L810">                    continue;</span>
+                }
+
+<span class="nc" id="L813">                throw RequestUtil.createAndLogRmHardValidationException(</span>
+										RmEjbBundleKey.REQ_USER_NOT_AUTHORIZED_FOR_ESCALATED_APPROVE,
+										RmEjbLogBundleKey.REQ_USER_NOT_AUTHORIZED_FOR_ESCALATED_APPROVE,
+                    new Object[] {userName, reqID, oldState, newState},
+										m_cat);
+            } // state transition check is done separately from privilege check
+//          else {
+//              t_hrow RequestUtil.createRmHardValidationException(RmEjbBundleKey.CANNOT_TRANSITION_STATUS,
+//                  new Object[] { reqAgg.getID(), oldState, newState}, m_cat );
+//          }
+        }
+<span class="nc" id="L824">    }</span>
+
+
+	@Override
+	protected void checkEscalateTransPriv(User userBasic, RequestAggregate reqAgg, String oldState,
+	                                      String newState, ID orgID) throws Exception {
+
+<span class="nc" id="L831">		ShiftSwapRequest ssr = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc" id="L832">		Collection orgIDs = ssr.getCache().getOrgIDs();</span>
+<span class="nc" id="L833">		ID reqID = reqAgg.getID();</span>
+<span class="nc" id="L834">		String userName = userBasic.getUserName();</span>
+<span class="nc" id="L835">		boolean foundPriv = false;</span>
+<span class="nc bnc" id="L836" title="All 2 branches missed.">		for (Iterator itr = orgIDs.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L837">			orgID = (ID) itr.next();</span>
+<span class="nc" id="L838">			ID privFailedOrgID = RequestUtil.checkPrivilegeForOrgs(userName, Collections.singleton(orgID),</span>
+			        //getPrivIDApproveEscalated()
+				//it should be
+<span class="nc" id="L841">			        getPrivIDEscalate());</span>
+<span class="nc bnc" id="L842" title="All 2 branches missed.">			if (privFailedOrgID == null) {</span>
+<span class="nc" id="L843">				foundPriv = true;</span>
+<span class="nc" id="L844">				break;</span>
+			}
+<span class="nc" id="L846">		}</span>
+<span class="nc bnc" id="L847" title="All 2 branches missed.">		if (!foundPriv) {//If no privilege found set the error message and return</span>
+<span class="nc" id="L848">			throw RequestUtil.createAndLogRmHardValidationException(RmEjbBundleKey.REQ_USER_NOT_AUTHORIZED_FOR_ESCALATED_APPROVE,</span>
+			        RmEjbLogBundleKey.REQ_USER_NOT_AUTHORIZED_FOR_ESCALATED_APPROVE,
+			        new Object[]{userName, reqID, oldState, newState},
+			        m_cat);
+		}
+<span class="nc" id="L853">	}</span>
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getPrivIDApproveEscalated()
+     */
+    @Override
+	protected ID getPrivIDApproveEscalated() {
+<span class="nc" id="L860">        return PrivilegeKeys.SS_APPROVEESCALATEDREQUESTS_ID;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getPrivIDApprovePending()
+     */
+    @Override
+	protected ID getPrivIDApprovePending() {
+<span class="nc" id="L868">        return PrivilegeKeys.SS_APPROVEPENDINGREQUESTS_ID;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getPrivIDEscalate()
+     */
+    @Override
+	protected ID getPrivIDEscalate() {
+<span class="nc" id="L876">        return PrivilegeKeys.SS_ESCALATEDENIEDREQUESTS_ID;</span>
+    }
+
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#checkModifyPrivilege(com.bluepumpkin.ejb.bbm.security.model.User, com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate, java.lang.String, java.lang.String, com.bluepumpkin.common.datatypes.ID)
+     */
+    @Override
+	protected void checkModifyPrivilege(User userBasic, RequestAggregate reqAgg, String oldState,
+        String newState, ID orgID) throws Exception {
+
+<span class="nc" id="L887">        ID reqID = reqAgg.getID();</span>
+
+        // get list of employees participating in shift swap
+<span class="nc" id="L890">        ShiftSwapValidationCache vc = (ShiftSwapValidationCache) reqAgg.getValidationCache();</span>
+        //Collection empIDs = vc.getEmployeeIDsForRequest();
+<span class="nc" id="L892">        Map reqEmpIDToOrgIDMap = vc.getEmpIDToOrgIDMap();</span>
+
+<span class="nc" id="L894">        String userName = userBasic.getUserName();</span>
+        // check if current user is a participant in this SSRequest with SS_MODIFYPERSONALREQUESTS privelge
+        //
+        // for each request's employee
+<span class="nc bnc" id="L898" title="All 2 branches missed.">        for (Iterator itr = reqEmpIDToOrgIDMap.entrySet().iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L899">            Map.Entry reqEmpIDToOrgIDMapEntry = (Map.Entry) itr.next();</span>
+
+<span class="nc" id="L901">            ID reqEmpID = (ID) reqEmpIDToOrgIDMapEntry.getKey();</span>
+<span class="nc" id="L902">            ID reqEmpOrgID = (ID) reqEmpIDToOrgIDMapEntry.getValue();</span>
+
+            // if request empID matches the user's
+<span class="nc bnc" id="L905" title="All 2 branches missed.">            if ( userBasic.getEmployeeID().equals(reqEmpID) ) {</span>
+                // check if the given user has 'modifypersonalreqs' privilege for his org.
+<span class="nc" id="L907">                ID privFailedOrgID = RequestUtil.checkPrivilegeForOrgs(</span>
+<span class="nc" id="L908">                		userName, Collections.singleton(reqEmpOrgID), getPrivIDModifyPersonalReqs());</span>
+
+				// if user has privilege in his org.
+<span class="nc bnc" id="L911" title="All 2 branches missed.">				if ( privFailedOrgID == null) {</span>
+<span class="nc" id="L912">                    return;</span>
+                }
+
+				// if user does not have the privilege
+<span class="nc" id="L916">                throw RequestUtil.createAndLogRmHardValidationException(</span>
+										RmEjbBundleKey.REQ_USER_NOT_AUTHORIZED_FOR_MODIFICATION,
+										RmEjbLogBundleKey.REQ_USER_NOT_AUTHORIZED_FOR_MODIFICATION,
+                    new Object[] {userName, reqID, oldState, newState},
+										m_cat);
+            }
+<span class="nc" id="L922">        }</span>
+
+        // Not  a participant of the SS Request.  Now check if current user has
+        // SS_MODIFYREQUESTSFOREMPLOYEE (manager privileges) in all orgs this SSRequest represents.
+<span class="nc" id="L926">        Collection orgIDs = vc.getOrgIDs();</span>
+
+		// check if user has SS_MODIFYREQUESTSFOREMPLOYEE privileges to all orgs.
+<span class="nc" id="L929">        ShiftSwapRequest ssReq = (ShiftSwapRequest)reqAgg;</span>
+<span class="nc" id="L930">        ID modifyReqsForEmpPriv=null;</span>
+<span class="nc bnc" id="L931" title="All 4 branches missed.">        if (oldState.compareTo(RequestAuditTrail.STATUS_APPROVED)==0 &amp;&amp; ssReq.getWithdrawInfo()!=null){</span>
+        	//This is a withdraw request.
+<span class="nc bnc" id="L933" title="All 2 branches missed.">        	if (newState.compareTo(RequestAuditTrail.STATUS_WITHDRAWN)==0){</span>
+<span class="nc" id="L934">        		modifyReqsForEmpPriv=getPrivIDApprovePending();</span>
+        	} else {
+<span class="nc" id="L936">        		modifyReqsForEmpPriv=PrivilegeKeys.SS_WITHDRAWREQUESTS_ID;</span>
+        	}
+        } else {
+<span class="nc" id="L939">        	modifyReqsForEmpPriv=getPrivIDModifyReqsForEmp();</span>
+        }
+
+
+<span class="nc" id="L943">        ID privFailedOrgID = RequestUtil.checkPrivilegeForOrgs(userName, orgIDs, modifyReqsForEmpPriv);</span>
+		// if user does not have this privilege
+<span class="nc bnc" id="L945" title="All 2 branches missed.">		if ( privFailedOrgID != null ) {</span>
+<span class="nc" id="L946">            throw RequestUtil.createAndLogRmHardValidationException(</span>
+								RmEjbBundleKey.REQ_MANAGER_NO_MODIFY_PRIVILEGE_FOR_ORG,
+								RmEjbLogBundleKey.REQ_MANAGER_NO_MODIFY_PRIVILEGE_FOR_ORG,
+                new Object[] {userName, privFailedOrgID, reqID, oldState, newState},
+								m_cat);
+        }
+
+        // user has SS_MODIFYREQUESTSFOREMPLOYEE privelege for all orgs associated with this request.
+        // But the manager is not permitted to change status to &quot;Negotiation&quot;.  Verify.
+<span class="nc bnc" id="L955" title="All 2 branches missed.">        if ( newState.equals(RequestAuditTrail.STATUS_NEGOTIATION) ) {</span>
+<span class="nc" id="L956">            throw RequestUtil.createAndLogRmHardValidationException(</span>
+								RmEjbBundleKey.REQ_MANAGER_CANT_CHANGE_TO_NEGOTIATE,
+								RmEjbLogBundleKey.REQ_MANAGER_CANT_CHANGE_TO_NEGOTIATE,
+                new Object[] {userName, reqID, oldState, newState},
+								m_cat);
+        }
+
+        // done
+<span class="nc" id="L964">        return;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getPrivIDModifyPersonalReqs()
+     */
+    @Override
+	protected ID getPrivIDModifyPersonalReqs() {
+<span class="nc" id="L972">        return PrivilegeKeys.SS_MODIFYPERSONALREQUESTS_ID;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getPrivIDModifyReqsForEmp()
+     */
+    @Override
+	protected ID getPrivIDModifyReqsForEmp() {
+<span class="nc" id="L980">        return PrivilegeKeys.SS_MODIFYREQUESTSFOREMPLOYEE_ID;</span>
+    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateManager#getPrivIDPurge()
+     */
+    @Override
+	protected ID getPrivIDPurge() {
+<span class="nc" id="L988">        return PrivilegeKeys.SS_PURGEREQUESTS_ID;</span>
+    }
+
+    /**
+     * Given a request object, add any associated employees to the input set and return the
+     * updated set.  The methods that build a list of requests also return a map of employee
+     * ids to EmployeeName objects.  In order to support that operation, the CommonRequestManager
+     * needs to know the ids of every employee associated with a request.  Since there may be
+     * several and the ids may be in the non-common portion of the request object, this method
+     * will be called to add any employee ids to the set being built.
+     *
+     * @param reqAgg the request to examine.
+     * @param reqEmpIds the set of employee ids so far.  This method will add all employee ids
+     * in request to this set.
+     * @return the updated set
+     */
+
+    @Override
+	public Set addEmployeeIDsToSet(RequestAggregate reqAgg, Set reqEmpIds) {
+<span class="nc" id="L1007">        ShiftSwapRequest ssr = (ShiftSwapRequest) reqAgg;</span>
+
+<span class="nc" id="L1009">        reqEmpIds.add(ssr.getEmployeeID());</span>
+<span class="nc" id="L1010">        reqEmpIds.addAll(ssr.getEmployees());</span>
+
+<span class="nc" id="L1012">        return reqEmpIds;</span>
+    }
+
+
+    /**
+     * Add columns necessary to process a query governed by the given filter.  The caller has already
+     * added columns from the REQUEST (as A), EMPLOYEE (as B) and PERSON (as C) tables.  Columns from
+     * new tables should start with D as a column synonym.  See
+     * {@link #addToFromClause addToFromClause} for how the from clause is modified,
+     * {@link #addToWhereClause addToWhereClause} for how the where clause is modified, and
+     * {@link #addOrderByClause addOrderByClause} for how the order by clause is modified by
+     * a request manager to reflect type-specific filtered queries.
+     * Columns added by this
+     * method should insert a leading comma.
+     * @param selectClause the string buffer being constructed, the generic columns have already been
+     * added, this method should append its columns.
+     * @param requestFilter the request filter
+     */
+    @Override
+	public void addToSelectColumns(StringBuffer selectClause, RequestFilter requestFilter, int sortColumn ){
+        // Allow sorting by swap type
+<span class="nc" id="L1033">        selectClause.append(&quot;, SSR.SWAPTYPE, SSI1.STARTTIME, SSI1.SHIFTTYPE &quot;);</span>
+<span class="nc" id="L1034">    }</span>
+
+    /**
+     * Add tables necessary to process a query governed by the given filter.  The caller has already
+     * added the REQUEST (as A), EMPLOYEE (as B) and PERSON (as C) tables.
+     * New tables should start with D as a column synonym.  See
+     * {@link #addToSelectColumns addToSelectColumns} for how the column list is modified,
+     * {@link #addToWhereClause addToWhereClause} for how the where clause is modified, and
+     * {@link #addOrderByClause addOrderByClause} for how the order by clause is modified by
+     * a request manager to reflect type-specific filtered queries.
+     * Tables added by this
+     * method should insert a leading comma.
+     * @param fromClause the string buffer being constructed, the generic tables have already been
+     * added, this method should append its tables with a leading comma and start with D as a synonym.
+     * @param requestFilter the request filter
+     */
+    @Override
+	public void addToFromClause(StringBuffer fromClause, RequestFilter requestFilter, int sortColumn) {
+        // In addition to the shift swap type, we need to include the items
+        // and identify the first item as a sort-by column, so we include
+        // the items table twice.  But, since the order is only in the
+        // SHIFTSWAPREQUESTITEM table, we need that one twice also.  Tables
+        // E and F are only for the first item.
+    	/* QA95168: refactor query to remove IN (employeeList) clause
+    	 * previously a separate query was used to limit skills
+    	 */
+<span class="nc" id="L1060">        fromClause.append(</span>
+         &quot;, SHIFTSWAPREQUEST SSR, SHIFTSWAPREQUESTITEM SSRI1, SHIFTSWAPITEM SSI1, SHIFTSWAPREQUESTITEM SSRI2, SHIFTSWAPITEM SSI2 &quot;);
+
+<span class="nc bnc" id="L1063" title="All 2 branches missed.">		if (RequestAuditTrail.isRequestForWithdrawalStates((String) requestFilter.getValueForKey(RequestFilter.STATUS_KEY))) {</span>
+<span class="nc" id="L1064">			fromClause.append(&quot;, SHIFTSWAPWITHDRAWALREQUEST SSWR &quot;);</span>
+		}
+
+    	/* QA95168: refactor query to remove IN (employeeList) clause
+    	 * previously a separate query was used to limit skills
+    	 */
+<span class="nc bnc" id="L1070" title="All 2 branches missed.">        if (requestFilter.isKeySet(RequestFilter.SWAP_SKILLS_KEY)) {</span>
+<span class="nc" id="L1071">            fromClause.append(&quot;, SKILL SK, WORKRESOURCESKILL WKRSK &quot;);</span>
+        }
+        // END QA 95168
+<span class="nc" id="L1074">    }</span>
+
+    /**
+     * Add conditions necessary to process a query governed by the given filter.  The caller has already
+     * added the generic where conditions.  See
+     * {@link #addToSelectColumns addToSelectColumns} for how the column list is modified,
+     * {@link #addToFromClause addToFromClause} for how the from clause is modified, and
+     * {@link #addOrderByClause addOrderByClause} for how the order by clause is modified by
+     * a request manager to reflect type-specific filtered queries.
+     * Conditions added by this
+     * method should insert a leading comma.
+     * @param whereClause the string buffer being constructed, the generic where clauses have already been
+     * added, this method should append its conditions with a leading AND and both front and rear pad with a space.
+     * @param requestFilter the request filter
+     */
+    @Override
+	public void addToWhereClause(StringBuffer whereClause, RequestFilter requestFilter, int sortColumn) {
+    	// QA 95047 - Unable to Load Data in Request module - java.lang.NullPointerException
+    	// if agent was assigned to more than 1 Organization during the time window
+//    	whereClause.append(&quot; AND SSI1.STARTTIME &gt;= WRO.STARTTIME and (WRO.ENDTIME IS NULL OR SSI1.STARTTIME &lt; WRO.ENDTIME) &quot;);
+
+<span class="nc" id="L1095">        whereClause.append(&quot; AND SSR.ID=REQ.ID &quot;) // join to REQUEST</span>
+<span class="nc" id="L1096">        .append(&quot; AND SSRI1.SHIFTSWAPREQUESTID=REQ.ID &quot;).append(&quot; AND SSRI1.SHIFTSWAPITEMID=SSI1.ID &quot;)</span>
+<span class="nc" id="L1097">             .append(&quot; AND SSRI1.ITEMORDER=0 &quot;).append(&quot; AND SSRI2.SHIFTSWAPREQUESTID=REQ.ID &quot;).append(&quot; AND SSRI2.SHIFTSWAPITEMID=SSI2.ID &quot;);</span>
+
+        // Handle swap type
+<span class="nc bnc" id="L1100" title="All 2 branches missed.">        if (requestFilter.isKeySet(RequestFilter.SWAP_TYPE_KEY)) {</span>
+<span class="nc" id="L1101">            String swapTypeFromFilter = (String) requestFilter.getValueForKey(RequestFilter.SWAP_TYPE_KEY);</span>
+<span class="nc" id="L1102">            whereClause.append(&quot; AND SSR.SWAPTYPE='&quot;).append(swapTypeFromFilter).append(&quot;' &quot;);</span>
+        }
+
+        // Handle shift date type
+<span class="nc bnc" id="L1106" title="All 2 branches missed.">        if (requestFilter.isKeySet(RequestFilter.REQUEST_DATE_RANGE_KEY)) {</span>
+            //dmo = new Jdmo();
+        	// QA 95168
+<span class="nc" id="L1109">        	StringsPair dates = RmFilterUtil.getStartAndEndDates(requestFilter, RequestFilter.REQUEST_DATE_RANGE_KEY);</span>
+<span class="nc" id="L1110">            String rangeStart = dates.getKey();</span>
+<span class="nc" id="L1111">            String rangeEnd = dates.getValue();</span>
+
+<span class="nc" id="L1113">            Date dtNow = new Date();</span>
+<span class="nc" id="L1114">    		String strDtNow = JdmoUtil.formatDBString(dtNow);</span>
+
+            // QA 95168: fix date restrictions in query
+<span class="nc" id="L1117">		    whereClause.append(&quot;AND &quot;);</span>
+<span class="nc" id="L1118">		    RmUtil.appendRequestDateRangeClauses(whereClause, &quot;&quot;, &quot;SSI2&quot;, rangeStart, rangeEnd, strDtNow);</span>
+<span class="nc" id="L1119">		    whereClause.append(&quot; &quot;);</span>
+            // END QA 95168
+/*
+            List dates = (List) requestFilter.getValueForKey(RequestFilter.REQUEST_DATE_RANGE_KEY);
+            String begDate = &quot;'&quot; + JdmoUtil.formatDBString((Date) dates.get(0)) + &quot;'&quot;;
+            String endDate = &quot;'&quot; + JdmoUtil.formatDBString((Date) dates.get(1)) + &quot;'&quot;;
+            whereClause.append(&quot; AND SSI2.STARTTIME&gt;=&quot;).append(begDate).append(&quot; AND SSI2.STARTTIME&lt;=&quot;)
+                 .append(endDate).append(' ');
+*/
+            // END QA 95168
+            //dmo.cleanUp();
+        }
+
+<span class="nc" id="L1132">		String filterStatus = (String) requestFilter.getValueForKey(RequestFilter.STATUS_KEY);</span>
+<span class="nc bnc" id="L1133" title="All 2 branches missed.">		if (RequestAuditTrail.isRequestForWithdrawalStates(filterStatus)) { // include the Join to the WIthdrawal request tabel</span>
+																			// only if the withdraw states are queried.
+<span class="nc" id="L1135">			whereClause.append(&quot; AND SSWR.SHIFTSWAPREQUESTID = REQ.ID &quot;);</span>
+<span class="nc" id="L1136">			whereClause.append(&quot; AND SSWR.REQUESTSTATUS='&quot;).append(filterStatus).append(&quot;' &quot;);</span>
+		}
+
+        // QA 95168: refactor query to remove IN (employeeList) clause
+        // this replaces method restrictEmployeesByFilter
+<span class="nc bnc" id="L1141" title="All 2 branches missed.">        if (requestFilter.isKeySet(RequestFilter.SWAP_SKILLS_KEY)) {</span>
+<span class="nc" id="L1142">        	Jdmo dmo = null;</span>
+
+        	try {
+<span class="nc" id="L1145">            	dmo = new Jdmo();</span>
+
+<span class="nc" id="L1147">            	String skillIDsInClauseList = dmo.createInClause(</span>
+<span class="nc" id="L1148">                    (Collection) requestFilter.getValueForKey(RequestFilter.SWAP_SKILLS_KEY));</span>
+
+<span class="nc" id="L1150">        		whereClause.append(&quot; AND SK.ID IN &quot;).append(skillIDsInClauseList)</span>
+<span class="nc" id="L1151">        		.append(&quot; AND SK.ID = WKRSK.SKILLID &quot;)</span>
+<span class="nc" id="L1152">        		.append(&quot; AND WKRSK.WORKRESOURCEID = WRO.WORKRESOURCEID &quot;);</span>
+<span class="nc" id="L1153">        	} catch (Exception e) {</span>
+<span class="nc" id="L1154">                throw RequestUtil.createRunTimeException(e.getMessage(), e, m_cat);</span>
+        	} finally {
+<span class="nc bnc" id="L1156" title="All 4 branches missed.">        		if (dmo != null) {</span>
+<span class="nc" id="L1157">					dmo.cleanUp();</span>
+				}
+        	}
+        }
+        // END QA 95168
+<span class="nc" id="L1162">    }</span>
+
+    /**
+     * Add conditions necessary to process a query governed by the given filter.  The caller has already
+     * added everthing but the order by clause.  See
+     * {@link #addToSelectColumns addToSelectColumns} for how the column list is modified,
+     * {@link #addToFromClause addToFromClause} for how the from clause is modified, and
+     * {@link #addToWhereClause addToWhereClause} for how the where clause is modified by
+     * a request manager to reflect type-specific filtered queries.
+     * Conditions added by this
+     * method should insert a leading comma.
+     * @param query the string buffer being constructed, the generic where clauses have already been
+     * added, this method should append its conditions with a leading AND and both front and rear pad with a space.
+     * @param requestFilter the request filter
+     * @param sortColumn identifies the column to use to sort the requests.
+     * The constants that define the expected values are in
+     * {@link com.bluepumpkin.ejb.rm.requests.common.model.Request Request}
+     * @param sortDir This string is either &quot; ASC &quot; or &quot; DESC &quot; depending on whether or not the
+     * sort is ascending or descending.  (Note spaces around values for convenience.)
+     */
+    @Override
+	public void addOrderByClause(StringBuffer query, RequestFilter requestFilter, int sortColumn,
+        String sortDir) {
+<span class="nc bnc" id="L1185" title="All 2 branches missed.">        if (sortColumn == Request.SORT_SWAP_TYPE) {</span>
+<span class="nc" id="L1186">            query.append(&quot; ORDER BY SSR.SWAPTYPE&quot;).append(sortDir);</span>
+        }
+
+<span class="nc bnc" id="L1189" title="All 2 branches missed.">        if (sortColumn == Request.SORT_SWAP_FIRST_START) {</span>
+<span class="nc" id="L1190">            query.append(&quot; ORDER BY SSI1.STARTTIME&quot;).append(sortDir);</span>
+        }
+
+<span class="nc bnc" id="L1193" title="All 2 branches missed.">        if (sortColumn == Request.SORT_SWAP_SHIFT_TYPE) {</span>
+<span class="nc" id="L1194">            query.append(&quot; ORDER BY SSI1.SHIFTTYPE&quot;).append(sortDir);</span>
+        }
+<span class="nc" id="L1196">    }</span>
+
+    /**
+     * Given a set of EmployeeIds, further restrict the set based on the content of the passed
+     * in filter.  Return the restricted set.
+     * @param empIds a collection of employeeIds
+     * @param requestFilter a request filter that specifies the request manager's type of request and
+     * possibly other conditions that would dictate that the set of employee ids be further restricted.
+     * @return the restricted set of employee ids.  This may be empty, but not null.
+     * @deprecated QA 95168
+     */
+    @Deprecated
+	@Override
+	public Collection restrictEmployeesByFilter(Collection empIds, RequestFilter requestFilter) {
+<span class="nc" id="L1210">        Collection result = empIds;</span>
+
+        // If the SKILLs filter is specified, then reduce the set of employees to just those
+        // that have the requested skills
+<span class="nc bnc" id="L1214" title="All 2 branches missed.">        if (requestFilter.isKeySet(RequestFilter.SWAP_SKILLS_KEY)) {</span>
+<span class="nc" id="L1215">            Jdmo dmo = null;</span>
+            try {
+<span class="nc" id="L1217">                dmo = new Jdmo();</span>
+
+                // Query the database for the subset of empIds who are currently assigned
+                // at least one of the skills in the list from the filter.
+                //DIRECT_DB_ACCESS
+<span class="nc" id="L1222">                String empIDsInClauseList = dmo.createInClause(empIds);</span>
+<span class="nc" id="L1223">                String skillIDsInClauseList = dmo.createInClause(</span>
+<span class="nc" id="L1224">                        (Collection) requestFilter.getValueForKey(RequestFilter.SWAP_SKILLS_KEY));</span>
+
+<span class="nc" id="L1226">                StringBuffer query = new StringBuffer(4096);</span>
+<span class="nc" id="L1227">                query.append(&quot;SELECT DISTINCT EMPLOYEEAM.ID &quot;)</span>
+<span class="nc" id="L1228">                .append(&quot; FROM SKILL, WORKRESOURCESKILL WKRSK, EMPLOYEEAM &quot;)</span>
+<span class="nc" id="L1229">                .append(&quot; WHERE SKILL.SID IN &quot;).append(skillIDsInClauseList)</span>
+<span class="nc" id="L1230">                .append(&quot; AND SKILL.ID = WKRSK.SKILLID &quot;)</span>
+<span class="nc" id="L1231">                .append(&quot; AND WKRSK.WORKRESOURCEID IN &quot;).append(empIDsInClauseList);</span>
+
+<span class="nc" id="L1233">                result = DAOUtil.getIDsUsingSQLQuery(dmo, query.toString());</span>
+
+<span class="nc" id="L1235">            } catch (Exception e) {</span>
+<span class="nc" id="L1236">                throw RequestUtil.createRunTimeException(e.getMessage(), e, m_cat);</span>
+            } finally {
+<span class="nc bnc" id="L1238" title="All 4 branches missed.">                if (dmo != null) {</span>
+<span class="nc" id="L1239">                    dmo.cleanUp();</span>
+                }
+            }
+        }
+
+<span class="nc" id="L1244">        return result;</span>
+    }
+
+    /*
+     * Given an agent, get a list of agents he/she can swap with
+     */
+    public Collection getEmployeesOneCanSwapWith(ID employeeID)
+            throws BbmFinderException
+    {
+<span class="nc" id="L1253">        String _method_ = &quot;getEmployeesOneCanSwapWith&quot;;</span>
+<span class="nc" id="L1254">        methodStart(_method_, employeeID);</span>
+<span class="nc" id="L1255">        String setterID = m_className + '.' + _method_;</span>
+<span class="nc" id="L1256">        boolean cacheEnabled = false;</span>
+        try {
+<span class="nc" id="L1258">            cacheEnabled = ThreadLocalForCacheManagerHelper.enableThreadLocalCacheIfNecess(setterID);</span>
+
+<span class="nc" id="L1260">            return (Collection) ShiftSwapRequestUtil.getEmployeesOneCanSwapWith(employeeID).getSecond();</span>
+<span class="nc" id="L1261">		} catch ( BbmFinderException e ) {</span>
+<span class="nc" id="L1262">			m_cat.error(e, e);</span>
+<span class="nc" id="L1263">			handleException(e);</span>
+<span class="nc" id="L1264">			throw e;</span>
+<span class="nc" id="L1265">        } catch ( Exception e ) {</span>
+<span class="nc" id="L1266">            handleException(e);</span>
+<span class="nc" id="L1267">            throw RequestUtil.createBbmFinderExceptionWrapper(e, m_cat);</span>
+        } finally {
+<span class="nc bnc" id="L1269" title="All 4 branches missed.">            if (cacheEnabled) {</span>
+<span class="nc" id="L1270">				ThreadLocalForCacheManagerHelper.disableThreadLocalCache(setterID);</span>
+			}
+<span class="nc" id="L1272">            methodFinish();</span>
+        }
+    }
+
+    @Override
+	public void deleteRequestsByStartDateRange(ID organizationId, boolean isForBranch, TimeRange range, ID subType)
+    throws BbmRemoveException, RmHardValidationException
+	{
+<span class="nc" id="L1280">		String _method_ = &quot;deleteRequestsByDateRange&quot;;</span>
+<span class="nc" id="L1281">		methodStart(_method_, organizationId, new Boolean(isForBranch), range, subType);</span>
+
+<span class="nc" id="L1283">		ShiftSwapRequestDAO toReqDao = null;</span>
+<span class="nc" id="L1284">		String setterID = m_className + '.' + _method_;</span>
+<span class="nc" id="L1285">		boolean cacheEnabled = false;</span>
+		try {
+<span class="nc" id="L1287">		    cacheEnabled = ThreadLocalForCacheManagerHelper.enableThreadLocalCacheIfNecess(setterID);</span>
+
+<span class="nc" id="L1289">		    String userName = RequestUtil.getLoginUserName(m_sessionContext);</span>
+
+<span class="nc" id="L1291">			ID privFailedOrgID = RequestUtil.checkPrivilegeForOrgs(userName, Collections.singleton(organizationId), getPrivIDPurge());</span>
+<span class="nc bnc" id="L1292" title="All 2 branches missed.">			if (privFailedOrgID != null) {</span>
+<span class="nc" id="L1293">				throw createAndLogHardValForUnathToPurge(userName, privFailedOrgID, m_cat);</span>
+			}
+
+<span class="nc" id="L1296">		    toReqDao =  new ShiftSwapRequestDAO(ShiftSwapRequest.DL_SHIFTSWAP_ITEMS);</span>
+<span class="nc" id="L1297">		    toReqDao.deleteRequestsByStartDateRange(organizationId, isForBranch, range, subType);</span>
+<span class="nc" id="L1298">		} catch (RmHardValidationException e) {</span>
+			//RM exceptions are always logged at the point where they are thrown.
+			//m_cat.error(e, e);
+
+		    // Logged with priority 'debug' since this exception is generated by RM during validations or
+		    // workflow processing and happens often during normal operation.  If logged with a different
+		    // priority level (like info), it may pollute the log files with unwanted messages.
+<span class="nc" id="L1305">		    handleException(Priority.DEBUG, e);</span>
+<span class="nc" id="L1306">			throw e;</span>
+<span class="nc" id="L1307">		} catch (BbmRemoveException e) {</span>
+<span class="nc" id="L1308">			m_cat.error(e, e);</span>
+<span class="nc" id="L1309">			handleException(e);</span>
+<span class="nc" id="L1310">			throw e;</span>
+<span class="nc" id="L1311">		} catch (Exception e) {</span>
+<span class="nc" id="L1312">		    handleException(e);</span>
+<span class="nc" id="L1313">		    throw RequestUtil.createBbmRemoveExceptionWrapper(e, m_cat);</span>
+		} finally {
+<span class="nc bnc" id="L1315" title="All 4 branches missed.">		    if (cacheEnabled) {</span>
+<span class="nc" id="L1316">				ThreadLocalForCacheManagerHelper.disableThreadLocalCache(setterID);</span>
+			}
+<span class="nc bnc" id="L1318" title="All 4 branches missed.">		    if ( toReqDao != null ) {</span>
+<span class="nc" id="L1319">				toReqDao.cleanUp();</span>
+			}
+<span class="nc" id="L1321">		    methodFinish();</span>
+<span class="nc" id="L1322">		}</span>
+<span class="nc" id="L1323">	}</span>
+
+    public Pair&lt;Boolean, String&gt; isEligibleForRequestWithdrawOfApprovedRequest(RequestAggregate reqAgg) throws BbmFinderException, RemoteException{
+<span class="nc" id="L1326">    	Pair&lt;Boolean, String&gt; pair = new Pair&lt;Boolean, String&gt;(new Boolean(&quot;true&quot;), null);</span>
+<span class="nc bnc" id="L1327" title="All 2 branches missed.">		if (reqAgg.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED)) {</span>
+			try {
+<span class="nc" id="L1329">				ValidationResult result = ShiftSwapRequestUtil.validateApprovedRequestForWithdraw(reqAgg);</span>
+<span class="nc" id="L1330">				ShiftSwapRequest ssReq = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc bnc" id="L1331" title="All 2 branches missed.">				if (result != null) {</span>
+<span class="nc" id="L1332">					String hardValLocalizedMsg = result.getLocalizedMessage(RequestUtil.getLocalizerForAppDefLocale(),</span>
+<span class="nc" id="L1333">					        reqAgg.getValidationCache().getTimeZoneForOrg());</span>
+<span class="nc" id="L1334">					pair = new Pair&lt;Boolean, String&gt;(new Boolean(&quot;false&quot;), hardValLocalizedMsg);</span>
+				}
+<span class="nc" id="L1336">			} catch (Exception e) {</span>
+<span class="nc" id="L1337">				m_cat.error(e, e);</span>
+<span class="nc" id="L1338">			}</span>
+		}
+<span class="nc" id="L1340">		return pair;</span>
+    }
+
+    public boolean requestWithdrawOfApprovedRequestNegotiation(RequestAggregate reqAgg, String comment) throws BbmUpdateException {
+<span class="nc" id="L1344">		String methodName = &quot;requestWithdrawOfApprovedRequestNegotiation&quot;;</span>
+<span class="nc" id="L1345">		m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqAgg, comment));</span>
+		try {
+<span class="nc" id="L1347">			ShiftSwapRequest request = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc" id="L1348">			ShiftSwapWithdraw withdraw = new ShiftSwapWithdraw();</span>
+<span class="nc" id="L1349">			withdraw.setShiftSwapRequestID(request.getID());</span>
+<span class="nc" id="L1350">			withdraw.setRequestStatus(RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION);</span>
+<span class="nc" id="L1351">			User user = RequestUtil.getLoginUserBasic(m_sessionContext);</span>
+<span class="nc" id="L1352">			withdraw.setCreatorID(user.getID());</span>
+<span class="nc" id="L1353">			withdraw.setCreationDate(new Date());</span>
+<span class="nc" id="L1354">			request.setWithdrawInfo(withdraw);</span>
+
+			//Reuse negotiation field in ShiftSwapItem. Set current employee to true and swap employee to false.
+<span class="nc" id="L1357">			ShiftSwapItem ssItem1 = request.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L1358">			ShiftSwapItem ssItem2 = request.getShiftSwapItems().get(1);</span>
+<span class="nc bnc" id="L1359" title="All 2 branches missed.">			if (ssItem1.getEmployeeID().compareTo(user.getEmployeeID())==0){</span>
+<span class="nc" id="L1360">				ssItem1.setNegotiation(true);</span>
+<span class="nc" id="L1361">				ssItem2.setNegotiation(false);</span>
+			} else {
+<span class="nc" id="L1363">				ssItem1.setNegotiation(false);</span>
+<span class="nc" id="L1364">				ssItem2.setNegotiation(true);</span>
+			}
+
+<span class="nc" id="L1367">			request.setUpdateAllShiftSwapItems(true);</span>
+<span class="nc" id="L1368">			setAuditTrail(reqAgg, comment, withdraw.getRequestStatus(), true);</span>
+<span class="nc" id="L1369">			_updateRequest(reqAgg, reqAgg.getRequestStatus(), comment, null, false, false);</span>
+<span class="nc" id="L1370">			reqAgg = getRequestByID(reqAgg.getID(), false, false, reqAgg.getDetailLevel());</span>
+<span class="nc" id="L1371">			JMSNotifyUtil.notifyOnUserAction(new RequestNotificationDetail(reqAgg, withdraw.getRequestStatus()));</span>
+<span class="nc" id="L1372">			_autoProcess(reqAgg, &quot;&quot;, true);</span>
+<span class="nc" id="L1373">			return true;</span>
+<span class="nc" id="L1374">		} catch (Exception e) {</span>
+<span class="nc" id="L1375">			handleException(e);</span>
+<span class="nc" id="L1376">			throw  new BbmUpdateException(e.getMessage());</span>
+		} finally {
+<span class="nc" id="L1378">			m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+		}
+	}
+
+    @Override
+	public boolean requestWithdrawOfApprovedRequest(RequestAggregate reqAgg, String comment) throws BbmUpdateException {
+<span class="nc" id="L1384">		String methodName = &quot;requestWithdrawOfApprovedRequest&quot;;</span>
+<span class="nc" id="L1385">		m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqAgg, comment));</span>
+		try {
+<span class="nc" id="L1387">			ShiftSwapRequest request = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc" id="L1388">			ShiftSwapWithdraw withdraw = new ShiftSwapWithdraw();</span>
+<span class="nc" id="L1389">			withdraw.setShiftSwapRequestID(request.getID());</span>
+<span class="nc" id="L1390">			withdraw.setRequestStatus(RequestAuditTrail.STATUS_WITHDRAW_REQUEST);</span>
+<span class="nc" id="L1391">			User user = RequestUtil.getLoginUserBasic(m_sessionContext);</span>
+<span class="nc" id="L1392">			withdraw.setCreatorID(user.getID());</span>
+<span class="nc" id="L1393">			withdraw.setCreationDate(new Date());</span>
+<span class="nc" id="L1394">			request.setWithdrawInfo(withdraw);</span>
+<span class="nc" id="L1395">			setAuditTrail(reqAgg, comment, withdraw.getRequestStatus(), true);</span>
+<span class="nc" id="L1396">			_updateRequest(reqAgg, reqAgg.getRequestStatus(), comment, null, false, false);</span>
+<span class="nc" id="L1397">			reqAgg = getRequestByID(reqAgg.getID(), false, false, reqAgg.getDetailLevel());</span>
+<span class="nc" id="L1398">			JMSNotifyUtil.notifyOnUserAction(new RequestNotificationDetail(reqAgg, withdraw.getRequestStatus()));</span>
+<span class="nc" id="L1399">			_autoProcess(reqAgg, &quot;&quot;, true);</span>
+<span class="nc" id="L1400">			return true;</span>
+<span class="nc" id="L1401">		} catch (Exception e) {</span>
+<span class="nc" id="L1402">			handleException(e);</span>
+<span class="nc" id="L1403">			throw  new BbmUpdateException(e.getMessage());</span>
+		} finally {
+<span class="nc" id="L1405">			m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+		}
+	}
+
+	@Override
+	protected boolean isEligibleForCancelWithdrawOfApprovedRequest(RequestAggregate reqAgg) throws BbmFinderException {
+<span class="nc bnc" id="L1411" title="All 4 branches missed.">		return reqAgg.isShiftSwapRequest() &amp;&amp; ((ShiftSwapRequest) reqAgg).isEligibleForCancelWithdrawAction();</span>
+	}
+
+	/**
+	 * applies to Cancelling Withdrawal of approved Requests
+	 *
+	 * @param reqAgg
+	 * @param comment
+	 * @param suppressPrivilegeChecking
+	 * @param loadedFromDB
+	 * @throws Exception
+	 */
+	@Override
+	protected boolean _cancelWithdrawOfApprovedRequest(RequestAggregate reqAgg, String comment,
+	                                                   boolean suppressPrivilegeChecking, boolean loadedFromDB) throws Exception {
+<span class="nc" id="L1426">		String methodName = &quot;_cancelWithdrawOfApprovedRequest&quot;;</span>
+<span class="nc" id="L1427">		m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqAgg, comment));</span>
+		try {
+<span class="nc" id="L1429">			updateSSWithdrawRequest(reqAgg,comment,reqAgg.getRequestStatus(),RequestAuditTrail.STATUS_WITHDRAW_CANCEL, suppressPrivilegeChecking, loadedFromDB);</span>
+<span class="nc" id="L1430">			return true;</span>
+<span class="nc" id="L1431">		} catch (Exception e) {</span>
+<span class="nc" id="L1432">			handleException(e);</span>
+<span class="nc" id="L1433">			throw  new BbmUpdateException(e.getMessage());</span>
+		} finally {
+<span class="nc" id="L1435">			m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+		}
+	}
+
+    private void updateSSWithdrawRequest(RequestAggregate reqAgg, String comment, String status, String withdrawStatus,
+    		boolean suppressPrivilegeChecking, boolean loadedFromDB) throws Exception {
+<span class="nc" id="L1441">    	User user = RequestUtil.getLoginUserBasic(m_sessionContext);</span>
+		// leave the original Shift Swap Request unchanged ; just update the comments
+<span class="nc" id="L1443">		ShiftSwapRequest ssRequest = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc" id="L1444">		ssRequest.setUpdateAllShiftSwapItems(true);</span>
+<span class="nc" id="L1445">		ShiftSwapWithdraw ssWithdraw = ssRequest.getWithdrawInfo();</span>
+<span class="nc" id="L1446">		ssWithdraw.setRequestStatus(withdrawStatus);</span>
+<span class="nc" id="L1447">		ssWithdraw.setLastModifiedDate(new Date());</span>
+<span class="nc bnc" id="L1448" title="All 2 branches missed.">		if (user != null) {</span>
+<span class="nc" id="L1449">			ssWithdraw.setModifierID(user.getID());</span>
+		}
+<span class="nc" id="L1451">		setAuditTrail(reqAgg, comment, ssWithdraw.getRequestStatus(), true);</span>
+<span class="nc" id="L1452">		_updateRequest(reqAgg, status, comment, null, suppressPrivilegeChecking, loadedFromDB);</span>
+<span class="nc" id="L1453">        JMSNotifyUtil.notifyOnUserAction(new RequestNotificationDetail(reqAgg, withdrawStatus));</span>
+<span class="nc" id="L1454">    }</span>
+
+
+	public void setAuditTrail(RequestAggregate request, String comment, String status, boolean setAuditTrailState) throws Exception {
+<span class="nc" id="L1458">		User user = RequestUtil.getLoginUserBasic(m_sessionContext);</span>
+<span class="nc" id="L1459">		RequestAuditTrail raTrail = RequestDAO.createAuditTrailObject(status, new Date(), comment, RmEjbBundleKey.UPDATED, user.getID());</span>
+<span class="nc" id="L1460">		raTrail.setIsStatusChange(true);</span>
+<span class="nc" id="L1461">		request.setAuditTrail(raTrail);</span>
+<span class="nc" id="L1462">		request.setAuditTrailSet(setAuditTrailState);</span>
+<span class="nc" id="L1463">	}</span>
+
+	@Override
+	public boolean isEligibleForAcceptWithdrawOfApprovedRequest(RequestAggregate reqAgg) throws BbmFinderException {
+<span class="nc bnc" id="L1467" title="All 4 branches missed.">		return reqAgg.isShiftSwapRequest() &amp;&amp; ((ShiftSwapRequest) reqAgg).isEligibleForAcceptWithdrawAction();</span>
+	}
+
+	@Override
+	protected void _approveRequestWorkFlow(RequestAggregate reqAgg, ID choiceID, String comment,
+			boolean suppressPrivilegeChecking, boolean loadedFromDB) throws Exception {
+
+<span class="nc bnc" id="L1474" title="All 2 branches missed.">		if (isShiftSwapWithdrawRequest(reqAgg)) {</span>
+<span class="nc" id="L1475">			_acceptWithdrawOfApprovedRequest(reqAgg, comment, suppressPrivilegeChecking, loadedFromDB);</span>
+		} else {
+<span class="nc" id="L1477">			super._approveRequestWorkFlow(reqAgg, choiceID, comment, suppressPrivilegeChecking, loadedFromDB);</span>
+		}
+<span class="nc" id="L1479">	}</span>
+
+	@Override
+	protected void _denyRequestWorkflow(RequestAggregate reqAgg, String comment, boolean suppressPrivChecking,
+			boolean loadedFromDB) throws Exception {
+
+<span class="nc bnc" id="L1485" title="All 2 branches missed.">		if (isShiftSwapWithdrawRequest(reqAgg)) {</span>
+<span class="nc" id="L1486">			_rejectWithdrawOfApprovedRequest(reqAgg, comment, suppressPrivChecking, loadedFromDB);</span>
+		} else {
+<span class="nc" id="L1488">			super._denyRequestWorkflow(reqAgg, comment, suppressPrivChecking, loadedFromDB);</span>
+		}
+<span class="nc" id="L1490">	}</span>
+
+	/**applies to Withdrawal of approved Requests
+	 * @param reqAgg
+	 * @param comment
+	 * @param suppressPrivilegeChecking
+	 * @param loadedFromDB
+	 * @throws Exception
+	 */
+	@Override
+	protected  boolean _acceptWithdrawOfApprovedRequest(RequestAggregate reqAgg,String comment,
+			boolean suppressPrivilegeChecking, boolean loadedFromDB) throws Exception{
+<span class="nc" id="L1502">		String methodName = &quot;_acceptWithdrawOfApprovedRequest&quot;;</span>
+<span class="nc" id="L1503">		m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqAgg, comment));</span>
+		try {
+<span class="nc" id="L1505">			_undoSchedule(reqAgg, null, null);</span>
+<span class="nc" id="L1506">			updateSSWithdrawRequest(reqAgg,comment,RequestAuditTrail.STATUS_WITHDRAWN, RequestAuditTrail.STATUS_WITHDRAW_ACCEPT, suppressPrivilegeChecking, loadedFromDB);</span>
+			//SSNotifyMessageClient.scanSSWaitlist(ssRequest, apprChoice); TODO: do we need this?
+<span class="nc" id="L1508">			return true;</span>
+<span class="nc" id="L1509">		} catch (Exception e) {</span>
+<span class="nc" id="L1510">			handleException(e);</span>
+<span class="nc" id="L1511">			throw  new BbmUpdateException(e.getMessage());</span>
+		} finally {
+<span class="nc" id="L1513">			m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+		}
+	}
+
+	//Check if request is eligible for rejecting the withdraw
+	@Override
+	public boolean isEligibleForRejectWithdrawOfApprovedRequest(RequestAggregate reqAgg) throws BbmFinderException {
+<span class="nc bnc" id="L1520" title="All 4 branches missed.">		return reqAgg.isShiftSwapRequest() &amp;&amp; ((ShiftSwapRequest) reqAgg).isEligibleForRejectWithdrawAction();</span>
+	}
+
+	@Override
+	protected boolean _rejectWithdrawOfApprovedRequest(RequestAggregate reqAgg, String comment,
+			boolean suppressPrivilegeChecking, boolean loadedFromDB) throws Exception {
+<span class="nc" id="L1526">		String methodName = &quot;_rejectWithdrawOfApprovedRequest&quot;;</span>
+<span class="nc" id="L1527">		m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqAgg, comment));</span>
+		try {
+<span class="nc" id="L1529">			updateSSWithdrawRequest(reqAgg,comment,reqAgg.getRequestStatus(),RequestAuditTrail.STATUS_WITHDRAW_REJECT, suppressPrivilegeChecking, loadedFromDB);</span>
+<span class="nc" id="L1530">			return true;</span>
+<span class="nc" id="L1531">		} catch (Exception e) {</span>
+<span class="nc" id="L1532">			handleException(e);</span>
+<span class="nc" id="L1533">			throw  new BbmUpdateException(e.getMessage());</span>
+		} finally {
+<span class="nc" id="L1535">			m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+		}
+	}
+
+	/**
+	 * Confirmation of a withdrawal request by employee that did not request the withdrawal
+	 * @param reqAgg
+	 * @param comment
+	 * @return boolean - true - update occurred, false - update didn't occur because not required.
+	 * @throws BbmUpdateException
+	 */
+	public boolean confirmWithdrawOfApprovedRequest(RequestAggregate reqAgg, String comment) throws  BbmUpdateException {
+<span class="nc" id="L1547">		String methodName = &quot;confirmWithdrawOfApprovedRequest&quot;;</span>
+<span class="nc" id="L1548">		m_cat.debug(RmUtil.dumpEnterMethod(methodName, reqAgg, comment));</span>
+<span class="nc" id="L1549">		RequestAggregateDAO reqAggDAO = null;</span>
+		try {
+<span class="nc" id="L1551">			ShiftSwapRequest request = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc" id="L1552">			User user = RequestUtil.getLoginUserBasic(m_sessionContext);</span>
+
+			//Set negotiation field if it is waiting for approval and then update status
+<span class="nc" id="L1555">			ShiftSwapItem ssItem1 = request.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L1556">			ShiftSwapItem ssItem2 = request.getShiftSwapItems().get(1);</span>
+<span class="nc" id="L1557">			boolean isNegotiationRequired = false;</span>
+<span class="nc bnc" id="L1558" title="All 4 branches missed.">			if (ssItem1.getEmployeeID().compareTo(user.getEmployeeID())==0 &amp;&amp; !ssItem1.getNegotiation()){</span>
+<span class="nc" id="L1559">				ssItem1.setNegotiation(true);</span>
+<span class="nc" id="L1560">				isNegotiationRequired=true;</span>
+			}
+
+<span class="nc bnc" id="L1563" title="All 4 branches missed.">			if (ssItem2.getEmployeeID().compareTo(user.getEmployeeID())==0 &amp;&amp; !ssItem2.getNegotiation()){</span>
+<span class="nc" id="L1564">				ssItem2.setNegotiation(true);</span>
+<span class="nc" id="L1565">				isNegotiationRequired=true;</span>
+			}
+<span class="nc bnc" id="L1567" title="All 2 branches missed.">			if (isNegotiationRequired){</span>
+<span class="nc" id="L1568">				updateSSWithdrawRequest(reqAgg,comment,reqAgg.getRequestStatus(),RequestAuditTrail.STATUS_WITHDRAW_REQUEST, false, false);</span>
+
+<span class="nc" id="L1570">				long detailLevelForVal = getDetailLevelForValidation() | RequestDetailLevel.DL_SHIFTSWAP_WITHDRAW;</span>
+<span class="nc" id="L1571">				reqAggDAO = getDAO(detailLevelForVal);</span>
+<span class="nc" id="L1572">				request = (ShiftSwapRequest) reqAggDAO.getRequestByID(reqAgg.getID(), detailLevelForVal);</span>
+<span class="nc" id="L1573">				requestWithdrawOfApprovedRequest(request, comment);</span>
+<span class="nc" id="L1574">				return true;</span>
+			}
+			else {
+				//This means nothing changed because approval was not required
+<span class="nc" id="L1578">				return false;</span>
+			}
+<span class="nc" id="L1580">		} catch (Exception e) {</span>
+<span class="nc" id="L1581">			handleException(e);</span>
+<span class="nc" id="L1582">			throw  new BbmUpdateException(e.getMessage());</span>
+		} finally {
+<span class="nc bnc" id="L1584" title="All 6 branches missed.">			if (reqAggDAO != null) {</span>
+<span class="nc" id="L1585">				reqAggDAO.cleanUp();</span>
+			}
+<span class="nc" id="L1587">			m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+		}
+	}
+
+	private void runSoftValidationsForApprovedSSWithdrawRequest(ShiftSwapRequest ssRequest) throws BbmException {
+<span class="nc" id="L1592">		String methodName = &quot;runSoftValidationsForSSWithdrawRequest&quot;;</span>
+<span class="nc" id="L1593">		m_cat.debug(RmUtil.dumpEnterMethod(methodName, ssRequest));</span>
+		try {
+<span class="nc" id="L1595">			ShiftSwapItem ssItem1 = ssRequest.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L1596">			ShiftSwapItem ssItem2 = ssRequest.getShiftSwapItems().get(1);</span>
+
+			//run the FilingRule validation per item, since it's the only validation rule that checks only one item.
+<span class="nc" id="L1599">			ValidationResult vr = runFilingRuleSoftValidationForApprovedSSWithdrawRequestItem(ssRequest, ssItem1);</span>
+			//only check the second item if the first item succeeded
+<span class="nc bnc" id="L1601" title="All 2 branches missed.">			if (vr == null) {</span>
+<span class="nc" id="L1602">				runFilingRuleSoftValidationForApprovedSSWithdrawRequestItem(ssRequest, ssItem2);</span>
+			}
+
+			//run all the other validation rules
+<span class="nc" id="L1606">			runNonFilingRuleSoftValidationsForApprovedSSWithdrawRequest(ssRequest);</span>
+
+<span class="nc" id="L1608">		} catch (Exception e) {</span>
+<span class="nc" id="L1609">			handleException(e);</span>
+<span class="nc" id="L1610">			throw new BbmException(e.getMessage());</span>
+		} finally {
+<span class="nc" id="L1612">			m_cat.debug(RmUtil.dumpExitMethod(methodName, ssRequest));</span>
+<span class="nc" id="L1613">		}</span>
+<span class="nc" id="L1614">	}</span>
+
+	 private ValidationResult runFilingRuleSoftValidationForApprovedSSWithdrawRequestItem(ShiftSwapRequest ssRequest,ShiftSwapItem ssItem) throws Exception{
+<span class="nc" id="L1617">		 String validatorName = null;</span>
+<span class="nc bnc" id="L1618" title="All 4 branches missed.">		 if (ssItem!=null &amp;&amp; ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)){</span>
+<span class="nc" id="L1619">			 ValidationCache vc = ssRequest.getValidationCache();</span>
+<span class="nc" id="L1620">			 ID orgId = vc.getOrgIDForEmployeeDuringPeriod(ssRequest.getEmployeeID(),</span>
+<span class="nc" id="L1621">					 ssItem.getStartDate(),</span>
+<span class="nc" id="L1622">					 ssItem.getEndDate());</span>
+<span class="nc" id="L1623">			 String requestType = Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW;</span>
+<span class="nc" id="L1624">			 Collection validators = vc.getValidators(orgId, requestType);</span>
+			 //Set start/end range for specific swap item
+<span class="nc" id="L1626">			 ssRequest.getWithdrawInfo().setValidationTimeRange(ssItem.getStartDate(), ssItem.getEndDate());</span>
+<span class="nc" id="L1627">			 ssRequest.getWithdrawInfo().setValidationItem(ssItem);</span>
+<span class="nc bnc" id="L1628" title="All 2 branches missed.">			 for (Iterator it = validators.iterator(); it.hasNext();) {</span>
+				 // Run the validations
+<span class="nc" id="L1630">				 validatorName = (String) it.next();</span>
+<span class="nc bnc" id="L1631" title="All 2 branches missed.">				 if (validatorName.equals(FilingRuleComplianceValidationRule.class.getName())) {</span>
+<span class="nc" id="L1632">					return ValidationUtil.doValidation(validatorName, ssRequest, s_validatorsMap);</span>
+				 }
+			 }
+		 }
+<span class="nc" id="L1636">		 return null;</span>
+	 }
+
+	private void runNonFilingRuleSoftValidationsForApprovedSSWithdrawRequest(ShiftSwapRequest ssRequest) throws Exception {
+<span class="nc" id="L1640">		ShiftSwapItem ssItem1 = ssRequest.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L1641">		ID emp1ID = ssItem1.getEmployeeID();</span>
+<span class="nc" id="L1642">		ShiftSwapItem ssItem2 = ssRequest.getShiftSwapItems().get(1);</span>
+<span class="nc" id="L1643">		ID emp2ID = ssItem2.getEmployeeID();</span>
+
+		//swap the employee ID's, since they are still assigned to their original schedules (before the original swap).
+<span class="nc" id="L1646">		ssItem1.setEmployeeID(emp2ID);</span>
+<span class="nc" id="L1647">		ssItem2.setEmployeeID(emp1ID);</span>
+
+<span class="nc" id="L1649">		ValidationCache vc = ssRequest.getValidationCache();</span>
+<span class="nc" id="L1650">		Collection&lt;String&gt; validators = vc.getValidators();</span>
+
+<span class="nc bnc" id="L1652" title="All 2 branches missed.">		for (String validatorName : validators) {</span>
+<span class="nc bnc" id="L1653" title="All 2 branches missed.">			if (!validatorName.equals(FilingRuleComplianceValidationRule.class.getName())) {</span>
+<span class="nc" id="L1654">				ValidationUtil.doValidation(validatorName, ssRequest, s_validatorsMap);</span>
+			}
+<span class="nc" id="L1656">		}</span>
+
+		//swap the employee ID's back
+<span class="nc" id="L1659">		ssItem1.setEmployeeID(emp1ID);</span>
+<span class="nc" id="L1660">		ssItem2.setEmployeeID(emp2ID);</span>
+<span class="nc" id="L1661">	 }</span>
+
+	/**
+	 * Determine if a request is a shift swap withdrawl request.
+	 */
+	 @Override
+	public boolean isShiftSwapWithdrawRequest(RequestAggregate reqAgg) {
+<span class="nc" id="L1668">		ShiftSwapRequest ssr = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc" id="L1669">		ShiftSwapWithdraw ssw = ssr.getWithdrawInfo();</span>
+<span class="nc bnc" id="L1670" title="All 4 branches missed.">		if (ssw != null &amp;&amp; ssw.getRequestStatus().equals(RequestAuditTrail.STATUS_WITHDRAW_REQUEST)) {</span>
+<span class="nc" id="L1671">			return true;</span>
+		}
+<span class="nc" id="L1673">		return false;</span>
+	}
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

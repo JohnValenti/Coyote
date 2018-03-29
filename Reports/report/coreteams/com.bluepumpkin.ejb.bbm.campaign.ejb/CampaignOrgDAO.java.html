@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CampaignOrgDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.campaign.ejb</a> &gt; <span class="el_source">CampaignOrgDAO.java</span></div><h1>CampaignOrgDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.campaign.ejb;
+
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  dao object to serialize CampaignOrg object
+ * Copyright:    Copyright (c) 2001
+ * Company:      Blue Pumpkin Software, Inc
+ * @author       lixin zhang
+ * @version      1.0
+ */
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Iterator;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmObjectNotFoundException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignOrg;
+import com.bluepumpkin.ejb.bbm.campaign.model.CampaignOrgFieldInfo;
+import com.bluepumpkin.ejb.bbm.dao.DAOEffectivity;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+
+public class CampaignOrgDAO extends DAOEffectivity&lt;CampaignOrg&gt; {
+
+<span class="fc" id="L36">	private static FieldInfo m_fieldInfo = new CampaignOrgFieldInfo();</span>
+
+	@Override
+	protected FieldInfo getFieldInfo() {
+<span class="fc" id="L40">		return m_fieldInfo;</span>
+	}
+
+	public CampaignOrgDAO() {
+<span class="fc" id="L44">		super();</span>
+<span class="fc" id="L45">	}</span>
+
+	public CampaignOrgDAO(Jdmo dmo) {
+<span class="fc" id="L48">		super(dmo);</span>
+<span class="fc" id="L49">	}</span>
+
+	@Override
+	protected CampaignOrg createValueObject() {
+<span class="nc" id="L53">		return new CampaignOrg();</span>
+	}
+
+	/**
+	 * get a given campaign's organization assignments
+	 *
+	 * @idCampaign campaign id
+	 * @dtStart, @dtEnd: the time period, null date means a open period
+	 *
+	 * @return a collection of CampaignOrg objects which hold the assignment
+	 *         information
+	 */
+	public Collection&lt;CampaignOrg&gt; getCampaignOrgAssignments(ID idCampaign, Date dtStart, Date dtEnd)
+			throws BbmFinderException {
+<span class="fc" id="L67">		return getCampaignOrgAssignments(idCampaign, dtStart, dtEnd, false);</span>
+	}
+
+	public Collection&lt;CampaignOrg&gt; getCampaignOrgAssignments(ID idCampaign, Date dtStart, Date dtEnd, boolean isDistributed)
+			throws BbmFinderException {
+		try {
+			// load all campaigns
+<span class="fc" id="L74">			ArrayList&lt;CampaignOrg&gt; aAssignments = new ArrayList&lt;CampaignOrg&gt;();</span>
+
+<span class="fc" id="L76">			String query = &quot;SELECT ORGANIZATIONID,FROMDATE,TODATE FROM SPCALLCENTER,SP,CAMPAIGN &quot;;</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">			if (!isDistributed) {</span>
+<span class="fc" id="L78">				query = query + &quot; WHERE CAMPAIGN.SID = &quot; + idCampaign + &quot; AND SP.CAMPAIGNID = CAMPAIGN.ID  &quot;;</span>
+			} else {
+<span class="fc" id="L80">				query = query</span>
+						+ &quot; where campaign.sid in (select campaign.sid from campaign where parentcampaignid in (select id from campaign where sid=&quot;
+						+ idCampaign + &quot;))&quot; + &quot; AND SP.CAMPAIGNID = CAMPAIGN.ID  &quot;;
+			}
+<span class="fc" id="L84">			query = query + &quot; AND SPCALLCENTER.SPID = SP.ID AND SP.FROMDATE &lt; '&quot; + JdmoUtil.formatDBString(dtEnd)</span>
+<span class="fc" id="L85">					+ &quot;' AND SP.TODATE &gt; '&quot; + JdmoUtil.formatDBString(dtStart) + &quot;'&quot;;</span>
+
+<span class="fc" id="L87">			JdmoRowset r = m_dmo.createRowset(query);</span>
+
+			// -------------------------------------------------
+			// get data and create campaigns
+			// -------------------------------------------------
+
+<span class="fc bfc" id="L93" title="All 2 branches covered.">			while (r.next()) {</span>
+<span class="fc" id="L94">				ID idOrg = r.getID(&quot;ORGANIZATIONID&quot;);</span>
+<span class="fc" id="L95">				Date dtStart1 = r.getTimestamp(&quot;FROMDATE&quot;);</span>
+<span class="fc" id="L96">				Date dtEnd1 = r.getTimestamp(&quot;TODATE&quot;);</span>
+
+<span class="fc" id="L98">				CampaignOrg pAssignment = new CampaignOrg();</span>
+<span class="fc" id="L99">				pAssignment.setCampaignID(idCampaign);</span>
+<span class="fc" id="L100">				pAssignment.setOrganizationID(idOrg);</span>
+<span class="fc" id="L101">				pAssignment.setStartTime(dtStart1);</span>
+<span class="fc" id="L102">				pAssignment.setEndTime(dtEnd1);</span>
+
+<span class="fc" id="L104">				aAssignments.add(pAssignment);</span>
+<span class="fc" id="L105">			}</span>
+
+<span class="fc" id="L107">			r.close();</span>
+<span class="fc" id="L108">			return aAssignments;</span>
+
+<span class="nc" id="L110">		} catch (JdmoException e) {</span>
+<span class="nc" id="L111">			e.printStackTrace();</span>
+<span class="nc" id="L112">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="pc" id="L114">			m_dmo.cleanUp();</span>
+		}
+	}
+
+	/**
+	 * get a given organization 's campaign assignments
+	 *
+	 * @idOrg organization id
+	 * @dtStart, @dtEnd: the time period, null date means a open period
+	 *
+	 * @return a collection of CampaignOrg objects which hold the assignment
+	 *         information
+	 */
+	public Collection&lt;CampaignOrg&gt; getOrgCampaignAssignments(ID idOrg, Date dtStart, Date dtEnd) throws BbmFinderException {
+		try {
+			// load all campaigns
+<span class="fc" id="L130">			ArrayList&lt;CampaignOrg&gt; aAssignments = new ArrayList&lt;CampaignOrg&gt;();</span>
+
+<span class="fc" id="L132">			StringBuffer query = new StringBuffer();</span>
+<span class="fc" id="L133">			query.append(&quot; SELECT CAMPAIGN.SID AS SID,FROMDATE,TODATE&quot;);</span>
+<span class="fc" id="L134">			query.append(&quot; FROM SPCALLCENTER,SP,CAMPAIGN&quot;);</span>
+<span class="fc" id="L135">			query.append(&quot; WHERE ORGANIZATIONID = &quot;);</span>
+<span class="fc" id="L136">			query.append(idOrg);</span>
+<span class="fc" id="L137">			query.append(&quot; AND SP.CAMPAIGNID = CAMPAIGN.ID&quot;);</span>
+<span class="fc" id="L138">			query.append(&quot; AND SPCALLCENTER.SPID = SP.ID&quot;);</span>
+<span class="fc" id="L139">			query.append(&quot; AND SP.TODATE &gt; '&quot; + JdmoUtil.formatDBString(dtStart) + &quot;'&quot;);</span>
+<span class="pc bpc" id="L140" title="1 of 2 branches missed.">			if (dtEnd != null) {</span>
+<span class="nc" id="L141">				query.append(&quot; AND SP.FROMDATE &lt; '&quot; + JdmoUtil.formatDBString(dtEnd) + &quot;'&quot;);</span>
+			}
+
+<span class="fc" id="L144">			JdmoRowset r = m_dmo.createRowset(query.toString());</span>
+
+			// -------------------------------------------------
+			// get data and create campaigns
+			// -------------------------------------------------
+
+<span class="pc bpc" id="L150" title="1 of 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L151">				ID idCampaign = r.getID(&quot;SID&quot;);</span>
+<span class="nc" id="L152">				Date dtStart1 = r.getTimestamp(&quot;FROMDATE&quot;);</span>
+<span class="nc" id="L153">				Date dtEnd1 = r.getTimestamp(&quot;TODATE&quot;);</span>
+
+<span class="nc" id="L155">				CampaignOrg pAssignment = new CampaignOrg();</span>
+<span class="nc" id="L156">				pAssignment.setCampaignID(idCampaign);</span>
+<span class="nc" id="L157">				pAssignment.setOrganizationID(idOrg);</span>
+<span class="nc" id="L158">				pAssignment.setStartTime(dtStart1);</span>
+<span class="nc" id="L159">				pAssignment.setEndTime(dtEnd1);</span>
+
+<span class="nc" id="L161">				aAssignments.add(pAssignment);</span>
+<span class="nc" id="L162">			}</span>
+
+<span class="fc" id="L164">			r.close();</span>
+<span class="fc" id="L165">			return aAssignments;</span>
+
+<span class="nc" id="L167">		} catch (JdmoException e) {</span>
+<span class="nc" id="L168">			e.printStackTrace();</span>
+<span class="nc" id="L169">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="pc" id="L171">			m_dmo.cleanUp();</span>
+		}
+	}
+
+	/**
+	 * Given a collection of orgIDs, return all campaignIDs linked to any of
+	 * those orgs, for any time period.
+	 */
+	public Collection&lt;ID&gt; getAllCampaignIDsLinkedToOrgs(Collection&lt;ID&gt; orgIDs) throws BbmFinderException {
+		try {
+
+<span class="pc bpc" id="L182" title="2 of 4 branches missed.">			if (orgIDs == null || orgIDs.size() == 0) {</span>
+<span class="nc" id="L183">				return Collections.emptyList();</span>
+			}
+
+			// load all campaigns
+<span class="fc" id="L187">			ArrayList&lt;ID&gt; campIDs = new ArrayList&lt;ID&gt;();</span>
+
+<span class="fc" id="L189">			StringBuffer query = new StringBuffer();</span>
+<span class="fc" id="L190">			query.append(&quot;SELECT DISTINCT C.SID AS SID&quot;);</span>
+<span class="fc" id="L191">			query.append(&quot; FROM CAMPAIGN C INNER JOIN&quot;);</span>
+<span class="fc" id="L192">			query.append(&quot; SP ON C.ID = SP.CAMPAIGNID&quot;);</span>
+<span class="fc" id="L193">			query.append(&quot; INNER JOIN SPCALLCENTER SCC ON SCC.SPID = SP.ID&quot;);</span>
+<span class="fc" id="L194">			query.append(&quot; WHERE SCC.ORGANIZATIONID in &quot;);</span>
+
+<span class="fc" id="L196">			Iterator&lt;ID&gt; it = orgIDs.iterator();</span>
+<span class="fc" id="L197">			StringBuilder sb = new StringBuilder(&quot;(&quot;);</span>
+<span class="fc bfc" id="L198" title="All 2 branches covered.">			while (it.hasNext()) {</span>
+<span class="fc" id="L199">				ID id = it.next();</span>
+<span class="fc" id="L200">				sb.append(id);</span>
+<span class="fc bfc" id="L201" title="All 2 branches covered.">				if (it.hasNext()) {</span>
+<span class="fc" id="L202">					sb.append(&quot;,&quot;);</span>
+				}
+<span class="fc" id="L204">			}</span>
+<span class="fc" id="L205">			sb.append(&quot;)&quot;);</span>
+<span class="fc" id="L206">			query.append(sb.toString());</span>
+
+<span class="fc" id="L208">			JdmoRowset r = m_dmo.createRowset(query.toString());</span>
+
+			// -------------------------------------------------
+			// get data and create campaigns
+			// -------------------------------------------------
+
+<span class="fc bfc" id="L214" title="All 2 branches covered.">			while (r.next()) {</span>
+<span class="fc" id="L215">				ID idCampaign = r.getID(&quot;SID&quot;);</span>
+<span class="fc" id="L216">				campIDs.add(idCampaign);</span>
+<span class="fc" id="L217">			}</span>
+
+<span class="fc" id="L219">			r.close();</span>
+<span class="fc" id="L220">			return campIDs;</span>
+
+<span class="nc" id="L222">		} catch (JdmoException e) {</span>
+<span class="nc" id="L223">			e.printStackTrace();</span>
+<span class="nc" id="L224">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="pc" id="L226">			m_dmo.cleanUp();</span>
+		}
+	}
+
+	/** create a campaign's organization assignment */
+	public ID createCampaignOrgAssignment(CampaignOrg objValue) throws BbmCreateException {
+<span class="nc" id="L232">		return super.createNoOverlapAssignment(objValue, CampaignOrgFieldInfo.CAMPAIGNORG_CAMPAIGNID,</span>
+				CampaignOrgFieldInfo.CAMPAIGNORG_ORGANIZATIONID);
+		/** @todo assign work resources ? */
+	}
+
+	/** save a campaign's organization assignment */
+	public void updateCampaignOrgAssignment(CampaignOrg objValue) throws MultiUserException, BbmUpdateException {
+<span class="nc" id="L239">		super.updateNoOverlapAssignment(objValue, CampaignOrgFieldInfo.CAMPAIGNORG_CAMPAIGNID,</span>
+				CampaignOrgFieldInfo.CAMPAIGNORG_ORGANIZATIONID, false); // bSaveAsNew = false
+<span class="nc" id="L241">	}</span>
+
+	/** delete a campaign's organization assignment given the assignment id */
+	public void deleteCampaignOrgAssignments(Collection&lt;ID&gt; colIDAssignments) throws BbmRemoveException {
+<span class="nc" id="L245">		deleteObjects(colIDAssignments);</span>
+		/** @todo unassign work resources ? */
+<span class="nc" id="L247">	}</span>
+
+	public CampaignOrg getCampaignOrgAssignmentByID(ID idAssignment) throws BbmObjectNotFoundException, BbmFinderException {
+<span class="nc" id="L250">		return (CampaignOrg) getObjectByID(idAssignment);</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

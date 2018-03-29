@@ -1,0 +1,1453 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.fs.shift</a> &gt; <span class="el_source">ShiftUtil.java</span></div><h1>ShiftUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.fs.shift;
+
+import com.bluepumpkin.common.datatypes.*;
+import com.bluepumpkin.common.l10n.RegionalFormatBundleKey;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.activity.model.SimpleEvent;
+import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workrules.model.*;
+import com.bluepumpkin.web.fs.keys.FsImageFileID;
+import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
+import com.bluepumpkin.web.fs.l10n.FsWebLogBundleKey;
+import com.bluepumpkin.web.fs.schedule.ScheduleViewUtil;
+import com.bluepumpkin.web.fs.schedule.summary.DailyScheduleSummary;
+import com.witness.web.uif.Log;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.util.HtmlUtil;
+
+import java.util.*;
+
+/**
+ * Title: ShiftUtil Description: Utility to encapsulate common Shift Code
+ * Copyright: Copyright (c) 2003 Company: Blue Pumpkin Software, Inc
+ * 
+ * @author David Su, DSu
+ * @version 1.0
+ *
+ *          Created on Aug 7, 2003, 2:40:04 PM
+ */
+public class ShiftUtil {
+	private static final int HOUR = (int) (Event.MINUTE * 60);
+<span class="fc" id="L38">	private static final Comparator EVENT_COMPARATOR = new EventComparator();</span>
+<span class="fc" id="L39">	protected static Category log = Log.initCategory(ShiftUtil.class.getName());</span>
+
+	private static final String LIST_DELIM = &quot;,&quot;;
+	private static final String RANGE_TOKEN = &quot;-&quot;;
+
+<span class="nc" id="L44">	private ShiftUtil() {</span>
+<span class="nc" id="L45">	}</span>
+
+	public static Set&lt;TimeOfDay&gt; getStartTimesOfDay(TimeContext timeContext, Collection&lt;ShiftStart&gt; shiftStarts) {
+<span class="fc" id="L48">		HashSet&lt;TimeOfDay&gt; retVal = new HashSet&lt;TimeOfDay&gt;();</span>
+<span class="fc bfc" id="L49" title="All 2 branches covered.">		for (ShiftStart ss : shiftStarts) {</span>
+<span class="fc" id="L50">			retVal.add(new TimeOfDay(ss.getPossibleStartTime() + timeContext.getDayBoundary()));</span>
+<span class="fc" id="L51">		}</span>
+<span class="fc" id="L52">		return retVal;</span>
+	}
+
+	public static Set&lt;ShiftStart&gt; getShiftStarts(TimeContext timeContext, ID shiftID, Collection&lt;TimeOfDay&gt; timesOfDay) {
+<span class="fc" id="L56">		HashSet&lt;ShiftStart&gt; retVal = new HashSet&lt;ShiftStart&gt;();</span>
+<span class="fc bfc" id="L57" title="All 2 branches covered.">		for (TimeOfDay tod : timesOfDay) {</span>
+<span class="fc" id="L58">			ShiftStart ss = new ShiftStart();</span>
+<span class="fc" id="L59">			ss.setShiftID(shiftID);</span>
+<span class="pc bpc" id="L60" title="1 of 2 branches missed.">			if (tod.getMinutesSinceMindnight() &lt; timeContext.getDayBoundary()) {</span>
+<span class="nc" id="L61">				ss.setPossibleStartTime(1440 + tod.getMinutesSinceMindnight() - timeContext.getDayBoundary());</span>
+			} else {
+<span class="fc" id="L63">				ss.setPossibleStartTime(tod.getMinutesSinceMindnight() - timeContext.getDayBoundary());</span>
+			}
+<span class="fc" id="L65">			retVal.add(ss);</span>
+<span class="fc" id="L66">		}</span>
+<span class="fc" id="L67">		return retVal;</span>
+	}
+
+	/**
+	 * Returns true if the event has an unavailability type activity and
+	 * UserPreferenceKeys.USER_SHOW_UNAVAILABLE is false
+	 * 
+	 * @param activity
+	 * @param event
+	 *            - schedule event
+	 * @param bShowUnavailable
+	 *            - UserPreferenceKeys.USER_SHOW_UNAVAILABLE entry
+	 * @return
+	 */
+	public static boolean isEventUnavailabilityType(Activity activity, Event event, boolean bShowUnavailable) {
+		// Do not display unavailability type activities used in shift event
+		// assignments, if
+		// UserPreferenceKeys.USER_SHOW_UNAVAILABLE is false.
+		// This check cannot be made at the event level, since an event of type
+		// Event.EVENT_TYPE_SHIFT_EVENT_ASSIGNMENT cannot have an unavailability
+		// event type.
+<span class="nc bnc" id="L88" title="All 6 branches missed.">		if (activity != null &amp;&amp; !bShowUnavailable &amp;&amp; activity.isUnavailability()) {</span>
+<span class="nc" id="L89">			return true;</span>
+		}
+
+<span class="nc" id="L92">		return false;</span>
+	}
+
+	/**
+	 * Make color box for an activity
+	 */
+	public static String makeActivityBox(Activity activity) {
+<span class="nc bnc" id="L99" title="All 2 branches missed.">		String color = (activity != null) ? activity.getColor() : &quot;&quot;;</span>
+<span class="nc" id="L100">		return HtmlUtil.makeHtmlColorBox(color);</span>
+	}// makeActivityBox
+
+	/**
+	 * Make color box for an activity with the background pattern
+	 */
+	public static String makeActivityBoxWithPattern(Activity activity, String patternUrl) {
+<span class="nc bnc" id="L107" title="All 2 branches missed.">		String color = (activity != null) ? activity.getColor() : &quot;&quot;;</span>
+<span class="nc" id="L108">		return HtmlUtil.makeHtmlColorWithBackgroundImgBox(color, patternUrl);</span>
+	}
+
+	/**
+	 * make the event period string, showing event name, the time for start and
+	 * end, optional date for the event end if it ends on the other date; also
+	 * add an icon with the event description popup if description is not empty;
+	 */
+	public static String makeEventPeriodString(CalendarRange dayRange, Event event, boolean bShowNote,
+			Localizer localizer, TimeZone tz) {
+<span class="nc" id="L118">		StringBuffer sb = new StringBuffer(100);</span>
+
+<span class="nc" id="L120">		Date eventStartDate = event.getStartTime();</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">		if (event instanceof ShiftAssignment) {</span>
+<span class="nc" id="L122">			eventStartDate = ScheduleViewUtil.getDisplayStartTime((ShiftAssignment) event);</span>
+		}
+
+<span class="nc" id="L125">		Date eventEndDate = event.getEndTime();</span>
+
+<span class="nc" id="L127">		String dates = makeShiftDatesString(dayRange, eventStartDate, eventEndDate, localizer, tz);</span>
+<span class="nc" id="L128">		sb.append(dates);</span>
+
+		// --- description note
+<span class="nc" id="L131">		String desc = event.getDescription();</span>
+		//QC 178994: See QC 122794
+		//Gonzalo sets this value (!VALIDATION_CHECK) in the description intentionally  and then uses it for something during validation. 
+		//The tooltip is probably showing description.  This flag really should be set in some other meta data field as it isn't a true description.
+		//Therefore we should replace the text which has !VALIDATION_CHECK&quot; by the empty text
+<span class="nc bnc" id="L136" title="All 4 branches missed.">		if(!StringUtil.isEmpty(desc)&amp;&amp;desc.indexOf(&quot;!VALIDATION_CHECK&quot;) &gt; -1){</span>
+<span class="nc" id="L137">			desc = desc.replaceAll(&quot;!VALIDATION_CHECK&quot;, &quot;&quot;);</span>
+		}
+<span class="nc bnc" id="L139" title="All 4 branches missed.">		if (bShowNote &amp;&amp; !StringUtil.isEmpty(desc)) {</span>
+			// width and hight are left null - not used in html tag
+<span class="nc" id="L141">			sb.append(HtmlUtil.imageTag(FsImageFileID.NOTE_ICON, null, null, HtmlUtil.escapeAttributeValue(desc)));</span>
+		}
+
+<span class="nc" id="L144">		return sb.toString();</span>
+	}// makeEventPeriodString
+
+	/**
+	 * Make Shift Dates as Strings
+	 *
+	 * @param dayRange
+	 *            - Date Range for Day
+	 * @param sDate
+	 *            - Start of Shift
+	 * @param eDate
+	 *            - End of Shift
+	 * @param localizer
+	 *            - Localizer
+	 * @param tz
+	 *            - TimeZone
+	 */
+	public static String makeShiftDatesString(CalendarRange dayRange, Date sDate, Date eDate, Localizer localizer,
+			TimeZone tz) {
+<span class="nc" id="L163">		StringBuffer sb = new StringBuffer(100);</span>
+
+		// --- start label ----
+<span class="nc bnc" id="L166" title="All 4 branches missed.">		if (dayRange != null &amp;&amp; dayRange.includes(sDate)) { // make time string</span>
+<span class="nc" id="L167">			sb.append(localizer.formatDate(sDate, tz, RegionalFormatBundleKey.TIME_FORMAT));</span>
+		} else { // make date+time string
+<span class="nc" id="L169">			sb.append(localizer.formatDateTime(sDate, tz));</span>
+		}
+
+		// --- middle dash ---
+<span class="nc" id="L173">		sb.append(&quot; - &quot;);</span>
+
+		// --- end label ---
+<span class="nc bnc" id="L176" title="All 4 branches missed.">		if (dayRange != null &amp;&amp; dayRange.includes(eDate)) { // make time string</span>
+<span class="nc" id="L177">			sb.append(localizer.formatDate(eDate, tz, RegionalFormatBundleKey.TIME_FORMAT));</span>
+		} else { // make date+time string
+<span class="nc" id="L179">			sb.append(localizer.formatDateTime(eDate, tz));</span>
+		}
+
+<span class="nc" id="L182">		return sb.toString();</span>
+	}
+
+	/**
+	 * Make Activities String
+	 */
+	public static String makeActivitiesString(CalendarRange dayRange, List&lt;Event&gt; eventList, boolean bShowUnavailable,
+			boolean bShowTimeoff, boolean bShowNote, Map&lt;ID, Activity&gt; activities, Localizer localizer, TimeZone tz) {
+<span class="nc" id="L190">		return makeActivitiesString(dayRange, eventList, bShowUnavailable, bShowTimeoff, bShowNote, activities,</span>
+				localizer, tz, true);
+	}
+
+	/**
+	 * Make Activities String
+	 * 
+	 * @param isShowAbsentReason
+	 *            to indicate if the Absent Reason is displayed or not
+	 */
+	public static String makeActivitiesString(CalendarRange dayRange, List&lt;Event&gt; eventList, boolean bShowUnavailable,
+			boolean bShowTimeoff, boolean bShowNote, Map&lt;ID, Activity&gt; activities, Localizer localizer, TimeZone tz,
+			boolean isShowAbsentReason) {
+<span class="nc" id="L203">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L204">		String absentStringCustomized = localizer.i18n(localizer.getBundle(FsWebBundleKey.BUNDLE_NAME),</span>
+				FsWebBundleKey.FS_CUSTOM_TIME_OFF);
+		// will use to detect gaps between events
+<span class="nc bnc" id="L207" title="All 2 branches missed.">		Date prevEventEnd = dayRange != null ? dayRange.getStartDate() : null;</span>
+<span class="nc" id="L208">		boolean hasOnly1Event = true;</span>
+		// Sort Events if necessary
+<span class="nc bnc" id="L210" title="All 2 branches missed.">		if (eventList.size() &gt; 1) {</span>
+<span class="nc" id="L211">			Collections.sort(eventList, EVENT_COMPARATOR);</span>
+<span class="nc" id="L212">			hasOnly1Event = false;</span>
+		}
+
+<span class="nc bnc" id="L215" title="All 2 branches missed.">		for (int i = 0; i &lt; eventList.size(); i++) {</span>
+<span class="nc" id="L216">			Event event = (Event) eventList.get(i);</span>
+<span class="nc bnc" id="L217" title="All 8 branches missed.">			if (event != null &amp;&amp; (bShowUnavailable || event.getEventType() != Event.EVENT_TYPE_UNAVAILABILITY)</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">					&amp;&amp; (bShowTimeoff || event.getEventType() != Event.EVENT_TYPE_TIME_OFF)) {</span>
+
+<span class="nc" id="L220">				Activity activity = (Activity) activities.get(event.getActivityID());</span>
+				// Story34045- PSR 6104 - Reason for Absence viewable only by
+				// Supervisor
+				// Under co-workers' view, it shows empty string for whole
+				// absence (hasOnly1Event=true) (isShowAbsentReason=false)
+				// However, for partial absence(hasOnly1Event=false), the
+				// absence description will be replace by the custom string
+<span class="nc bnc" id="L227" title="All 8 branches missed.">				if (activity != null &amp;&amp; activity.isTimeoff() &amp;&amp; !isShowAbsentReason &amp;&amp; hasOnly1Event) {</span>
+<span class="nc" id="L228">					continue;</span>
+				}
+				// do not display the event if it has an unavailability type
+				// activity
+<span class="nc bnc" id="L232" title="All 2 branches missed.">				if (ShiftUtil.isEventUnavailabilityType(activity, event, bShowUnavailable)) {</span>
+<span class="nc" id="L233">					continue;</span>
+				}
+
+<span class="nc bnc" id="L236" title="All 4 branches missed.">				if (activity != null &amp;&amp; !activity.getID().equals(Activity.ACTIVITY_NONE)) {</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">					if (i &gt; 0) {</span>
+						// sb.append(&quot;&lt;br&gt;&quot;); //next event
+						// if (isMoreThanHourGap(event,prevEventEnd))
+						// sb.append(&quot;&lt;br&gt;&quot;); //add an extra line if events are
+						// &gt;1hr apart
+					}
+<span class="nc" id="L243">					prevEventEnd = event.getEndTime();</span>
+
+					// make the span with the bottom border
+<span class="nc" id="L246">					sb.append(&quot;&lt;table class=\&quot;w100\&quot;&gt; &lt;tr&gt;&quot;);</span>
+
+					// make nested span with activity box and the label
+					// PSR6104: Under co-workers' view
+					// (isShowAbsentReason=false), for partial
+					// absence(hasOnly1Event=false), the activity box will have
+					// default color as in Graph view
+<span class="nc" id="L253">					sb.append(&quot;&lt;td class=\&quot;w150px\&quot;&gt;&quot;);</span>
+<span class="nc bnc" id="L254" title="All 4 branches missed.">					if (event instanceof SimpleEvent &amp;&amp; ((SimpleEvent) event).isOvertime()</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">							&amp;&amp; (event.getEventType() != Event.EVENT_TYPE_TIME_OFF)) {</span>
+<span class="nc" id="L256">						sb.append(makeActivityBoxWithPattern(activity, FsImageFileID.OT_PATTERN));</span>
+<span class="nc bnc" id="L257" title="All 6 branches missed.">					} else if (activity.isTimeoff() &amp;&amp; !hasOnly1Event &amp;&amp; !isShowAbsentReason) {</span>
+<span class="nc" id="L258">						sb.append(HtmlUtil.makeHtmlColorBox(&quot;0000FF&quot;));</span>
+					} else {
+<span class="nc" id="L260">						sb.append(makeActivityBox(activity));</span>
+					}
+<span class="nc" id="L262">					sb.append(&quot;&amp;nbsp;&quot;);</span>
+					// PSR6104: Under co-workers' view
+					// (isShowAbsentReason=false), for partial
+					// absence(hasOnly1Event=false), the absence description
+					// will be replace by the custom string
+<span class="nc bnc" id="L267" title="All 6 branches missed.">					if (activity.isTimeoff() &amp;&amp; !hasOnly1Event &amp;&amp; !isShowAbsentReason) {</span>
+<span class="nc" id="L268">						sb.append(absentStringCustomized);</span>
+					} else {
+<span class="nc" id="L270">						sb.append(activity.getName());</span>
+					}
+<span class="nc" id="L272">					sb.append(&quot;&lt;/td&gt;&quot;);</span>
+
+					// make next nested span with the time interval and
+					// description icon
+<span class="nc" id="L276">					sb.append(&quot;&lt;td style=\&quot;left-padding:3px; \&quot;&gt;&quot;);</span>
+<span class="nc bnc" id="L277" title="All 4 branches missed.">					sb.append(makeEventPeriodString(dayRange, event, bShowNote &amp;&amp; isShowAbsentReason, localizer, tz));</span>
+<span class="nc" id="L278">					sb.append(&quot;&lt;/td&gt;&lt;/tr&gt;&quot;);</span>
+
+					// close border span
+<span class="nc" id="L281">					sb.append(&quot;&lt;/table&gt;&quot;);</span>
+				}
+			}
+		}// for
+
+<span class="nc" id="L286">		return sb.toString();</span>
+	}
+
+	/**
+	 * Creates and returns a string representing an HTML snippet used to render
+	 * the campaign name associated to an activity of a shift.
+	 */
+	public static String makeCampaignActivityString(CalendarRange dayRange, DailyScheduleSummary daySummary,
+			Collection&lt;ShiftAssignment&gt; shifts, List&lt;Event&gt; dayEvents, Map&lt;ID, Activity&gt; activities,
+			Map&lt;ID, String&gt; campaignNamesBySpID, boolean bShowUnavailable, boolean bShowTimeoff) {
+<span class="nc" id="L296">		StringBuffer sb = new StringBuffer();</span>
+
+<span class="nc bnc" id="L298" title="All 2 branches missed.">		if (dayEvents == null) {</span>
+<span class="nc" id="L299">			dayEvents = new ArrayList&lt;Event&gt;();</span>
+		}
+
+		// Sort Events if necessary
+<span class="nc bnc" id="L303" title="All 2 branches missed.">		if (dayEvents.size() &gt; 1) {</span>
+<span class="nc" id="L304">			Collections.sort(dayEvents, EVENT_COMPARATOR);</span>
+		}
+
+		// will use to detect gaps between events
+<span class="nc bnc" id="L308" title="All 2 branches missed.">		Date prevEventEnd = dayRange != null ? dayRange.getStartDate() : null;</span>
+
+<span class="nc bnc" id="L310" title="All 2 branches missed.">		for (int i = 0; i &lt; dayEvents.size(); i++) {</span>
+<span class="nc" id="L311">			Event event = dayEvents.get(i);</span>
+<span class="nc bnc" id="L312" title="All 8 branches missed.">			if (event != null &amp;&amp; (bShowUnavailable || event.getEventType() != Event.EVENT_TYPE_UNAVAILABILITY)</span>
+<span class="nc bnc" id="L313" title="All 2 branches missed.">					&amp;&amp; (bShowTimeoff || event.getEventType() != Event.EVENT_TYPE_TIME_OFF)) {</span>
+<span class="nc" id="L314">				Activity activity = (Activity) activities.get(event.getActivityID());</span>
+<span class="nc bnc" id="L315" title="All 4 branches missed.">				if (activity != null &amp;&amp; !activity.getID().equals(Activity.ACTIVITY_NONE)) {</span>
+<span class="nc bnc" id="L316" title="All 2 branches missed.">					if (i &gt; 0) {</span>
+<span class="nc" id="L317">						sb.append(&quot;&lt;br&gt;&quot;); // next event</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">						if (isMoreThanHourGap(event, prevEventEnd)) {</span>
+<span class="nc" id="L319">							sb.append(&quot;&lt;br&gt;&quot;); // add an extra line if events</span>
+												// are &gt;1hr apart
+						}
+					}
+<span class="nc" id="L323">					prevEventEnd = event.getEndTime();</span>
+					// make the span with the bottom border.
+					// We need to add a padding of 7px here manually because we
+					// are removing with
+					// padding from the surrounding td. We have to do this,
+					// otherwise the bottom border
+					// of the row will not stretch all the way to the end of the
+					// td, and the row border will
+					// have gaps as you progress to the next column.
+<span class="nc bnc" id="L332" title="All 2 branches missed.">					sb.append((i == (dayEvents.size() - 1)) ? &quot;&lt;span class=\&quot;w100\&quot; style=\&quot;padding-left: 7px;\&quot;&gt;&quot;</span>
+							: &quot;&lt;span class=\&quot;w100bbot1\&quot; style=\&quot;padding-left: 7px;\&quot;&gt;&quot;);
+
+					// make nested span with activity box and the label
+<span class="nc" id="L336">					sb.append(&quot;&lt;span class=\&quot;w150px\&quot;&gt;&quot;);</span>
+
+					// Check the shift event assignments of each shift
+					// assignment to see if they have any activities
+					// that do not match the SPID of the corresponding shift
+					// assignment. If so, print the name of the
+					// associated campaign of the shift event assignment.
+<span class="nc bnc" id="L343" title="All 2 branches missed.">					for (ShiftAssignment shiftAssignment : shifts) {</span>
+<span class="nc" id="L344">						TimeRange eventRange = new TimeRange(shiftAssignment.getStartTime(),</span>
+<span class="nc" id="L345">								shiftAssignment.getEndTime());</span>
+<span class="nc" id="L346">						int overlapType = dayRange.getRelativeLocationTo(eventRange);</span>
+<span class="nc bnc" id="L347" title="All 6 branches missed.">						if (overlapType == TimeRange.INTERVAL_COVERS || overlapType == TimeRange.INTERVAL_EQUALS</span>
+								|| overlapType == TimeRange.INTERVAL_BEFORE_AND_IN) {
+
+<span class="nc" id="L350">							Collection&lt;ShiftEventAssignment&gt; shiftEventAssignments = shiftAssignment.getChildren();</span>
+<span class="nc" id="L351">							for (Iterator&lt;ShiftEventAssignment&gt; seIter = shiftEventAssignments.iterator(); seIter</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">									.hasNext();) {</span>
+<span class="nc" id="L353">								ShiftEventAssignment seAssignment = seIter.next();</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">								if (seAssignment.getSPID() != null</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">										&amp;&amp; seAssignment.getStartTime().equals(event.getStartTime())</span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">										&amp;&amp; seAssignment.getActivityID().equals(event.getActivityID())</span>
+<span class="nc bnc" id="L357" title="All 2 branches missed.">										&amp;&amp; !seAssignment.getSPID().equals(shiftAssignment.getCampaignID())) {</span>
+<span class="nc" id="L358">									String shiftEventCampaignName = campaignNamesBySpID.get(seAssignment.getSPID());</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">									if (shiftEventCampaignName != null) {</span>
+<span class="nc" id="L360">										sb.append(shiftEventCampaignName);</span>
+									} else {
+<span class="nc" id="L362">										sb.append(&quot;&quot;);</span>
+									}
+<span class="nc" id="L364">								} else {</span>
+<span class="nc" id="L365">									sb.append(&quot;&quot;);</span>
+								}
+<span class="nc" id="L367">							}</span>
+						}
+<span class="nc" id="L369">					}</span>
+
+<span class="nc" id="L371">					sb.append(&quot;&lt;/span&gt;&quot;);</span>
+					// close border span
+<span class="nc" id="L373">					sb.append(&quot;&lt;/span&gt;&quot;);</span>
+				}
+			}
+		}// for
+
+<span class="nc" id="L378">		return sb.toString();</span>
+	}
+
+	public static ArrayList&lt;Message&gt; validateShiftEventDefinitions(Localizer localizer,
+			Collection&lt;ShiftEvent&gt; shiftEvents) {
+<span class="fc" id="L383">		ArrayList&lt;Message&gt; results = new ArrayList&lt;Message&gt;();</span>
+
+<span class="fc bfc" id="L385" title="All 2 branches covered.">		for (ShiftEvent se : shiftEvents) {</span>
+<span class="fc bfc" id="L386" title="All 4 branches covered.">			if (se.isPaid() &amp;&amp; se.isFlexible()) {</span>
+				// Min Count &gt; Max Count
+<span class="pc bpc" id="L388" title="1 of 2 branches missed.">				if (se.getMinCount() &gt; se.getMaxCount()) {</span>
+<span class="nc" id="L389">					results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFTEVENT_INVALID_MIN_MAX_COUNT,</span>
+<span class="nc" id="L390">							FsWebBundleKey.BUNDLE_NAME, new String[] { se.getName(), String.valueOf(se.getMinCount()),</span>
+<span class="nc" id="L391">									String.valueOf(se.getMaxCount()) }));</span>
+				}
+			}
+
+			// Min Count Fits in Start Window
+			// If shift event is marked as any time, we can assume the activities will fit in the shift window.
+			// Otherwise, we need to check if they actually fit.
+<span class="fc bfc" id="L398" title="All 2 branches covered.">			if (!se.isAnyTime()) {</span>
+<span class="fc" id="L399">				int dur = se.getDuration().getDurationInMinutes();</span>
+<span class="fc" id="L400">				int start = se.getStart();</span>
+<span class="fc" id="L401">				int end = se.getEnd();</span>
+<span class="fc" id="L402">				int window = end - start;</span>
+
+				// It's possible for the end to lie before the start. Take for example an absolute shift event
+				// with a start window of 1AM - 2AM, at an org with a 2AM day boundary. The start will be 1380
+				// (since it is relative to the day boundary), and the end will be 0, resulting in a window of
+				// -1380. In these cases we add 1440 minutes (number of minutes in a day) to the result to get
+				// the proper window length (60 in the previous case).
+<span class="pc bpc" id="L409" title="1 of 2 branches missed.">				if (window &lt; 0) {</span>
+<span class="nc" id="L410">					window = window + 1440;</span>
+				}
+
+				//Calculate the total duration required to fit the minimum count of shift event instances inside
+				//the given start window.
+<span class="fc bfc" id="L415" title="All 2 branches covered.">				int durationRequiredForMinCount = (se.getMinCount() &gt; 0 ? se.getMinCount() - 1 : 0) * dur;</span>
+
+<span class="pc bpc" id="L417" title="1 of 2 branches missed.">				if (durationRequiredForMinCount &gt; window) {</span>
+<span class="nc" id="L418">					results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.MIN_COUNT_DOES_NOT_FIT_IN_START_WINDOW,</span>
+<span class="nc" id="L419">							FsWebBundleKey.BUNDLE_NAME, new String[] { se.getName() }));</span>
+				}
+<span class="pc bpc" id="L421" title="1 of 2 branches missed.">				if ((se.getMaxCount() - 1) * dur &gt; window) {</span>
+<span class="nc" id="L422">					results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.MAX_COUNT_DOES_NOT_FIT_IN_START_WINDOW,</span>
+<span class="nc" id="L423">							FsWebBundleKey.BUNDLE_NAME, new String[] { se.getName() }));</span>
+				}
+			}
+<span class="fc" id="L426">		}</span>
+<span class="fc" id="L427">		return results;</span>
+	}
+
+	/**
+	 * Validates shift event
+	 * 
+	 * @param localizer
+	 *            Localizer
+	 * @param shiftEvent
+	 *            Shift event
+	 * @return List of Message
+	 */
+	public static List&lt;Message&gt; validateShiftEvent(Localizer localizer, ShiftEvent shiftEvent) {
+<span class="nc" id="L440">		Collection&lt;ShiftEvent&gt; events = new ArrayList&lt;ShiftEvent&gt;();</span>
+<span class="nc" id="L441">		events.add(shiftEvent);</span>
+<span class="nc" id="L442">		return validateShiftEvents(localizer, events);</span>
+	}
+
+	/**
+	 * Validates a collection of shift events
+	 * 
+	 * @param localizer
+	 *            Localizer
+	 * @param shiftEvents
+	 *            Collection of shift events
+	 * @return List of Message
+	 */
+	public static List&lt;Message&gt; validateShiftEvents(Localizer localizer, Collection&lt;ShiftEvent&gt; shiftEvents) {
+<span class="fc" id="L455">		List&lt;Message&gt; results = new ArrayList&lt;Message&gt;();</span>
+
+<span class="fc bfc" id="L457" title="All 2 branches covered.">		for (ShiftEvent shiftEvent : shiftEvents) {</span>
+
+			// Shift event name is required.
+<span class="pc bpc" id="L460" title="2 of 4 branches missed.">			if (shiftEvent.getName() == null || shiftEvent.getName().length() == 0) {</span>
+<span class="nc" id="L461">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_EVENT_IMPORT_NAME_IS_REQUIRED,</span>
+						FsWebBundleKey.BUNDLE_NAME));
+<span class="nc" id="L463">				continue; // Skip the rest of the validations because they use</span>
+							// name for error messaging.
+			}
+
+			// name length must be &lt;= 50
+<span class="pc bpc" id="L468" title="2 of 4 branches missed.">			if (shiftEvent.getName() != null &amp;&amp; shiftEvent.getName().length() &gt; 50) {</span>
+<span class="nc" id="L469">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_EVENT_IMPORT_NAME_LENGTH_INVALID,</span>
+<span class="nc" id="L470">						FsWebBundleKey.BUNDLE_NAME, new String[] { shiftEvent.getName(), String.valueOf(50) }));</span>
+			}
+
+			// description must be &lt;= 250
+<span class="pc bpc" id="L474" title="2 of 4 branches missed.">			if (shiftEvent.getDescription() != null &amp;&amp; shiftEvent.getDescription().length() &gt; 250) {</span>
+<span class="nc" id="L475">				results.add(new Message(Message.ERROR_TYPE,</span>
+						FsWebBundleKey.FS_SHIFT_EVENT_IMPORT_DESCRIPTION_LENGTH_INVALID, FsWebBundleKey.BUNDLE_NAME,
+<span class="nc" id="L477">						new String[] { shiftEvent.getName(), String.valueOf(250) }));</span>
+			}
+
+			// Duration: min time 15 minutes, max time 23 hours
+<span class="pc bpc" id="L481" title="1 of 2 branches missed.">			if (shiftEvent.getDuration().getDurationInMinutes() &lt; 1</span>
+<span class="pc bpc" id="L482" title="1 of 2 branches missed.">					|| shiftEvent.getDuration().getDurationInMinutes() &gt; 1439) {</span>
+<span class="nc" id="L483">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_EVENT_IMPORT_DURATION_INVALID,</span>
+<span class="nc" id="L484">						FsWebBundleKey.BUNDLE_NAME, new String[] { shiftEvent.getName(), String.valueOf(5), &quot;23:59&quot; }));</span>
+			}
+
+			// Min Count must be between 0 and 99
+<span class="pc bpc" id="L488" title="2 of 6 branches missed.">			if (shiftEvent.isFlexible() &amp;&amp; (shiftEvent.getMinCount() &lt; 0 || shiftEvent.getMinCount() &gt; 99)) {</span>
+<span class="nc" id="L489">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_EVENT_IMPORT_MIN_COUNT_INVALID,</span>
+<span class="nc" id="L490">						FsWebBundleKey.BUNDLE_NAME, new String[] { shiftEvent.getName(), String.valueOf(0),</span>
+<span class="nc" id="L491">								String.valueOf(99) }));</span>
+			}
+
+			// Max Count must be between 0 and 99
+<span class="pc bpc" id="L495" title="2 of 6 branches missed.">			if (shiftEvent.isFlexible() &amp;&amp; (shiftEvent.getMaxCount() &lt; 1 || shiftEvent.getMaxCount() &gt; 99)) {</span>
+<span class="nc" id="L496">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_EVENT_IMPORT_MAX_COUNT_INVALID,</span>
+<span class="nc" id="L497">						FsWebBundleKey.BUNDLE_NAME, new String[] { shiftEvent.getName(), String.valueOf(1),</span>
+<span class="nc" id="L498">								String.valueOf(99) }));</span>
+			}
+
+<span class="pc bpc" id="L501" title="1 of 2 branches missed.">			if (shiftEvent.getMinCount() &gt; shiftEvent.getMaxCount()) {</span>
+<span class="nc" id="L502">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_EVENT_MIN_MAX_INVALID,</span>
+						FsWebBundleKey.BUNDLE_NAME));
+			}
+
+<span class="fc" id="L506">			Collection&lt;Activity&gt; additionalActivities = shiftEvent.getAdditionalActivities();</span>
+
+<span class="pc bpc" id="L508" title="1 of 2 branches missed.">			for (Activity activity : additionalActivities) {</span>
+<span class="nc bnc" id="L509" title="All 2 branches missed.">				if (activity.getID().equals(shiftEvent.getActivityID())) {</span>
+<span class="nc" id="L510">					results.add(new Message(Message.ERROR_TYPE,</span>
+							FsWebBundleKey.FS_SHIFT_EVENT_IMPORT_ADDITIONAL_ACTIVITY_DUPLICATE_OF_ACTIVITY_ASSIGNED,
+<span class="nc" id="L512">							FsWebBundleKey.BUNDLE_NAME, new String[] { shiftEvent.getName() }));</span>
+				}
+<span class="nc" id="L514">			}</span>
+<span class="fc" id="L515">		}</span>
+
+<span class="fc" id="L517">		return results;</span>
+	}
+
+	/***
+	 * Validates a single shift
+	 * 
+	 * @param localizer
+	 * @param shift
+	 * @return List of Messages representing any problems with the shift.
+	 */
+	public static List&lt;Message&gt; validateShift(Localizer localizer, Shift shift) {
+<span class="nc" id="L528">		Collection&lt;Shift&gt; shifts = new ArrayList&lt;Shift&gt;();</span>
+<span class="nc" id="L529">		shifts.add(shift);</span>
+<span class="nc" id="L530">		return validateShifts(localizer, shifts);</span>
+	}
+
+	public static List&lt;Message&gt; validateShifts(Localizer localizer, Collection&lt;Shift&gt; shifts) {
+<span class="nc" id="L534">		List&lt;Message&gt; results = new ArrayList&lt;Message&gt;();</span>
+
+		// These are rules extracted from the form.
+<span class="nc bnc" id="L537" title="All 2 branches missed.">		for (Shift shift : shifts) {</span>
+			// Shift name is required.
+<span class="nc bnc" id="L539" title="All 4 branches missed.">			if (shift.getName() == null || shift.getName().length() == 0) {</span>
+<span class="nc" id="L540">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_IMPORT_NAME_IS_REQUIRED,</span>
+						FsWebBundleKey.BUNDLE_NAME));
+				// If there isn't a shift name, no sense continuing because the
+				// null name will cause problems for
+				// messaging.
+<span class="nc" id="L545">				continue;</span>
+			}
+
+			// Shift name length must be &lt;= 50
+<span class="nc bnc" id="L549" title="All 4 branches missed.">			if (shift.getName() != null &amp;&amp; shift.getName().length() &gt; 50) {</span>
+<span class="nc" id="L550">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_IMPORT_NAME_LENGTH_INVALID,</span>
+<span class="nc" id="L551">						FsWebBundleKey.BUNDLE_NAME, new String[] { shift.getName(), String.valueOf(50) }));</span>
+			}
+
+			// Shift description must be &lt;= 250
+<span class="nc bnc" id="L555" title="All 4 branches missed.">			if (shift.getDescription() != null &amp;&amp; shift.getDescription().length() &gt; 250) {</span>
+<span class="nc" id="L556">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_IMPORT_DESCRIPTION_LENGTH_INVALID,</span>
+<span class="nc" id="L557">						FsWebBundleKey.BUNDLE_NAME, new String[] { shift.getName(), String.valueOf(250) }));</span>
+			}
+
+			// Duration: min time 15 minutes, max time 23 hours
+<span class="nc bnc" id="L561" title="All 4 branches missed.">			if (shift.getDuration() &lt; 15 || shift.getDuration() &gt; 1380) {</span>
+<span class="nc" id="L562">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_IMPORT_DURATION_INVALID,</span>
+<span class="nc" id="L563">						FsWebBundleKey.BUNDLE_NAME, new String[] { shift.getName(), String.valueOf(0),</span>
+<span class="nc" id="L564">								String.valueOf(23) }));</span>
+			}
+
+			// Min Spacing: max value 8
+<span class="nc bnc" id="L568" title="All 2 branches missed.">			if (shift.getMinSpacing() &gt; 480) {</span>
+<span class="nc" id="L569">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_IMPORT_MIN_SPACING_INVALID,</span>
+<span class="nc" id="L570">						FsWebBundleKey.BUNDLE_NAME, new String[] { shift.getName(), String.valueOf(0),</span>
+<span class="nc" id="L571">								String.valueOf(8) }));</span>
+			}
+
+			// Max Spacing: max value 8
+<span class="nc bnc" id="L575" title="All 2 branches missed.">			if (shift.getMaxSpacing() &gt; 480) {</span>
+<span class="nc" id="L576">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_SHIFT_IMPORT_MAX_SPACING_INVALID,</span>
+<span class="nc" id="L577">						FsWebBundleKey.BUNDLE_NAME, new String[] { shift.getName(), String.valueOf(0),</span>
+<span class="nc" id="L578">								String.valueOf(8) }));</span>
+			}
+<span class="nc" id="L580">		}</span>
+
+<span class="nc" id="L582">		return results;</span>
+	}
+
+	/**
+	 * Validates placement, spacing, and size of shift events to determine if
+	 * they will fit within a given shift.
+	 */
+	public static ArrayList&lt;Message&gt; validateShiftEventAssignments(Localizer localizer, int dayBoundaryOffset,
+			Shift shift, Collection&lt;ShiftEvent&gt; shiftEventsToValidate, boolean workTypeEvents,
+			Map&lt;String, TimeZone&gt; shiftTimeZones, Map&lt;String, TimeZone&gt; shiftEventTimeZones) {
+<span class="fc" id="L592">		ArrayList&lt;Message&gt; results = new ArrayList&lt;Message&gt;();</span>
+
+<span class="pc bpc" id="L594" title="1 of 4 branches missed.">		if (shiftEventsToValidate == null || shiftEventsToValidate.size() == 0) {</span>
+<span class="fc" id="L595">			return results;</span>
+		}
+
+<span class="fc" id="L598">		Collection&lt;ShiftEvent&gt; absoluteShiftEvents = new ArrayList&lt;ShiftEvent&gt;();</span>
+<span class="fc" id="L599">		Collection&lt;ShiftEvent&gt; flexibleShiftEvents = new ArrayList&lt;ShiftEvent&gt;();</span>
+<span class="fc" id="L600">		Collection&lt;ShiftEvent&gt; relativeShiftEvents = new ArrayList&lt;ShiftEvent&gt;();</span>
+<span class="fc" id="L601">		Collection&lt;ShiftEvent&gt; anyTimeShiftEvents = new ArrayList&lt;ShiftEvent&gt;();</span>
+<span class="fc bfc" id="L602" title="All 2 branches covered.">		for (ShiftEvent se : shiftEventsToValidate) {</span>
+<span class="fc bfc" id="L603" title="All 2 branches covered.">			if (se.isCafeteria()) {</span>
+<span class="pc bpc" id="L604" title="1 of 4 branches missed.">				if (se.isFlexible() &amp;&amp; se.getMinCount() == 0) {</span>
+<span class="nc" id="L605">					flexibleShiftEvents.add(se);</span>
+				} else {
+<span class="fc" id="L607">					absoluteShiftEvents.add(se);</span>
+				}
+<span class="fc bfc" id="L609" title="All 2 branches covered.">			} else if (se.isAnyTime()) {</span>
+<span class="fc" id="L610">				anyTimeShiftEvents.add(se);</span>
+			} else {
+<span class="fc" id="L612">				relativeShiftEvents.add(se);</span>
+			}
+<span class="fc" id="L614">		}</span>
+
+		// Step 1: Check if relative shift events fit inside shift (their start
+		// times and duration may fall outside the
+		// length of the shift, validation fails if this is the case
+<span class="fc bfc" id="L619" title="All 2 branches covered.">		for (ShiftEvent relativeShiftEvent : relativeShiftEvents) {</span>
+<span class="fc bfc" id="L620" title="All 2 branches covered.">			if (relativeShiftEvent.isFlexible()) {</span>
+<span class="pc bpc" id="L621" title="1 of 2 branches missed.">				if (relativeShiftEvent.isWorkType()) { // Spacing not enforced</span>
+														// for shift events with
+														// primary activities
+<span class="nc" id="L624">					if (relativeShiftEvent.getStart()</span>
+<span class="nc" id="L625">							+ (relativeShiftEvent.getDuration().getDurationInMinutes() * relativeShiftEvent</span>
+<span class="nc bnc" id="L626" title="All 2 branches missed.">									.getMinCount()) &gt; shift.getDuration()) {</span>
+<span class="nc" id="L627">						results.add(new Message(Message.ERROR_TYPE, localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+								FsWebBundleKey.FS_SHIFT_EVENT_DOES_NOT_FIT_IN_SHIFT,
+<span class="nc" id="L629">								new Object[] { relativeShiftEvent.getName(), shift.getName() })));</span>
+					}
+<span class="fc" id="L631">				} else if (relativeShiftEvent.getStart()</span>
+<span class="fc" id="L632">						+ (relativeShiftEvent.getDuration().getDurationInMinutes() * relativeShiftEvent.getMinCount())</span>
+<span class="pc bpc" id="L633" title="1 of 2 branches missed.">						+ (shift.getMinSpacing() * (relativeShiftEvent.getMinCount() - 1)) &gt; shift.getDuration()) {</span>
+<span class="nc" id="L634">					results.add(new Message(Message.ERROR_TYPE, localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+							FsWebBundleKey.FS_SHIFT_EVENT_DOES_NOT_FIT_IN_SHIFT,
+<span class="nc" id="L636">							new Object[] { relativeShiftEvent.getName(), shift.getName() })));</span>
+				}
+<span class="fc" id="L638">			} else if (relativeShiftEvent.getStart() + relativeShiftEvent.getDuration().getDurationInMinutes() &gt; shift</span>
+<span class="pc bpc" id="L639" title="1 of 2 branches missed.">					.getDuration()) {</span>
+<span class="nc" id="L640">				results.add(new Message(Message.ERROR_TYPE, localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+						FsWebBundleKey.FS_SHIFT_EVENT_DOES_NOT_FIT_IN_SHIFT,
+<span class="nc" id="L642">						new Object[] { relativeShiftEvent.getName(), shift.getName() })));</span>
+			}
+<span class="fc" id="L644">		}</span>
+
+		// ESR4450128: If shift contains flexible events with mincount = 0,
+		// iterate through them and find the valid shift start time. If any of
+		// them cannot
+		// find a valid shift start time, then validation fails.
+<span class="pc bpc" id="L650" title="1 of 2 branches missed.">		for (ShiftEvent flexibleShiftEvent : flexibleShiftEvents) {</span>
+<span class="nc" id="L651">			boolean isShiftStartValid = false;</span>
+<span class="nc bnc" id="L652" title="All 2 branches missed.">			for (ShiftStart shiftStart : shift.getShiftStarts()) {</span>
+<span class="nc" id="L653">				int shiftEventActivityLength = flexibleShiftEvent.getDuration().getDurationInMinutes();</span>
+<span class="nc bnc" id="L654" title="All 2 branches missed.">				if (shift.getDuration() &lt; shiftEventActivityLength) {</span>
+<span class="nc" id="L655">					break;</span>
+				}
+
+				// If the shift crosses the day boundary, check that the event
+				// window lies after the shift start
+				// or that the event window lies after the end of the shift
+				// (which will be after the beginning of
+				// the subsequent day.
+<span class="nc bnc" id="L663" title="All 2 branches missed.">				if (shiftStart.getPossibleStartTime() + shift.getDuration() &gt; 1440) {</span>
+<span class="nc bnc" id="L664" title="All 2 branches missed.">					if ((flexibleShiftEvent.getStart() &lt; shiftStart.getPossibleStartTime())</span>
+<span class="nc bnc" id="L665" title="All 2 branches missed.">							&amp;&amp; (flexibleShiftEvent.getEnd() &gt;= shiftStart.getPossibleStartTime())) {</span>
+<span class="nc" id="L666">						isShiftStartValid = true;</span>
+<span class="nc" id="L667">						break;</span>
+<span class="nc bnc" id="L668" title="All 2 branches missed.">					} else if (flexibleShiftEvent.getStart() &gt;= shiftStart.getPossibleStartTime()) {</span>
+<span class="nc bnc" id="L669" title="All 2 branches missed.">						if ((flexibleShiftEvent.getStart() + shiftEventActivityLength &lt;= 1440)</span>
+<span class="nc" id="L670">								|| ((flexibleShiftEvent.getStart() + shiftEventActivityLength) % 1440 &lt;= (shiftStart</span>
+<span class="nc bnc" id="L671" title="All 2 branches missed.">										.getPossibleStartTime() + shift.getDuration()) % 1440)) {</span>
+<span class="nc" id="L672">							isShiftStartValid = true;</span>
+<span class="nc" id="L673">							break;</span>
+						}
+<span class="nc bnc" id="L675" title="All 2 branches missed.">					} else if (flexibleShiftEvent.getStart() &lt; (shiftStart.getPossibleStartTime() + shift.getDuration()) % 1440) {</span>
+<span class="nc" id="L676">						if ((flexibleShiftEvent.getStart() + shiftEventActivityLength) &lt;= (shiftStart</span>
+<span class="nc bnc" id="L677" title="All 2 branches missed.">								.getPossibleStartTime() + shift.getDuration()) % 1440) {</span>
+<span class="nc" id="L678">							isShiftStartValid = true;</span>
+<span class="nc" id="L679">							break;</span>
+						}
+					}
+					// If the shift does not cross the day boundary:
+<span class="nc bnc" id="L683" title="All 2 branches missed.">				} else if (shiftStart.getPossibleStartTime() &lt;= flexibleShiftEvent.getEnd()</span>
+<span class="nc bnc" id="L684" title="All 2 branches missed.">						&amp;&amp; shiftStart.getPossibleStartTime() + shift.getDuration() &gt;= flexibleShiftEvent.getStart()</span>
+								+ shiftEventActivityLength) {
+<span class="nc" id="L686">					isShiftStartValid = true;</span>
+					;
+<span class="nc" id="L688">					break;</span>
+				}
+<span class="nc" id="L690">			}</span>
+<span class="nc bnc" id="L691" title="All 2 branches missed.">			if (!isShiftStartValid) {</span>
+<span class="nc" id="L692">				results.add(new Message(Message.ERROR_TYPE, localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+						FsWebBundleKey.FS_SHIFT_EVENT_DOES_NOT_FIT_IN_SHIFT,
+<span class="nc" id="L694">						new Object[] { flexibleShiftEvent.getName(), shift.getName() })));</span>
+			}
+<span class="nc" id="L696">		}</span>
+
+		// Step 2: If shift contains events with absolute windows, iterate
+		// through them and find all the shift start
+		// times that are valid for these absolute shift events. If none of the
+		// shift start times meet this condition, then validation fails.
+<span class="fc" id="L702">		Collection&lt;Integer&gt; validStartTimes = new ArrayList&lt;Integer&gt;();</span>
+		// if no absolute times, we only need to create a set of relative windows with just one offset
+<span class="fc bfc" id="L704" title="All 2 branches covered.">		if (absoluteShiftEvents.size() == 0) {</span>
+<span class="fc" id="L705">			validStartTimes.add(0);</span>
+		} else {
+<span class="fc bfc" id="L707" title="All 2 branches covered.">			for (ShiftStart shiftStart : shift.getShiftStarts()) {</span>
+<span class="fc" id="L708">				boolean isShiftStartValid = true;</span>
+<span class="fc bfc" id="L709" title="All 2 branches covered.">				for (ShiftEvent absoluteShiftEvent : absoluteShiftEvents) {</span>
+<span class="fc" id="L710">					int shiftEventActivityLength = getMinimumShiftEventLength(absoluteShiftEvent, shift.getMinSpacing());</span>
+<span class="fc" id="L711">					int shiftEventStart = adjustOffsetByTimeZoneDifference(shiftTimeZones.get(shift.getName()),</span>
+<span class="fc" id="L712">							shiftEventTimeZones.get(absoluteShiftEvent.getName()), absoluteShiftEvent.getStart());</span>
+<span class="fc" id="L713">					int shiftEventEnd = adjustOffsetByTimeZoneDifference(shiftTimeZones.get(shift.getName()),</span>
+<span class="fc" id="L714">							shiftEventTimeZones.get(absoluteShiftEvent.getName()), absoluteShiftEvent.getEnd());</span>
+
+					// If the shift crosses the day boundary, check that the event window lies after the shift start
+					// or that the event window lies after the end of the shift (which will be after the beginning of
+					// the subsequent day.
+<span class="fc bfc" id="L719" title="All 2 branches covered.">					if (shiftStart.getPossibleStartTime() + shift.getDuration() &gt; 1440) {</span>
+<span class="pc bpc" id="L720" title="1 of 2 branches missed.">						if (((shiftStart.getPossibleStartTime() + shift.getDuration()) % 1440 &lt;</span>
+								(shiftEventStart + shiftEventActivityLength) % 1440)
+<span class="pc bpc" id="L722" title="1 of 2 branches missed.">								&amp;&amp; shiftStart.getPossibleStartTime() &gt; shiftEventStart) {</span>
+<span class="nc" id="L723">							isShiftStartValid = false;</span>
+<span class="nc" id="L724">							break;</span>
+						}
+						// If the shift does not cross the day boundary:
+<span class="pc bpc" id="L727" title="1 of 2 branches missed.">					} else if (shiftStart.getPossibleStartTime() &gt; shiftEventEnd</span>
+<span class="fc bfc" id="L728" title="All 2 branches covered.">							|| shiftStart.getPossibleStartTime() + shift.getDuration() &lt; shiftEventStart + shiftEventActivityLength) {</span>
+<span class="fc" id="L729">						isShiftStartValid = false;</span>
+<span class="fc" id="L730">						break;</span>
+					}
+<span class="fc" id="L732">				}</span>
+<span class="fc bfc" id="L733" title="All 2 branches covered.">				if (isShiftStartValid) {</span>
+<span class="fc" id="L734">					validStartTimes.add(shiftStart.getPossibleStartTime());</span>
+				}
+<span class="fc" id="L736">			}</span>
+		}
+
+		// Step 3: For each valid start time, see if the relative shift events
+		// can be placed along with the absolute events.
+		// What this algorithm will do is create a window (TimeRange object) for
+		// each shift event and combine them to find
+		// the union of time between the relative and absolute shift events.
+		// If there are no absolute events, we just check the relative events
+		// against a start time of midnight.
+		// Once absolute and relative shift events have been placed, check to
+		// see if the anytime events can fit in the space that is left.
+
+		// We are going to calculate time ranges for each shift event to be used
+		// here in step 3. However, since we will have the time ranges we will
+		// also
+		// build a map of shiftEvents to TimeRanges that will be used in Step 4
+		// to do a pair wise comparison of each shift event.
+<span class="fc" id="L754">		HashMap&lt;ShiftEvent, Collection&lt;TimeRange&gt;&gt; shiftEventTimeRange = new HashMap&lt;ShiftEvent, Collection&lt;TimeRange&gt;&gt;();</span>
+
+<span class="fc" id="L756">		Collection&lt;TimeRange&gt; absoluteShiftWindows = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="fc bfc" id="L757" title="All 2 branches covered.">		for (ShiftEvent absoluteShiftEvent : absoluteShiftEvents) {</span>
+<span class="pc bpc" id="L758" title="1 of 4 branches missed.">			if (absoluteShiftEvent.isFlexible() == false || absoluteShiftEvent.getMinCount() &gt; 0) {</span>
+<span class="fc" id="L759">				TimeRange eventWindow = createShiftEventWindow(absoluteShiftEvent, 0, dayBoundaryOffset,</span>
+<span class="fc" id="L760">						shift.getMinSpacing());</span>
+<span class="fc" id="L761">				absoluteShiftWindows.add(eventWindow);</span>
+
+<span class="fc" id="L763">				shiftEventTimeRange.put(absoluteShiftEvent, Collections.singletonList(eventWindow));</span>
+			}
+<span class="fc" id="L765">		}</span>
+
+<span class="fc" id="L767">		boolean doShiftEventsFitWithinShift = false;</span>
+<span class="pc bpc" id="L768" title="1 of 4 branches missed.">		if (relativeShiftEvents != null &amp;&amp; relativeShiftEvents.size() &gt; 0) {</span>
+<span class="fc bfc" id="L769" title="All 2 branches covered.">			for (Integer startTime : validStartTimes) {</span>
+<span class="fc" id="L770">				Collection&lt;TimeRange&gt; relativeShiftWindows = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="fc bfc" id="L771" title="All 2 branches covered.">				for (ShiftEvent relativeShiftEvent : relativeShiftEvents) {</span>
+<span class="pc bpc" id="L772" title="1 of 4 branches missed.">					if (relativeShiftEvent.isFlexible() == false || relativeShiftEvent.getMinCount() &gt; 0) {</span>
+<span class="fc" id="L773">						TimeRange eventWindow = createShiftEventWindow(relativeShiftEvent, startTime,</span>
+<span class="fc" id="L774">								dayBoundaryOffset, shift.getMinSpacing());</span>
+<span class="fc" id="L775">						relativeShiftWindows.add(eventWindow);</span>
+
+<span class="fc bfc" id="L777" title="All 2 branches covered.">						if (shiftEventTimeRange.get(relativeShiftEvent) == null) {</span>
+<span class="fc" id="L778">							shiftEventTimeRange.put(relativeShiftEvent, new ArrayList&lt;TimeRange&gt;());</span>
+						}
+
+<span class="fc" id="L781">						shiftEventTimeRange.get(relativeShiftEvent).add(eventWindow);</span>
+					}
+<span class="fc" id="L783">				}</span>
+
+<span class="fc" id="L785">				ArrayList&lt;TimeRange&gt; mergedWindows = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="fc" id="L786">				mergedWindows.addAll(absoluteShiftWindows);</span>
+<span class="fc" id="L787">				mergedWindows.addAll(relativeShiftWindows);</span>
+<span class="fc" id="L788">				mergedWindows = mergeTimeRanges(mergedWindows);</span>
+
+<span class="fc" id="L790">				List&lt;Message&gt; tempResults = doShiftEventWindowsFitInShift(shift, localizer, mergedWindows,</span>
+						absoluteShiftEvents, relativeShiftEvents, anyTimeShiftEvents, workTypeEvents);
+<span class="pc bpc" id="L792" title="2 of 4 branches missed.">				if (tempResults != null &amp;&amp; tempResults.size() &gt; 0) {</span>
+<span class="nc" id="L793">					results.addAll(tempResults);</span>
+<span class="nc" id="L794">					break;</span>
+				}
+<span class="fc" id="L796">			}</span>
+		} else { // If we don't have any relative events, then there is no need
+					// to cycle through the shift start times.
+<span class="fc" id="L799">			ArrayList&lt;TimeRange&gt; mergedWindows = new ArrayList&lt;TimeRange&gt;(absoluteShiftWindows);</span>
+<span class="fc" id="L800">			mergedWindows = mergeTimeRanges(mergedWindows);</span>
+<span class="fc" id="L801">			List&lt;Message&gt; tempResults = doShiftEventWindowsFitInShift(shift, localizer, mergedWindows,</span>
+					absoluteShiftEvents, relativeShiftEvents, anyTimeShiftEvents, workTypeEvents);
+<span class="pc bpc" id="L803" title="2 of 4 branches missed.">			if (tempResults != null &amp;&amp; tempResults.size() &gt; 0) {</span>
+<span class="nc" id="L804">				results.addAll(tempResults);</span>
+			} else {
+<span class="fc" id="L806">				doShiftEventsFitWithinShift = true;</span>
+			}
+		}
+
+		// Step 4: Check each (relative and absolute) shift event pair wise with
+		// each other to see if one makes the other impossible to place.
+<span class="fc" id="L812">		boolean isShiftEventPlacementValid = true;</span>
+<span class="fc bfc" id="L813" title="All 2 branches covered.">		if (doShiftEventsFitWithinShift) {</span>
+<span class="fc bfc" id="L814" title="All 2 branches covered.">			for (ShiftEvent firstShiftEvent : shiftEventTimeRange.keySet()) {</span>
+<span class="pc bpc" id="L815" title="1 of 2 branches missed.">				if (isShiftEventPlacementValid == false) {</span>
+<span class="nc" id="L816">					break;</span>
+				}
+<span class="fc bfc" id="L818" title="All 2 branches covered.">				for (ShiftEvent secondShiftEvent : shiftEventTimeRange.keySet()) {</span>
+					// Do not compare the same shift event to itself
+<span class="fc bfc" id="L820" title="All 2 branches covered.">					if (firstShiftEvent.getID().equals(secondShiftEvent.getID()) == false) {</span>
+<span class="fc" id="L821">						isShiftEventPlacementValid = areShiftEventsAbleToBePlaced(localizer, shift, firstShiftEvent,</span>
+								secondShiftEvent, shiftEventTimeRange);
+<span class="pc bpc" id="L823" title="1 of 2 branches missed.">						if (isShiftEventPlacementValid == false) {</span>
+<span class="nc" id="L824">							break;</span>
+						}
+					}
+<span class="fc" id="L827">				}</span>
+<span class="fc" id="L828">			}</span>
+		}
+
+<span class="pc bpc" id="L831" title="1 of 2 branches missed.">		if (validStartTimes.size() == 0) {</span>
+<span class="nc" id="L832">			results.add(new Message(Message.ERROR_TYPE, localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+<span class="nc" id="L833">					FsWebBundleKey.FS_ABSOLUTE_SHIFT_EVENTS_DO_NOT_FIT_IN_SHIFT, new Object[] { shift.getName() })));</span>
+		}
+<span class="pc bpc" id="L835" title="1 of 2 branches missed.">		if (isShiftEventPlacementValid == false) {</span>
+<span class="nc" id="L836">			results.add(new Message(Message.ERROR_TYPE, localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+<span class="nc" id="L837">					FsWebBundleKey.FS_SHIFT_EVENT_PLACEMENT_IS_INVALID, new Object[] { shift.getName() })));</span>
+		}
+
+<span class="fc" id="L840">		return results;</span>
+	}
+
+	/**
+	 * Determines the difference in offsets between the shift and shift event time zones, and adjusts the given start time
+	 * value by that difference in offsets.
+	 */
+	static int adjustOffsetByTimeZoneDifference(TimeZone shiftTimeZone, TimeZone shiftEventTimeZone, int start) {
+<span class="pc bpc" id="L848" title="3 of 6 branches missed.">		if (shiftTimeZone != null &amp;&amp; shiftEventTimeZone != null &amp;&amp; !shiftTimeZone.equals(shiftEventTimeZone)) {</span>
+			//Shift/shift event templates are not linked to a specific datetime, however to determine the offset of
+			//two timezones we need to use a specific datetime as the offsets can change depending on the date.
+			//The long below corresponds to the following date: Jan 10th, 2017 8:00AM UTC.  This is chosen arbitrarily
+			//and hopefully should avoid any DST issues.
+<span class="nc" id="L853">			long cur = 1484035200000L;</span>
+<span class="nc" id="L854">			return start + (int)((shiftTimeZone.getOffset(cur) - shiftEventTimeZone.getOffset(cur)) / (60 * 1000L));</span>
+		}
+<span class="fc" id="L856">		return start;</span>
+	}
+
+	/**
+	 * Returns a map of all the timezones of the given shifts, keyed by shift name (shift names are assumed to be unique).
+	 * The timezones are pulled from the shift's org (or campaign if the shift belongs to a campaign).
+	 *
+	 * If the org/campaign is not in the accompanying map, then an entry for that shift will not be in the resulting map.
+	 */
+	public static Map&lt;String, TimeZone&gt; getTimeZoneForShifts(Collection&lt;Shift&gt; shifts, Map&lt;ID, Organization&gt; orgMap,
+			Map&lt;ID, Campaign&gt; campaignMap) {
+
+<span class="fc" id="L868">		Map&lt;String, TimeZone&gt; shiftTimeZones = new HashMap&lt;String, TimeZone&gt;();</span>
+
+<span class="fc bfc" id="L870" title="All 2 branches covered.">		for (Shift shift : shifts) {</span>
+<span class="pc bpc" id="L871" title="1 of 2 branches missed.">			if (shift.getName() != null) {</span>
+<span class="pc bpc" id="L872" title="2 of 4 branches missed.">				if (shift.getOrganizationID() != null &amp;&amp; orgMap.containsKey(shift.getOrganizationID())) {</span>
+<span class="fc" id="L873">					shiftTimeZones.put(shift.getName(), orgMap.get(shift.getOrganizationID()).getTimeZone());</span>
+<span class="nc bnc" id="L874" title="All 4 branches missed.">				} else if (shift.getCampaignID() != null &amp;&amp; campaignMap.containsKey(shift.getCampaignID())) {</span>
+<span class="nc" id="L875">					shiftTimeZones.put(shift.getName(), campaignMap.get(shift.getCampaignID()).getTimeZone());</span>
+				}
+			}
+<span class="fc" id="L878">		}</span>
+
+<span class="fc" id="L880">		return shiftTimeZones;</span>
+	}
+
+	/**
+	 * Returns a map of all the timezones of the given shift events, keyed by shift event name (shift event names are assumed
+	 * to be unique).
+	 * The timezones are pulled from the shift event's org (or campaign if the shift event belongs to a campaign).
+	 *
+	 * If the org/campaign is not in the accompanying map, then an entry for that shift event will not be in the resulting map.
+	 */
+	public static Map&lt;String, TimeZone&gt; getTimeZoneForShiftEventsInShifts(Collection&lt;Shift&gt; shifts, Map&lt;ID, Organization&gt; orgMap,
+			Map&lt;ID, Campaign&gt; campaignMap) {
+
+<span class="fc" id="L893">		Map&lt;String, TimeZone&gt; shiftEventTimeZones = new HashMap&lt;String, TimeZone&gt;();</span>
+
+<span class="fc bfc" id="L895" title="All 2 branches covered.">		for (Shift shift : shifts) {</span>
+<span class="fc bfc" id="L896" title="All 2 branches covered.">			for (ShiftEvent shiftEvent : shift.getShiftEvents()) {</span>
+<span class="pc bpc" id="L897" title="1 of 2 branches missed.">				if (shiftEvent.getID() != null) {</span>
+<span class="pc bpc" id="L898" title="2 of 4 branches missed.">					if (shiftEvent.getOrganizationID() != null &amp;&amp; orgMap.containsKey(shiftEvent.getOrganizationID())) {</span>
+<span class="fc" id="L899">						shiftEventTimeZones.put(shiftEvent.getName(), orgMap.get(shiftEvent.getOrganizationID()).getTimeZone());</span>
+<span class="nc bnc" id="L900" title="All 4 branches missed.">					} else if (shiftEvent.getCampaignID() != null &amp;&amp; campaignMap.containsKey(shiftEvent.getCampaignID())) {</span>
+<span class="nc" id="L901">						shiftEventTimeZones.put(shiftEvent.getName(), campaignMap.get(shiftEvent.getCampaignID()).getTimeZone());</span>
+					}
+				}
+<span class="fc" id="L904">			}</span>
+<span class="fc" id="L905">		}</span>
+
+<span class="fc" id="L907">		return shiftEventTimeZones;</span>
+	}
+
+	/**
+	 * Validates a single work pattern returning messages for problems.
+	 * 
+	 * @param localizer
+	 * @param pattern
+	 * @return
+	 */
+	public static List&lt;Message&gt; validateWorkPattern(Localizer localizer, ShiftPattern pattern) {
+<span class="nc" id="L918">		Collection&lt;ShiftPattern&gt; patterns = new ArrayList&lt;ShiftPattern&gt;();</span>
+<span class="nc" id="L919">		patterns.add(pattern);</span>
+<span class="nc" id="L920">		return validateWorkPatterns(localizer, patterns);</span>
+	}
+
+	/**
+	 * Validates work patterns returning messages for problems.
+	 * 
+	 * @param localizer
+	 * @param patterns
+	 * @return
+	 */
+	public static List&lt;Message&gt; validateWorkPatterns(Localizer localizer, Collection&lt;ShiftPattern&gt; patterns) {
+<span class="nc" id="L931">		List&lt;Message&gt; results = new ArrayList&lt;Message&gt;();</span>
+
+		// These are rules extracted from the form.
+<span class="nc bnc" id="L934" title="All 2 branches missed.">		for (ShiftPattern pattern : patterns) {</span>
+			// Shift name is required.
+<span class="nc bnc" id="L936" title="All 4 branches missed.">			if (pattern.getName() == null || pattern.getName().length() == 0) {</span>
+<span class="nc" id="L937">				results.add(new Message(Message.ERROR_TYPE, FsWebBundleKey.FS_WORK_PATTERN_NAME_IS_REQUIRED,</span>
+						FsWebBundleKey.BUNDLE_NAME));
+				// If there isn't a shift name, no sense continuing because the
+				// null name will cause problems for
+				// messaging.
+<span class="nc" id="L942">				continue;</span>
+			}
+<span class="nc" id="L944">		}</span>
+
+<span class="nc" id="L946">		return results;</span>
+	}
+
+	/**
+	 * This method looks at the activites of the absolute, relative, and anytime
+	 * shift events to see if they fit within the absolute/relative shift event
+	 * windows. It then checks to see if these activities also fit within the
+	 * defined shift length. If both conditions are met, this method returns
+	 * true.
+	 */
+	private static List&lt;Message&gt; doShiftEventWindowsFitInShift(Shift shift, Localizer localizer,
+			Collection&lt;TimeRange&gt; mergedEventWindows, Collection&lt;ShiftEvent&gt; absoluteShiftEvents,
+			Collection&lt;ShiftEvent&gt; relativeShiftEvents, Collection&lt;ShiftEvent&gt; anyTimeShiftEvents,
+			boolean workTypeEvents) {
+
+<span class="fc" id="L961">		ArrayList&lt;Message&gt; results = new ArrayList&lt;Message&gt;();</span>
+
+<span class="fc" id="L963">		int shiftEventWindowDuration = 0;</span>
+<span class="fc bfc" id="L964" title="All 2 branches covered.">		for (TimeRange eventRange : mergedEventWindows) {</span>
+<span class="fc" id="L965">			shiftEventWindowDuration += eventRange.getDurationMin();</span>
+<span class="fc" id="L966">		}</span>
+
+		// We subtract the min spacing value (for break type events) once from
+		// the shiftEventWindowDuration because
+		// when the windows were calculated we added a min spacing to each
+		// event. However, in actuality the min spacing only
+		// affects the spaces between events, so the min spacing added to the
+		// last event was unnecessary.
+		// TODO: min spacing actually affects spaces between the event and
+		// start/end of shift as well. This logic needs to change.
+<span class="fc bfc" id="L976" title="All 4 branches covered.">		if (workTypeEvents == false &amp;&amp; (absoluteShiftEvents.size() + relativeShiftEvents.size()) &gt; 1) {</span>
+<span class="fc" id="L977">			shiftEventWindowDuration -= shift.getMinSpacing();</span>
+		}
+
+		// The sum of the activity durations (not windows, but the event
+		// activities) of the absolute and relative
+		// shift events must be smaller than their window durations or the shift
+		// is invalid
+<span class="fc" id="L984">		Collection&lt;ShiftEvent&gt; windowedShiftEvents = new ArrayList&lt;ShiftEvent&gt;();</span>
+<span class="fc" id="L985">		windowedShiftEvents.addAll(absoluteShiftEvents);</span>
+<span class="fc" id="L986">		windowedShiftEvents.addAll(relativeShiftEvents);</span>
+
+<span class="fc" id="L988">		int shiftEventActivityDuration = 0;</span>
+<span class="fc" id="L989">		int shiftEventCount = 0; // keep track of all shift events that are</span>
+									// either non-flexible OR are flexible but
+									// have min count &gt; 0
+<span class="fc bfc" id="L992" title="All 2 branches covered.">		for (ShiftEvent shiftEvent : windowedShiftEvents) {</span>
+<span class="fc bfc" id="L993" title="All 2 branches covered.">			if (shiftEvent.isFlexible()) {</span>
+<span class="pc bpc" id="L994" title="1 of 2 branches missed.">				if (shiftEvent.getMinCount() &gt; 0) {</span>
+<span class="fc" id="L995">					shiftEventCount++;</span>
+<span class="pc bpc" id="L996" title="1 of 2 branches missed.">					if (workTypeEvents) { // min spacing is only applied to</span>
+											// secondary (break type) events
+<span class="nc" id="L998">						shiftEventActivityDuration += (shiftEvent.getDuration().getDurationInMinutes() * shiftEvent</span>
+<span class="nc" id="L999">								.getMinCount());</span>
+					} else {
+<span class="fc" id="L1001">						shiftEventActivityDuration += (shiftEvent.getDuration().getDurationInMinutes() * shiftEvent</span>
+<span class="fc" id="L1002">								.getMinCount()) + (shiftEvent.getMinCount() - 1) * shift.getMinSpacing();</span>
+					}
+				}
+			} else {
+<span class="fc" id="L1006">				shiftEventActivityDuration += (shiftEvent.getDuration().getDurationInMinutes());</span>
+<span class="fc" id="L1007">				shiftEventCount++;</span>
+			}
+<span class="fc" id="L1009">		}</span>
+<span class="fc bfc" id="L1010" title="All 4 branches covered.">		if (shiftEventCount &gt; 1 &amp;&amp; workTypeEvents == false) {</span>
+<span class="fc" id="L1011">			shiftEventActivityDuration += (shiftEventCount - 1) * shift.getMinSpacing();</span>
+		}
+
+<span class="pc bpc" id="L1014" title="1 of 2 branches missed.">		if (shiftEventActivityDuration &gt; shiftEventWindowDuration) {</span>
+<span class="nc" id="L1015">			results.add(new Message(Message.ERROR_TYPE, localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+<span class="nc" id="L1016">					FsWebBundleKey.FS_SHIFT_EVENT_PLACEMENT_IS_INVALID, new Object[] { shift.getName() })));</span>
+<span class="nc" id="L1017">			return results;</span>
+		}
+
+		// Check anytime events to see if their activities fit in the shift
+		// duration (along with the other event activities from the previous
+		// step)
+<span class="fc bfc" id="L1023" title="All 2 branches covered.">		if (shiftEventCount &gt; 0) {</span>
+<span class="fc" id="L1024">			shiftEventCount = 1;</span>
+		} else {
+<span class="fc" id="L1026">			shiftEventCount = 0;</span>
+		}
+<span class="fc bfc" id="L1028" title="All 2 branches covered.">		for (ShiftEvent shiftEvent : anyTimeShiftEvents) {</span>
+<span class="fc bfc" id="L1029" title="All 2 branches covered.">			if (shiftEvent.isFlexible()) {</span>
+<span class="fc bfc" id="L1030" title="All 2 branches covered.">				if (shiftEvent.getMinCount() &gt; 0) {</span>
+<span class="fc" id="L1031">					shiftEventCount++;</span>
+<span class="fc bfc" id="L1032" title="All 2 branches covered.">					if (workTypeEvents) { // min spacing is only applied to</span>
+											// secondary (break type) events
+<span class="fc" id="L1034">						shiftEventActivityDuration += (shiftEvent.getDuration().getDurationInMinutes() * shiftEvent</span>
+<span class="fc" id="L1035">								.getMinCount());</span>
+					} else {
+<span class="fc" id="L1037">						shiftEventActivityDuration += (shiftEvent.getDuration().getDurationInMinutes() * shiftEvent</span>
+<span class="fc" id="L1038">								.getMinCount()) + (shiftEvent.getMinCount() - 1) * shift.getMinSpacing();</span>
+					}
+				}
+			} else {
+<span class="fc" id="L1042">				shiftEventActivityDuration += (shiftEvent.getDuration().getDurationInMinutes());</span>
+<span class="fc" id="L1043">				shiftEventCount++;</span>
+			}
+<span class="fc" id="L1045">		}</span>
+<span class="fc bfc" id="L1046" title="All 4 branches covered.">		if (shiftEventCount &gt; 1 &amp;&amp; workTypeEvents == false) {</span>
+<span class="fc" id="L1047">			shiftEventActivityDuration += (shiftEventCount - 1) * shift.getMinSpacing();</span>
+		}
+<span class="pc bpc" id="L1049" title="1 of 2 branches missed.">		if (shiftEventActivityDuration &gt; shift.getDuration()) {</span>
+<span class="nc" id="L1050">			results.add(new Message(Message.ERROR_TYPE, localizer.i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+<span class="nc" id="L1051">					FsWebBundleKey.FS_SHIFT_EVENTS_DO_NOT_FIT_IN_SHIFT, new Object[] { shift.getName() })));</span>
+		}
+
+<span class="fc" id="L1054">		return results;</span>
+	}
+
+	/**
+	 * Creates a TimeRange object representing a shift event window for a given
+	 * shift event. A shift event window is a length of time in which the shift
+	 * event can occur. This is defined as: Window start = shift event earliest
+	 * start time Window end = shift event duration + shift event latest start
+	 * time Shift event duration = shiftEventMinCount * shiftEvent duration +
+	 * (minSpacing * (shiftEventMinCount - 1))
+	 */
+	private static TimeRange createShiftEventWindow(ShiftEvent shiftEvent, int shiftStartTime, int dayBoundaryOffset,
+			int minSpacing) {
+
+		Date startDate;
+<span class="fc bfc" id="L1069" title="All 2 branches covered.">		if (shiftEvent.isCafeteria()) {</span>
+<span class="fc" id="L1070">			startDate = new Date((shiftEvent.getStart() + dayBoundaryOffset + shiftStartTime) * 1000 * 60);</span>
+		} else {
+<span class="fc" id="L1072">			startDate = new Date((shiftEvent.getStart() + shiftStartTime) * 1000 * 60);</span>
+		}
+<span class="fc bfc" id="L1074" title="All 2 branches covered.">		if (shiftEvent.isFlexible()) {</span>
+<span class="pc bpc" id="L1075" title="1 of 2 branches missed.">			if (shiftEvent.isWorkType()) { // min spacing is only applied to</span>
+											// secondary (break type) events
+<span class="nc" id="L1077">				return new TimeRange(startDate, ((shiftEvent.getEnd() - shiftEvent.getStart()) + shiftEvent</span>
+<span class="nc" id="L1078">						.getDuration().getDurationInMinutes() * shiftEvent.getMinCount()) * 1000 * 60);</span>
+			} else {
+				// This minSpacing accounts for the spacing between different events
+								
+				// This min spacing accounts for the spacing between the instances of the activity
+				// of flexible events
+<span class="fc" id="L1084">				return new TimeRange(startDate, ((shiftEvent.getEnd() - shiftEvent.getStart())</span>
+<span class="fc" id="L1085">						+ shiftEvent.getDuration().getDurationInMinutes() * shiftEvent.getMinCount() + minSpacing + </span>
+<span class="fc" id="L1086">						minSpacing * (shiftEvent.getMinCount() - 1)) </span>
+						* 1000 * 60);
+				
+			}
+		} else {
+<span class="fc bfc" id="L1091" title="All 2 branches covered.">			if (shiftEvent.isWorkType()) { // min spacing is only applied to</span>
+											// secondary (break type) events
+<span class="fc" id="L1093">				return new TimeRange(startDate, (shiftEvent.getEnd() - shiftEvent.getStart() + shiftEvent.getDuration()</span>
+<span class="fc" id="L1094">						.getDurationInMinutes()) * 1000 * 60);</span>
+			} else {
+				// We need to add a min spacing duration to the end of the time
+				// range for break type events to account
+				// for min spacing between different events.
+<span class="fc" id="L1099">				return new TimeRange(startDate, (shiftEvent.getEnd() - shiftEvent.getStart()</span>
+<span class="fc" id="L1100">						+ shiftEvent.getDuration().getDurationInMinutes() + minSpacing) * 1000 * 60);</span>
+			}
+		}
+	}
+
+	/**
+	 * Checks to see if the given two shift events prevent one another from
+	 * being placed in the shift. It does this by checking each shift event's
+	 * window (a relative event may have more than one window) against the other
+	 * event's windows to see if there is at least one combination where the two
+	 * event's windows will not conflict. If this happens, the method will
+	 * return true, but if there is no combination of windows such that there is
+	 * no conflict between these two shifts, this method will return false.
+	 * 
+	 * If the shift events are of different work types, this method will return
+	 * true since break type events can overlap with work type events without
+	 * any conflict.
+	 * 
+	 * @param shift
+	 *            - The shift that we are attempting to fit the shift events
+	 *            into.
+	 * @param shiftEventToCompare1
+	 *            - The first shift event to compare.
+	 * @param shiftEventToCompare2
+	 *            - The second shift event to compare.
+	 * @param shiftEventTimeRange
+	 *            - A map of shift events to the collection of time ranges
+	 *            representing the shift event windows for the particular shift
+	 *            event.
+	 */
+	private static boolean areShiftEventsAbleToBePlaced(Localizer localizer, Shift shift,
+			ShiftEvent shiftEventToCompare1, ShiftEvent shiftEventToCompare2,
+			Map&lt;ShiftEvent, Collection&lt;TimeRange&gt;&gt; shiftEventTimeRange) {
+
+		// If the two shift events are of different work types, then they will
+		// not conflict with each other
+<span class="pc bpc" id="L1136" title="1 of 2 branches missed.">		if (shiftEventToCompare1.isWorkType() != shiftEventToCompare2.isWorkType()) {</span>
+<span class="nc" id="L1137">			return true;</span>
+		}
+
+<span class="pc bpc" id="L1140" title="1 of 2 branches missed.">		for (TimeRange firstRangeToCompare : shiftEventTimeRange.get(shiftEventToCompare1)) {</span>
+<span class="pc bpc" id="L1141" title="1 of 2 branches missed.">			for (TimeRange secondTimeRangeToCompare : shiftEventTimeRange.get(shiftEventToCompare2)) {</span>
+<span class="fc" id="L1142">				ArrayList&lt;TimeRange&gt; timeRangesToMerge = new ArrayList&lt;TimeRange&gt;();</span>
+<span class="fc" id="L1143">				timeRangesToMerge.add(firstRangeToCompare);</span>
+<span class="fc" id="L1144">				timeRangesToMerge.add(secondTimeRangeToCompare);</span>
+				// Merge the windows for the two shift events. If they overlap,
+				// they will be merged
+				// into one window and in that case we will need to check to see
+				// if the total duration of the
+				// two events will fit in the smaller merged window.
+<span class="fc" id="L1150">				ArrayList&lt;TimeRange&gt; mergedRanges = mergeTimeRanges(timeRangesToMerge);</span>
+<span class="pc bpc" id="L1151" title="1 of 2 branches missed.">				if (mergedRanges.size() &gt;= 2) {</span>
+					// There should only be one or two ranges returned from
+					// mergeTimeRanges (there shouldn't ever be more than two).
+					// If there is two then this indicates a problem with the
+					// merge logic and we should log it.
+					// We will still return true though as we don't want to
+					// prevent the user from making a shift.
+<span class="fc" id="L1158">					log.error(localizer.i18n(FsWebLogBundleKey.BUNDLE_NAME,</span>
+							FsWebLogBundleKey.ERROR_MERGING_TIME_RANGES_FOR_SHIFT_VALIDATION, new Object[] {
+<span class="fc" id="L1160">									shiftEventToCompare1.getName(), shiftEventToCompare2.getName(), shift.getName() }));</span>
+<span class="fc" id="L1161">					return true;</span>
+				}
+<span class="nc bnc" id="L1163" title="All 2 branches missed.">				if (mergedRanges.size() == 0) {</span>
+<span class="nc" id="L1164">					return true;</span>
+				}
+
+<span class="nc" id="L1167">				ArrayList&lt;ShiftEvent&gt; absoluteShiftEventsTemp = new ArrayList&lt;ShiftEvent&gt;();</span>
+<span class="nc" id="L1168">				ArrayList&lt;ShiftEvent&gt; relativeShiftEventsTemp = new ArrayList&lt;ShiftEvent&gt;();</span>
+<span class="nc bnc" id="L1169" title="All 2 branches missed.">				if (shiftEventToCompare1.isCafeteria()) {</span>
+<span class="nc" id="L1170">					absoluteShiftEventsTemp.add(shiftEventToCompare1);</span>
+				} else {
+<span class="nc" id="L1172">					relativeShiftEventsTemp.add(shiftEventToCompare1);</span>
+				}
+<span class="nc bnc" id="L1174" title="All 2 branches missed.">				if (shiftEventToCompare2.isCafeteria()) {</span>
+<span class="nc" id="L1175">					absoluteShiftEventsTemp.add(shiftEventToCompare2);</span>
+				} else {
+<span class="nc" id="L1177">					relativeShiftEventsTemp.add(shiftEventToCompare2);</span>
+				}
+				// Check if the merged event window can fit the duration of the
+				// two shift events. If not,
+				// isShiftEventPlacementValid will get set to false and the user
+				// will be notified that the shift
+				// events do not fit.
+<span class="nc" id="L1184">				boolean isShiftEventPlacementValid = doShiftEventWindowsFitInShift(shift, localizer, mergedRanges,</span>
+						absoluteShiftEventsTemp, relativeShiftEventsTemp, new ArrayList&lt;ShiftEvent&gt;(),
+<span class="nc bnc" id="L1186" title="All 2 branches missed.">						shiftEventToCompare1.isWorkType()).size() &gt; 0 ? false : true;</span>
+<span class="nc bnc" id="L1187" title="All 2 branches missed.">				if (isShiftEventPlacementValid) {</span>
+<span class="nc" id="L1188">					return true;</span>
+				}
+<span class="nc" id="L1190">			}</span>
+<span class="nc" id="L1191">		}</span>
+		// If no windows are found that do not conflict, then the shift events
+		// cannot be placed without conflict.
+<span class="nc" id="L1194">		return false;</span>
+	}
+
+	/**
+	 * Takes a collection of time range objects and merges them. If two time
+	 * ranges in the input collection overlap each other, they are combined into
+	 * one time range that contains the start point of the earliest start of the
+	 * two ranges and the end point of the latest end of the two ranges.
+	 */
+	private static ArrayList&lt;TimeRange&gt; mergeTimeRanges(ArrayList&lt;TimeRange&gt; timeRangesToMerge) {
+<span class="pc bpc" id="L1204" title="1 of 4 branches missed.">		if (timeRangesToMerge != null &amp;&amp; timeRangesToMerge.size() &gt; 0) {</span>
+<span class="fc" id="L1205">			boolean wereRangesMerged = true;</span>
+<span class="fc bfc" id="L1206" title="All 2 branches covered.">			while (wereRangesMerged) {</span>
+<span class="fc" id="L1207">				wereRangesMerged = false;</span>
+<span class="fc" id="L1208">				TimeRange firstMergeConstituent = null;</span>
+<span class="fc" id="L1209">				TimeRange secondMergeConstituent = null;</span>
+<span class="fc bfc" id="L1210" title="All 2 branches covered.">				for (TimeRange timeRangeToMerge : timeRangesToMerge) {</span>
+<span class="fc bfc" id="L1211" title="All 2 branches covered.">					for (TimeRange timeRangeToCompare : timeRangesToMerge) {</span>
+<span class="fc bfc" id="L1212" title="All 2 branches covered.">						if (timeRangeToMerge != timeRangeToCompare) {</span>
+<span class="fc" id="L1213">							TimeRange mergedRange = timeRangeToMerge.joinWithOverlap(timeRangeToCompare);</span>
+							// We've found two ranges that overlap. We will
+							// merge them and remove them from the
+							// timeRangesToMerge collection so that they will
+							// not be compared again. Additionally, we
+							// will add the merged range to the collection so we
+							// can compare it to the ranges remaining in the
+							// collection.
+<span class="fc bfc" id="L1221" title="All 2 branches covered.">							if (mergedRange != null) {</span>
+<span class="fc" id="L1222">								firstMergeConstituent = timeRangeToMerge;</span>
+<span class="fc" id="L1223">								secondMergeConstituent = timeRangeToCompare;</span>
+<span class="fc" id="L1224">								timeRangesToMerge.add(mergedRange);</span>
+<span class="fc" id="L1225">								wereRangesMerged = true;</span>
+<span class="fc" id="L1226">								break;</span>
+							}
+						}
+<span class="fc" id="L1229">					}</span>
+<span class="fc bfc" id="L1230" title="All 2 branches covered.">					if (wereRangesMerged) {</span>
+<span class="fc" id="L1231">						break;</span>
+					}
+<span class="fc" id="L1233">				}</span>
+				// If we found two ranges that could be merged, we will remove
+				// them from the collection
+				// as they are now represented by the single merged range.
+<span class="fc bfc" id="L1237" title="All 2 branches covered.">				if (wereRangesMerged) {</span>
+<span class="fc" id="L1238">					timeRangesToMerge.remove(firstMergeConstituent);</span>
+<span class="fc" id="L1239">					timeRangesToMerge.remove(secondMergeConstituent);</span>
+				}
+<span class="fc" id="L1241">			}</span>
+		}
+<span class="fc" id="L1243">		return timeRangesToMerge;</span>
+	}
+
+	/**
+	 * find if event is more than an hour after the given date/time
+	 * 
+	 * @param event
+	 *            - schedule event
+	 * @param prevEventEnd
+	 *            - previous event end
+	 * @return boolean
+	 */
+	private static boolean isMoreThanHourGap(Event event, Date prevEventEnd) {
+<span class="nc" id="L1256">		Date eventStart = event.getStartTime();</span>
+<span class="nc bnc" id="L1257" title="All 4 branches missed.">		if (prevEventEnd != null &amp;&amp; prevEventEnd.after(eventStart)</span>
+<span class="nc bnc" id="L1258" title="All 2 branches missed.">				&amp;&amp; (eventStart.getTime() - prevEventEnd.getTime()) &gt; HOUR) { </span>
+<span class="nc" id="L1259">			return true;</span>
+		} else {
+<span class="nc" id="L1261">			return false;</span>
+		}
+	}// isMoreThanHourGap
+
+	// ////////////////////////////////////////////////////////////////////////////
+	// Helper Class
+	// ////////////////////////////////////////////////////////////////////////////
+<span class="fc" id="L1268">	public static class EventComparator implements Comparator {</span>
+		@Override
+		public int compare(Object o1, Object o2) {
+<span class="nc" id="L1271">			Event e1 = (Event) o1;</span>
+<span class="nc" id="L1272">			Event e2 = (Event) o2;</span>
+
+<span class="nc bnc" id="L1274" title="All 2 branches missed.">			if (e1 == null) {</span>
+<span class="nc" id="L1275">				return -1;</span>
+<span class="nc bnc" id="L1276" title="All 2 branches missed.">			} else if (e2 == null) {</span>
+<span class="nc" id="L1277">				return 1;</span>
+			} else {
+<span class="nc" id="L1279">				int result = compareDates(e1.getStartTime(), e2.getStartTime());</span>
+<span class="nc bnc" id="L1280" title="All 2 branches missed.">				if (result == 0) {</span>
+<span class="nc" id="L1281">					result = compareDates(e1.getEndTime(), e2.getEndTime());</span>
+				}
+<span class="nc" id="L1283">				return result;</span>
+			}
+		}
+
+		public static final int compareDates(Date d1, Date d2) {
+<span class="nc bnc" id="L1288" title="All 2 branches missed.">			if (d1 == null) {</span>
+<span class="nc" id="L1289">				return -1;</span>
+<span class="nc bnc" id="L1290" title="All 2 branches missed.">			} else if (d2 == null) {</span>
+<span class="nc" id="L1291">				return 1;</span>
+			} else {
+<span class="nc bnc" id="L1293" title="All 2 branches missed.">				if (d1.equals(d2)) {</span>
+<span class="nc" id="L1294">					return 0;</span>
+<span class="nc bnc" id="L1295" title="All 2 branches missed.">				} else if (d1.before(d2)) {</span>
+<span class="nc" id="L1296">					return -1;</span>
+				} else {
+<span class="nc" id="L1298">					return 1;</span>
+				}
+			}
+		}
+	}
+
+	public static String getWorkPatternPeriodLocalizedValue(Localizer localizer, ShiftPatternPeriod workPatternPeriod) {
+<span class="nc bnc" id="L1305" title="All 6 branches missed.">		switch (workPatternPeriod) {</span>
+		case Week:
+<span class="nc" id="L1307">			return localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_WEEK);</span>
+		case TwentyEightDayMonth:
+<span class="nc" id="L1309">			return localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_28_DAY_MONTH);</span>
+		case TwentyNineDayMonth:
+<span class="nc" id="L1311">			return localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_29_DAY_MONTH);</span>
+		case ThirtyDayMonth:
+<span class="nc" id="L1313">			return localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_30_DAY_MONTH);</span>
+		case ThirtyOneDayMonth:
+<span class="nc" id="L1315">			return localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_31_DAY_MONTH);</span>
+		default:
+<span class="nc" id="L1317">			return &quot;&quot;;</span>
+		}
+	}
+
+	/**
+	 * Parses a localized value of shift pattern period into the proper enum
+	 * type
+	 * 
+	 * @param localizer
+	 * @param value
+	 *            localized value of pattern period
+	 * @return {@link com.bluepumpkin.ejb.bbm.workrules.model.ShiftPatternPeriod
+	 *         ShiftPatternPeriod}
+	 * @see com.bluepumpkin.ejb.bbm.workrules.model.ShiftPatternPeriod
+	 */
+	public static ShiftPatternPeriod parseWorkPatternPeriodLocalizedValue(Localizer localizer, String value) {
+<span class="nc bnc" id="L1333" title="All 2 branches missed.">		if (value.toLowerCase().compareTo(</span>
+<span class="nc" id="L1334">				localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_WEEK).toLowerCase()) == 0) {</span>
+<span class="nc" id="L1335">			return ShiftPatternPeriod.Week;</span>
+<span class="nc bnc" id="L1336" title="All 2 branches missed.">		} else if (value.toLowerCase().compareTo(</span>
+<span class="nc" id="L1337">				localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_28_DAY_MONTH)</span>
+<span class="nc" id="L1338">						.toLowerCase()) == 0) {</span>
+<span class="nc" id="L1339">			return ShiftPatternPeriod.TwentyEightDayMonth;</span>
+<span class="nc bnc" id="L1340" title="All 2 branches missed.">		} else if (value.toLowerCase().compareTo(</span>
+<span class="nc" id="L1341">				localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_29_DAY_MONTH)</span>
+<span class="nc" id="L1342">						.toLowerCase()) == 0) {</span>
+<span class="nc" id="L1343">			return ShiftPatternPeriod.TwentyNineDayMonth;</span>
+<span class="nc bnc" id="L1344" title="All 2 branches missed.">		} else if (value.toLowerCase().compareTo(</span>
+<span class="nc" id="L1345">				localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_30_DAY_MONTH)</span>
+<span class="nc" id="L1346">						.toLowerCase()) == 0) {</span>
+<span class="nc" id="L1347">			return ShiftPatternPeriod.ThirtyDayMonth;</span>
+<span class="nc bnc" id="L1348" title="All 2 branches missed.">		} else if (value.toLowerCase().compareTo(</span>
+<span class="nc" id="L1349">				localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_WORK_PATTERN_PERIOD_31_DAY_MONTH)</span>
+<span class="nc" id="L1350">						.toLowerCase()) == 0) {</span>
+<span class="nc" id="L1351">			return ShiftPatternPeriod.ThirtyOneDayMonth;</span>
+		}
+<span class="nc" id="L1353">		return null;</span>
+	}
+
+	/**
+	 * Determines the minimum required length to perform the activities of the
+	 * given shift event, with the given minimum spacing of the shift.
+	 */
+	private static int getMinimumShiftEventLength(ShiftEvent se, int minimumSpacing) {
+<span class="fc bfc" id="L1361" title="All 2 branches covered.">		if (se.isFlexible()) {</span>
+<span class="pc bpc" id="L1362" title="1 of 2 branches missed.">			if (se.isWorkType()) {</span>
+<span class="nc" id="L1363">				return se.getDuration().getDurationInMinutes() * se.getMinCount();</span>
+			} else { // Break type events take into account minimum spacing
+						// between occurrences of the activity
+<span class="fc" id="L1366">				return (se.getDuration().getDurationInMinutes() * se.getMinCount())</span>
+<span class="fc" id="L1367">						+ (minimumSpacing * (se.getMinCount() - 1));</span>
+			}
+		} else {
+<span class="fc" id="L1370">			return se.getDuration().getDurationInMinutes();</span>
+		}
+	}
+
+	public static String workDaysArrayToString(Integer[] array) {
+<span class="nc" id="L1375">		Arrays.sort(array);</span>
+<span class="nc" id="L1376">		int UNSET = -1;</span>
+<span class="nc" id="L1377">		StringBuilder sb = new StringBuilder();</span>
+
+<span class="nc" id="L1379">		int lastNum = UNSET;</span>
+<span class="nc" id="L1380">		int rangeStart = UNSET;</span>
+<span class="nc" id="L1381">		int rangeEnd = UNSET;</span>
+
+<span class="nc" id="L1383">		int index = 0;</span>
+
+<span class="nc bnc" id="L1385" title="All 2 branches missed.">		for (int num : array) {</span>
+<span class="nc bnc" id="L1386" title="All 2 branches missed.">			if (rangeStart == UNSET) {</span>
+<span class="nc" id="L1387">				rangeStart = num;</span>
+			}
+<span class="nc bnc" id="L1389" title="All 4 branches missed.">			if (lastNum != UNSET &amp;&amp; num &gt; (lastNum + 1)) { // This means we no</span>
+															// longer have an
+															// integer
+															// consecutive
+															// number.
+<span class="nc" id="L1394">				rangeEnd = lastNum; // close out the range using the last</span>
+									// consecutive number as the range end.
+
+<span class="nc bnc" id="L1397" title="All 2 branches missed.">				if (sb.length() &gt; 0) {</span>
+<span class="nc" id="L1398">					sb.append(LIST_DELIM);</span>
+				}
+<span class="nc bnc" id="L1400" title="All 2 branches missed.">				if (rangeStart != rangeEnd) { // Range start/end are different</span>
+												// numbers.
+<span class="nc" id="L1402">					sb.append(String.valueOf(rangeStart) + RANGE_TOKEN + String.valueOf(rangeEnd));</span>
+				} else { // The range start and end = the same number.
+<span class="nc" id="L1404">					sb.append(String.valueOf(rangeEnd));</span>
+				}
+				// Reset.
+<span class="nc" id="L1407">				rangeStart = num;</span>
+<span class="nc" id="L1408">				rangeEnd = UNSET;</span>
+			}
+
+<span class="nc bnc" id="L1411" title="All 2 branches missed.">			if (index == array.length - 1) { // Last record.</span>
+<span class="nc bnc" id="L1412" title="All 2 branches missed.">				if (rangeStart == num) {</span>
+<span class="nc bnc" id="L1413" title="All 2 branches missed.">					if (sb.length() &gt; 0) {</span>
+<span class="nc" id="L1414">						sb.append(LIST_DELIM);</span>
+					}
+<span class="nc" id="L1416">					sb.append(num);</span>
+<span class="nc bnc" id="L1417" title="All 2 branches missed.">				} else if (rangeStart != num) {</span>
+<span class="nc bnc" id="L1418" title="All 2 branches missed.">					if (sb.length() &gt; 0) {</span>
+<span class="nc" id="L1419">						sb.append(LIST_DELIM);</span>
+					}
+<span class="nc" id="L1421">					sb.append(String.valueOf(rangeStart) + RANGE_TOKEN + String.valueOf(num));</span>
+				}
+			}
+
+<span class="nc" id="L1425">			lastNum = num;</span>
+<span class="nc" id="L1426">			index++;</span>
+		}
+
+<span class="nc" id="L1429">		return sb.toString();</span>
+	}
+
+	public static Collection&lt;Integer&gt; parseWorkDaysArrayFromString(String workDaysText) {
+<span class="nc" id="L1433">		String[] values = workDaysText.split(LIST_DELIM);</span>
+<span class="nc" id="L1434">		ArrayList&lt;Integer&gt; results = new ArrayList&lt;Integer&gt;();</span>
+<span class="nc bnc" id="L1435" title="All 2 branches missed.">		for (String value : values) {</span>
+<span class="nc bnc" id="L1436" title="All 2 branches missed.">			if (value.contains(RANGE_TOKEN)) {</span>
+<span class="nc" id="L1437">				String[] rangeParts = value.split(RANGE_TOKEN);</span>
+<span class="nc" id="L1438">				int rangeStart = Integer.parseInt(rangeParts[0].trim());</span>
+<span class="nc" id="L1439">				int rangeEnd = Integer.parseInt(rangeParts[1].trim());</span>
+<span class="nc" id="L1440">				int index = rangeStart;</span>
+<span class="nc bnc" id="L1441" title="All 2 branches missed.">				while (index &lt;= rangeEnd) {</span>
+<span class="nc" id="L1442">					results.add(Integer.valueOf(index));</span>
+<span class="nc" id="L1443">					index++;</span>
+				}
+
+<span class="nc" id="L1446">			} else { // presume it is a single value.</span>
+<span class="nc" id="L1447">				results.add(Integer.parseInt(value.trim()));</span>
+			}
+		}
+<span class="nc" id="L1450">		return results;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

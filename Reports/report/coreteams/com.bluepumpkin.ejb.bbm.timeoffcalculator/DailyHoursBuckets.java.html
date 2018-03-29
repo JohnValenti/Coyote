@@ -1,0 +1,657 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>DailyHoursBuckets.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.timeoffcalculator</a> &gt; <span class="el_source">DailyHoursBuckets.java</span></div><h1>DailyHoursBuckets.java</h1><pre class="source lang-java linenums">/*
+ * DailyHoursBuckets.java
+ * Copyright (c) 2002, Blue Pumpkin Software, Inc
+ * All rights reserved.
+ */
+
+package com.bluepumpkin.ejb.bbm.timeoffcalculator;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.LocalDate;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.Log;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectBase;
+import com.verint.ejb.wfm.IDailyHoursBuckets;
+
+/**
+ * Wrapper around a an array of floats. Each array element represents an org
+ * day's allocation such as available TO Hours, computed TO hours etc. Can
+ * retrieve and set elements in the array using a 'date' as an index (instead of
+ * using a numeric index).
+ * 
+ * &lt;p&gt;
+ * Allocates a float array representing hours per organization day. These can be
+ * available hours, request hours, taken hours.... This class also provides
+ * operations to compare HoursBucket objects.
+ */
+public class DailyHoursBuckets implements IDailyHoursBuckets {
+<span class="fc" id="L34">	private static final String CLASSNAME = DailyHoursBuckets.class.getName();</span>
+<span class="fc" id="L35">	private static Category LOG = Log.initCategory(CLASSNAME);</span>
+	/**
+	 * which of 3 cases TOChoice falls into: &lt;br&gt;
+	 * 
+	 * &lt;pre&gt;
+	 * 1 = entirely in scheduled period
+	 * 2 = overlaps scheduled and unscheduled period
+	 * 3 = entirely in unscheduled period
+	 * &lt;/pre&gt;
+	 * 
+	 * &lt;br&gt;
+	 * The flag is used to print a more precise message if the TORequest len =
+	 * 0.
+	 */
+	public static final int DAILYHOURSBUCKETS_PERIOD_INIT = 0;
+	public static final int DAILYHOURSBUCKETS_PERIOD_SCHED = 1;
+	public static final int DAILYHOURSBUCKETS_PERIOD_OVERLAP = 2;
+	public static final int DAILYHOURSBUCKETS_PERIOD_UNSCHED = 3;
+
+	/**
+	 * Flags to indicate the source of the hourse: defaulted or from shifts.
+	 */
+	public static final int HOURS_SOURCE_UNINITIALIZED = 0;
+	public static final int HOURS_SOURCE_SCHEDULE = 1;
+	public static final int HOURS_SOURCE_DEFAULT = 2;
+
+	/**
+	 * Holds one of the TOCHOICE_PERIOD_ states.
+	 */
+	protected int periodFlag;
+
+	/**
+	 * The number of minutes offset from midnight local time that marks the
+	 * beginning of a new organization day.
+	 */
+<span class="pc" id="L70">	protected int dayBoundaryOffsetInMins = 0;</span>
+
+	/**
+	 * The organization timezone.
+	 */
+<span class="pc" id="L75">	protected TimeZone timeZone = null;</span>
+
+	/**
+	 * The time range for the hours buckets. The range passed to initialize the
+	 * calculator is expanded to start and end on the org day start and end.
+	 * 
+	 * Note: The end date is not the orgDayEnd for the last date for the
+	 * dailyBucketHours's range. Instead it is the orgDayStart for the last date
+	 * for the dailyBucketHours's range. For example this can be: Sun Dec 21
+	 * 06:00:00 GMT 2003, ends at: Wed Dec 31 06:00:00 GMT 2003; and not: Sun
+	 * Dec 21 06:00:00 GMT 2003, ends at: Thurs Jan 1st 05:59:59 GMT 2003;
+	 */
+<span class="pc" id="L87">	protected TimeRange dailyHrsBucketsRangeAsOrgDayStart = null; // m_DHBRangeInOrgDays</span>
+														// ==
+														// m_DailyHoursBucketRangeInOrgDays
+
+	/**
+	 * The end date for the DailyHoursBuckets's date range expanded to the end
+	 * of the org day.
+	 * 
+	 * DHB == DailyHoursBuckets
+	 */
+<span class="pc" id="L97">	protected Date dailyHrsBucketsRangeEndAsOrgDayEnd = null;</span>
+
+	/**
+	 * The time corresponding to the start of the first organization day for the
+	 * first bucket.
+	 */
+<span class="pc" id="L103">	protected Calendar dailyHrsBucketsRangeStartAsOrgDayStartCal = null; </span>
+
+	/**
+	 * The buckets array
+	 */
+
+<span class="pc" id="L109">	protected float buckets[] = null;</span>
+<span class="pc" id="L110">	protected ArrayList TOEventDetailArray[] = null;</span>
+	/**
+	 * cached total for the hours in the buckets field. Any operation on this
+	 * object that alters buckets must invalidate the cached value by setting
+	 * it to -1.
+	 */
+	protected float totalHours;
+
+<span class="pc" id="L118">	protected float totalHoursScheduled = 0;</span>
+<span class="pc" id="L119">	protected float totalHoursDefaulted = 0;</span>
+
+	public boolean isInclTOHrsPerDayDetails() {
+<span class="fc" id="L122">		return inclTOHrsPerDayDetails;</span>
+	}
+
+	public void setInclTOHrsPerDayDetails(boolean inclTOHrsPerDayDetails) {
+<span class="nc" id="L126">		this.inclTOHrsPerDayDetails = inclTOHrsPerDayDetails;</span>
+<span class="nc" id="L127">	}</span>
+
+	/**
+	 * Creates a new instance of HoursBucket
+	 * 
+	 * @param dayBoundaryOffset
+	 *            the integer number of minutes from midnight, local time that
+	 *            markes the start of a new organization day.
+	 * @param tz
+	 *            the organization time zone
+	 * @param range
+	 *            the time range for the DailyHoursBuckets object
+	 */
+<span class="pc" id="L140">	protected boolean inclTOHrsPerDayDetails = false;</span>
+
+	public DailyHoursBuckets(int dayBoundaryOffset, TimeZone tz, TimeRange range, boolean inclHrsPerDayDetails) {
+<span class="fc" id="L143">		this(dayBoundaryOffset, tz, range);</span>
+<span class="fc" id="L144">		this.inclTOHrsPerDayDetails = inclHrsPerDayDetails;</span>
+<span class="fc bfc" id="L145" title="All 2 branches covered.">		if (this.inclTOHrsPerDayDetails) {</span>
+<span class="fc" id="L146">			TOEventDetailArray = new ArrayList[buckets.length];</span>
+		}
+<span class="fc" id="L148">	}</span>
+
+	/**
+	 * Creates a new instance of HoursBucket
+	 * 
+	 * @param dayBoundaryOffset
+	 *            the integer number of minutes from midnight, local time that
+	 *            markes the start of a new organization day.
+	 * @param tz
+	 *            the organization time zone
+	 * @param range
+	 *            the time range for the DailyHoursBuckets object
+	 */
+<span class="fc" id="L161">	public DailyHoursBuckets(int aDayBoundaryOffset, TimeZone tz, TimeRange range) {</span>
+
+<span class="pc bpc" id="L163" title="2 of 4 branches missed.">		if (aDayBoundaryOffset &lt; 0 || aDayBoundaryOffset &gt;= 60 * 24) {</span>
+<span class="nc" id="L164">			throw new IllegalArgumentException(&quot;aDayBoundaryOffset &quot; + aDayBoundaryOffset);</span>
+		}
+<span class="fc" id="L166">		dayBoundaryOffsetInMins = aDayBoundaryOffset;</span>
+
+<span class="pc bpc" id="L168" title="1 of 2 branches missed.">		if (tz == null) {</span>
+<span class="nc" id="L169">			throw new IllegalArgumentException(&quot;TimeZone is null&quot;);</span>
+		}
+<span class="fc" id="L171">		timeZone = tz;</span>
+
+<span class="pc bpc" id="L173" title="1 of 2 branches missed.">		if (range == null) {</span>
+<span class="nc" id="L174">			throw new IllegalArgumentException(&quot;TimeRange is null&quot;);</span>
+		}
+		// bad hack sameet Apr 2010
+		// we should not create dailyhourbuckets with 1 extra day if enddate is
+		// same as start of org day
+		// because it is redundant; no hours will ever be accounted for that
+		// day.
+<span class="fc bfc" id="L181" title="All 2 branches covered.">		if (TOCalcUtil.getDateForOrgDayStart(timeZone, dayBoundaryOffsetInMins, range.getEndDate()).equals(range.getEndDate())) {</span>
+<span class="fc" id="L182">			LOG.debug(&quot; deducting 1 msec from end date :&quot; + range.getEndDate());</span>
+<span class="fc" id="L183">			range.setEndDate(new Date(range.getEndDate().getTime() - 1));</span>
+		}
+
+<span class="fc" id="L186">		dailyHrsBucketsRangeAsOrgDayStart = new TimeRange(TOCalcUtil.getDateForOrgDayStart(timeZone, dayBoundaryOffsetInMins, range.getStartDate()),</span>
+<span class="fc" id="L187">				TOCalcUtil.getDateForOrgDayStart(timeZone, dayBoundaryOffsetInMins, range.getEndDate()));</span>
+
+<span class="fc" id="L189">		dailyHrsBucketsRangeEndAsOrgDayEnd = TOCalcUtil.getDateForOrgDayEnd(timeZone, dayBoundaryOffsetInMins, dailyHrsBucketsRangeAsOrgDayStart.getEndDate());</span>
+
+<span class="fc" id="L191">		dailyHrsBucketsRangeStartAsOrgDayStartCal = Calendar.getInstance(timeZone);</span>
+<span class="fc" id="L192">		dailyHrsBucketsRangeStartAsOrgDayStartCal.setTime(dailyHrsBucketsRangeAsOrgDayStart.getStartDate());</span>
+
+		// get the difference, in days, between the range's end date and
+		// m_rangeStartOrgDayCal.
+<span class="fc" id="L196">		int endIndex = getIndex(range.getEndDate());</span>
+
+		// Allocate the bucket array
+		// The size of the array is one more than the index of the last day
+<span class="fc" id="L200">		buckets = new float[endIndex + 1];</span>
+<span class="fc" id="L201">	}</span>
+
+<span class="nc" id="L203">	public DailyHoursBuckets(DailyHoursBuckets copy) {</span>
+<span class="nc" id="L204">		dayBoundaryOffsetInMins = copy.dayBoundaryOffsetInMins;</span>
+<span class="nc" id="L205">		timeZone = copy.timeZone;</span>
+<span class="nc" id="L206">		dailyHrsBucketsRangeAsOrgDayStart = copy.dailyHrsBucketsRangeAsOrgDayStart;</span>
+<span class="nc" id="L207">		dailyHrsBucketsRangeEndAsOrgDayEnd = copy.dailyHrsBucketsRangeEndAsOrgDayEnd;</span>
+<span class="nc" id="L208">		dailyHrsBucketsRangeStartAsOrgDayStartCal = copy.dailyHrsBucketsRangeStartAsOrgDayStartCal;</span>
+
+<span class="nc" id="L210">		buckets = new float[copy.buckets.length];</span>
+
+<span class="nc bnc" id="L212" title="All 2 branches missed.">		for (int i = 0; i &lt; copy.buckets.length; i++) {</span>
+<span class="nc" id="L213">			buckets[i] = copy.buckets[i];</span>
+		}
+
+<span class="nc" id="L216">		inclTOHrsPerDayDetails = copy.inclTOHrsPerDayDetails;</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">		if (inclTOHrsPerDayDetails) {</span>
+<span class="nc" id="L218">			TOEventDetailArray = new ArrayList[copy.TOEventDetailArray.length];</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">			for (int i = 0; i &lt; copy.TOEventDetailArray.length; i++) {</span>
+<span class="nc" id="L220">				TOEventDetailArray[i] = new ArrayList();</span>
+<span class="nc" id="L221">				TOEventDetailArray[i].addAll(copy.TOEventDetailArray[i]);</span>
+			}
+		}
+
+<span class="nc" id="L225">		totalHours = copy.totalHours;</span>
+<span class="nc" id="L226">		periodFlag = copy.periodFlag;</span>
+<span class="nc" id="L227">		totalHoursScheduled = copy.totalHoursScheduled;</span>
+<span class="nc" id="L228">		totalHoursDefaulted = copy.totalHoursDefaulted;</span>
+<span class="nc" id="L229">	}</span>
+
+	/**
+	 * Add the selected amount to the bucket that starts on the day indicated by
+	 * the local date.
+	 * &lt;p&gt;
+	 * Note: only the year/month/day fields of the given local date are used.
+	 * The hour/minute/second fields are initialized using this bucket object's
+	 * organization dayBoundaryOffset.
+	 */
+	public void addToBucket(LocalDate ld, float hours, int sourceFlag) {
+		// Add hours to the bucket
+<span class="nc" id="L241">		buckets[getIndex(ld)] += hours;</span>
+
+<span class="nc bnc" id="L243" title="All 2 branches missed.">		if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_SCHEDULE) {</span>
+<span class="nc" id="L244">			totalHoursScheduled += hours;</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">		} else if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_DEFAULT) {</span>
+<span class="nc" id="L246">			totalHoursDefaulted += hours;</span>
+		}
+
+		// invalidate cache
+<span class="nc" id="L250">		totalHours = -1;</span>
+<span class="nc" id="L251">	}</span>
+
+	public void addToBucket(Date d, float hours, ValueObjectBase hrsPerDay) {
+<span class="fc" id="L254">		addToBucket(d, hours, hrsPerDay, DailyHoursBuckets.HOURS_SOURCE_UNINITIALIZED);</span>
+<span class="fc" id="L255">	}</span>
+
+	/**
+	 * Add the selected amount to the bucket that starts on the day that
+	 * contains the given date.
+	 */
+	public void addToBucket(Date d, float hours, ValueObjectBase hrsPerDay, int sourceFlag) {
+		// Add hours to the bucket
+<span class="fc" id="L263">		int index = getIndex(d);</span>
+<span class="fc" id="L264">		buckets[index] += hours;</span>
+<span class="pc bpc" id="L265" title="1 of 2 branches missed.">		if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_SCHEDULE) {</span>
+<span class="nc" id="L266">			totalHoursScheduled += hours;</span>
+<span class="pc bpc" id="L267" title="1 of 2 branches missed.">		} else if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_DEFAULT) {</span>
+<span class="nc" id="L268">			totalHoursDefaulted += hours;</span>
+		}
+
+<span class="pc bpc" id="L271" title="1 of 2 branches missed.">		if (TOEventDetailArray[index] == null) {</span>
+<span class="fc" id="L272">			TOEventDetailArray[index] = new ArrayList();</span>
+		}
+<span class="fc" id="L274">		TOEventDetailArray[index].add(hrsPerDay);</span>
+		// invalidate cache
+<span class="fc" id="L276">		totalHours = -1;</span>
+<span class="fc" id="L277">	}</span>
+
+	public void addToBucket(Date d, float hours) {
+<span class="fc" id="L280">		addToBucket(d, hours, DailyHoursBuckets.HOURS_SOURCE_UNINITIALIZED);</span>
+<span class="fc" id="L281">	}</span>
+
+	/**
+	 * Add the selected amount to the bucket that starts on the day that
+	 * contains the given date.
+	 */
+	public void addToBucket(Date d, float hours, int sourceFlag) {
+		// Add hours to the bucket
+<span class="fc" id="L289">		buckets[getIndex(d)] += hours;</span>
+<span class="fc bfc" id="L290" title="All 2 branches covered.">		if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_SCHEDULE) {</span>
+<span class="fc" id="L291">			totalHoursScheduled += hours;</span>
+<span class="fc bfc" id="L292" title="All 2 branches covered.">		} else if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_DEFAULT) {</span>
+<span class="fc" id="L293">			totalHoursDefaulted += hours;</span>
+		}
+		// invalidate cache
+<span class="fc" id="L296">		totalHours = -1;</span>
+<span class="fc" id="L297">	}</span>
+
+	/**
+	 * Get the hours from the bucket that corresponds to a date.
+	 */
+	public ArrayList getTOHoursPerDayForDate(Date d) {
+		// get the hours from the indicated bucket
+<span class="fc" id="L304">		return TOEventDetailArray[getIndex(d)];</span>
+	}
+
+	/**
+	 * Get the hours from the bucket that corresponds to a date.
+	 */
+	public float getBucketHours(Date d) {
+		// get the hours from the indicated bucket
+<span class="fc" id="L312">		return buckets[getIndex(d)];</span>
+	}
+
+	public boolean isDateInRange(Date dt) {
+<span class="pc bpc" id="L316" title="1 of 6 branches missed.">		return (dt != null &amp;&amp; dt.before(getDHBRangeEndAsOrgDayEnd()) &amp;&amp; !dt.before(getDHBRangeStartAsOrgDayStart()));</span>
+	}
+
+	// returns Hours for a given date without considering Time component.
+	// the API will internally use the start of Day for the relevant org for the
+	// given date.
+	// Day start will be computed based on Timezone and day boundary of the Org
+	// to which the buckets belong to;
+	public Date getOrgDayStart(Calendar calInp) {
+<span class="fc" id="L325">		Calendar cal = Calendar.getInstance(getTimeZone());</span>
+<span class="fc" id="L326">		cal.set(Calendar.YEAR, calInp.get(Calendar.YEAR));</span>
+<span class="fc" id="L327">		cal.set(Calendar.MONTH, calInp.get(Calendar.MONTH));</span>
+<span class="fc" id="L328">		cal.set(Calendar.DAY_OF_MONTH, calInp.get(Calendar.DAY_OF_MONTH));</span>
+<span class="fc" id="L329">		TOCalcUtil.setCalMinsOffsetFromMidnight(cal, dayBoundaryOffsetInMins);</span>
+<span class="fc" id="L330">		return cal.getTime();</span>
+	}
+
+	/**
+	 * @param i
+	 * @return
+	 */
+	public float getBucketHours(int i) {
+<span class="fc" id="L338">		return buckets[i];</span>
+	}
+
+	/**
+	 * Subtract the selected amount from the bucket that starts on the day
+	 * indicated by the local date.
+	 */
+
+	private void subFromBucket(LocalDate ld, float hours, int sourceFlag) {
+		// Add hours to the bucket
+<span class="nc" id="L348">		buckets[getIndex(ld)] -= hours;</span>
+
+<span class="nc bnc" id="L350" title="All 2 branches missed.">		if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_SCHEDULE) {</span>
+<span class="nc" id="L351">			totalHoursScheduled -= hours;</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">		} else if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_DEFAULT) {</span>
+<span class="nc" id="L353">			totalHoursDefaulted -= hours;</span>
+		}
+		// invalidate cache
+<span class="nc" id="L356">		totalHours = -1;</span>
+<span class="nc" id="L357">	}</span>
+
+	/**
+	 * Subtract the selected amount from the bucket that starts on the day that
+	 * contains the given date.
+	 */
+	public void subFromBucket(Date d, float hours, int sourceFlag) {
+		// Add hours to the bucket
+<span class="fc" id="L365">		buckets[getIndex(d)] -= hours;</span>
+
+<span class="pc bpc" id="L367" title="1 of 2 branches missed.">		if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_SCHEDULE) {</span>
+<span class="nc" id="L368">			totalHoursScheduled -= hours;</span>
+<span class="pc bpc" id="L369" title="1 of 2 branches missed.">		} else if (sourceFlag == DailyHoursBuckets.HOURS_SOURCE_DEFAULT) {</span>
+<span class="nc" id="L370">			totalHoursDefaulted -= hours;</span>
+		}
+
+		// invalidate cache
+<span class="fc" id="L374">		totalHours = -1;</span>
+<span class="fc" id="L375">	}</span>
+
+	/**
+	 * subtracts the hours from this bucket using the given bucket
+	 * 
+	 * @param srcBuckets
+	 * @param start
+	 * @param end
+	 */
+	public void subFromBucket(DailyHoursBuckets srcBuckets, Date start, Date end) {
+<span class="fc" id="L385">		subFromBucket(srcBuckets, start, end, DailyHoursBuckets.HOURS_SOURCE_UNINITIALIZED);</span>
+<span class="fc" id="L386">	}</span>
+
+	public void subFromBucket(DailyHoursBuckets srcBuckets, Date start, Date end, int sourceFlag) {
+<span class="fc" id="L389">		Date currDate = start;</span>
+<span class="fc bfc" id="L390" title="All 2 branches covered.">		while (!end.before(currDate)) {</span>
+<span class="fc" id="L391">			float hrs = srcBuckets.getBucketHours(currDate);</span>
+<span class="fc" id="L392">			subFromBucket(currDate, hrs, sourceFlag);</span>
+<span class="fc" id="L393">			currDate = TOCalcUtil.getDateForwardOneDay(currDate, getTimeZone());</span>
+<span class="fc" id="L394">		}</span>
+<span class="fc" id="L395">	}</span>
+
+	public void resetBuckets() {
+<span class="nc" id="L398">		Arrays.fill(buckets, 0.0f);</span>
+<span class="nc" id="L399">		totalHoursScheduled = 0;</span>
+<span class="nc" id="L400">		totalHoursDefaulted = 0;</span>
+
+<span class="nc bnc" id="L402" title="All 2 branches missed.">		if (inclTOHrsPerDayDetails) {</span>
+<span class="nc" id="L403">			TOEventDetailArray = new ArrayList[buckets.length];</span>
+		}
+<span class="nc" id="L405">	}</span>
+
+	public int getTotalMinutes() {
+<span class="fc" id="L408">		return Math.round(getTotalHours() * 60f);</span>
+	}
+
+	public float getTotalHours() {
+		// return cached value if cache is still valid.
+<span class="fc bfc" id="L413" title="All 2 branches covered.">		if (totalHours &gt;= 0)</span>
+<span class="fc" id="L414">			return totalHours;</span>
+
+		// recompute as cache is invalid.
+<span class="fc" id="L417">		totalHours = 0;</span>
+<span class="fc bfc" id="L418" title="All 2 branches covered.">		for (int i = 0; i &lt; buckets.length; i++) {</span>
+<span class="fc" id="L419">			totalHours += buckets[i];</span>
+		}
+
+<span class="fc" id="L422">		return totalHours;</span>
+	}
+
+	/*
+	 * Returns total minutes derived from employee default
+	 */
+	public int getTotalMinutesFromDefault() {
+
+<span class="fc" id="L430">		return Math.round(totalHoursDefaulted * 60f);</span>
+
+		}
+
+	public void setTotalMinutesFromDefault(int minutes) {
+<span class="fc" id="L435">		totalHoursDefaulted = minutes / 60f;</span>
+<span class="fc" id="L436">	}</span>
+
+	/*
+	 * Returns total hours derived from schedules
+	 */
+	public int getTotalMinutesFromSchedule() {
+<span class="fc" id="L442">		return Math.round(totalHoursScheduled * 60f);</span>
+
+	}
+
+	public void setTotalMinutesFromSchedule(int minutes) {
+<span class="fc" id="L447">		totalHoursScheduled = minutes / 60f;</span>
+<span class="fc" id="L448">	}</span>
+
+	/**
+	 * Check that the allocation of hours for each day in this set of buckets is
+	 * at least as large as the amount of time in the requested buckets. Return
+	 * the first date (beginning of org day) that has the requeted time exceed
+	 * the available.
+	 * 
+	 * @param requestedBuckets
+	 *            buckets representing a time off request
+	 * @return the first date that doesn't have enough available hours or null
+	 *         if there are enough available hours for all the days in the
+	 *         request.
+	 */
+	public Date checkAllocation(DailyHoursBuckets requestedBuckets) {
+<span class="fc" id="L463">		Date result = null;</span>
+
+<span class="fc" id="L465">		Calendar vCal = (Calendar) requestedBuckets.dailyHrsBucketsRangeStartAsOrgDayStartCal.clone();</span>
+<span class="fc" id="L466">		Date d = vCal.getTime();</span>
+<span class="fc" id="L467">		Date end = requestedBuckets.dailyHrsBucketsRangeAsOrgDayStart.getEndDate();</span>
+		do {
+			// QA 81106/93213 - Time off requests are triggering the
+			// &quot;Organization has available time off hours&quot; validation rule when
+			// the day after the request does not have enough hours available
+			// if the request is one day request but the bucket have two item,
+			// the second one
+			// is 0.0 and for the 'this' buckes the second item is -4.0 then the
+			// if will fail
+			// so we should check the request bucket hours &gt; 0 and &gt; 'this'
+			// bucket hours
+<span class="pc bpc" id="L478" title="1 of 4 branches missed.">			if (requestedBuckets.getBucketHours(d) &gt; 0 &amp;&amp; requestedBuckets.getBucketHours(d) &gt; this.getBucketHours(d)) {</span>
+				// found a day that doesn't have enough hours
+<span class="fc" id="L480">				result = d;</span>
+<span class="fc" id="L481">				break;</span>
+			}
+<span class="fc" id="L483">			vCal.add(Calendar.DATE, 1);</span>
+<span class="fc" id="L484">			d = vCal.getTime();</span>
+			
+			// QA 77903 - Time-zone differences allow auto-approval of vacation
+			// requests when request adjusts to cross day boundry
+			// if the bucket has 2 items which has end date = start date + 1
+			// then above while will be fail
+<span class="fc bfc" id="L490" title="All 2 branches covered.">		} while (!d.after(end));</span>
+<span class="fc" id="L491">		return result;</span>
+	}
+
+	/**
+	 * Get the range computed during the constructor
+	 */
+	public TimeRange getRange() {
+<span class="fc" id="L498">		return dailyHrsBucketsRangeAsOrgDayStart;</span>
+	}
+
+	/**
+	 * Get the number of buckets
+	 */
+	public int getSize() {
+<span class="fc" id="L505">		return buckets.length;</span>
+	}
+
+	/**
+	 * Get a clone of the calendar for the first day
+	 */
+	public Calendar getFirstDay() {
+<span class="fc" id="L512">		return (Calendar) dailyHrsBucketsRangeStartAsOrgDayStartCal.clone();</span>
+	}
+
+	/**
+	 * Return the date that corresponds to the given index
+	 */
+	public Date getDateFromIndex(int index) {
+<span class="nc bnc" id="L519" title="All 4 branches missed.">		if (index &lt; 0 || index &gt;= getSize())</span>
+<span class="nc" id="L520">			throw new IllegalArgumentException(&quot;&quot; + index);</span>
+<span class="nc" id="L521">		Calendar c = getFirstDay();</span>
+<span class="nc" id="L522">		c.add(Calendar.DATE, index);</span>
+<span class="nc" id="L523">		return c.getTime();</span>
+	}
+
+	/**
+	 * Find the index for a day given a LocalDate that specifies the
+	 * month/day/year
+	 * 
+	 * &lt;p&gt;
+	 * Note: the hours/minute/second fields of the given local date are not
+	 * used. Instead they are set using the org's dayBoundaryOffset.
+	 */
+	public int getIndex(LocalDate ld) {
+		// Compute a date object for the beginning of the organization day
+		// on the given local date
+<span class="nc" id="L537">		int m_dayBoundaryHour = 0;</span>
+<span class="nc" id="L538">		int m_dayBoundaryMinute = 0;</span>
+<span class="nc" id="L539">		Calendar vCal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L540">		vCal.setTime(ld.getTime(timeZone));</span>
+<span class="nc" id="L541">		vCal.set(Calendar.HOUR_OF_DAY, m_dayBoundaryHour);</span>
+<span class="nc" id="L542">		vCal.set(Calendar.MINUTE, m_dayBoundaryMinute);</span>
+<span class="nc" id="L543">		vCal.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L544">		vCal.set(Calendar.MILLISECOND, 0);</span>
+		// Get the index for the day
+<span class="nc" id="L546">		return getIndex(vCal.getTime());</span>
+	}
+
+	/**
+	 * Get the day index for the given date. The org day start, for the given
+	 * date, is used to compute the index. Index computation takes into account
+	 * that the interval between the given date 'dt' and the buckets's start
+	 * date (as org day) could span year boundaries.
+	 * 
+	 * @param dt
+	 *            the date of interest
+	 * @return the index of the bucket in the bucket array corresponding to the
+	 *         given date
+	 */
+	public int getIndex(Date givenDate) {
+<span class="fc" id="L561">		Date givenDateAsOrgDayStart = TOCalcUtil.getDateForOrgDayStart(timeZone, dayBoundaryOffsetInMins, givenDate);</span>
+
+<span class="fc" id="L563">		Calendar givenDateAsOrgDayStartCal = Calendar.getInstance(timeZone);</span>
+<span class="fc" id="L564">		givenDateAsOrgDayStartCal.setTime(givenDateAsOrgDayStart);</span>
+
+		// Make sure that 'givenDate' is after this DailyBucketHours range's
+		// start date.
+<span class="pc bpc" id="L568" title="1 of 2 branches missed.">		if (givenDateAsOrgDayStartCal.before(dailyHrsBucketsRangeStartAsOrgDayStartCal)) {</span>
+<span class="nc" id="L569">			throw new IllegalArgumentException(&quot;Cannot compute index for date &quot; + givenDateAsOrgDayStart + &quot; since it is before &quot;</span>
+<span class="nc" id="L570">					+ dailyHrsBucketsRangeStartAsOrgDayStartCal.getTime());</span>
+		}
+
+		// Ensure that the givenDate is before this DailyBucketHours range's end
+		// date.
+<span class="fc bfc" id="L575" title="All 2 branches covered.">		if (givenDateAsOrgDayStart.after(dailyHrsBucketsRangeEndAsOrgDayEnd)) {</span>
+<span class="fc" id="L576">			throw new IllegalArgumentException(&quot;Cannot compute index for date &quot; + givenDateAsOrgDayStart + &quot; since it is after &quot;</span>
+					+ dailyHrsBucketsRangeEndAsOrgDayEnd);
+		}
+
+		// Calculate the day difference between the computed orgDayStart
+		// containing the given dt
+		// and the org day for the start of this bucket's time range.
+<span class="fc" id="L583">		int diff = 0;</span>
+		// DailyBucketHour range's start date (adjusted to the beginning
+		// of the org day) in the same year as the givenDate.
+		// DBH == DailyBucketHours;
+<span class="fc" id="L587">		Calendar DBHRangeStartOrgDayCal = (Calendar) dailyHrsBucketsRangeStartAsOrgDayStartCal.clone();</span>
+		// get year for the orgDayStart that contains dt.
+<span class="fc" id="L589">		int yearForGivenDateOrgDayStart = givenDateAsOrgDayStartCal.get(Calendar.YEAR);</span>
+		// if firstOrgDay points to a prior calendar year
+<span class="fc bfc" id="L591" title="All 2 branches covered.">		while (DBHRangeStartOrgDayCal.get(Calendar.YEAR) &lt; yearForGivenDateOrgDayStart) {</span>
+<span class="fc" id="L592">			int dayInYear = DBHRangeStartOrgDayCal.get(Calendar.DAY_OF_YEAR);</span>
+<span class="fc" id="L593">			int lastDayOfYear = DBHRangeStartOrgDayCal.getActualMaximum(Calendar.DAY_OF_YEAR);</span>
+			// number of days to get the
+													// rest of year.
+<span class="fc" id="L596">			diff += lastDayOfYear - dayInYear + 1; </span>
+			// set firstOrgDay to point the beginning of the next year
+<span class="fc" id="L598">			DBHRangeStartOrgDayCal.roll(Calendar.YEAR, true);</span>
+<span class="fc" id="L599">			DBHRangeStartOrgDayCal.set(Calendar.MONTH, Calendar.JANUARY);</span>
+<span class="fc" id="L600">			DBHRangeStartOrgDayCal.set(Calendar.DAY_OF_MONTH, 1);</span>
+<span class="fc" id="L601">		}</span>
+		// Now the calendars point to the same year
+<span class="fc" id="L603">		diff += (givenDateAsOrgDayStartCal.get(Calendar.DAY_OF_YEAR) - DBHRangeStartOrgDayCal.get(Calendar.DAY_OF_YEAR));</span>
+
+		// The difference is the index
+<span class="fc" id="L606">		return diff;</span>
+	}
+
+	public TimeZone getTimeZone() {
+<span class="fc" id="L610">		return timeZone;</span>
+	}
+
+	/**
+	 * Get DailyBucketHours Range Start As Org Day Start
+	 * 
+	 * Get startDate for this DailyHOursBuckets's dateRange adjusted (expanded)
+	 * to the beginning of the org day.
+	 * 
+	 * @return
+	 */
+	public Date getDHBRangeStartAsOrgDayStart() {
+<span class="fc" id="L622">		return dailyHrsBucketsRangeAsOrgDayStart.getStartDate();</span>
+	}
+
+	/**
+	 * Get DailyBucketHours Range End As Org Day End
+	 * 
+	 * Get endDate for this DailyHOursBuckets's dateRange adjusted (expanded) to
+	 * the end of the org day.
+	 * 
+	 * @return
+	 */
+	public Date getDHBRangeEndAsOrgDayEnd() {
+<span class="fc" id="L634">		return dailyHrsBucketsRangeEndAsOrgDayEnd;</span>
+	}
+
+	/**
+	 * Set flag to denote which of 3 periods the buckets represent.
+	 * 
+	 * @see {@link DAILYHOURSBUCKETS_PERIOD_SCHED TOCHOICE_PERIOD flags} for
+	 *      valid states:
+	 * @param caseSchedUnsched
+	 */
+	public void setPeriodFlag(int aPeriodFlag) {
+<span class="fc" id="L645">		periodFlag = aPeriodFlag;</span>
+<span class="fc" id="L646">	}</span>
+
+	/**
+	 * @return a flag that denotes which of 3 periods the buckets represent.
+	 * @see {@link DAILYHOURSBUCKETS_PERIOD_SCHED TOCHOICE_PERIOD flags} for
+	 *      valid states:
+	 */
+	public int getPeriodFlag() {
+<span class="fc" id="L654">		return periodFlag;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

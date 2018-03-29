@@ -1,0 +1,621 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AuctionUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.auction</a> &gt; <span class="el_source">AuctionUtil.java</span></div><h1>AuctionUtil.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.auction;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.ResourceBundle;
+import java.util.Set;
+import java.util.TimeZone;
+
+import com.bluepumpkin.common.datatypes.CalendarRange;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.l10n.RegionalFormatBundleKey;
+import com.bluepumpkin.common.localization.Localizer;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.DateTimeUtil;
+import com.bluepumpkin.ejb.bbm.campaign.CampaignScopeManagerProxy;
+import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeTemplate;
+import com.bluepumpkin.ejb.bbm.workresource.model.Phantom;
+import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.model.ShiftBidAuction;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.BiddableSchedule;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidder;
+import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.web.bbm.employee.EmployeeModelHandler;
+import com.bluepumpkin.web.fs.schedule.ScheduleViewUtil;
+import com.bluepumpkin.web.fs.shift.ShiftUtil;
+import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.auction.filter.BidOptionsFilterPC;
+import com.bluepumpkin.web.rm.keys.RmPageAction;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
+import com.bluepumpkin.web.rm.l10n.RmWebLogBundleKey;
+import com.bluepumpkin.web.rm.setup.settings.SettingsModelHandler;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.data.wrapper.BasicWrapper;
+import com.witness.web.uif.data.wrapper.NumberWrapper;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.contenttitle.ContentTitlePC;
+import com.witness.web.uif.pagecomponent.dialog.DialogToolbarMenuPC;
+import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarPC;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.pagemodel.WorkpanePageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.html.CSSUtil;
+import com.witness.web.uif.util.html.HtmlLinkUtil;
+
+/**
+ * Title:        AuctionUtil
+ * Description:  Common Auction related code
+ * Copyright:    Copyright (c) 2003
+ * Company:      Blue Pumpkin Software, Inc
+ * @author       David Su, dsu
+ * @version      1.0
+ *
+ * Created on Jun 25, 2003, 3:57:50 PM
+ */
+<span class="nc" id="L75">public class AuctionUtil {</span>
+<span class="nc" id="L76">	private static final Category LOG = Log.initCategory(AuctionUtil.class.getName());</span>
+	private static final String CLOSE_AUCTION_MENU = &quot;CLOSE_AUCTION_MENU&quot;;
+	public static final int COLUMN_CELL_ALIGNMENT = 6;
+
+	/**
+	 * Retrieve ShiftBidAuction for the specified auctionID and validate auction
+	 */
+	public static final ShiftBidAuction getAuctionAndValidate(ID auctionID,
+			RequestContext context, AuctionPM model) throws RmHardValidationException, Exception {
+<span class="nc" id="L85">		ShiftBidAuction auction = AuctionMH.getAuction(auctionID);</span>
+<span class="nc bnc" id="L86" title="All 2 branches missed.">		ID campID = auction == null ? null : auction.getOptMethods().getCampaignID();</span>
+<span class="nc" id="L87">		boolean isAuthToView = context.getUser().</span>
+<span class="nc" id="L88">				isAuthorized(PrivilegeKeys.SB_VIEWAUCTIONS_ID, CampaignScopeManagerProxy.getScopeID(campID));</span>
+<span class="nc" id="L89">		model.setIsPageEnabled(isAuthToView);</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">		if (!isAuthToView) {</span>
+<span class="nc" id="L91">			model.addPageMessage(Message.WARNING_TYPE, RmWebBundleKey.UNAUTHORIZED_TO_VIEW_AUCTION, RmWebBundleKey.BUNDLE_NAME);</span>
+		}
+<span class="nc" id="L93">		return auction;</span>
+	}
+
+	/**
+	 * initialize Content Title
+	 */
+	public static final void initContentTitle(
+			RequestContext context, boolean isPageEnabled, String name, Date deadline,
+			ContentTitlePC contentTitle, BidOptionsFilterPC filterPC){
+
+<span class="nc" id="L103">		AuctionUtil.initContentTitle( context,  isPageEnabled,  name,  deadline,</span>
+									  contentTitle,  filterPC, &quot;&quot;);
+<span class="nc" id="L105">	}</span>
+
+	public static final void initContentTitle(
+			RequestContext context, boolean isPageEnabled, String name, Date deadline,
+			ContentTitlePC contentTitle, BidOptionsFilterPC filterPC, String bidApprovalOrder) 	{
+
+<span class="nc" id="L111">		Localizer localizer = context.getLocalizer();</span>
+
+		//JT
+<span class="nc bnc" id="L114" title="All 4 branches missed.">		if (bidApprovalOrder != null &amp;&amp; !bidApprovalOrder.isEmpty()) {</span>
+<span class="nc" id="L115">			String approvalOrderLabel = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.RM_SA_BID_APPROVAL_ORDER);</span>
+<span class="nc" id="L116">			String approvalOrder = &quot;&lt;span class=\&quot;headerText2\&quot; style=\&quot;vertical-align:middle;\&quot;&gt;&quot;</span>
+					+ bidApprovalOrder + &quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&quot; + &quot;&lt;/span&gt;&quot;;
+
+<span class="nc" id="L119">			contentTitle.addActiveComponent(approvalOrderLabel, approvalOrder, true);</span>
+		}
+
+<span class="nc bnc" id="L122" title="All 2 branches missed.">		if (deadline != null) {</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">			if (filterPC != null) {</span>
+<span class="nc" id="L124">				contentTitle.addActiveComponent(filterPC);</span>
+			}
+
+<span class="nc" id="L127">			TimeZone tz = context.getViewingTimeZone();</span>
+<span class="nc" id="L128">			String deadlineLbl = localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.DEADLINE);</span>
+<span class="nc" id="L129">			String sDeadline = &quot;&lt;span class=\&quot;headerText2\&quot;&gt;&quot; + localizer.formatDateTime(deadline, tz) + &quot;&lt;/span&gt;&quot;;</span>
+<span class="nc" id="L130">			contentTitle.addActiveComponent(deadlineLbl, sDeadline, true);</span>
+		}
+<span class="nc" id="L132">	}</span>
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Auction Status Related Code
+	//////////////////////////////////////////////////////////////////////////////
+	/**
+	 * Initialize Close Menu
+	 */
+	public static void addCloseAuctionMenu(PageModel model, RequestContext context,
+			ToolbarPC toolbar, boolean isEditable, ResourceBundle bundle) {
+<span class="nc" id="L142">		String titleLbl = model.i18n(bundle, RmWebBundleKey.CLOSE_AUCTION);</span>
+
+<span class="nc" id="L144">		DialogToolbarMenuPC dialogMenuPC = new DialogToolbarMenuPC(context, toolbar);</span>
+<span class="nc" id="L145">		dialogMenuPC.setName(CLOSE_AUCTION_MENU);</span>
+<span class="nc" id="L146">		model.addChildComponent(dialogMenuPC);</span>
+
+		// Initialize Menu Buttons
+<span class="nc" id="L149">		dialogMenuPC.setHeader(titleLbl);</span>
+<span class="nc" id="L150">		dialogMenuPC.addSubmitButton(RmPageAction.CLOSE_AUCTION_AND_ASSIGN_BONUS,</span>
+<span class="nc" id="L151">				model.i18n(bundle, RmWebBundleKey.CLOSE_AUCTION_WITH_BONUS_ASSIGNED), true);</span>
+<span class="nc" id="L152">		dialogMenuPC.addSubmitButton(RmPageAction.CLOSE_AUCTION,</span>
+<span class="nc" id="L153">				model.i18n(bundle, RmWebBundleKey.CLOSE_AUCTION_WITHOUT_BONUS_ASSIGNED), true);</span>
+
+		// Add button to associated to Menu
+<span class="nc" id="L156">		toolbar.addPopupDialogTextButton(CLOSE_AUCTION_MENU, titleLbl, isEditable);</span>
+<span class="nc" id="L157">	}</span>
+
+	/**
+	 * Add button is toggle Opening / Closing Auction
+	 */
+	public static void addOpenOrCloseAuctionBtn(PageModel model, RequestContext context,
+			ToolbarPC toolbar, boolean isEditable, boolean isAuctionOpen,
+			ResourceBundle bundle) {
+<span class="nc bnc" id="L165" title="All 2 branches missed.">		if (isAuctionOpen) {</span>
+<span class="nc" id="L166">			AuctionUtil.addCloseAuctionMenu(model, context, toolbar, isEditable, bundle);</span>
+		} else {
+<span class="nc" id="L168">			String lbl = model.i18n(bundle, RmWebBundleKey.OPEN_AUCTION);</span>
+<span class="nc" id="L169">			toolbar.addSubmitTextButton(RmPageAction.OPEN_AUCTION, lbl, isEditable);</span>
+		}
+<span class="nc" id="L171">		toolbar.addDivider();</span>
+<span class="nc" id="L172">	}</span>
+
+	/**
+	 * Process Auction Status Change
+	 */
+	public static void processAuctionStatus(RequestContext context,
+			WorkpanePageModel model, boolean isOpenAuction, boolean isAddNoneApprBonus) {
+<span class="nc" id="L179">		model.extractParameters(context.getRequest());</span>
+<span class="nc" id="L180">		ID auctionID = model.getSelectedIDObject();</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">		if (auctionID != null) {</span>
+			try {
+<span class="nc bnc" id="L183" title="All 2 branches missed.">				if (isOpenAuction) {</span>
+<span class="nc" id="L184">					AuctionMH.openAuction(auctionID);</span>
+				} else {
+<span class="nc" id="L186">					AuctionMH.closeAuction(auctionID, isAddNoneApprBonus);</span>
+				}
+<span class="nc" id="L188">			} catch (RmHardValidationException ex) {</span>
+<span class="nc" id="L189">				Message msg = new Message(Message.ERROR_TYPE,</span>
+						RmWebBundleKey.UNABLE_TO_CHANGE_AUCTION_STATUS,
+						RmWebBundleKey.BUNDLE_NAME);
+<span class="nc" id="L192">				msg.setAssociatedMessage(ex.getLocalizedMessage(context.getLocalizer(), context.getViewingTimeZone()));</span>
+<span class="nc" id="L193">				context.addPageMessage(msg);</span>
+<span class="nc" id="L194">				LOG.l7dDebug(RmWebLogBundleKey.UNABLE_TO_CHANGE_AUCTION_STATUS, ex);</span>
+<span class="nc" id="L195">			} catch (Exception ex) {</span>
+<span class="nc" id="L196">				Message msg = new Message(Message.ERROR_TYPE,</span>
+						RmWebBundleKey.UNABLE_TO_CHANGE_AUCTION_STATUS,
+						RmWebBundleKey.BUNDLE_NAME);
+<span class="nc" id="L199">				context.addPageMessage(msg);</span>
+<span class="nc" id="L200">				LOG.l7dError(RmWebLogBundleKey.UNABLE_TO_CHANGE_AUCTION_STATUS, ex);</span>
+<span class="nc" id="L201">			}</span>
+		}
+
+<span class="nc" id="L204">		context.setPageModel(model);</span>
+<span class="nc" id="L205">	}</span>
+
+	//////////////////////////////////////////////////////////////////////////////
+	// Schedule, Shift Related Code
+	//////////////////////////////////////////////////////////////////////////////
+	public static final CalendarRange getCalendarRange(SchedulingPeriod schedPeriod, TimeZone tz, Locale locale) {
+<span class="nc" id="L211">		Date sDate = schedPeriod.getStartTime();</span>
+<span class="nc" id="L212">		Date eDate = schedPeriod.getEndTime();</span>
+
+<span class="nc" id="L214">		CalendarRange calRange = new CalendarRange(sDate, eDate, tz, locale);</span>
+<span class="nc" id="L215">		return calRange;</span>
+	}
+
+	public static Collection findShifts(CalendarRange dayRange, Collection shifts) {
+<span class="nc" id="L219">		Collection results = new ArrayList(2);</span>
+<span class="nc bnc" id="L220" title="All 2 branches missed.">		for (Iterator it = shifts.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L221">			ShiftAssignment sa = (ShiftAssignment) it.next();</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">			if (dayRange.includes(ScheduleViewUtil.getDisplayStartTime(sa))) {</span>
+<span class="nc" id="L223">				results.add(sa);</span>
+			}
+<span class="nc" id="L225">		}</span>
+<span class="nc" id="L226">		return results;</span>
+	}
+
+	/**
+	 * Add Day Range to Table Header
+	 * @param useMultiSortCols true means a popup will give user ability to sort by &quot;Start&quot;,
+	 *        &quot;End&quot;, or &quot;Length&quot; for each shift date column.
+	 */
+	public static final void addShiftDatesToHeader(SchedulingPeriod schedPeriod,
+			Localizer localizer, TimeZone campaignTz, TableHeaderPC header, boolean useMultiSortCols) {
+<span class="nc bnc" id="L236" title="All 2 branches missed.">		if (schedPeriod == null) {</span>
+<span class="nc" id="L237">			return;</span>
+		}
+
+<span class="nc" id="L240">		Locale locale = localizer.getLocaleContext().getRegionalFormatLocale();</span>
+<span class="nc" id="L241">		CalendarRange cRange = getCalendarRange(schedPeriod, campaignTz, locale);</span>
+<span class="nc" id="L242">		Calendar startCal = cRange.getStartCalendar();</span>
+<span class="nc" id="L243">		Calendar endCal = cRange.getEndCalendar();</span>
+
+		//int [] sortName = getSortDayColNames(getNumWeeks(schedPeriod, localizer, tz));
+<span class="nc" id="L246">		int i = 0;</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">		while (endCal.after(startCal)) {</span>
+<span class="nc" id="L248">			int w = i / 7; //the current week offset</span>
+
+<span class="nc" id="L250">			Date date = startCal.getTime();</span>
+<span class="nc" id="L251">			int curDayOfWeek = startCal.get(Calendar.DAY_OF_WEEK);</span>
+<span class="nc" id="L252">        	String dayDisplay = localizer.formatDate(date, campaignTz,</span>
+					RegionalFormatBundleKey.DATE_NOYEAR_DAYINWEEKFULL_FORMAT);
+
+<span class="nc bnc" id="L255" title="All 2 branches missed.">			String onClickJS = useMultiSortCols ? &quot;pageMediator.popupDialog(''SORT_DIALOG_PC'', true);&quot; : &quot;&quot;;</span>
+
+			//header.addColumnHeaderData(String.valueOf(sortName[curDayOfWeek-1]), dayDisplay, true).setOnClickJS(onClickJS);
+
+<span class="nc" id="L259">			int curSortCol = BiddableSchedule.getDayColumnIndex(w, curDayOfWeek, BiddableSchedule.SORTBY_STARTTIME);</span>
+<span class="nc" id="L260">			header.addColumnHeaderData(String.valueOf(curSortCol), (dayDisplay), true).setOnClickJS(onClickJS);</span>
+
+<span class="nc" id="L262">			startCal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L263">			i++;</span>
+<span class="nc" id="L264">		}</span>
+<span class="nc" id="L265">	}</span>
+
+	/**
+	 * 508: Wrap a String in an anchor tag that links to nothing (#).
+	 */
+	public static String anchor(String innerHTML) {
+<span class="nc" id="L271">		return &quot;&lt;a href=\&quot;#\&quot;&gt;&quot; + innerHTML + &quot;&lt;/a&gt;&quot;;</span>
+	}
+
+	/**
+	 * Get the number of weeks in an SP.
+	 * @param schedPeriod The SP.
+	 * @return the number of weeks in the SP. If it's a single-week SP, the result is simply 1.
+	 */
+	public static int getNumWeeks(SchedulingPeriod schedPeriod, Localizer localizer, TimeZone tz) {
+<span class="nc" id="L280">		int numWeeks = 1;</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">		if (schedPeriod != null) {</span>
+<span class="nc" id="L282">			Locale locale = localizer.getLocaleContext().getRegionalFormatLocale();</span>
+<span class="nc" id="L283">			CalendarRange cRange = getCalendarRange(schedPeriod, tz, locale);</span>
+<span class="nc" id="L284">			Calendar startCal = cRange.getStartCalendar();</span>
+<span class="nc" id="L285">			Calendar endCal = cRange.getEndCalendar();</span>
+<span class="nc" id="L286">			int numDays = 0;</span>
+<span class="nc bnc" id="L287" title="All 2 branches missed.">			while (endCal.after(startCal)) {</span>
+<span class="nc" id="L288">				startCal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L289">				numDays++;</span>
+			}
+<span class="nc" id="L291">			numWeeks = numDays / 7;</span>
+		}
+<span class="nc" id="L293">		return numWeeks;</span>
+	}
+
+	/**
+	 * Get an array containing the sortable shift column identifiers.
+	 * @param schedPeriod
+
+	public static int[] getSortDayColNames(int numWeeks)
+	{
+	    int numDays = numWeeks*7;
+	    int[] colNames = new int[numDays];
+
+		//return new int[]{
+	    //    	BiddableSchedule.SORTBY_SUNDAY_STARTTIME, BiddableSchedule.SORTBY_MONDAY_STARTTIME,
+	    //        BiddableSchedule.SORTBY_TUESDAY_STARTTIME, BiddableSchedule.SORTBY_WEDNESDAY_STARTTIME,
+		//		BiddableSchedule.SORTBY_THURSDAY_STARTTIME,BiddableSchedule.SORTBY_FRIDAY_STARTTIME,
+		//		BiddableSchedule.SORTBY_SATURDAY_STARTTIME};
+
+
+	    for (int i=0; i&lt;numDays; i++)
+	    {
+	        int d = i%7; //the current day offset
+	        int w = i/7; //the current week offset
+	        colNames[d] = BiddableSchedule.SORTBY_SUNDAY_STARTTIME + d + (w * 7 * BiddableSchedule.NUM_SORT_TYPES);
+	    }
+	    return colNames;
+	}
+	*/
+
+	/**
+	 * Add Shifts Data to Node
+	 */
+    public static void addShiftsData(SchedulingPeriod schedPeriod,
+			Collection shifts, Localizer localizer, TimeZone tz, TimeZone campaignTz, DefaultMultiColumnNodeData node) {
+
+<span class="nc" id="L328">		Locale locale = localizer.getLocaleContext().getRegionalFormatLocale();</span>
+<span class="nc" id="L329">		CalendarRange cRange = getCalendarRange(schedPeriod, campaignTz, locale);</span>
+<span class="nc" id="L330">		Calendar startCal = cRange.getStartCalendar();</span>
+<span class="nc" id="L331">		Calendar endCal = cRange.getEndCalendar();</span>
+
+<span class="nc" id="L333">		String alt = localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.VIEW_DETAILS);</span>
+
+<span class="nc bnc" id="L335" title="All 2 branches missed.">		while (endCal.after(startCal)) {</span>
+<span class="nc" id="L336">			CalendarRange dayRange = DateTimeUtil.makeDayRange(startCal.getTime(), campaignTz);</span>
+<span class="nc" id="L337">			Collection selectedShiftList = findShifts(dayRange, shifts);</span>
+
+<span class="nc bnc" id="L339" title="All 2 branches missed.">			if (selectedShiftList.isEmpty()) {</span>
+<span class="nc" id="L340">				node.add(&quot;-&quot;);</span>
+			} else {
+<span class="nc" id="L342">				Date comparable = null;</span>
+<span class="nc" id="L343">				StringBuffer sb = new StringBuffer(100);</span>
+<span class="nc bnc" id="L344" title="All 2 branches missed.">				for (Iterator it = selectedShiftList.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L345">					ShiftAssignment sa = (ShiftAssignment) it.next();</span>
+
+<span class="nc" id="L347">					Date startDate = ScheduleViewUtil.getDisplayStartTime(sa);</span>
+<span class="nc" id="L348">					Date endDate = sa.getEndTime();</span>
+<span class="nc bnc" id="L349" title="All 2 branches missed.">					if (comparable == null) {</span>
+<span class="nc" id="L350">						comparable = startDate;</span>
+					}
+
+<span class="nc" id="L353">					String shiftDisp = ShiftUtil.makeShiftDatesString(dayRange, startDate, endDate, localizer, tz);</span>
+<span class="nc" id="L354">					String onClickJS = &quot;pageMediator.popupShiftDetails( new Array('&quot; + sa.getID() + &quot;') );&quot;;</span>
+<span class="nc" id="L355">					String display = HtmlLinkUtil.createActiveLink(shiftDisp, alt, &quot;&quot;, onClickJS);</span>
+
+<span class="nc" id="L357">					sb.append(display);</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">					if (it.hasNext()) {</span>
+<span class="nc" id="L359">						sb.append(&quot;&lt;br&gt;&quot;);</span>
+					}
+<span class="nc" id="L361">				}</span>
+
+<span class="nc" id="L363">				BasicWrapper data = new BasicWrapper(comparable, sb.toString());</span>
+<span class="nc" id="L364">				node.add(data, CSSUtil.STYLE_NOWRAP);</span>
+			}
+
+<span class="nc" id="L367">			startCal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L368">		}</span>
+<span class="nc" id="L369">	}</span>
+
+    public static List createShiftsNodeDataList(SchedulingPeriod schedPeriod,
+			Collection shifts, Map actMap, Localizer localizer, TimeZone tz, TimeZone campaignTz) {
+<span class="nc" id="L373">		ArrayList result = new ArrayList(7);</span>
+
+<span class="nc" id="L375">		Locale locale = localizer.getLocaleContext().getRegionalFormatLocale();</span>
+<span class="nc" id="L376">		CalendarRange cRange = getCalendarRange(schedPeriod, tz, locale);</span>
+<span class="nc" id="L377">		Calendar startCal = cRange.getStartCalendar();</span>
+<span class="nc" id="L378">		Calendar endCal = cRange.getEndCalendar();</span>
+
+<span class="nc" id="L380">		String dayPatterm = RegionalFormatBundleKey.DATE_NOYEAR_DAYINWEEKFULL_FORMAT;</span>
+
+<span class="nc bnc" id="L382" title="All 2 branches missed.">		while (endCal.after(startCal)) {</span>
+<span class="nc" id="L383">			DefaultMultiColumnNodeData node = new DefaultMultiColumnNodeData();</span>
+
+<span class="nc" id="L385">			Date currentDate = startCal.getTime();</span>
+<span class="nc" id="L386">			String currentDayDisp = localizer.formatDate(currentDate, campaignTz, dayPatterm);</span>
+<span class="nc" id="L387">			node.add(currentDayDisp);</span>
+
+<span class="nc" id="L389">			CalendarRange dayRange = DateTimeUtil.makeDayRange(currentDate, campaignTz);</span>
+<span class="nc" id="L390">			List&lt;ShiftAssignment&gt; selectedShiftList = new ArrayList&lt;ShiftAssignment&gt;(findShifts(dayRange, shifts));</span>
+<span class="nc" id="L391">			Collections.sort(selectedShiftList, new Comparator&lt;ShiftAssignment&gt;() {</span>
+
+				@Override
+				public int compare(ShiftAssignment o1, ShiftAssignment o2) {
+<span class="nc" id="L395">					return o1.getStartTime().compareTo(o2.getStartTime());</span>
+				}
+			});
+
+<span class="nc bnc" id="L399" title="All 2 branches missed.">			if (selectedShiftList.isEmpty()) {</span>
+<span class="nc" id="L400">				node.add(&quot;-&quot;);</span>
+			} else {
+<span class="nc" id="L402">				StringBuffer sb = new StringBuffer(100);</span>
+<span class="nc bnc" id="L403" title="All 2 branches missed.">				for (ShiftAssignment sa : selectedShiftList) {</span>
+
+<span class="nc" id="L405">					Date startDate = ScheduleViewUtil.getDisplayStartTime(sa);</span>
+<span class="nc" id="L406">					Date endDate = sa.getEndTime();</span>
+<span class="nc" id="L407">					String saDisp = ShiftUtil.makeShiftDatesString(dayRange, startDate, endDate, localizer, tz);</span>
+
+<span class="nc" id="L409">					CalendarRange shiftCR = DateTimeUtil.makeDayRange(sa.getStartTime(), tz);</span>
+<span class="nc" id="L410">					List eventList = new ArrayList(sa.getChildren());</span>
+<span class="nc" id="L411">					String activities = ShiftUtil.makeActivitiesString(shiftCR, eventList,</span>
+							false, false, true, actMap, localizer, tz);
+
+<span class="nc" id="L414">					sb.append(saDisp).append(HtmlUtil.NEW_LINE).append(activities);</span>
+<span class="nc" id="L415">				}</span>
+<span class="nc" id="L416">				node.add(sb);</span>
+			}
+<span class="nc" id="L418">			node.setSelectable(false);</span>
+<span class="nc" id="L419">			result.add(node);</span>
+
+<span class="nc" id="L421">			startCal.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L422">		}</span>
+
+<span class="nc" id="L424">		return result;</span>
+	}
+
+	/**
+	 * Computes the total length of the given shift assignments taking into account
+	 * paid/unpaid shift event assignments associated with the shift assignments.
+	 */
+	public static String getScheduleHourDisplay(Collection shifts, Localizer localizer) {
+<span class="nc" id="L432">		int len = RequestUtil.computeScheduleLength(shifts);</span>
+<span class="nc" id="L433">		return localizer.formatDurationInMins(len);</span>
+	}
+
+	/**
+	 * Computes the total length of the given shift assignments taking into account
+	 * paid/unpaid shift event assignments associated with the shift assignments.
+	 *
+	 * This is used for List Screen to support sorting
+	 */
+	public static NumberWrapper getScheduleHourWrapper(Collection shifts, Localizer localizer) {
+<span class="nc" id="L443">		int len = RequestUtil.computeScheduleLength(shifts);</span>
+<span class="nc" id="L444">		return new NumberWrapper(len, localizer.formatDurationInMins(len));</span>
+	}
+
+	/**
+	 * returns a hashmap containing names of the employee templates used in the phantoms for display
+	 */
+	public static HashMap&lt;ID, String&gt; getEmpTemplateNameMap(Collection biddableSchedulesCol, RequestContext context) {
+<span class="nc" id="L451">		HashMap&lt;ID, String&gt; empTemplateNameMap = new HashMap&lt;ID, String&gt;(biddableSchedulesCol.size());</span>
+		try {
+			//create a map of template names
+<span class="nc" id="L454">			Set&lt;ID&gt; empTemplateIdList = new HashSet&lt;ID&gt;();</span>
+<span class="nc bnc" id="L455" title="All 2 branches missed.">			for (Iterator it = biddableSchedulesCol.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L456">				BiddableSchedule schedule = (BiddableSchedule) it.next();</span>
+<span class="nc" id="L457">				empTemplateIdList.add(schedule.getOptMethods().getEmployee().getEmployeeTemplateID());</span>
+<span class="nc" id="L458">			}</span>
+			//now get the emptemplateobjects
+<span class="nc" id="L460">			Collection empTemplateCol = EmployeeModelHandler.getEmployeeTemplatesByID(context, empTemplateIdList);</span>
+
+<span class="nc bnc" id="L462" title="All 2 branches missed.">			for (Iterator it = empTemplateCol.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L463">				EmployeeTemplate empTemplate = (EmployeeTemplate) it.next();</span>
+<span class="nc" id="L464">				empTemplateNameMap.put(empTemplate.getID(), empTemplate.getName());</span>
+<span class="nc" id="L465">			}</span>
+
+<span class="nc" id="L467">		} catch (Exception ex) {</span>
+			//TODO why are exceptions being ignored?
+<span class="nc" id="L469">			LOG.error(&quot;Ignoring exception in getEmpTemplateNameMap&quot;, ex);</span>
+<span class="nc" id="L470">		}</span>
+<span class="nc" id="L471">		return empTemplateNameMap;</span>
+	}
+
+	public static String getEmployeeNameDisplay(Localizer localizer, BiddableSchedule schedule, Map&lt;ID, String&gt; empTemplateNameMap) {
+<span class="nc" id="L475">		Phantom phantomEmp = schedule.getOptMethods().getEmployee();</span>
+<span class="nc" id="L476">		ID etID = phantomEmp.getEmployeeTemplateID();</span>
+<span class="nc" id="L477">		EmployeeName name = new EmployeeName();</span>
+<span class="nc" id="L478">		name.setFirstName(phantomEmp.getName());</span>
+<span class="nc" id="L479">		name.setLastName(empTemplateNameMap.get(etID));</span>
+<span class="nc" id="L480">		return localizer.formatName(name);</span>
+	}
+
+	/**
+	 * Determine if a Scheduling Period, is a single-week SP.
+	 * weeks in the SP.
+	 * @param sp The Scheduling Period.
+	 * @param campTZ The Campaign's TimeZone.
+	 * @return True if the Scheduling Period, is a single-week SP, false if it's a multi-week SP.
+	 */
+	public static boolean isSingleWeekSP(SchedulingPeriod sp, TimeZone campTZ) {
+<span class="nc" id="L491">		boolean isSingleWeek = true;</span>
+<span class="nc bnc" id="L492" title="All 2 branches missed.">		if (sp != null) {</span>
+<span class="nc" id="L493">			Date startDate = sp.getStartTime();</span>
+<span class="nc" id="L494">			Date endDate = sp.getEndTime();</span>
+
+			//must use campaign TimeZone to determine the exact length of an SP week
+<span class="nc" id="L497">			Calendar cal = Calendar.getInstance(campTZ);</span>
+<span class="nc" id="L498">			cal.setTime(startDate);</span>
+<span class="nc" id="L499">			cal.add(Calendar.DATE, 7);</span>
+
+<span class="nc bnc" id="L501" title="All 2 branches missed.">			if (endDate.after(cal.getTime())) {</span>
+<span class="nc" id="L502">				isSingleWeek = false;</span>
+			}
+		}
+<span class="nc" id="L505">		return isSingleWeek;</span>
+	}
+
+	/**
+	 * Given a Scheduling Period, return an array of TimeRange's representing the
+	 * weeks in the SP.
+	 * @param sp The Scheduling Period.
+	 * @param campTZ The Campaign's TimeZone.
+	 * @return An array of TimeRange's representing the weeks in the SP.
+	 */
+	public static TimeRange[] getWeekRanges(SchedulingPeriod sp, TimeZone campTZ) {
+<span class="nc" id="L516">		TimeRange[] weekRanges = null;</span>
+<span class="nc bnc" id="L517" title="All 2 branches missed.">		if (sp != null) {</span>
+<span class="nc" id="L518">			Date SPStartDate = sp.getStartTime();</span>
+<span class="nc" id="L519">			Date SPEndDate = sp.getEndTime();</span>
+<span class="nc" id="L520">			ArrayList aWeekRanges = new ArrayList();</span>
+
+<span class="nc bnc" id="L522" title="All 2 branches missed.">			if (isSingleWeekSP(sp, campTZ)) {</span>
+<span class="nc" id="L523">				weekRanges = new TimeRange[] { new TimeRange(SPStartDate, SPEndDate) };</span>
+			} else {
+				//Must use campaign TZ to determine SP weeks. The week ranges are not affected
+				//by the user preference TimeZone.
+<span class="nc" id="L527">				Calendar cal = Calendar.getInstance(campTZ);</span>
+<span class="nc" id="L528">				Date curStartDate = SPStartDate;</span>
+<span class="nc" id="L529">				Date nextStartDate = SPStartDate;</span>
+
+				do {
+<span class="nc" id="L532">					curStartDate = nextStartDate;</span>
+<span class="nc" id="L533">					cal.setTime(curStartDate);</span>
+<span class="nc" id="L534">					cal.add(Calendar.DATE, 7);</span>
+<span class="nc" id="L535">					nextStartDate = cal.getTime();</span>
+<span class="nc" id="L536">					cal.add(Calendar.SECOND, -1);</span>
+<span class="nc" id="L537">					Date curEndDate = cal.getTime();</span>
+<span class="nc" id="L538">					aWeekRanges.add(new TimeRange(curStartDate, curEndDate));</span>
+<span class="nc bnc" id="L539" title="All 2 branches missed.">				} while (nextStartDate.before(SPEndDate));</span>
+
+				//now convert our ArrayList into an array
+<span class="nc bnc" id="L542" title="All 2 branches missed.">				if (aWeekRanges != null) {</span>
+<span class="nc" id="L543">					int numWeeks = aWeekRanges.size();</span>
+<span class="nc" id="L544">					weekRanges = new TimeRange[numWeeks];</span>
+<span class="nc" id="L545">					int w = 0;</span>
+<span class="nc bnc" id="L546" title="All 2 branches missed.">					for (Iterator it = aWeekRanges.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L547">						TimeRange curWeek = (TimeRange) it.next();</span>
+<span class="nc" id="L548">						weekRanges[w++] = curWeek;</span>
+<span class="nc" id="L549">					}</span>
+				}
+			}
+		}
+<span class="nc" id="L553">		return weekRanges;</span>
+	}
+
+	protected static Collection&lt;StringsPair&gt; getDisplayOptions(boolean isCheckedScore, RequestContext context) {
+<span class="nc" id="L557">		Collection&lt;StringsPair&gt; options = new ArrayList&lt;StringsPair&gt;();</span>
+<span class="nc" id="L558">		Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L559">		options.add(new StringsPair(Integer.toString(ShiftBidder.RANKBY_SENIORITY), localizer.i18n(localizer.getBundle(UIFWebBundleKey.BUNDLE_NAME), UIFWebBundleKey.SENIORITY)));</span>
+<span class="nc" id="L560">		options.add(new StringsPair(Integer.toString(ShiftBidder.RANKBY_EMPLOYEERANK), localizer.i18n(localizer.getBundle(UIFWebBundleKey.BUNDLE_NAME), UIFWebBundleKey.RANK)));</span>
+<span class="nc" id="L561">		options.add(new StringsPair(Integer.toString(ShiftBidder.RANKBY_ACCUMULATEDBONUS), localizer.i18n(localizer.getBundle(UIFWebBundleKey.BUNDLE_NAME), UIFWebBundleKey.POINTS)));</span>
+<span class="nc" id="L562">		options.add(new StringsPair(Integer.toString(ShiftBidder.RANKBY_SHIFTBIDDER_BONUS), localizer.i18n(localizer.getBundle(UIFWebBundleKey.BUNDLE_NAME), UIFWebBundleKey.BONUS)));</span>
+<span class="nc bnc" id="L563" title="All 2 branches missed.">		if (isCheckedScore) {</span>
+<span class="nc" id="L564">			options.add(new StringsPair(Integer.toString(ShiftBidder.RANKBY_SCORE), localizer.i18n(localizer.getBundle(UIFWebBundleKey.BUNDLE_NAME), UIFWebBundleKey.SCORE)));</span>
+		}
+<span class="nc" id="L566">		return options;</span>
+	}
+
+	/**
+	 * Retrieves the Organization Settings for every Organization in the list and saves the
+	 * Display Description setting in the Map.
+	 * 
+	 * @param spOrgList Collection that contains Organization IDs
+	 * @return A HashMap of Organization Display Description settings keyed by Organization ID
+	 * @throws Exception Thrown to the calling method
+	 */
+	public static Map&lt;ID, Boolean&gt; setOrgDisplayDecription(Collection&lt;ID&gt; spOrgList) throws Exception {
+<span class="nc" id="L578">		HashMap&lt;ID, Boolean&gt; orgDescSettings = new HashMap();</span>
+
+<span class="nc bnc" id="L580" title="All 2 branches missed.">		for (ID orgID : spOrgList) {</span>
+<span class="nc" id="L581">			OrganizationSetting orgSettings = SettingsModelHandler.getSettings(orgID);</span>
+<span class="nc" id="L582">			orgDescSettings.put(orgID, Boolean.valueOf(orgSettings.getDisplayBidTemplateDes()));</span>
+<span class="nc" id="L583">		}</span>
+
+<span class="nc" id="L585">		return orgDescSettings;</span>
+	}
+
+	/**
+	 * Returns whether or not an Organizations Display Description setting is checked.
+	 * 
+	 * @param spOrgList Collection of Organization IDs.
+	 * @param usersScopeOrgIDs Collection of Organization IDs the user has scope.
+	 * @param orgDescSettings Map of Organization Display Description settings
+	 * @return True if the Organization Setting Display Description is checked, false otherwise.
+	 */
+	public static boolean getDisplayDescriptionColumn(Collection&lt;ID&gt; spOrgList, Collection&lt;ID&gt; usersScopeOrgIDs, Map&lt;ID, Boolean&gt; orgDescSettings) {
+		Boolean displayDecription;
+
+<span class="nc bnc" id="L599" title="All 2 branches missed.">		for (ID orgID : spOrgList) {</span>
+<span class="nc" id="L600">			displayDecription = orgDescSettings.get(orgID);</span>
+<span class="nc bnc" id="L601" title="All 4 branches missed.">			if (displayDecription != null &amp;&amp; displayDecription.booleanValue() &amp;&amp;</span>
+<span class="nc bnc" id="L602" title="All 2 branches missed.">				usersScopeOrgIDs.contains(orgID)) {</span>
+<span class="nc" id="L603">				return true;</span>
+			}
+<span class="nc" id="L605">		}</span>
+
+<span class="nc" id="L607">		return false;</span>
+	}
+	
+	/**
+	 * Format the string to align it with controls place in the table.  It adds more
+	 * left padding to align the data with the data in the control.
+	 * 
+	 * @param value Value for the table cell
+	 * @return A span HTML tag with the proper padding to align the text with other controls.
+	 */
+	public static String columnCellFormatForAlignment(int numberOfPixels, String value) {
+<span class="nc" id="L618">		return &quot;&lt;span style=\&quot;padding-left:&quot; + numberOfPixels + &quot;px;\&quot;&gt;&quot; + value + &quot;&lt;/span&gt;&quot;;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

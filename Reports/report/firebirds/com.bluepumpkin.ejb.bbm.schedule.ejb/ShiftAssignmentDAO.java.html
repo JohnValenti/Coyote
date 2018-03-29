@@ -1,0 +1,725 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftAssignmentDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.schedule.ejb</a> &gt; <span class="el_source">ShiftAssignmentDAO.java</span></div><h1>ShiftAssignmentDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.bbm.schedule.ejb;
+
+/**
+ * Title:        Blue Pumpkin Software Basic Business Model
+ * Description:  Shift Assignment DAO class
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, inc
+ * @author       Greg Fichtenholtz
+ * @version 1.0
+ */
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.common.jdmo.SPMultiUserChangedException;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.base.BbmRemoveException;
+import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
+import com.bluepumpkin.ejb.bbm.dao.DAOBase;
+import com.bluepumpkin.ejb.bbm.schedule.model.BbmScheduleConflict;
+import com.bluepumpkin.ejb.bbm.schedule.model.CalendarEventAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignmentFields;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectUtil;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workresource.model.OrganizationFieldInfo;
+import com.bluepumpkin.ejb.core.base.MultiUserException;
+
+public class ShiftAssignmentDAO extends EventAssignmentUnpubDAO&lt;ShiftAssignment&gt; implements ScheduleConflictChecker&lt;ShiftAssignment&gt; {
+	// meta data info.
+<span class="fc" id="L51">	private static FieldInfo m_fieldInfo = new ShiftAssignmentFields();</span>
+
+	protected FieldInfo getFieldInfo() {
+<span class="fc" id="L54">		return m_fieldInfo;</span>
+	}
+
+	/**
+	 * ctor
+	 */
+	public ShiftAssignmentDAO() {
+<span class="fc" id="L61">		super();</span>
+<span class="fc" id="L62">	}</span>
+
+	/**
+	 * ctor
+	 */
+	public ShiftAssignmentDAO(Jdmo dmo) {
+<span class="fc" id="L68">		super(dmo);</span>
+<span class="fc" id="L69">	}</span>
+
+	@Override
+	protected ShiftAssignment createValueObject() {
+<span class="fc" id="L73">		return new ShiftAssignment();</span>
+	}
+
+	/** override from base class */
+	@Override
+	protected DAOBase createChildDAO(int iType) {
+		// only has one child object
+<span class="fc" id="L80">		return new ShiftEventAssignmentDAO(m_dmo);</span>
+	}
+
+	/**
+	 * This method will be overridden by the derived class to provide an instance
+	 * of the DAO class that model the published event
+	 */
+	@Override
+	protected ShiftAssignmentPubDAO getPublishedDAO() {
+<span class="nc" id="L89">		return new ShiftAssignmentPubDAO(m_dmo);</span>
+	}
+
+	protected void calcAndSetEventPrecedence(ShiftAssignment objValue) throws Exception {
+<span class="fc" id="L93">		ShiftAssignment event = objValue;</span>
+<span class="fc" id="L94">		int precedence = EventPrecedenceRule.getEventOverlayPrecedence(event);</span>
+<span class="fc" id="L95">		event.setOverlayPrecedence(precedence);</span>
+
+		// also set the precedence for all the children - ShiftEventAssignment
+		// ??? is ShiftEventAssignment the only child type for a Shift
+<span class="fc" id="L99">		Collection&lt;ShiftEventAssignment&gt; children = event.getChildren();</span>
+<span class="fc" id="L100">		ShiftEventAssignment shiftEvent = null;</span>
+<span class="fc bfc" id="L101" title="All 2 branches covered.">		for (Iterator&lt;ShiftEventAssignment&gt; i = children.iterator(); i.hasNext();) {</span>
+<span class="fc" id="L102">			shiftEvent = i.next();</span>
+<span class="pc bpc" id="L103" title="1 of 2 branches missed.">			if (shiftEvent.getActivityID() == null) {</span>
+				// shiftEvent object is partially update object,
+				// need to get Acticity ID from database since it is
+				// used to get precendence
+<span class="nc" id="L107">				ShiftEventAssignment oldEvent = (ShiftEventAssignment) createChildDAO(</span>
+<span class="nc" id="L108">						ShiftAssignmentFields.CHILD_SHIFT_EVENT).getObjectByID(shiftEvent.getID());</span>
+<span class="nc" id="L109">				shiftEvent.setActivityID(oldEvent.getActivityID());</span>
+			}
+<span class="fc" id="L111">			precedence = EventPrecedenceRule.getEventOverlayPrecedence(shiftEvent);</span>
+<span class="fc" id="L112">			shiftEvent.setOverlayPrecedence(precedence);</span>
+		}
+<span class="fc" id="L114">	}</span>
+
+	public HashMap&lt;ID, ShiftAssignment&gt; getLastShiftAssignments(Collection&lt;ID&gt; workResourceIDs) throws BbmFinderException {
+		try {
+<span class="nc" id="L118">			StringBuffer buf = new StringBuffer(200);</span>
+<span class="nc" id="L119">			buf.append(&quot;A.WORKRESOURCEID IN &quot;);</span>
+<span class="nc" id="L120">			buf.append(m_dmo.createInClause(workResourceIDs));</span>
+<span class="nc" id="L121">			buf.append(&quot; AND A.STARTTIME &gt;= &quot;);</span>
+<span class="nc" id="L122">			buf.append(&quot;(SELECT MAX(B.STARTTIME) FROM SHIFTASSIGNMENT B &quot;);</span>
+<span class="nc" id="L123">			buf.append(&quot; WHERE B.WORKRESOURCEID = A.WORKRESOURCEID)&quot;);</span>
+
+<span class="nc" id="L125">			Collection&lt;ShiftAssignment&gt; listShifts = getObjects(buf.toString());</span>
+<span class="nc" id="L126">			return ValueObjectUtil.indexBy(listShifts, ShiftAssignmentFields.WORKRESOURCEID);</span>
+<span class="nc" id="L127">		} catch (JdmoException e) {</span>
+<span class="nc" id="L128">			throw new BbmFinderException(e);</span>
+		}
+	}
+
+	/**
+	 * This function is called right after a newly created shift assignment has
+	 * been persisted to the database. It checks whether this new shift
+	 * assignment created any conflicts in the employee's schedule. The
+	 * following are possible conflicts: 1) Overlapping shift assignments 2)
+	 * Overlapping shift event assignments 3) Shift Assignment Overlaps
+	 * Unavailability Calendar Event Assignments 4) More than 1 shift assignment
+	 * on same org day
+	 *
+	 * Note: we shall ignore conflictResolutions collection for now, because
+	 * there is no requirement on schedule access manager EJB to provide a
+	 * method that allows one to create an event and resolve conflicts at the
+	 * same time.
+	 */
+	@Override
+	public Collection&lt;BbmScheduleConflict&gt; getConflictsForNewScheduleObject(ShiftAssignment obj) throws BbmFinderException {
+<span class="nc" id="L148">		return getConflictsForScheduleObjects(Collections.singleton(obj), true);</span>
+	}
+
+	@Override
+	public Collection&lt;BbmScheduleConflict&gt; getConflictsForUpdatedScheduleObject(ShiftAssignment obj)
+			throws BbmFinderException {
+<span class="fc" id="L154">		return getConflictsForScheduleObjects(Collections.singleton(obj), false);</span>
+	}
+
+	public Collection&lt;BbmScheduleConflict&gt; getConflictsForNewScheduleObjects(Collection&lt;ShiftAssignment&gt; listEvents)
+			throws BbmFinderException {
+<span class="fc" id="L159">		return getConflictsForScheduleObjects(listEvents, true);</span>
+	}
+
+	public Collection&lt;BbmScheduleConflict&gt; getConflictsForUpdatedScheduleObjects(Collection&lt;ShiftAssignment&gt; listEvents)
+			throws BbmFinderException {
+<span class="nc" id="L164">		return getConflictsForScheduleObjects(listEvents, false);</span>
+	}
+
+	/**
+	 * This method is called right after a set of newly created shift
+	 * assignments has been persisted to the database. It checks whether these
+	 * new shifts assignments created any conflicts in the employee's schedule.
+	 * The following are possible conflicts: 1) Overlapping shift assignments 2)
+	 * Overlapping shift event assignments 3) Shift Assignment Overlaps
+	 * Unavailability Calendar Event Assignments 4) More than 1 shift assignment
+	 * on same org day
+	 */
+	private Collection&lt;BbmScheduleConflict&gt; getConflictsForScheduleObjects(Collection&lt;ShiftAssignment&gt; listEvents,
+			boolean isNewObject) throws BbmFinderException {
+<span class="pc bpc" id="L178" title="1 of 4 branches missed.">		if (listEvents == null || listEvents.isEmpty())</span>
+<span class="fc" id="L179">			return Collections.emptyList();</span>
+
+<span class="fc" id="L181">		List&lt;BbmScheduleConflict&gt; listConflicts = new ArrayList&lt;BbmScheduleConflict&gt;();</span>
+		try {
+			/*
+			 * find the earliest start time, latest end time and the full set of
+			 * work resources
+			 */
+<span class="fc" id="L187">			Date dtEarliestStart = null, dtLatestEnd = null;</span>
+<span class="fc" id="L188">			Set&lt;ID&gt; setWorkResources = new HashSet&lt;ID&gt;();</span>
+<span class="fc" id="L189">			Map&lt;ID, ShiftAssignment&gt; mapEvents = new HashMap&lt;ID, ShiftAssignment&gt;();</span>
+<span class="fc" id="L190">			List&lt;Pair&lt;ID, Date&gt;&gt; listPairs = new ArrayList&lt;Pair&lt;ID, Date&gt;&gt;(listEvents.size());</span>
+
+<span class="fc bfc" id="L192" title="All 2 branches covered.">			for (Iterator&lt;ShiftAssignment&gt; it = listEvents.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L193">				ShiftAssignment saNext = it.next();</span>
+				// need to set precedence for later use
+<span class="fc" id="L195">				calcAndSetEventPrecedence(saNext);</span>
+
+<span class="fc" id="L197">				ID workResourceID = saNext.getWorkResourceIDs().iterator().next();</span>
+<span class="fc bfc" id="L198" title="All 4 branches covered.">				if (dtEarliestStart == null || dtEarliestStart.after(saNext.getStartTime()))</span>
+<span class="fc" id="L199">					dtEarliestStart = saNext.getStartTime();</span>
+
+<span class="fc bfc" id="L201" title="All 4 branches covered.">				if (dtLatestEnd == null || dtLatestEnd.before(saNext.getEndTime()))</span>
+<span class="fc" id="L202">					dtLatestEnd = saNext.getEndTime();</span>
+
+<span class="fc" id="L204">				setWorkResources.add(workResourceID);</span>
+<span class="fc" id="L205">				mapEvents.put(saNext.getID(), saNext);</span>
+<span class="fc" id="L206">				listPairs.add(new Pair&lt;ID, Date&gt;(workResourceID, saNext.getStartTime()));</span>
+<span class="fc" id="L207">			}</span>
+
+			/* find out the organization for each shift assignment */
+<span class="fc" id="L210">			WorkResourceManager workResourceManager = getWorkResourceManager();</span>
+<span class="fc" id="L211">			List&lt;ID&gt; listOrgIDs = workResourceManager.getEmployeeOrganizations(listPairs);</span>
+<span class="fc" id="L212">			Set&lt;ID&gt; setOrgIDs = new HashSet&lt;ID&gt;();</span>
+<span class="fc bfc" id="L213" title="All 2 branches covered.">			for (Iterator&lt;ID&gt; it = listOrgIDs.iterator(); it.hasNext();) {</span>
+<span class="fc" id="L214">				ID orgID = it.next();</span>
+<span class="pc bpc" id="L215" title="1 of 2 branches missed.">				if (orgID != null)</span>
+<span class="fc" id="L216">					setOrgIDs.add(orgID);</span>
+<span class="fc" id="L217">			}</span>
+<span class="fc" id="L218">			Collection&lt;Organization&gt; listOrgs = workResourceManager.getOrganizationsByIDs(setOrgIDs);</span>
+<span class="fc" id="L219">			Map&lt;ID, Organization&gt; mapOrgs = ValueObjectUtil.indexBy(listOrgs, OrganizationFieldInfo.ORGANIZATION_ID);</span>
+
+			/**
+			 * 1) check whether these new shift assignments overlap with other
+			 * shift assignments 2) let's check whether any of the shift event
+			 * assignments overlap 3) make sure there's only one shift
+			 * assignment per 1 org day
+			 *
+			 * find the organization where the employee worked on the day of the
+			 * shift assignment
+			 */
+			/**
+			 * extend the earliest start time and latest end time by 1 day so
+			 * that we can also use the results of the next query to check that
+			 * there are no 2 shift assignments for the same employee on a given
+			 * work day
+			 */
+<span class="fc" id="L236">			dtEarliestStart = new Date(dtEarliestStart.getTime() - ShiftAssignment.MILLIS_IN_ONE_DAY);</span>
+<span class="fc" id="L237">			dtLatestEnd = new Date(dtLatestEnd.getTime() + ShiftAssignment.MILLIS_IN_ONE_DAY);</span>
+
+<span class="fc" id="L239">			Collection&lt;Collection&lt;ShiftAssignment&gt;&gt; listShifts = getEventsForWorkResources(setWorkResources,</span>
+					dtEarliestStart, dtLatestEnd);
+<span class="fc" id="L241">			Map&lt;ID, Collection&lt;ShiftAssignment&gt;&gt; mapShifts = new HashMap&lt;ID, Collection&lt;ShiftAssignment&gt;&gt;();</span>
+<span class="fc" id="L242">			Iterator&lt;Collection&lt;ShiftAssignment&gt;&gt; it = listShifts.iterator();</span>
+<span class="fc" id="L243">			Iterator&lt;ID&gt; it2 = setWorkResources.iterator();</span>
+<span class="pc bpc" id="L244" title="1 of 4 branches missed.">			while (it.hasNext() &amp;&amp; it2.hasNext()) {</span>
+<span class="fc" id="L245">				Collection&lt;ShiftAssignment&gt; listWrkShifts = it.next();</span>
+<span class="fc" id="L246">				ID workResourceID = it2.next();</span>
+
+<span class="fc bfc" id="L248" title="All 4 branches covered.">				if (listWrkShifts != null &amp;&amp; !listWrkShifts.isEmpty())</span>
+<span class="fc" id="L249">					mapShifts.put(workResourceID, listWrkShifts);</span>
+<span class="fc" id="L250">			}</span>
+
+<span class="fc" id="L252">			Iterator&lt;ShiftAssignment&gt; itSA = listEvents.iterator();</span>
+<span class="fc" id="L253">			it2 = listOrgIDs.iterator();</span>
+<span class="fc" id="L254">			Calendar cal = null, calEnd = null;</span>
+<span class="pc bpc" id="L255" title="1 of 4 branches missed.">			while (itSA.hasNext() &amp;&amp; it2.hasNext()) {</span>
+<span class="fc" id="L256">				ShiftAssignment saNext = itSA.next();</span>
+<span class="fc" id="L257">				ID orgID = it2.next();</span>
+<span class="fc" id="L258">				ID workResourceID = saNext.getWorkResourceIDs().iterator().next();</span>
+
+				/* find out org start day and org end day */
+<span class="fc" id="L261">				int dayOffset = 0;</span>
+<span class="fc" id="L262">				int startHour = 0;</span>
+<span class="fc" id="L263">				Organization org = null;</span>
+<span class="pc bpc" id="L264" title="1 of 2 branches missed.">				if (orgID != null) {</span>
+<span class="fc" id="L265">					org = mapOrgs.get(orgID);</span>
+<span class="pc bpc" id="L266" title="1 of 2 branches missed.">					if (org != null) {</span>
+						/* find the organization time zone */
+<span class="fc" id="L268">						cal = Calendar.getInstance(org.getTimeZone());</span>
+<span class="fc" id="L269">						dayOffset = org.getDayBoundaryOffset();</span>
+					}
+				}
+
+				// QA 82170 - Agent has two shift assignments that start on same
+				// day
+				// for the shift has extension before or after we must adjust
+				// the start and end time of the shift
+<span class="fc" id="L277">				Date saNextStartTime = saNext.getStartTime();</span>
+<span class="fc" id="L278">				Date saNextEndTime = saNext.getEndTime();</span>
+
+<span class="pc bpc" id="L280" title="1 of 4 branches missed.">				if (saNext.getExtensionBefore() &gt; 0 &amp;&amp; cal != null) {</span>
+<span class="fc" id="L281">					cal.setTime(saNextStartTime);</span>
+<span class="fc" id="L282">					cal.add(Calendar.MINUTE, saNext.getExtensionBefore());</span>
+<span class="fc" id="L283">					saNextStartTime = cal.getTime();</span>
+				}
+
+<span class="pc bpc" id="L286" title="1 of 4 branches missed.">				if (saNext.getExtensionAfter() &gt; 0 &amp;&amp; cal != null) {</span>
+<span class="fc" id="L287">					cal.setTime(saNextEndTime);</span>
+<span class="fc" id="L288">					cal.add(Calendar.MINUTE, -saNext.getExtensionAfter());</span>
+<span class="fc" id="L289">					saNextEndTime = cal.getTime();</span>
+				}
+
+				/* find out org start day and org end day */
+<span class="fc" id="L293">				Date orgDayStart = null, orgDayEnd = null;</span>
+<span class="pc bpc" id="L294" title="1 of 2 branches missed.">				if (cal != null) {</span>
+<span class="fc" id="L295">					orgDayStart = getOrgDayStart(dayOffset, cal, saNextStartTime);</span>
+<span class="fc" id="L296">					orgDayEnd = getOrgDayEnd(dayOffset, cal, saNextStartTime);</span>
+				}
+
+				/*
+				 * check there is no overlapping shifts and also that there's no
+				 * 2 shift assignments on the same work day
+				 */
+<span class="fc" id="L303">				Collection&lt;ShiftAssignment&gt; listWrkShifts = mapShifts.get(workResourceID);</span>
+<span class="pc bpc" id="L304" title="1 of 4 branches missed.">				if (listWrkShifts != null &amp;&amp; !listWrkShifts.isEmpty()) {</span>
+<span class="fc bfc" id="L305" title="All 2 branches covered.">					for (ShiftAssignment saNext2 : listWrkShifts) {</span>
+						// QA 82170 - Agent has two shift assignments that start
+						// on same day
+						// for the shift has extension before or after we must
+						// adjust the start and end time of the shift
+<span class="fc" id="L310">						Date saNext2StartTime = saNext2.getStartTime();</span>
+<span class="fc" id="L311">						Date saNext2EndTime = saNext2.getEndTime();</span>
+
+<span class="pc bpc" id="L313" title="1 of 4 branches missed.">						if (saNext2.getExtensionBefore() &gt; 0 &amp;&amp; cal != null) {</span>
+<span class="fc" id="L314">							cal.setTime(saNext2StartTime);</span>
+<span class="fc" id="L315">							cal.add(Calendar.MINUTE, saNext2.getExtensionBefore());</span>
+<span class="fc" id="L316">							saNext2StartTime = cal.getTime();</span>
+						}
+
+<span class="pc bpc" id="L319" title="1 of 4 branches missed.">						if (saNext2.getExtensionAfter() &gt; 0 &amp;&amp; cal != null) {</span>
+<span class="fc" id="L320">							cal.setTime(saNext2EndTime);</span>
+<span class="fc" id="L321">							cal.add(Calendar.MINUTE, -saNext2.getExtensionAfter());</span>
+<span class="fc" id="L322">							saNext2EndTime = cal.getTime();</span>
+						}
+
+						// if ((isNewObject ||
+						// !saNext.getID().equals(saNext2.getID())) &amp;&amp;
+						// saNext.getStartTime().before(saNext2.getEndTime()) &amp;&amp;
+						// saNext.getEndTime().after(saNext2.getStartTime()))
+						// {
+						// listConflicts.add(new BbmScheduleConflict(saNext,
+						// saNext2));
+						// }
+
+						// if ((isNewObject ||
+						// !saNext.getID().equals(saNext2.getID())) &amp;&amp;
+						// orgDayStart != null &amp;&amp; orgDayEnd != null &amp;&amp;
+						// saNext2.getStartTime().compareTo(orgDayEnd) &lt; 0 &amp;&amp;
+						// saNext2.getStartTime().compareTo(orgDayStart) &gt;= 0)
+						// {
+						// listConflicts.add(new BbmScheduleConflict(saNext,
+						// saNext2, orgDayStart));
+						// }
+
+<span class="pc bpc" id="L344" title="1 of 4 branches missed.">						if ((isNewObject || !saNext.getID().equals(saNext2.getID()))</span>
+<span class="pc bpc" id="L345" title="3 of 4 branches missed.">								&amp;&amp; saNextStartTime.before(saNext2EndTime) &amp;&amp; saNextEndTime.after(saNext2StartTime)) {</span>
+<span class="nc" id="L346">							listConflicts.add(new BbmScheduleConflict(saNext, saNext2));</span>
+						}
+
+<span class="pc bpc" id="L349" title="3 of 8 branches missed.">						if ((isNewObject || !saNext.getID().equals(saNext2.getID())) &amp;&amp; orgDayStart != null</span>
+<span class="pc bpc" id="L350" title="1 of 2 branches missed.">								&amp;&amp; orgDayEnd != null &amp;&amp; saNext2StartTime.compareTo(orgDayEnd) &lt; 0</span>
+<span class="pc bpc" id="L351" title="1 of 2 branches missed.">								&amp;&amp; saNext2StartTime.compareTo(orgDayStart) &gt;= 0) {</span>
+<span class="nc" id="L352">							listConflicts.add(new BbmScheduleConflict(saNext, saNext2, orgDayStart));</span>
+						}
+<span class="fc" id="L354">					}</span>
+				}
+
+				/* check there are no overlapping shift events */
+<span class="fc" id="L358">				Collection&lt;ShiftEventAssignment&gt; listChildren = saNext.getChildren();</span>
+<span class="fc bfc" id="L359" title="All 2 branches covered.">				if (listChildren.size() &gt; 1) {</span>
+<span class="fc" id="L360">					Object[] arChildren = listChildren.toArray();</span>
+<span class="fc" id="L361">					boolean bFoundOverlappingSE = false;</span>
+<span class="pc bpc" id="L362" title="1 of 4 branches missed.">					for (int i = 0; i &lt; arChildren.length &amp;&amp; !bFoundOverlappingSE; i++) {</span>
+<span class="fc" id="L363">						ShiftEventAssignment shiftEvent1 = (ShiftEventAssignment) arChildren[i];</span>
+<span class="fc bfc" id="L364" title="All 2 branches covered.">						for (int j = i + 1; j &lt; arChildren.length; j++) {</span>
+<span class="fc" id="L365">							ShiftEventAssignment shiftEvent2 = (ShiftEventAssignment) arChildren[j];</span>
+<span class="fc bfc" id="L366" title="All 2 branches covered.">							if ((shiftEvent1.getOverlayPrecedence() == shiftEvent2.getOverlayPrecedence())</span>
+<span class="fc bfc" id="L367" title="All 2 branches covered.">									&amp;&amp; shiftEvent1.getStartTime().before(shiftEvent2.getEndTime())</span>
+<span class="pc bpc" id="L368" title="1 of 2 branches missed.">									&amp;&amp; shiftEvent1.getEndTime().after(shiftEvent2.getStartTime())) {</span>
+<span class="nc" id="L369">								listConflicts.add(new BbmScheduleConflict(saNext));</span>
+<span class="nc" id="L370">								bFoundOverlappingSE = true;</span>
+<span class="nc" id="L371">								break;</span>
+							}
+						}
+					}
+				}
+<span class="fc" id="L376">			}</span>
+
+			/**
+			 * 3) Shift Assignment Overlaps Unavailability Calendar Event
+			 * Assignments
+			 */
+<span class="fc" id="L382">			CalendarEventAssignmentDAO daoCalendarEvent = getCalendarEventAssignmentDAO();</span>
+
+<span class="fc" id="L384">			Collection&lt;Collection&lt;CalendarEventAssignment&gt;&gt; listCalEvents = daoCalendarEvent</span>
+<span class="fc" id="L385">					.getAllAttendingEventsForWorkResources(setWorkResources, dtEarliestStart, dtLatestEnd);</span>
+<span class="fc" id="L386">			Map&lt;ID, Collection&lt;CalendarEventAssignment&gt;&gt; mapCalEvents = new HashMap&lt;ID, Collection&lt;CalendarEventAssignment&gt;&gt;();</span>
+<span class="fc" id="L387">			Iterator&lt;Collection&lt;CalendarEventAssignment&gt;&gt; it3 = listCalEvents.iterator();</span>
+<span class="fc" id="L388">			it2 = setWorkResources.iterator();</span>
+<span class="pc bpc" id="L389" title="1 of 4 branches missed.">			while (it3.hasNext() &amp;&amp; it2.hasNext()) {</span>
+<span class="fc" id="L390">				Collection&lt;CalendarEventAssignment&gt; listWrkEvents = it3.next();</span>
+<span class="fc" id="L391">				ID workResourceID = it2.next();</span>
+<span class="fc bfc" id="L392" title="All 4 branches covered.">				if (listWrkEvents != null &amp;&amp; !listWrkEvents.isEmpty())</span>
+<span class="fc" id="L393">					mapCalEvents.put(workResourceID, listWrkEvents);</span>
+<span class="fc" id="L394">			}</span>
+<span class="fc bfc" id="L395" title="All 2 branches covered.">			for (ShiftAssignment saNext : listEvents) {</span>
+<span class="fc" id="L396">				ID workResourceID = saNext.getWorkResourceIDs().iterator().next();</span>
+<span class="fc" id="L397">				Collection&lt;CalendarEventAssignment&gt; listWrkEvents = mapCalEvents.get(workResourceID);</span>
+<span class="pc bpc" id="L398" title="1 of 4 branches missed.">				if (listWrkEvents != null &amp;&amp; !listWrkEvents.isEmpty()) {</span>
+<span class="fc bfc" id="L399" title="All 2 branches covered.">					for (CalendarEventAssignment ceNext : listWrkEvents) {</span>
+<span class="pc bpc" id="L400" title="1 of 2 branches missed.">						if (saNext.getOverlayPrecedence() == ceNext.getOverlayPrecedence()</span>
+<span class="nc bnc" id="L401" title="All 2 branches missed.">								&amp;&amp; saNext.getStartTime().before(ceNext.getEndTime())</span>
+<span class="nc bnc" id="L402" title="All 2 branches missed.">								&amp;&amp; saNext.getEndTime().after(ceNext.getStartTime())) {</span>
+<span class="nc" id="L403">							listConflicts.add(new BbmScheduleConflict(saNext, ceNext));</span>
+						}
+<span class="fc" id="L405">					}</span>
+				}
+<span class="fc" id="L407">			}</span>
+
+			/**
+			 * the last step is to find the find all of the employee names for
+			 * all of the conflicts returned from this method call
+			 */
+<span class="fc" id="L413">			ScheduleDAOUtil.findEmployeeNames(listConflicts);</span>
+<span class="nc" id="L414">		} catch (Exception e) {</span>
+<span class="nc" id="L415">			throw new BbmFinderException(e);</span>
+<span class="fc" id="L416">		}</span>
+<span class="fc" id="L417">		return listConflicts;</span>
+	}
+	
+	protected Date getOrgDayStart(int dayOffset, Calendar cal, Date saNextStartTime) {
+		Date orgDayStart;
+		
+		/*
+		 * now calculate when the org day that includes that shift
+		 * start time actually starts
+		 */
+<span class="fc" id="L427">		cal.setTime(saNextStartTime);</span>
+<span class="fc" id="L428">		cal.set(Calendar.MILLISECOND, 0);</span>
+<span class="fc" id="L429">		cal.set(Calendar.SECOND, 0);</span>
+<span class="fc" id="L430">		cal.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="fc" id="L431">		cal.set(Calendar.MINUTE, dayOffset);</span>
+
+		/* find the day start and the day end */
+<span class="fc" id="L434">		orgDayStart = cal.getTime();</span>
+<span class="pc bpc" id="L435" title="1 of 2 branches missed.">		if (saNextStartTime.before(orgDayStart)) {</span>
+			/*
+			 * to account for a weird case when the shift starts at
+			 * 1am and the organization start time occurs at 2am we
+			 * have this if clause
+			 */
+<span class="nc" id="L441">			cal.add(Calendar.DATE, -1);</span>
+<span class="nc" id="L442">			orgDayStart = cal.getTime();</span>
+		}
+<span class="fc" id="L444">		return orgDayStart;</span>
+	}
+	
+	protected Date getOrgDayEnd(int dayOffset, Calendar cal, Date saNextStartTime ) {
+<span class="fc" id="L448">		int startHour = 0;</span>
+<span class="fc" id="L449">		cal.add(Calendar.DATE, 1);</span>
+
+		// QC 106865: saving error when day boundary is on exact DST roll back transition
+<span class="fc" id="L452">		Calendar calEnd = cal.getInstance(); // ........and next shift is</span>
+											 // starting on next day within 1
+											// hour
+<span class="fc" id="L455">		calEnd.setTime(saNextStartTime);</span>
+<span class="fc" id="L456">		calEnd.add(Calendar.DATE, -1);     // Want to check day boundary</span>
+									       // for the previous day
+<span class="fc" id="L458">		calEnd.set(Calendar.MILLISECOND, 0);</span>
+<span class="fc" id="L459">		calEnd.set(Calendar.SECOND, 0);</span>
+<span class="fc" id="L460">		calEnd.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="fc" id="L461">		calEnd.set(Calendar.MINUTE, dayOffset);</span>
+
+<span class="fc" id="L463">		startHour = calEnd.get(Calendar.HOUR_OF_DAY);</span>
+
+<span class="pc bpc" id="L465" title="1 of 2 branches missed.">		if (cal.get(Calendar.HOUR_OF_DAY) &gt; startHour) // undo our</span>
+													   // hour
+													   // addition
+<span class="nc" id="L468">			cal.add(Calendar.HOUR_OF_DAY, -1);</span>
+		// End QC 106865: saving error when day boundary is on exact
+		// DST roll back .....
+
+<span class="fc" id="L472">		cal.add(Calendar.MINUTE, -1); // set the org end at the last</span>
+									  // minute of the day fix
+									  // 95084
+<span class="fc" id="L475">		return cal.getTime();</span>
+	}
+
+
+	/**
+	 * Locks or Unlocks events of a given type for a given set of work resources
+	 * and time period
+	 */
+	public void lockOrUnlockEvents(int eventTypeMask, Collection&lt;ID&gt; workResourceIDs, Date dtStart, Date dtEnd,
+			boolean bLock) throws BbmUpdateException {
+		try {
+<span class="pc bpc" id="L486" title="1 of 2 branches missed.">			if ((eventTypeMask &amp; Event.EVENT_TYPE_SHIFT_ASSIGNMENT) != 0) {</span>
+<span class="fc" id="L487">				StringBuffer buf = new StringBuffer(200);</span>
+<span class="fc" id="L488">				buf.append(&quot;UPDATE SHIFTASSIGNMENT &quot;);</span>
+<span class="pc bpc" id="L489" title="1 of 2 branches missed.">				buf.append(&quot;SET ISLOCKED = &quot;).append(bLock ? &quot;1 &quot; : &quot;0 &quot;);</span>
+<span class="fc" id="L490">				buf.append(&quot;WHERE ENDTIME &quot;);</span>
+				// buf.append(m_dmo.dateAddMinutes(&quot;DURATION&quot;, &quot;STARTTIME&quot;));
+<span class="fc" id="L492">				buf.append(&quot; &gt; '&quot; + JdmoUtil.formatDBString(dtStart));</span>
+<span class="fc" id="L493">				buf.append(&quot;' AND STARTTIME &lt; '&quot; + JdmoUtil.formatDBString(dtEnd));</span>
+<span class="fc" id="L494">				buf.append(&quot;' AND WORKRESOURCEID IN &quot;);</span>
+<span class="fc" id="L495">				buf.append(m_dmo.createInClause(workResourceIDs));</span>
+<span class="fc" id="L496">				m_dmo.executeCommand(buf.toString());</span>
+			}
+<span class="pc bpc" id="L498" title="1 of 2 branches missed.">			if ((eventTypeMask &amp; Event.EVENT_TYPE_SHIFT_EVENT_ASSIGNMENT) != 0) {</span>
+<span class="fc" id="L499">				ShiftEventAssignmentDAO daoChild = new ShiftEventAssignmentDAO(m_dmo);</span>
+<span class="fc" id="L500">				daoChild.lockOrUnlockEvents(workResourceIDs, dtStart, dtEnd, bLock);</span>
+			}
+<span class="nc" id="L502">		} catch (JdmoException e) {</span>
+<span class="nc" id="L503">			throw new BbmUpdateException(e);</span>
+<span class="fc" id="L504">		}</span>
+<span class="fc" id="L505">	}</span>
+
+	/**
+	 * Deletes schedule events for a set of work resources in a given time
+	 * window Note: no need to record the audit trail for this particular action
+	 * ?
+	 */
+	public void deleteEventsForWorkResources(Collection&lt;ID&gt; workResourceIDs, Date startTime, Date endTime, ID campaignID,
+			boolean unlockedOnly, boolean byStartTime) throws BbmRemoveException {
+		try {
+<span class="fc" id="L515">			StringBuffer strWhere = new StringBuffer(200);</span>
+<span class="pc bpc" id="L516" title="1 of 2 branches missed.">			if (byStartTime) {</span>
+<span class="fc" id="L517">				strWhere.append(getWhereClauseForGetEventsQueryByStartTime(workResourceIDs, startTime, endTime));</span>
+			} else {
+<span class="nc" id="L519">				strWhere.append(getWhereClauseForGetEventsQuery(workResourceIDs, startTime, endTime));</span>
+			}
+<span class="pc bpc" id="L521" title="1 of 2 branches missed.">			if (campaignID != null) {</span>
+<span class="fc" id="L522">				strWhere.append(&quot; AND A.SPID = &quot;).append(campaignID);</span>
+			}
+<span class="pc bpc" id="L524" title="1 of 2 branches missed.">			if (unlockedOnly) {</span>
+<span class="nc" id="L525">				strWhere.append(&quot; AND A.ISLOCKED = 0&quot;);</span>
+			}
+
+<span class="fc" id="L528">			deleteEventsGivenWhereClause(strWhere.toString());</span>
+<span class="nc" id="L529">		} catch (JdmoException e) {</span>
+<span class="nc" id="L530">			throw new BbmRemoveException(e);</span>
+<span class="fc" id="L531">		}</span>
+<span class="fc" id="L532">	}</span>
+
+	public void unlockShiftAssignmentsByIDs(Collection&lt;ID&gt; cShiftAssignmentIDs, boolean bShiftEventAssignmentsOnly)
+			throws BbmUpdateException {
+		try {
+
+<span class="nc bnc" id="L538" title="All 2 branches missed.">			if (!bShiftEventAssignmentsOnly) {</span>
+<span class="nc" id="L539">				String sQuery = &quot;UPDATE SHIFTASSIGNMENT SET ISLOCKED = 0 WHERE ID IN &quot;</span>
+<span class="nc" id="L540">						+ m_dmo.createInClause(cShiftAssignmentIDs);</span>
+<span class="nc" id="L541">				m_dmo.execute(sQuery);</span>
+			}
+
+<span class="nc" id="L544">			String sQuery = &quot;UPDATE SHIFTEVENTASSIGNMENT SET ISLOCKED = 0 WHERE SHIFTASSIGNMENTID IN &quot;</span>
+<span class="nc" id="L545">					+ m_dmo.createInClause(cShiftAssignmentIDs);</span>
+<span class="nc" id="L546">			m_dmo.execute(sQuery);</span>
+<span class="nc" id="L547">		} catch (JdmoException e) {</span>
+<span class="nc" id="L548">			throw new BbmUpdateException(e);</span>
+<span class="nc" id="L549">		}</span>
+<span class="nc" id="L550">	}</span>
+
+	public void unlinkShiftAssignmentFromCampaign(Collection&lt;ID&gt; workResourceIDs, ID spID) throws BbmUpdateException,
+			MultiUserException {
+		try {
+<span class="nc bnc" id="L555" title="All 2 branches missed.">			if (spID == null) {</span>
+				// no action required since the spID is null already
+				// should never happen - just in case
+<span class="nc" id="L558">				return;</span>
+			}
+<span class="nc" id="L560">			m_dmo.execute(getStmtForUnlinkShiftAssignment(&quot;SHIFTASSIGNMENT&quot;, workResourceIDs, spID));</span>
+<span class="nc" id="L561">			m_dmo.execute(getStmtForUnlinkShiftAssignment(&quot;SHIFTASSIGNMENTPUB&quot;, workResourceIDs, spID));</span>
+<span class="nc" id="L562">		} catch (SPMultiUserChangedException e) {</span>
+<span class="nc" id="L563">			throw new MultiUserException(e.getUpdateUser(), true);</span>
+<span class="nc" id="L564">		} catch (JdmoException e) {</span>
+<span class="nc" id="L565">			throw new BbmUpdateException(e);</span>
+<span class="nc" id="L566">		}</span>
+<span class="nc" id="L567">	}</span>
+
+	private String getStmtForUnlinkShiftAssignment(String tableName, Collection&lt;ID&gt; workResourceIDs, ID spID)
+			throws JdmoException {
+<span class="nc" id="L571">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L572">		sb.append(&quot;UPDATE &quot;);</span>
+<span class="nc" id="L573">		sb.append(tableName);</span>
+<span class="nc" id="L574">		sb.append(&quot; SET SPID = NULL WHERE SPID = &quot;);</span>
+<span class="nc" id="L575">		sb.append(spID.toString());</span>
+<span class="nc bnc" id="L576" title="All 4 branches missed.">		if (workResourceIDs != null &amp;&amp; !workResourceIDs.isEmpty()) {</span>
+<span class="nc" id="L577">			sb.append(&quot; AND WORKRESOURCEID IN &quot;);</span>
+<span class="nc" id="L578">			sb.append(m_dmo.createInClause(workResourceIDs));</span>
+		}
+<span class="nc" id="L580">		return sb.toString();</span>
+	}
+
+	public void unlinkShiftAssignmentFromCampaign(Collection&lt;ID&gt; shiftAssignmentIDs) throws BbmUpdateException,
+			MultiUserException {
+		try {
+<span class="nc bnc" id="L586" title="All 4 branches missed.">			if (shiftAssignmentIDs == null || shiftAssignmentIDs.isEmpty())</span>
+<span class="nc" id="L587">				return;</span>
+<span class="nc" id="L588">			m_dmo.execute(getStmtForUnlinkShiftAssignment(&quot;SHIFTASSIGNMENT&quot;, shiftAssignmentIDs));</span>
+<span class="nc" id="L589">			m_dmo.execute(getStmtForUnlinkShiftAssignment(&quot;SHIFTASSIGNMENTPUB&quot;, shiftAssignmentIDs));</span>
+<span class="nc" id="L590">		} catch (SPMultiUserChangedException e) {</span>
+<span class="nc" id="L591">			throw new MultiUserException(e.getUpdateUser(), true);</span>
+<span class="nc" id="L592">		} catch (JdmoException e) {</span>
+<span class="nc" id="L593">			throw new BbmUpdateException(e);</span>
+<span class="nc" id="L594">		}</span>
+<span class="nc" id="L595">	}</span>
+
+	private String getStmtForUnlinkShiftAssignment(String tableName, Collection&lt;ID&gt; shiftAssignmentIDs)
+			throws JdmoException {
+<span class="nc" id="L599">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L600">		sb.append(&quot;UPDATE &quot;);</span>
+<span class="nc" id="L601">		sb.append(tableName);</span>
+<span class="nc" id="L602">		sb.append(&quot; SET SPID = NULL WHERE ID IN &quot;);</span>
+<span class="nc" id="L603">		sb.append(m_dmo.createInClause(shiftAssignmentIDs));</span>
+<span class="nc" id="L604">		return sb.toString();</span>
+	}
+
+	public void unlinkShiftAssignmentFromCampaign(ID orgID, ID spID) throws BbmUpdateException, MultiUserException {
+		try {
+<span class="nc bnc" id="L609" title="All 2 branches missed.">			if (spID == null)</span>
+<span class="nc" id="L610">				return;</span>
+<span class="nc" id="L611">			m_dmo.execute(getStmtForUnlinkShiftAssignment(&quot;SHIFTASSIGNMENT&quot;, orgID, spID));</span>
+<span class="nc" id="L612">			m_dmo.execute(getStmtForUnlinkShiftAssignment(&quot;SHIFTASSIGNMENTPUB&quot;, orgID, spID));</span>
+<span class="nc" id="L613">		} catch (SPMultiUserChangedException e) {</span>
+<span class="nc" id="L614">			throw new MultiUserException(e.getUpdateUser(), true);</span>
+<span class="nc" id="L615">		} catch (JdmoException e) {</span>
+<span class="nc" id="L616">			throw new BbmUpdateException(e);</span>
+<span class="nc" id="L617">		}</span>
+<span class="nc" id="L618">	}</span>
+
+	private String getStmtForUnlinkShiftAssignment(String tableName, ID orgID, ID spID) throws JdmoException {
+<span class="nc" id="L621">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L622">		sb.append(&quot;UPDATE &quot;);</span>
+<span class="nc" id="L623">		sb.append(tableName);</span>
+<span class="nc" id="L624">		sb.append(&quot; SET SPID = NULL WHERE SPID = &quot;);</span>
+<span class="nc" id="L625">		sb.append(spID.toString());</span>
+
+<span class="nc bnc" id="L627" title="All 2 branches missed.">		if (orgID != null) {</span>
+<span class="nc" id="L628">			sb.append(&quot; AND WORKRESOURCEID IN &quot;);</span>
+<span class="nc" id="L629">			sb.append(&quot;(SELECT WORKRESOURCEID FROM WORKRESOURCEORGANIZATION &quot;);</span>
+<span class="nc" id="L630">			sb.append(&quot; WHERE ORGANIZATIONID = &quot;).append(orgID.toString()).append(&quot;)&quot;);</span>
+		}
+<span class="nc" id="L632">		return sb.toString();</span>
+	}
+
+	/** This is an override of the base class to set endtime based on duration */
+	@Override
+	public ID createObject(ShiftAssignment objValue, boolean bBatched) throws BbmCreateException {
+<span class="fc" id="L638">		ShiftAssignment shift = objValue;</span>
+<span class="pc bpc" id="L639" title="1 of 2 branches missed.">		if (objValue.isFieldValueSet(ShiftAssignmentFields.STARTTIME)</span>
+<span class="pc bpc" id="L640" title="1 of 2 branches missed.">				&amp;&amp; objValue.isFieldValueSet(ShiftAssignmentFields.DURATION)) {</span>
+<span class="fc" id="L641">			shift.setFieldValue(ShiftAssignmentFields.ENDTIME,</span>
+<span class="fc" id="L642">					new Date(shift.getStartTime().getTime() + shift.getDuration() * ShiftAssignment.MILLIS_IN_ONE_MIN));</span>
+		}
+<span class="fc" id="L644">		return super.createObject(objValue, bBatched);</span>
+	}
+
+	// override the method defined in DAONode
+	@Override
+	public void updateObject(ShiftAssignment objValue) throws MultiUserException, BbmUpdateException {
+<span class="fc" id="L650">		ShiftAssignment event = objValue;</span>
+
+<span class="pc bpc" id="L652" title="1 of 2 branches missed.">		if (objValue.isFieldValueSet(ShiftAssignmentFields.STARTTIME)</span>
+<span class="pc bpc" id="L653" title="1 of 2 branches missed.">				&amp;&amp; objValue.isFieldValueSet(ShiftAssignmentFields.DURATION)) {</span>
+<span class="fc" id="L654">			event.setFieldValue(ShiftAssignmentFields.ENDTIME,</span>
+<span class="fc" id="L655">					new Date(event.getStartTime().getTime() + event.getDuration() * ShiftAssignment.MILLIS_IN_ONE_MIN));</span>
+		}
+
+<span class="fc" id="L658">		super.updateObject(objValue);</span>
+<span class="fc" id="L659">	}</span>
+
+	public HashMap&lt;ID, Timestamp&gt; getLastShiftAssignmentStartTime(Collection&lt;ID&gt; workResourceIDs) throws BbmFinderException {
+		try {
+<span class="nc" id="L663">			HashMap&lt;ID, Timestamp&gt; map = new HashMap&lt;ID, Timestamp&gt;(workResourceIDs.size());</span>
+<span class="nc" id="L664">			StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L665">			sb.append(&quot; select WORKRESOURCEID, MAX(STARTTIME) from SHIFTASSIGNMENT &quot;);</span>
+<span class="nc" id="L666">			sb.append(&quot; where WORKRESOURCEID IN &quot;).append(m_dmo.createInClause(workResourceIDs));</span>
+<span class="nc" id="L667">			sb.append(&quot; group by WORKRESOURCEID&quot;);</span>
+
+<span class="nc" id="L669">			JdmoRowset rs = m_dmo.createRowset(sb.toString());</span>
+<span class="nc bnc" id="L670" title="All 2 branches missed.">			while (rs.next()) {</span>
+<span class="nc" id="L671">				map.put(rs.getID(1), rs.getTimestamp(2));</span>
+			}
+<span class="nc" id="L673">			return map;</span>
+<span class="nc" id="L674">		} catch (JdmoException e) {</span>
+<span class="nc" id="L675">			throw new BbmFinderException(e);</span>
+		}
+	}
+
+	public Collection&lt;ShiftAssignment&gt; getShiftAssignmentInSP(ID spID, Collection&lt;ID&gt; workResourceIDs, Date startTime, Date endTime)
+			throws BbmFinderException {
+<span class="fc" id="L681">		return getShiftAssignmentInSP(spID, workResourceIDs, startTime, endTime, false);</span>
+	}
+
+	public Collection&lt;ShiftAssignment&gt; getShiftAssignmentInSP(ID spID, Collection&lt;ID&gt; workResourceIDs, Date startTime, Date endTime,
+			boolean unlockedOnly) throws BbmFinderException {
+<span class="fc" id="L686">		StringBuffer strWhere = new StringBuffer(200);</span>
+		try {
+<span class="fc" id="L688">			strWhere.append(getWhereClauseForGetEventsQuery(workResourceIDs, startTime, endTime));</span>
+<span class="pc bpc" id="L689" title="1 of 2 branches missed.">			if (spID != null)</span>
+<span class="fc" id="L690">				strWhere.append(&quot; AND A.SPID = &quot;).append(spID);</span>
+<span class="pc bpc" id="L691" title="1 of 2 branches missed.">			if (unlockedOnly)</span>
+<span class="nc" id="L692">				strWhere.append(&quot; AND A.ISLOCKED = 0&quot;);</span>
+<span class="nc" id="L693">		} catch (JdmoException e) {</span>
+<span class="nc" id="L694">			throw new BbmFinderException(e);</span>
+<span class="fc" id="L695">		}</span>
+<span class="fc" id="L696">		return getObjects(strWhere.toString());</span>
+	}
+
+	WorkResourceManager getWorkResourceManager() {
+<span class="fc" id="L700">		CachePerEJBMethod cache = CachePerEJBMethod.getCache();</span>
+<span class="fc" id="L701">		return cache.getWorkResourceManager();</span>
+	}
+
+	CalendarEventAssignmentDAO getCalendarEventAssignmentDAO() {
+<span class="fc" id="L705">		return new CalendarEventAssignmentDAO(m_dmo);</span>
+	}
+	
+	/**
+	 * Get a list of unpublised ShiftAssignment by IDs of ShiftAssignment
+	 *
+	 * @param shiftAssignmentIds list of IDs of ShiftAssignment
+	 * @return List&lt;ShiftAssignment&gt;
+	 * @throws BbmFinderException
+	 * @throws JdmoException
+	 */
+	public List&lt;ShiftAssignment&gt; getShiftAssignmentByIDs(List&lt;ID&gt; shiftAssignmentIds) throws BbmFinderException {
+		try {
+<span class="nc" id="L718">			Collection&lt;ShiftAssignment&gt; unpubShiftAssg = this.getObjects(&quot; ID in &quot; + m_dmo.createInClause(shiftAssignmentIds));</span>
+<span class="nc" id="L719">			return new ArrayList&lt;ShiftAssignment&gt;(unpubShiftAssg);</span>
+<span class="nc" id="L720">		} catch (JdmoException e) {</span>
+<span class="nc" id="L721">			throw new BbmFinderException(e);</span>
+		}
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

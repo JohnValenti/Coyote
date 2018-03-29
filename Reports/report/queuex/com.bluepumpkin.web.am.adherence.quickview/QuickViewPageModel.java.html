@@ -1,0 +1,963 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>QuickViewPageModel.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.am.adherence.quickview</a> &gt; <span class="el_source">QuickViewPageModel.java</span></div><h1>QuickViewPageModel.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.am.adherence.quickview;
+
+import com.bluepumpkin.common.base.BPException;
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.config.ConfigKey;
+import com.bluepumpkin.ejb.bbm.rtaamanager.ejb.RTAAManager;
+import com.bluepumpkin.ejb.bbm.rtaamanager.model.ActivityAdheranceStatusSummary;
+import com.bluepumpkin.ejb.bbm.rtaamanager.model.AdheranceStatusData;
+import com.bluepumpkin.ejb.bbm.rtaamanager.model.EmployeeAdheranceStatus;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.web.am.Log;
+import com.bluepumpkin.web.am.keys.AmImageFileID;
+import com.bluepumpkin.web.am.keys.AmJavaScriptFileID;
+import com.bluepumpkin.web.am.l10n.AmWebBundleKey;
+import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.workresource.WorkResourceModelHandler;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.jsp.HtmlButton;
+import com.witness.web.uif.jsp.HtmlImage;
+import com.witness.web.uif.keys.AccessibilityComplianceKeys;
+import com.witness.web.uif.keys.ImageFileID;
+import com.witness.web.uif.keys.JavaScriptFileID;
+import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
+import com.witness.web.uif.pagecomponent.contenttitle.ContentTitlePC;
+import com.witness.web.uif.pagecomponent.list.MultiColListPC;
+import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarPC;
+import com.witness.web.uif.pagemodel.WorkpaneListPageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.ColorUtil;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.MultiColPCFactory;
+import com.witness.web.uif.util.html.CSSUtil;
+import com.witness.web.uif.util.js.JSDateTimeUtil;
+
+import java.text.MessageFormat;
+import java.util.*;
+
+/**
+ * Title:        Page Model for quick view screen
+ * Description:  Page Model for the quick view screen, perform analysis
+ * of scheduled versus actual activities of agents.
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, Inc
+ *
+ * @author Shimon Kakon
+ * @version 1.0
+ */
+public class QuickViewPageModel extends WorkpaneListPageModel {
+<span class="fc" id="L56">	private static final Category log = Log.initCategory(QuickViewPageModel.class.getName());</span>
+
+	// Refresh rate constants
+	public static final String REFRESH_RATE_FN = &quot;refreshRate&quot;; // form field name
+	public static final int REFRESH_RATE_NOT_SET = -1; // indicate that the refresh rate was not set yet
+	public static final int DEFAULT_REFRESH_RATE = 5; // default
+	public static final String REFRESH_RATE_USER_PROPERTY_KEY = &quot;rtaaRefreshRate&quot;; // user profile key
+
+	// Actions
+	public static final String CHANGE_REFRESH_RATE_ACTION = &quot;CHANGE_REFRESH_RATE_ACTION&quot;;
+	public static final String PUSH_PIN_ACTION = &quot;PUSH_PIN_ACTION&quot;;
+	public static final String REMOVE_PIN_ACTION = &quot;REMOVE_PIN_ACTION&quot;;
+	public static final String RECORD_ACTION = &quot;RECORD_ACTION&quot;;
+
+	// Quick View Column names
+	public static final String PUSH_PIN = &quot;PUSH_PIN&quot;;
+
+<span class="fc" id="L73">	public static final String AGENT_NAME_SORT = Integer.toString(</span>
+		AdheranceStatusData.SORT_EMPLOYEE_NAME);
+
+	public static final String ORGANIZATION_NAME_SORT = &quot;ORGANIZATION_NAME_SORT&quot;;
+
+<span class="fc" id="L78">	public static final String SCHEDULED_ACTIVITY_SORT = Integer.toString(</span>
+		AdheranceStatusData.SORT_PLANNED_ACTIVITY);
+
+<span class="fc" id="L81">	public static final String OUT_OF_ADHERENCE_SORT = Integer.toString(</span>
+		AdheranceStatusData.SORT_MINUTES_OUTOFADHERANCE);
+
+<span class="fc" id="L84">	public static final String ACTUAL_ACTIVITY_SORT = Integer.toString(</span>
+		AdheranceStatusData.SORT_ACTUAL_ACTIVITY);
+
+<span class="fc" id="L87">	public static final String TIME_IN_STATE_SORT = Integer.toString(</span>
+		AdheranceStatusData.SORT_MINUTES_INSTATE);
+
+<span class="fc" id="L90">	public static final String PERCENT_ADHERING_SORT = Integer.toString(</span>
+		AdheranceStatusData.SORT_PERCENT_ADHERING);
+
+	public static final String ACTIONS = &quot;ACTIONS&quot;;
+
+	//Push pin Ids
+	public static final String PUSH_EMP_IDS_KEY = &quot;pushEmployeeIds&quot;;
+	public static final String PUSH_EMP_ID_FN = &quot;pushedEmployeeId&quot;;
+	public static final String RECORD_EMP_ID_FN = &quot;recordEmployeeId&quot;;
+	public static final String START_RECORD_FN = &quot;startRecording&quot;;
+
+	public static final String TIME_OF_DAY = &quot;timeOfDay&quot;;
+	public static final String ALERT_COLOR = &quot;FF0000&quot;;
+	public static final String SHOW_ORG_COLUMN_KEY = &quot;quickViewShowOrg&quot;;
+	
+	private static final String STRING_TRUE = &quot;true&quot;;
+	private static final String STRING_FALSE = &quot;false&quot;;
+
+	// Summary Form collapsable state
+	public static final String SUMMARY_COLLAPSABLE_STATE_FN = &quot;summaryCollapsableState&quot;;
+	public static final String SUMMARY_COLLAPSABLE_STATE_USER_PROPERTY_KEY = &quot;rtaaSummaryCollapseState&quot;;
+	public static final String SUMMARY_COLLAPSABLE_STATE_DEFAULT = STRING_FALSE;
+
+	// Summary Day Form collapsable state
+	public static final String SUMMARY_DAY_COLLAPSABLE_STATE_FN = &quot;summaryDayCollapsableState&quot;;
+	public static final String SUMMARY_DAY_COLLAPSABLE_STATE_USER_PROPERTY_KEY = &quot;rtaaSummaryDayCollapseState&quot;;
+	public static final String SUMMARY_DAY_COLLAPSABLE_STATE_DEFAULT = STRING_FALSE;
+
+	private ResourceBundle m_amBundle;
+	private ResourceBundle m_bbmBundle;
+	//private ResourceBundle m_coreBundle;
+<span class="nc" id="L121">	private boolean m_initialized = false;</span>
+<span class="nc" id="L122">	private Collection m_pushedEmployeeIDList = null;</span>
+
+<span class="nc" id="L124">	private QuickViewSummaryPC m_summaryForm = null; // this is the Status Summary form</span>
+<span class="nc" id="L125">	private QuickViewDaySummaryPC m_summaryDayForm = null; // this is the Day Summary form    </span>
+
+<span class="nc" id="L127">	private String m_summaryCollapsedState = SUMMARY_COLLAPSABLE_STATE_DEFAULT;</span>
+<span class="nc" id="L128">	private String m_summaryDayCollapsedState = SUMMARY_DAY_COLLAPSABLE_STATE_DEFAULT;</span>
+<span class="nc" id="L129">	private ArrayList m_refreshRateList = null; // a list of refresh rate options for the drop down</span>
+<span class="nc" id="L130">	private int m_refreshRate = REFRESH_RATE_NOT_SET;</span>
+<span class="nc" id="L131">	private AdheranceStatusData m_adhStatus = null; //holds the adherence status for all selected agents</span>
+<span class="nc" id="L132">	private Map m_empIdOrgMap = null; // a map empId - org  (optional)</span>
+<span class="nc" id="L133">	private boolean m_showOrgColumn = false;</span>
+	//add fro 7.9 private HashMap m_qualityPrivs = null;
+
+	public QuickViewPageModel(RequestContext context) {
+<span class="nc" id="L137">		super(context, QuickViewPageModel.FRAMED_MODEL);</span>
+<span class="nc" id="L138">		m_amBundle = m_localizer.getBundle(AmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L139">		m_bbmBundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+
+		// Initialize Status Summary Form PC
+<span class="nc" id="L142">		m_summaryForm = new QuickViewSummaryPC(context, m_amBundle);</span>
+<span class="nc" id="L143">		m_summaryForm.setName(&quot;QuickViewSummaryContainer&quot;);</span>
+<span class="nc" id="L144">		addChildComponent(m_summaryForm);</span>
+
+		// Initialize Day Summary Form PC
+<span class="nc" id="L147">		m_summaryDayForm = new QuickViewDaySummaryPC(context, m_amBundle);</span>
+<span class="nc" id="L148">		m_summaryDayForm.setName(&quot;QuickViewSummaryDayContainer&quot;);</span>
+<span class="nc" id="L149">		addChildComponent(m_summaryDayForm);</span>
+
+<span class="nc" id="L151">		ToolbarPC toolbar = this.getToolbar();</span>
+<span class="nc bnc" id="L152" title="All 4 branches missed.">		if (toolbar != null &amp;&amp; isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L153">			toolbar.setIsRegion(false);</span>
+		}
+
+		// Component specific required JavaScript Files
+<span class="nc" id="L157">		addRequiredJavaScriptFile(JavaScriptFileID.MEDIATOR_WORKPANE_LIST);</span>
+<span class="nc" id="L158">		addRequiredJavaScriptFile(JavaScriptFileID.DATEORMAT_UTILITIES);</span>
+<span class="nc" id="L159">		addRequiredJavaScriptFile(JavaScriptFileID.UTIL_DATETIMEFORMAT);</span>
+
+<span class="nc" id="L161">		setJSMediator(AmJavaScriptFileID.MEDIATOR_ADHERENCE_QUICKVIEW);</span>
+
+<span class="nc" id="L163">		addJSVariable(JSDateTimeUtil.getTimeFormatJSVariables(m_localizer));</span>
+<span class="nc" id="L164">		addJSVariable(JSDateTimeUtil.getDateFormatJSVariables(m_localizer));</span>
+<span class="nc" id="L165">		addJSVariable(&quot;WEEKDAY_ARRAY&quot;, getWeekDayArray());</span>
+<span class="nc" id="L166">	}</span>
+
+
+	/**
+	 * Return instance of Model which is ready to be rendered
+	 *
+	 * @param context - The request context
+	 * @return QuickViewPageModel
+	 */
+	public static QuickViewPageModel getInstance(RequestContext context) {
+<span class="nc" id="L176">		return (QuickViewPageModel) getInstance(context, QuickViewPageModel.class);</span>
+	}
+
+	/**
+	 * Initialize Model with Data
+	 */
+	protected void initializeModel() {
+<span class="nc bnc" id="L183" title="All 2 branches missed.">		if (m_initialized) return;</span>
+<span class="nc" id="L184">		m_initialized = true;</span>
+
+		// Show org column? get from app context or from db
+<span class="nc" id="L187">		Object showOrgFromContext = m_context.getAttribute(RequestContext.APPLICATION_SCOPE, SHOW_ORG_COLUMN_KEY);</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">		if (showOrgFromContext != null) {</span>
+<span class="nc" id="L189">			m_showOrgColumn = ((Boolean) showOrgFromContext).booleanValue();</span>
+		} else {
+<span class="nc" id="L191">			String strValue = null;</span>
+			try {
+<span class="nc" id="L193">				strValue = BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.QUICK_VIEW_SHOW_ORGANIZATION_COLUMN);</span>
+<span class="nc" id="L194">			} catch (Exception ex) {</span>
+<span class="nc" id="L195">				strValue = STRING_FALSE;</span>
+<span class="nc" id="L196">				log.l7dError(&quot;failed to fetch QUICK_VIEW_SHOW_ORGANIZATION_COLUMN value from DBCONFIG&quot;, ex);</span>
+<span class="nc" id="L197">			}</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">			if (strValue != null) {</span>
+<span class="nc" id="L199">				m_showOrgColumn = (strValue.equals(STRING_TRUE));</span>
+			} else {
+<span class="nc" id="L201">				m_showOrgColumn = false;</span>
+			}
+<span class="nc" id="L203">			m_context.setAttribute(RequestContext.APPLICATION_SCOPE, SHOW_ORG_COLUMN_KEY, new Boolean(m_showOrgColumn));</span>
+		}
+
+<span class="nc" id="L206">		initContentComponent();</span>
+<span class="nc" id="L207">		initList();</span>
+
+<span class="nc bnc" id="L209" title="All 2 branches missed.">		if (!isAuthorizedToView()) {</span>
+<span class="nc" id="L210">			addPageMessage(Message.ERROR_TYPE, getNotAuthorizedToViewMsg());</span>
+<span class="nc" id="L211">			return;</span>
+		}
+
+		// Get the pushed employee ids from the session
+<span class="nc" id="L215">		m_pushedEmployeeIDList = (Collection) m_context.getAttribute(RequestContext.SESSION_SCOPE, PUSH_EMP_IDS_KEY);</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">		if (m_pushedEmployeeIDList == null) {</span>
+<span class="nc" id="L217">			m_pushedEmployeeIDList = new ArrayList();</span>
+		}
+
+		try {
+<span class="nc bnc" id="L221" title="All 2 branches missed.">			if (getSelectedIDSize() &gt; 0) {</span>
+<span class="nc" id="L222">				Collection selectedIds = getSelectedIDsAsCollection();</span>
+				// retain only the selected employees in the push pin list
+<span class="nc bnc" id="L224" title="All 4 branches missed.">				if (m_pushedEmployeeIDList != null &amp;&amp; !m_pushedEmployeeIDList.isEmpty()) {</span>
+<span class="nc bnc" id="L225" title="All 2 branches missed.">					if (m_pushedEmployeeIDList.retainAll(selectedIds)) {</span>
+<span class="nc" id="L226">						m_context.setAttribute(RequestContext.SESSION_SCOPE, PUSH_EMP_IDS_KEY, m_pushedEmployeeIDList);</span>
+					}
+				}
+				// The ejb do not support currently org name and sort by org name. So it is implemented here...
+<span class="nc" id="L230">				boolean isSortByOrgName = false;</span>
+<span class="nc" id="L231">				String sortColumnForEjb = m_sortColumn;</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">				if (m_sortColumn.equals(ORGANIZATION_NAME_SORT)) {</span>
+<span class="nc" id="L233">					isSortByOrgName = true;</span>
+<span class="nc" id="L234">					sortColumnForEjb = AGENT_NAME_SORT;</span>
+				}
+<span class="nc" id="L236">				m_adhStatus = QuickViewModelHandler.getAdherenceStatusData(m_context, selectedIds, m_pushedEmployeeIDList,</span>
+<span class="nc" id="L237">					Integer.parseInt(sortColumnForEjb), m_sortOrder.equals(&quot;ascending&quot;), 0, selectedIds.size());</span>
+
+<span class="nc bnc" id="L239" title="All 2 branches missed.">				if (m_adhStatus == null) {</span>
+<span class="nc" id="L240">					throw (new BPException(AmWebBundleKey.BUNDLE_NAME, AmWebBundleKey.ADHERENCE_STATUS_NULL));</span>
+				}
+<span class="nc bnc" id="L242" title="All 2 branches missed.">				if (m_showOrgColumn) {</span>
+<span class="nc" id="L243">					m_empIdOrgMap = WorkResourceModelHandler.getEmployeesOrg(m_context, selectedIds, new Date());</span>
+				}
+<span class="nc bnc" id="L245" title="All 2 branches missed.">				if (isSortByOrgName) {</span>
+<span class="nc" id="L246">					sortByOrgName();</span>
+				}
+
+<span class="nc" id="L249">				createListModel();</span>
+<span class="nc" id="L250">				m_summaryForm.createForm(m_adhStatus, getSelectedIDSize(), (m_summaryCollapsedState.equals(STRING_TRUE)));</span>
+<span class="nc" id="L251">				m_summaryDayForm.createForm(m_adhStatus, getSelectedIDSize(), (m_summaryDayCollapsedState.equals(STRING_TRUE)));</span>
+<span class="nc" id="L252">			} else { </span>
+				// still show the summary
+<span class="nc" id="L254">				m_summaryForm.createEmptyForm((m_summaryCollapsedState.equals(STRING_TRUE)));</span>
+<span class="nc" id="L255">				m_summaryDayForm.createEmptyForm((m_summaryDayCollapsedState.equals(STRING_TRUE)));</span>
+			}
+<span class="nc" id="L257">		} catch (Exception ex) {</span>
+<span class="nc" id="L258">			handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L259">		}</span>
+<span class="nc" id="L260">	}</span>
+
+
+	/**
+	 * Return the JavaScript init code required by Page model.
+	 * Default behavior is to retrieve sub-component JavaScript Init code
+	 */
+	public String getJavaScriptInitCode() {
+<span class="nc" id="L268">		StringBuffer jsInitCode = new StringBuffer(128);</span>
+
+		// Add sub-component JavaScript code first
+<span class="nc" id="L271">		jsInitCode.append(super.getJavaScriptInitCode());</span>
+<span class="nc" id="L272">		String template = &quot;startclock();\nsetTimeout(\&quot;{0}.refreshPage()\&quot;,{1});\n\n&quot;;</span>
+<span class="nc" id="L273">		Object[] args = new Object[]{</span>
+<span class="nc" id="L274">			getPageMediatorRef(),</span>
+<span class="nc" id="L275">			Integer.toString(getRefreshRate() * 60000)</span>
+		};
+<span class="nc" id="L277">		jsInitCode.append(MessageFormat.format(template, args));</span>
+<span class="nc" id="L278">		return jsInitCode.toString();</span>
+	}
+
+
+	/**
+	 * Return URL for HTML Form Action
+	 */
+	public String getFormAction() {
+<span class="nc" id="L286">		return &quot;timerecord_quickview&quot;;</span>
+	}
+
+	/**
+	 * Return quick view status summary
+	 */
+	public QuickViewSummaryPC getSummaryForm() {
+<span class="nc" id="L293">		return m_summaryForm;</span>
+	}
+
+	/**
+	 * Return quick view day summary
+	 */
+	public QuickViewDaySummaryPC getSummaryDayForm() {
+<span class="nc" id="L300">		return m_summaryDayForm;</span>
+	}
+
+	public ContentTitlePC getContentTitle() {
+<span class="nc" id="L304">		m_contentTitlePC.setPageTitle(i18n(m_amBundle, AmWebBundleKey.AM_TIME_QUICKVIEW));</span>
+<span class="nc" id="L305">		m_contentTitlePC.setItemName(getContentTitleItemName());</span>
+<span class="nc" id="L306">		m_contentTitlePC.setActiveComponent(getComponentHtml());</span>
+<span class="nc bnc" id="L307" title="All 2 branches missed.">		if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L308">			m_contentTitlePC.setAriaRegion(true);</span>
+		}
+<span class="nc" id="L310">		return m_contentTitlePC;</span>
+	}
+
+	public void setRefreshRate(int rate) {
+<span class="nc" id="L314">		m_refreshRate = rate;</span>
+<span class="nc" id="L315">	}</span>
+
+	public void setSummaryCollapsableState(String state) {
+<span class="nc" id="L318">		m_summaryCollapsedState = state;</span>
+<span class="nc" id="L319">	}</span>
+
+	public String getSummaryCollapsableState() {
+<span class="nc" id="L322">		return m_summaryCollapsedState;</span>
+	}
+
+	public void setSummaryDayCollapsableState(String state) {
+<span class="nc" id="L326">		m_summaryDayCollapsedState = state;</span>
+<span class="nc" id="L327">	}</span>
+
+	public String getSummaryDayCollapsableState() {
+<span class="nc" id="L330">		return m_summaryDayCollapsedState;</span>
+	}
+
+	public int getRefreshRate() {
+<span class="nc bnc" id="L334" title="All 2 branches missed.">		if (m_refreshRate == REFRESH_RATE_NOT_SET) {</span>
+			// if it is not set yet, from the form it is probably because the page is loaded for the first time
+			// so we should fetch the refresh rate from user profile
+<span class="nc" id="L337">			String userProperty = m_context.getUserProperty(REFRESH_RATE_USER_PROPERTY_KEY);</span>
+<span class="nc bnc" id="L338" title="All 2 branches missed.">			if (!StringUtil.isEmpty(userProperty)) {</span>
+				try {
+<span class="nc" id="L340">					m_refreshRate = Integer.parseInt(userProperty);</span>
+<span class="nc" id="L341">				} catch (NumberFormatException e) {</span>
+<span class="nc" id="L342">					m_refreshRate = DEFAULT_REFRESH_RATE;</span>
+<span class="nc" id="L343">				}</span>
+			} else {
+<span class="nc" id="L345">				m_refreshRate = DEFAULT_REFRESH_RATE;</span>
+			}
+		}
+<span class="nc" id="L348">		return m_refreshRate;</span>
+	}
+
+
+	private boolean isPushed(ID id) {
+<span class="nc bnc" id="L353" title="All 4 branches missed.">		if (m_pushedEmployeeIDList != null &amp;&amp; m_pushedEmployeeIDList.size() &gt; 0) {</span>
+<span class="nc" id="L354">			return m_pushedEmployeeIDList.contains(id);</span>
+		} else {
+<span class="nc" id="L356">			return false;</span>
+		}
+	}
+
+	protected void initList() {
+<span class="nc" id="L361">		super.initList();</span>
+		//boolean showMonitorCol = hasPrivOverAnyEmp(true);
+		//boolean showRecordCol = hasPrivOverAnyEmp(false);
+<span class="nc" id="L364">		TableHeaderPC listHeader = m_list.getHeader();</span>
+<span class="nc" id="L365">		m_list.setTableClass(CSSUtil.CLASS_BORDER_DEFAULT);</span>
+<span class="nc" id="L366">		m_list.setName(&quot;adherenceList&quot;);</span>
+		// Set up Headers
+<span class="nc" id="L368">		listHeader.addColumnHeaderData(PUSH_PIN, &quot;&quot;, false);</span>
+<span class="nc" id="L369">		listHeader.addColumnHeaderData(AGENT_NAME_SORT, i18n(m_amBundle,</span>
+			AmWebBundleKey.AGENT_NAME), true);
+		/*add for 7.9
+		if (showMonitorCol || showRecordCol)
+			listHeader.addColumnHeaderData(&quot;ACTIONS&quot;, i18n(m_amBundle,
+					AmWebBundleKey.QUALITY_ACTIONS), false);
+		*/
+<span class="nc bnc" id="L376" title="All 2 branches missed.">		if (m_showOrgColumn) {</span>
+<span class="nc" id="L377">			listHeader.addColumnHeaderData(ORGANIZATION_NAME_SORT, i18n(m_amBundle,</span>
+				AmWebBundleKey.QUICK_VIEW_LABEL_ORGANIZATION), true);
+		}
+<span class="nc" id="L380">		listHeader.addColumnHeaderData(SCHEDULED_ACTIVITY_SORT, i18n(m_amBundle,</span>
+			AmWebBundleKey.SCHEDULED_ACTIVITY), true);
+<span class="nc" id="L382">		listHeader.addColumnHeaderData(OUT_OF_ADHERENCE_SORT, i18n(m_amBundle,</span>
+			AmWebBundleKey.OUT_OF_ADHERENCE), true);
+<span class="nc" id="L384">		listHeader.addColumnHeaderData(ACTUAL_ACTIVITY_SORT, i18n(m_amBundle,</span>
+			AmWebBundleKey.ACTUAL_ACTIVITY), true);
+<span class="nc" id="L386">		listHeader.addColumnHeaderData(TIME_IN_STATE_SORT, i18n(m_amBundle,</span>
+			AmWebBundleKey.TIME_IN_STATE), true);
+<span class="nc" id="L388">		listHeader.addColumnHeaderData(PERCENT_ADHERING_SORT, i18n(m_amBundle,</span>
+			AmWebBundleKey.MY_ADHERENCE_SUMMARY_PERCENTAGE), true);
+
+		// Set up basic table property
+<span class="nc" id="L392">		m_list.setRowSelectable(false);</span>
+<span class="nc" id="L393">		int rowHeaderColNum = 1;</span>
+<span class="nc bnc" id="L394" title="All 2 branches missed.">		if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L395">			rowHeaderColNum = 0;</span>
+<span class="nc" id="L396">			m_list.setUseWrapper(true);</span>
+<span class="nc" id="L397">			m_list.setFirstColumnWidth(MultiColPCFactory.ACCESSIBILITY_FIRST_COLUMN_SIZE);</span>
+		}
+<span class="nc" id="L399">		m_list.setRowHeaderColNum(rowHeaderColNum); //508</span>
+
+		// Enable List Sorting
+<span class="nc" id="L402">		listHeader.setPartialSortable(true);</span>
+<span class="nc" id="L403">		listHeader.setSortColumn(m_sortColumn);</span>
+<span class="nc bnc" id="L404" title="All 2 branches missed.">		listHeader.setSortOrder(m_sortOrder.equals(&quot;ascending&quot;) ? &quot;ascending&quot; : &quot;descending&quot;);</span>
+<span class="nc" id="L405">	}</span>
+
+	/**
+	 * Get the default sort order. This method should be override by derived
+	 * classes that implement sorting
+	 */
+	protected String getDefaultSortColumn() {
+<span class="nc" id="L412">		return AGENT_NAME_SORT;</span>
+	}
+
+	/**
+	 * Returns true if the list support sorting.
+	 */
+	protected boolean isSortSupported() {
+<span class="nc" id="L419">		return true;</span>
+	}
+
+	/**
+	 * Return true if Current User is authorized to view Quick View
+	 */
+	protected boolean isAuthorizedToView() {
+<span class="nc" id="L426">		return m_context.getUser().isAuthorized(PrivilegeKeys.AM_VIEWQUICKVIEW);</span>
+	}
+
+	/**
+	 * Return localized message indicating that current user is not authorized
+	 * to configure pay period types
+	 */
+	protected String getNotAuthorizedToViewMsg() {
+<span class="nc" id="L434">		return MessageFormat.format(</span>
+<span class="nc" id="L435">			i18n(m_bbmBundle, BbmWebBundleKey.NOT_AUTHORIZED_TO_VIEW),</span>
+<span class="nc" id="L436">			new Object[]{i18n(m_amBundle, AmWebBundleKey.AM_TIME_QUICKVIEW)});</span>
+	}
+
+
+	/**
+	 * Return the custom JavaScript code for the Page model.
+	 */
+	public String getCustomJavaScript() {
+<span class="nc" id="L444">		StringBuffer jsInitCode = new StringBuffer(1024);</span>
+<span class="nc" id="L445">		jsInitCode.append(super.getCustomJavaScript());</span>
+<span class="nc" id="L446">		jsInitCode.append(&quot;\nfunction startclock() {&quot;)</span>
+<span class="nc" id="L447">			.append(&quot;\n\tvar oField = DOM2.getElementById('&quot;).append(TIME_OF_DAY).append(&quot;');&quot;)</span>
+<span class="nc" id="L448">			.append(&quot;\n\tif (oField != null) oField.innerHTML = getFormattedDateTime(newUTCDate(), true);&quot;)</span>
+<span class="nc" id="L449">			.append(&quot;\n\tsetTimeout('startclock()', 1000);&quot;)</span>
+<span class="nc" id="L450">			.append(&quot;\n}\n&quot;);</span>
+<span class="nc" id="L451">		return jsInitCode.toString();</span>
+	}
+
+	/**
+	 * Override method to return Required HTML for this component
+	 * Use this to add a specific hidden field
+	 */
+	public String getRequiredHTML() {
+<span class="nc" id="L459">		StringBuffer reqHtml = new StringBuffer(1024);</span>
+<span class="nc" id="L460">		reqHtml.append(super.getRequiredHTML());</span>
+<span class="nc" id="L461">		reqHtml.append(HtmlUtil.makeHiddenInput(PUSH_EMP_ID_FN, &quot;&quot;));</span>
+		/* add fro 7.9
+		reqHtml.append(HtmlUtil.makeHiddenInput(RECORD_EMP_ID_FN, &quot;&quot;));
+		reqHtml.append(HtmlUtil.makeHiddenInput(START_RECORD_FN, &quot;&quot;)); 
+		*/
+<span class="nc" id="L466">		reqHtml.append(HtmlUtil.makeHiddenInput(SUMMARY_COLLAPSABLE_STATE_FN, getSummaryCollapsableState()));</span>
+<span class="nc" id="L467">		reqHtml.append(HtmlUtil.makeHiddenInput(SUMMARY_DAY_COLLAPSABLE_STATE_FN, getSummaryDayCollapsableState()));</span>
+<span class="nc" id="L468">		return reqHtml.toString();</span>
+	}
+
+
+	private void initContentComponent() {
+<span class="nc" id="L473">		m_refreshRateList = new ArrayList(8);</span>
+<span class="nc" id="L474">		String minute = i18n(m_amBundle, AmWebBundleKey.ADHERENCE_MINUTE);</span>
+<span class="nc" id="L475">		String minutes = i18n(m_amBundle, AmWebBundleKey.ADHERENCE_MINUTES);</span>
+		int i;
+		String len;
+<span class="nc bnc" id="L478" title="All 2 branches missed.">		for (i = 1; i &lt; 5; i++) {</span>
+<span class="nc" id="L479">			len = Integer.toString(i);</span>
+<span class="nc bnc" id="L480" title="All 2 branches missed.">			m_refreshRateList.add((i &gt; 1) ? new StringsPair(len, len + &quot; &quot; + minutes)</span>
+				: new StringsPair(len, len + &quot; &quot; + minute));
+		}
+<span class="nc bnc" id="L483" title="All 2 branches missed.">		for (i = 5; i &lt;= 20; i += 5) {</span>
+<span class="nc" id="L484">			len = Integer.toString(i);</span>
+<span class="nc" id="L485">			m_refreshRateList.add(new StringsPair(len, len + &quot; &quot; + minutes));</span>
+		}
+<span class="nc" id="L487">	}</span>
+
+
+	private String getContentTitleItemName() {
+<span class="nc" id="L491">		StringBuffer item = new StringBuffer(128);</span>
+<span class="nc bnc" id="L492" title="All 2 branches missed.">		if (!hasSelectedID()) {</span>
+<span class="nc" id="L493">			item.append(&quot;(0 &quot;).append(i18n(m_amBundle, AmWebBundleKey.PEOPLE)).append(&quot;)&quot;);</span>
+		} else {
+<span class="nc" id="L495">			int idSize = getSelectedIDSize();</span>
+<span class="nc" id="L496">			item.append(&quot;(&quot;).append(idSize).append(&quot; &quot;);</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">			if (idSize == 1) {</span>
+<span class="nc" id="L498">				item.append(i18n(m_amBundle, AmWebBundleKey.PERSON));</span>
+			} else {
+<span class="nc" id="L500">				item.append(i18n(m_amBundle, AmWebBundleKey.PEOPLE));</span>
+			}
+<span class="nc" id="L502">			item.append(&quot;)&quot;);</span>
+		}
+<span class="nc" id="L504">		return item.toString();</span>
+	}
+
+
+	private String getComponentHtml() {
+<span class="nc" id="L509">		StringBuffer onClick = new StringBuffer(64);</span>
+<span class="nc" id="L510">		onClick.append(getNamePrefix()).append(getName())</span>
+<span class="nc" id="L511">			.append(&quot;.refreshPageWithAction('&quot;).append(CHANGE_REFRESH_RATE_ACTION).append(&quot;')&quot;);</span>
+
+<span class="nc" id="L513">		StringBuffer sb = new StringBuffer(256);</span>
+<span class="nc" id="L514">		sb.append(HtmlUtil.TBL_OPEN_TAG).append(&quot;&lt;tr&gt;&lt;td nowrap&gt;\n&quot;);</span>
+<span class="nc" id="L515">		String currentDateTimeSpan = &quot;&lt;span class=\&quot;headerText2\&quot; id=\&quot;&quot; + TIME_OF_DAY + &quot;\&quot; style=\&quot;position:relative;\&quot;&gt;&lt;/span&gt;\n&quot;;</span>
+<span class="nc bnc" id="L516" title="All 2 branches missed.">		if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L517">			final String currentDateTimeLabelID = &quot;currentDateTimeLabelId&quot;;</span>
+<span class="nc" id="L518">			currentDateTimeSpan = HtmlUtil.getTabbableLabel(currentDateTimeSpan, Arrays.asList(currentDateTimeLabelID, TIME_OF_DAY))</span>
+<span class="nc" id="L519">				+ HtmlUtil.makeHiddenSpanWithId(i18n(m_amBundle, AmWebBundleKey.CURRENT_DATE_TIME_LABEL),</span>
+				currentDateTimeLabelID);
+		}
+<span class="nc" id="L522">		String refreshRateLabel = i18n(m_amBundle, AmWebBundleKey.ADHERENCE_REFRESHRATE_TITLE);</span>
+<span class="nc" id="L523">		sb.append(currentDateTimeSpan)</span>
+<span class="nc" id="L524">			.append(&quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;/td&gt;\n&quot;)</span>
+<span class="nc" id="L525">			.append(&quot;&lt;td nowrap&gt;&quot;)</span>
+<span class="nc" id="L526">			.append(&quot;&lt;span class=\&quot;headerText2\&quot;&gt;&quot;)</span>
+<span class="nc" id="L527">			.append(refreshRateLabel)</span>
+<span class="nc" id="L528">			.append(&quot;: &lt;/span&gt;&quot;)</span>
+<span class="nc" id="L529">			.append(HtmlUtil.makeSelectInput(REFRESH_RATE_FN, &quot;&quot;,</span>
+<span class="nc" id="L530">				new String[]{Integer.toString(getRefreshRate())}, onClick.toString(), m_refreshRateList,</span>
+				null, false, false, true, false, null, null, true, refreshRateLabel, null))
+<span class="nc" id="L532">			.append(&quot;&lt;/td&gt;&quot;)</span>
+<span class="nc" id="L533">			.append(&quot;&lt;td&gt;\n&quot;)</span>
+<span class="nc" id="L534">			.append(&quot;\n&quot;)</span>
+<span class="nc" id="L535">			.append(getRefreshBtn(i18n(m_amBundle, AmWebBundleKey.REFRESH),</span>
+<span class="nc" id="L536">				getNamePrefix() + getName() + &quot;.refreshPage();&quot;))</span>
+<span class="nc" id="L537">			.append(&quot;\n&quot;)</span>
+<span class="nc" id="L538">			.append(&quot;&lt;/td&gt;\n&quot;)</span>
+<span class="nc" id="L539">			.append(&quot;&lt;/tr&gt;\n&lt;/table&gt;\n&quot;);</span>
+
+<span class="nc" id="L541">		return sb.toString();</span>
+	}
+
+	//508
+	private HtmlButton getRefreshBtn(String title, String onClick) {
+<span class="nc" id="L546">		HtmlImage image = new HtmlImage(ImageFileID.REFRESH_WITH_BORDER);</span>
+<span class="nc" id="L547">		image.setAttribute(&quot;class&quot;, &quot;imgToolbarDefault&quot;);</span>
+<span class="nc" id="L548">		image.setAlt(title);</span>
+
+<span class="nc" id="L550">		HtmlButton button = new HtmlButton(&quot;LogHstoryRefreshButton&quot;);</span>
+<span class="nc" id="L551">		button.setInnerHtml(image);</span>
+<span class="nc" id="L552">		button.setAttribute(&quot;class&quot;, &quot;dialogBtn&quot;);</span>
+<span class="nc" id="L553">		button.setStyle(&quot;vertical-align:middle;&quot;);</span>
+
+<span class="nc" id="L555">		button.setOnClick(onClick);</span>
+<span class="nc" id="L556">		button.setAttribute(&quot;title&quot;, title);</span>
+<span class="nc" id="L557">		appendTooltipToButton(button, title);</span>
+<span class="nc" id="L558">		return button;</span>
+	}
+
+
+	private void createListModel() {
+<span class="nc" id="L563">		Collection colEmpAdherenceStatus = m_adhStatus.getEmployeeAdheranceStatusCol();</span>
+<span class="nc bnc" id="L564" title="All 2 branches missed.">		if (colEmpAdherenceStatus == null) return;</span>
+
+
+<span class="nc" id="L567">		Map activities = m_adhStatus.getActivityStatusSummaries();</span>
+<span class="nc bnc" id="L568" title="All 2 branches missed.">		if (activities == null) activities = Collections.emptyMap();</span>
+
+		try {
+			/*add for 7.9
+			Collection empsBeingRecordedByUser = AdherenceEJBInvoker.getEmployeesBeingRecordedByUser(m_context.getUser().getID());
+			HashMap monitorUrlMap = AdherenceEJBInvoker.getMonitorUrls(getSelectedIDsAsCollection());
+			boolean showMonitorCol = hasPrivOverAnyEmp(true);
+			boolean showRecordCol = hasPrivOverAnyEmp(false);
+			*/
+<span class="nc" id="L577">			Organization organization = null;</span>
+			//DateTimeDisplay dtd = m_context.getDateTimeDisplay();
+<span class="nc" id="L579">			int rowIndex = 0;</span>
+<span class="nc" id="L580">			ArrayList adherenceStatusDataArray = new ArrayList(colEmpAdherenceStatus.size());</span>
+<span class="nc" id="L581">			EmployeeAdheranceStatus empAdhStatus = null;</span>
+<span class="nc" id="L582">			ID empId = null;</span>
+<span class="nc" id="L583">			String colorDisplay = null;</span>
+<span class="nc bnc" id="L584" title="All 2 branches missed.">			for (Iterator it = colEmpAdherenceStatus.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L585">				empAdhStatus = (EmployeeAdheranceStatus) it.next();</span>
+<span class="nc" id="L586">				empId = empAdhStatus.getEmployeeID();</span>
+<span class="nc" id="L587">				DefaultMultiColumnNodeData rowData = new DefaultMultiColumnNodeData(empId);</span>
+				// push pin
+<span class="nc" id="L589">				rowData.add(getPushPinCellHtml(rowIndex, empId));</span>
+
+//				 Agent name
+<span class="nc" id="L592">				rowData.add(m_localizer.formatName(empAdhStatus), CSSUtil.STYLE_NORMAL_LEFT); //508</span>
+				
+				/*add for 7.9
+				// start/stop recording
+				if (showMonitorCol || showRecordCol){
+					StringBuffer strBuf = new StringBuffer();
+					if (showRecordCol)
+						strBuf.append(getRecordCellHtml(empId, empsBeingRecordedByUser.contains(empId), (boolean[])m_qualityPrivs.get(empId)));
+					
+					strBuf.append(&quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&quot;);
+					
+					if (showMonitorCol)
+						strBuf.append(getMonitorCellHtml(empId, empsBeingRecordedByUser.contains(empId), (boolean[])m_qualityPrivs.get(empId), (String)monitorUrlMap.get(empId)));
+					
+					rowData.add(strBuf.toString());
+				}	
+				*/
+
+				// organization name (optional)
+<span class="nc bnc" id="L611" title="All 6 branches missed.">				if (m_showOrgColumn &amp;&amp; m_empIdOrgMap != null &amp;&amp; !m_empIdOrgMap.isEmpty()) {</span>
+<span class="nc" id="L612">					organization = (Organization) m_empIdOrgMap.get(empId);</span>
+<span class="nc bnc" id="L613" title="All 2 branches missed.">					if (organization != null) {</span>
+<span class="nc" id="L614">						rowData.add(organization.getName());</span>
+					} else {
+<span class="nc" id="L616">						rowData.add(HtmlUtil.NBSP);</span>
+					}
+				}
+
+				// Scheduled activity
+<span class="nc bnc" id="L621" title="All 2 branches missed.">				if (empAdhStatus.getPlannedActivityID() != null) {</span>
+<span class="nc" id="L622">					ActivityAdheranceStatusSummary activityAdherence = (ActivityAdheranceStatusSummary) activities.get(empAdhStatus.getPlannedActivityID());</span>
+<span class="nc" id="L623">					rowData.add(getActivityCellHtml(activityAdherence));</span>
+<span class="nc" id="L624">				} else {</span>
+<span class="nc" id="L625">					rowData.add(HtmlUtil.NBSP);</span>
+				}
+
+				// Out of adherence
+<span class="nc" id="L629">				int outOfAdherence = empAdhStatus.getSecondsOutOfAdherance();</span>
+<span class="nc bnc" id="L630" title="All 2 branches missed.">				if (outOfAdherence &gt;= (RTAAManager.QUICK_VIEW_LOOKBACK_LIMIT / 1000)) {</span>
+<span class="nc" id="L631">					rowData.add(getAlertCellHtml(ALERT_COLOR, i18n(m_amBundle, AmWebBundleKey.QUICK_VIEW_OVER_THE_LIMIT)));</span>
+<span class="nc bnc" id="L632" title="All 2 branches missed.">				} else if (outOfAdherence &gt; 0) {</span>
+<span class="nc" id="L633">					rowData.add(getAlertCellHtml(ALERT_COLOR, m_localizer.formatDurationInSecs(outOfAdherence)));</span>
+				} else {
+<span class="nc" id="L635">					rowData.add(HtmlUtil.NBSP);</span>
+				}
+
+				// Actual activity
+<span class="nc bnc" id="L639" title="All 2 branches missed.">				if (empAdhStatus.getActualActivityID() != null) {</span>
+<span class="nc" id="L640">					ActivityAdheranceStatusSummary activityAdherence = (ActivityAdheranceStatusSummary) activities.get(empAdhStatus.getActualActivityID());</span>
+<span class="nc" id="L641">					rowData.add(getActivityCellHtml(activityAdherence));</span>
+<span class="nc" id="L642">				} else {</span>
+<span class="nc" id="L643">					rowData.add(HtmlUtil.NBSP);</span>
+				}
+
+				// Time in State
+<span class="nc" id="L647">				int timeInState = empAdhStatus.getSecondsInState();</span>
+<span class="nc bnc" id="L648" title="All 2 branches missed.">				colorDisplay = (empAdhStatus.getSecondsViolatingMaxDuration() &gt; 0) ? ALERT_COLOR : null;</span>
+<span class="nc bnc" id="L649" title="All 2 branches missed.">				if (timeInState &gt;= (RTAAManager.QUICK_VIEW_LOOKBACK_LIMIT / 1000)) {</span>
+<span class="nc" id="L650">					rowData.add(getActivityAlertHTML(colorDisplay, i18n(m_amBundle, AmWebBundleKey.QUICK_VIEW_OVER_THE_LIMIT)));</span>
+<span class="nc bnc" id="L651" title="All 2 branches missed.">				} else if (timeInState &gt; 0) {</span>
+<span class="nc" id="L652">					rowData.add(getActivityAlertHTML(colorDisplay, m_localizer.formatDurationInSecs(timeInState)));</span>
+				} else {
+<span class="nc" id="L654">					rowData.add(HtmlUtil.NBSP);</span>
+				}
+
+				// Adherence Percentage
+<span class="nc bnc" id="L658" title="All 2 branches missed.">				if (empAdhStatus.getNumSummaryScheduled() &gt; 0) {</span>
+<span class="nc" id="L659">					rowData.add(m_localizer.formatPercentage(empAdhStatus.getNumSummaryPercentage(), 0));</span>
+				} else {
+<span class="nc" id="L661">					rowData.add(HtmlUtil.NBSP);</span>
+				}
+
+<span class="nc bnc" id="L664" title="All 2 branches missed.">				rowData.getNodeAttributes().put(&quot;isPushed&quot;, isPushed(empId) ? STRING_TRUE : STRING_FALSE);</span>
+<span class="nc" id="L665">				adherenceStatusDataArray.add(rowData);</span>
+<span class="nc" id="L666">				rowIndex++;</span>
+<span class="nc" id="L667">			}</span>
+
+<span class="nc" id="L669">			m_list.setListModel(adherenceStatusDataArray);</span>
+<span class="nc" id="L670">		} catch (Exception ex) {</span>
+<span class="nc" id="L671">			handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L672">		}</span>
+<span class="nc" id="L673">	}</span>
+
+	@Override
+	protected MultiColListPC getMultiColListPC(RequestContext context) {
+<span class="nc" id="L677">		MultiColListPC list = MultiColPCFactory.getMultiColListPC(context,</span>
+<span class="nc" id="L678">			getLocalizer().i18n(AmWebBundleKey.BUNDLE_NAME, AmWebBundleKey.USER_ADHERENCES_GRID), false, true);</span>
+<span class="nc" id="L679">		MultiColPCFactory.addAriaToMultiColListPC(list, context, true, true, true, true, true);</span>
+<span class="nc" id="L680">		return list;</span>
+	}
+	
+	private String getActivityAlertHTML(String colorDisplay, String displayName) {
+<span class="nc" id="L684">		String alertHTML = &quot;&quot;;</span>
+<span class="nc bnc" id="L685" title="All 2 branches missed.">		if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L686">			alertHTML = getAlertCellHtml(colorDisplay, displayName,</span>
+<span class="nc" id="L687">					getLocalizer().i18n(AmWebBundleKey.BUNDLE_NAME, AmWebBundleKey.IS_TOO_LONG_IN_ACTIVITY_MSG), true,</span>
+					true);
+		} else {
+<span class="nc" id="L690">			alertHTML = getAlertCellHtml(colorDisplay, displayName);</span>
+		}
+<span class="nc" id="L692">		return alertHTML;</span>
+	}
+
+	//508
+	private String getPushPinCellHtml(int rowIndex, ID empId) {
+<span class="nc" id="L697">		HtmlImage image = null;</span>
+<span class="nc" id="L698">		String title = &quot;&quot;;</span>
+<span class="nc" id="L699">		String additionalInstruction = &quot;&quot;;</span>
+<span class="nc bnc" id="L700" title="All 2 branches missed.">		if (isPushed(empId)) {</span>
+			//imgCellHTML.append(HtmlUtil.imageTag(AmImageFileID.PUSHPIN_ON,
+			//	AmImageFileID.PUSHPIN_ON_WIDTH, AmImageFileID.PUSHPIN_ON_HEIGHT, pushPinOnTitle, false));
+<span class="nc" id="L703">			image = new HtmlImage(AmImageFileID.PUSHPIN_ON);</span>
+<span class="nc" id="L704">			image.setAlt(title = i18n(m_amBundle, AmWebBundleKey.PUSHPIN_ON_TITLE));</span>
+<span class="nc" id="L705">			additionalInstruction = getLocalizer().i18n(AmWebBundleKey.BUNDLE_NAME,</span>
+				AmWebBundleKey.USER_IS_PINNED_ON_TOP);
+		} else {
+			//imgCellHTML.append(HtmlUtil.imageTag(AmImageFileID.PUSHPIN_OFF,
+			//	AmImageFileID.PUSHPIN_OFF_WIDTH, AmImageFileID.PUSHPIN_OFF_HEIGHT, pushPinOffTitle, false));
+<span class="nc" id="L710">			image = new HtmlImage(AmImageFileID.PUSHPIN_OFF);</span>
+<span class="nc" id="L711">			image.setAlt(title = i18n(m_amBundle, AmWebBundleKey.PUSHPIN_OFF_TITLE));</span>
+<span class="nc" id="L712">			additionalInstruction = getLocalizer().i18n(AmWebBundleKey.BUNDLE_NAME,</span>
+				AmWebBundleKey.USER_IS_NOT_PINNED_ON_TOP);
+		}
+<span class="nc" id="L715">		StringBuffer id = new StringBuffer(m_list.getName()).append(&quot;r&quot;).append(String.valueOf(rowIndex)).append(&quot;Img&quot;);</span>
+<span class="nc" id="L716">		image.setId(id.toString());</span>
+<span class="nc" id="L717">		image.setAttribute(&quot;class&quot;, &quot;imgToolbarDefault&quot;);</span>
+
+		//imgCellHTML.append(&quot; id=\&quot;&quot;)
+		//					 .append(m_list.getName())
+		//					 .append(&quot;r&quot;).append(String.valueOf(rowIndex)).append(&quot;Img\&quot;&quot;);
+
+<span class="nc" id="L723">		StringBuffer onClick = new StringBuffer()</span>
+<span class="nc" id="L724">			.append(getNamePrefix()).append(getName())</span>
+<span class="nc" id="L725">			.append(&quot;.handlePushPinAction('&quot;)</span>
+<span class="nc" id="L726">			.append(m_list.getName()).append(&quot;', &quot;)</span>
+<span class="nc" id="L727">			.append(String.valueOf(rowIndex)).append(&quot;, &quot;)</span>
+<span class="nc" id="L728">			.append(empId.toString())</span>
+<span class="nc" id="L729">			.append(&quot;)&quot;);</span>
+
+<span class="nc" id="L731">		id.append(&quot;Button&quot;);</span>
+<span class="nc" id="L732">		HtmlButton button = new HtmlButton(id.toString());</span>
+<span class="nc" id="L733">		button.setInnerHtml(image);</span>
+<span class="nc" id="L734">		button.setAttribute(&quot;class&quot;, &quot;imgToolbarDefaultButton&quot;);</span>
+<span class="nc" id="L735">		button.appendAttribute(&quot;align&quot;, &quot;absmiddle&quot;);</span>
+<span class="nc" id="L736">		button.setOnClick(onClick.toString());</span>
+<span class="nc bnc" id="L737" title="All 2 branches missed.">		if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L738">			button.setAttribute(&quot;title&quot;, additionalInstruction);</span>
+		} else {
+<span class="nc" id="L740">			button.setAttribute(&quot;title&quot;, title);</span>
+		}
+<span class="nc" id="L742">		button.setStyle(&quot;margin:0px; border:none; background-color:transparent;&quot;);</span>
+<span class="nc" id="L743">		appendTooltipToButton(button, title);</span>
+<span class="nc" id="L744">		return button.toString();</span>
+	}
+
+	private String getRecordCellHtml(ID empId, boolean isBeingRecorded, boolean[] privs) {
+<span class="nc bnc" id="L748" title="All 2 branches missed.">		if (privs[1] == false) return &quot;&quot;;</span>
+<span class="nc" id="L749">		StringBuffer imgCellHTML = new StringBuffer(128);</span>
+<span class="nc bnc" id="L750" title="All 2 branches missed.">		String hoverImageStr = isBeingRecorded ? ImageFileID.STOP_RECORDING_HOVER_IMAGE : ImageFileID.START_RECORDING_HOVER_IMAGE;</span>
+<span class="nc bnc" id="L751" title="All 2 branches missed.">		String nonHoverImageStr = isBeingRecorded ? ImageFileID.STOP_RECORDING_IMAGE : ImageFileID.START_RECORDING_IMAGE;</span>
+
+<span class="nc bnc" id="L753" title="All 2 branches missed.">		String altTextStr = isBeingRecorded ? i18n(m_amBundle, AmWebBundleKey.QUALITY_STOP_RECORDING) :</span>
+<span class="nc" id="L754">			i18n(m_amBundle, AmWebBundleKey.QUALITY_START_RECORDING);</span>
+<span class="nc" id="L755">		imgCellHTML.append(&quot;&lt;span class=\&quot;itemActionWpr\&quot;&gt;&lt;span class=\&quot;itemAction\&quot;&gt;&quot;);</span>
+<span class="nc" id="L756">		imgCellHTML.append(&quot;&lt;div id=\'nonHoverImg&quot; + empId.toString() + &quot;\' onmouseover=\'javascript:doOnHover(&quot; +</span>
+<span class="nc" id="L757">			empId.toString() + &quot;);\' onmouseout=\'javascript:doOnHoverOut(&quot; +</span>
+<span class="nc" id="L758">			empId.toString() + &quot;);\'&gt;&quot;);</span>
+<span class="nc" id="L759">		imgCellHTML.append(HtmlUtil.imageTag(nonHoverImageStr,</span>
+			null, null,
+			altTextStr, false));
+<span class="nc" id="L762">		imgCellHTML.append(&quot; onClick=\&quot;&quot;)</span>
+<span class="nc" id="L763">			.append(getNamePrefix()).append(getName())</span>
+<span class="nc" id="L764">			.append(&quot;.handleRecordAction(&quot;)</span>
+<span class="nc bnc" id="L765" title="All 2 branches missed.">			.append(empId.toString() + &quot;,&quot;)</span>
+<span class="nc" id="L766">			.append(&quot;'&quot; + !isBeingRecorded + &quot;'&quot;)</span>
+<span class="nc" id="L767">			.append(&quot;)\&quot;&gt;&quot;);</span>
+<span class="nc" id="L768">		imgCellHTML.append(&quot;&lt;/div&gt;&quot;);</span>
+<span class="nc" id="L769">		imgCellHTML.append(&quot;&lt;div id=\'hoverImg&quot; + empId.toString() + &quot;\' onmouseover=\'javascript:doOnHover(&quot; +</span>
+<span class="nc" id="L770">			empId.toString() + &quot;);\' style=\&quot;display:none\&quot; onmouseout=\'javascript:doOnHoverOut(&quot; +</span>
+<span class="nc" id="L771">			empId.toString() + &quot;);\'&gt;&quot;);</span>
+<span class="nc" id="L772">		imgCellHTML.append(HtmlUtil.imageTag(hoverImageStr,</span>
+			null, null,
+			altTextStr, false));
+<span class="nc" id="L775">		imgCellHTML.append(&quot; onClick=\&quot;&quot;)</span>
+<span class="nc" id="L776">			.append(getNamePrefix()).append(getName())</span>
+<span class="nc" id="L777">			.append(&quot;.handleRecordAction(&quot;)</span>
+<span class="nc bnc" id="L778" title="All 2 branches missed.">			.append(empId.toString() + &quot;,&quot;)</span>
+<span class="nc" id="L779">			.append(&quot;'&quot; + !isBeingRecorded + &quot;'&quot;)</span>
+<span class="nc" id="L780">			.append(&quot;)\&quot;&gt;&quot;);</span>
+<span class="nc" id="L781">		imgCellHTML.append(&quot;&lt;/div&gt;&quot;);</span>
+<span class="nc" id="L782">		imgCellHTML.append(&quot;&lt;/span&gt;&lt;/span&gt;&quot;);</span>
+<span class="nc" id="L783">		return imgCellHTML.toString();</span>
+	}
+
+	private String getMonitorCellHtml(ID empId, boolean isBeingRecorded, boolean[] privs, String monitorUrl) {
+<span class="nc bnc" id="L787" title="All 2 branches missed.">		if (privs[0] == false) return &quot;&quot;;</span>
+<span class="nc" id="L788">		StringBuffer imgCellHTML = new StringBuffer(128);</span>
+<span class="nc bnc" id="L789" title="All 2 branches missed.">		boolean isException = !monitorUrl.substring(0, 4).equals(&quot;http&quot;);</span>
+<span class="nc" id="L790">		imgCellHTML.append(&quot;&lt;span class=\&quot;itemActionWpr\&quot;&gt;&lt;span class=\&quot;itemAction\&quot;&gt;&quot;);</span>
+<span class="nc" id="L791">		imgCellHTML.append(HtmlUtil.imageTag(ImageFileID.MONITOR_IMAGE,</span>
+			&quot;12&quot;, &quot;14&quot;,
+<span class="nc" id="L793">			i18n(m_amBundle, AmWebBundleKey.QUALITY_MONITOR), false));</span>
+<span class="nc" id="L794">		imgCellHTML.append(&quot; onClick=\&quot;&quot;);</span>
+<span class="nc bnc" id="L795" title="All 2 branches missed.">		if (!isException)</span>
+<span class="nc" id="L796">			imgCellHTML.append(&quot;javascript: pm_openPopup('&quot; + monitorUrl + &quot;',50,50)&quot;);</span>
+		else
+<span class="nc" id="L798">			imgCellHTML.append(&quot;javascript: alert('&quot; + monitorUrl + &quot;')&quot;);</span>
+<span class="nc" id="L799">		imgCellHTML.append(&quot;\&quot;&gt;&quot;);</span>
+<span class="nc" id="L800">		imgCellHTML.append(&quot;&lt;/span&gt;&lt;/span&gt;&quot;);</span>
+<span class="nc" id="L801">		return imgCellHTML.toString();</span>
+	}
+	
+	/*add fro 7.9
+	private boolean hasPrivOverAnyEmp(boolean monitor){
+		if (m_qualityPrivs != null &amp;&amp; m_qualityPrivs.size()&gt;0){
+			Collection values = m_qualityPrivs.values();
+			boolean [] privVal = null;
+			for (Iterator it=values.iterator(); it.hasNext();){
+				privVal = (boolean[])it.next();
+				if (monitor &amp;&amp; privVal[0] == true){
+					return true;
+				} else if (privVal[1] == true){
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	*/
+
+	private String getActivityCellHtml(ActivityAdheranceStatusSummary activityAdherence) {
+<span class="nc bnc" id="L823" title="All 2 branches missed.">		if (activityAdherence == null) return HtmlUtil.NBSP;</span>
+
+<span class="nc" id="L825">		StringBuffer colorCellHTML = new StringBuffer(128);</span>
+<span class="nc" id="L826">		String activityColor = activityAdherence.getActivityColor();</span>
+<span class="nc bnc" id="L827" title="All 2 branches missed.">		if (StringUtil.isEmpty(activityColor)) {</span>
+<span class="nc" id="L828">			colorCellHTML.append(&quot;&lt;img src=\&quot;&quot;)</span>
+<span class="nc" id="L829">				.append(ImageFileID.BLANK_SPACER)</span>
+<span class="nc" id="L830">				.append(&quot;\&quot; align=\&quot;absmiddle\&quot; class=\&quot;legendImg\&quot;&gt;&quot;);</span>
+		} else {
+<span class="nc" id="L832">			String colorStr = ColorUtil.getHtmlColorCode(activityColor);</span>
+<span class="nc bnc" id="L833" title="All 2 branches missed.">			if (ColorUtil.validateColor(colorStr)) {</span>
+<span class="nc" id="L834">				colorCellHTML.append(&quot;&lt;img src=\&quot;&quot;)</span>
+<span class="nc" id="L835">					.append(ImageFileID.BLANK_SPACER)</span>
+<span class="nc" id="L836">					.append(&quot;\&quot; align=\&quot;absmiddle\&quot; class=\&quot;legendImg\&quot; style=\&quot;background-color: #&quot;)</span>
+<span class="nc" id="L837">					.append(colorStr)</span>
+<span class="nc" id="L838">					.append(&quot;\&quot;&gt;&quot;);</span>
+			} else {
+<span class="nc" id="L840">				colorCellHTML.append(i18n(m_bbmBundle,</span>
+					BbmWebBundleKey.ACTIVITY_COLOR_INVALID));
+			}
+		}
+
+<span class="nc" id="L845">		colorCellHTML.append(&quot;&amp;nbsp;&quot;);</span>
+<span class="nc" id="L846">		colorCellHTML.append(activityAdherence.getActivityName());</span>
+<span class="nc" id="L847">		return colorCellHTML.toString();</span>
+	}
+
+
+	private String getAlertCellHtml(String colorCode, String displayName) {
+<span class="nc" id="L852">		return getAlertCellHtml(colorCode, displayName, null, false, false);</span>
+	}
+	
+	private String getAlertCellHtml(String colorCode, String displayName, String ariaLabel, boolean isTabbable,
+			boolean useTooltip) {
+<span class="nc" id="L857">		StringBuffer colorCellHTML = new StringBuffer(128);</span>
+<span class="nc bnc" id="L858" title="All 2 branches missed.">		if (StringUtil.isEmpty(colorCode)) {</span>
+<span class="nc" id="L859">			colorCellHTML.append(&quot;&lt;img src=\&quot;&quot;).append(ImageFileID.BLANK_SPACER)</span>
+<span class="nc" id="L860">					.append(&quot;\&quot; align=\&quot;absmiddle\&quot; class=\&quot;legendImg\&quot;&gt;&quot;);</span>
+		} else {
+<span class="nc" id="L862">			colorCellHTML.append(&quot;&lt;img src=\&quot;&quot;).append(ImageFileID.BLANK_SPACER)</span>
+<span class="nc" id="L863">					.append(&quot;\&quot; align=\&quot;absmiddle\&quot; class=\&quot;legendImg &quot;);</span>
+<span class="nc bnc" id="L864" title="All 2 branches missed.">			if (isTabbable) {</span>
+<span class="nc" id="L865">				colorCellHTML.append(ATTR_VALUE_TABBABLE).append(&quot;\&quot; &quot;).append(ATTR_TABINDEX).append(&quot;=\&quot;&quot;)</span>
+<span class="nc" id="L866">						.append(ATTR_TABINDEX_ZERO).append(&quot;\&quot; &quot;);</span>
+			} else {
+<span class="nc" id="L868">				colorCellHTML.append(&quot;\&quot; &quot;);</span>
+			}
+			
+<span class="nc bnc" id="L871" title="All 2 branches missed.">			if (useTooltip) {</span>
+<span class="nc" id="L872">				colorCellHTML.append(ATTR_ARIA_LABEL_TOOLTIP_TRUE);</span>
+			}
+<span class="nc bnc" id="L874" title="All 2 branches missed.">			if (!StringUtil.isEmpty(ariaLabel)) {</span>
+<span class="nc" id="L875">				colorCellHTML.append(AccessibilityComplianceKeys.ATTR_ARIA_LABEL).append(&quot;=\&quot;&quot;).append(ariaLabel)</span>
+<span class="nc" id="L876">						.append(&quot;\&quot; alt=\&quot;&quot;).append(ariaLabel).append(&quot;\&quot;&quot;);</span>
+			}
+<span class="nc" id="L878">			colorCellHTML.append(&quot; style=\&quot;background-color: #&quot;).append(colorCode).append(&quot;\&quot;&gt;&quot;);</span>
+		}
+<span class="nc" id="L880">		colorCellHTML.append(&quot;&amp;nbsp;&quot;);</span>
+<span class="nc" id="L881">		colorCellHTML.append(displayName);</span>
+<span class="nc" id="L882">		return colorCellHTML.toString();</span>
+	}
+	
+	private void sortByOrgName() {
+<span class="nc" id="L886">		List colEmpAdherenceStatus = new ArrayList(m_adhStatus.getEmployeeAdheranceStatusCol());</span>
+
+		//need to get the pushpins in the beginning
+<span class="nc" id="L889">		ArrayList pushpinEmpCol = new ArrayList(m_pushedEmployeeIDList.size());</span>
+<span class="nc" id="L890">		ArrayList nonPushedEmpCol = new ArrayList();</span>
+
+<span class="nc bnc" id="L892" title="All 2 branches missed.">		for (int i = 0; i &lt; colEmpAdherenceStatus.size(); i++) {</span>
+<span class="nc" id="L893">			EmployeeAdheranceStatus empAdhStatus = (EmployeeAdheranceStatus) colEmpAdherenceStatus.get(i);</span>
+<span class="nc bnc" id="L894" title="All 2 branches missed.">			if (isPushed(empAdhStatus.getEmployeeID())) {</span>
+<span class="nc" id="L895">				pushpinEmpCol.add(empAdhStatus);</span>
+			} else {
+<span class="nc" id="L897">				nonPushedEmpCol.add(empAdhStatus);</span>
+			}
+		}
+
+<span class="nc" id="L901">		Collections.sort(pushpinEmpCol, new OrgNameComperator());</span>
+<span class="nc" id="L902">		Collections.sort(nonPushedEmpCol, new OrgNameComperator());</span>
+
+<span class="nc" id="L904">		ArrayList finalList = new ArrayList(pushpinEmpCol.size() + nonPushedEmpCol.size());</span>
+		//now add the pushpinEmpCol objects to the list
+<span class="nc bnc" id="L906" title="All 2 branches missed.">		for (int j = 0; j &lt; pushpinEmpCol.size(); j++) {</span>
+<span class="nc" id="L907">			finalList.add(pushpinEmpCol.get(j));</span>
+		}
+<span class="nc bnc" id="L909" title="All 2 branches missed.">		for (int k = 0; k &lt; nonPushedEmpCol.size(); k++) {</span>
+<span class="nc" id="L910">			finalList.add(nonPushedEmpCol.get(k));</span>
+		}
+
+<span class="nc" id="L913">		m_adhStatus.setEmployeeAdheranceStatusCol(finalList);</span>
+<span class="nc" id="L914">	}</span>
+
+	private String getWeekDayArray() {
+<span class="nc" id="L917">		StringBuffer weekDayBuf = new StringBuffer(256);</span>
+<span class="nc" id="L918">		weekDayBuf.append(&quot;new Array(&quot; + &quot;\&quot;&quot; + i18nCore(UIFWebBundleKey.SUNDAY) + &quot;\&quot;,&quot;)</span>
+<span class="nc" id="L919">			.append(&quot;\&quot;&quot; + i18nCore(UIFWebBundleKey.MONDAY) + &quot;\&quot;,&quot;)</span>
+<span class="nc" id="L920">			.append(&quot;\&quot;&quot; + i18nCore(UIFWebBundleKey.TUESDAY) + &quot;\&quot;,&quot;)</span>
+<span class="nc" id="L921">			.append(&quot;\&quot;&quot; + i18nCore(UIFWebBundleKey.WEDNESDAY) + &quot;\&quot;,&quot;)</span>
+<span class="nc" id="L922">			.append(&quot;\&quot;&quot; + i18nCore(UIFWebBundleKey.THURSDAY) + &quot;\&quot;,&quot;)</span>
+<span class="nc" id="L923">			.append(&quot;\&quot;&quot; + i18nCore(UIFWebBundleKey.FRIDAY) + &quot;\&quot;,&quot;)</span>
+<span class="nc" id="L924">			.append(&quot;\&quot;&quot; + i18nCore(UIFWebBundleKey.SATURDAY) + &quot;\&quot;)&quot;);</span>
+<span class="nc" id="L925">		return weekDayBuf.toString();</span>
+	}
+
+	private void appendTooltipToButton(HtmlButton button, String title) {
+<span class="nc bnc" id="L929" title="All 2 branches missed.">		if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L930">			button.setAttribute(ATTR_ARIA_LABEL, title);</span>
+<span class="nc" id="L931">			button.setAttribute(ATTR_ARIA_LABEL_TOOLTIP, STRING_TRUE);</span>
+		}
+<span class="nc" id="L933">	}</span>
+
+	class OrgNameComperator implements Comparator {
+<span class="nc" id="L936">		OrgNameComperator() {</span>
+<span class="nc" id="L937">		}</span>
+
+		public int compare(Object o1, Object o2) {
+<span class="nc" id="L940">			boolean ascending = m_sortOrder.equals(&quot;ascending&quot;);</span>
+<span class="nc" id="L941">			ID empId1 = ((EmployeeAdheranceStatus) o1).getEmployeeID();</span>
+<span class="nc" id="L942">			ID empId2 = ((EmployeeAdheranceStatus) o2).getEmployeeID();</span>
+<span class="nc" id="L943">			Organization org1 = (Organization) m_empIdOrgMap.get(empId1);</span>
+<span class="nc" id="L944">			Organization org2 = (Organization) m_empIdOrgMap.get(empId2);</span>
+<span class="nc bnc" id="L945" title="All 4 branches missed.">			if (org1 == null &amp;&amp; org2 == null)</span>
+<span class="nc" id="L946">				return 0;</span>
+<span class="nc bnc" id="L947" title="All 2 branches missed.">			if (org1 == null)</span>
+<span class="nc bnc" id="L948" title="All 2 branches missed.">				return ascending ? -1 : 1;</span>
+<span class="nc bnc" id="L949" title="All 2 branches missed.">			if (org2 == null)</span>
+<span class="nc bnc" id="L950" title="All 2 branches missed.">				return ascending ? 1 : -1;</span>
+// 			if(ascending)
+// 				return (org1.getName()).compareToIgnoreCase(org2.getName());
+// 			else
+// 				return (org2.getName()).compareToIgnoreCase(org1.getName());
+<span class="nc bnc" id="L955" title="All 2 branches missed.">			if (ascending)</span>
+<span class="nc" id="L956">				return (m_localizer.getCollator().compare(org1.getName(), org2.getName()));</span>
+			else
+<span class="nc" id="L958">				return (m_localizer.getCollator().compare(org2.getName(), org1.getName()));</span>
+		}
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

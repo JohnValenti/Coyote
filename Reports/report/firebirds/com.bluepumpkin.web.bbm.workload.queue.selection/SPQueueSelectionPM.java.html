@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SPQueueSelectionPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.bbm.workload.queue.selection</a> &gt; <span class="el_source">SPQueueSelectionPM.java</span></div><h1>SPQueueSelectionPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.bbm.workload.queue.selection;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.ejb.bbm.workload.ejb.WorkloadManager;
+import com.bluepumpkin.ejb.bbm.workload.model.Media;
+import com.bluepumpkin.web.bbm.workload.WorkloadModelHandler;
+import com.bluepumpkin.web.bbm.workload.queue.selection.queueattribute.SPQueueAttributeFilterBoxPC;
+import com.verint.ejb.wfm.WfmManagerFactory;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.pagemodel.SelectionpaneTreePM;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.HtmlUtil;
+import com.witness.web.uif.util.SortUtil;
+
+/**
+ * Accepts Request Parameters:
+ * &lt;ul&gt;
+ * &lt;li&gt;ignorePageDirty
+ * &lt;/ul&gt; 
+ *
+ */
+@SuppressWarnings(&quot;serial&quot;)
+public class SPQueueSelectionPM extends SelectionpaneTreePM {
+	private static final String QUEUE_CAMPAIGN_SP_FORM_ACTION = &quot;queue_campaign_sp_selection&quot;;
+	private static final String PARAM_EXCLUDE_MEDIA = &quot;excludeMedia&quot;;
+	private static final String PARAM_IS_DISTRIBUTED_CAMPAIGN_ENABLED = &quot;isDistributedCampaignEnabled&quot;;
+	private static final String PARAM_IS_DISTRIBUTED_CAMPAIGN_ONLY = &quot;isDistributedCampaignOnly&quot;;
+	private static final String PARAM_SELECTION_BEHAVIOR_TYPE = &quot;selectionBehaviorType&quot;;
+	protected SPQueueAttributeFilterBoxPC m_SpQueueAttribFilterBoxPC;
+	
+	// For persisting some values.
+	private static final String LAST_CAMPAIGN_ID_FN = &quot;lastCampaignID&quot;;
+	private static final String LAST_SCHEDULING_PERIOD_ID_FN = &quot;lastSchedulingPeriodID&quot;;
+	private static final String IS_INFO_SUBMITTED_FROM_SELF_FN = &quot;isInfoSubmittedFromSelf&quot;;
+	
+<span class="fc" id="L42">	private ID m_campaignID = null;</span>
+<span class="fc" id="L43">	private ID m_schedulingPeriodID = null;</span>
+	
+<span class="fc" id="L45">	private String m_excludeMediaRawParam = null;</span>
+<span class="fc" id="L46">	private boolean m_isDistributedCampaignEnabled = true;</span>
+<span class="fc" id="L47">	private String m_selectionBehaviorType = null;</span>
+	
+	/**
+	 * This is to restrict the campaign drop down to only distributed campaigns.
+	 */
+<span class="fc" id="L52">	private boolean m_isDistributedCampaignOnly = false;</span>
+	
+	/**
+	 * Constructor
+	 */
+	public SPQueueSelectionPM(RequestContext context) {
+<span class="fc" id="L58">		super(context, new SPQueueSelectionPC(context));</span>
+		
+<span class="fc" id="L60">		((SPQueueSelectionPC)m_treePC).setSelectionBehaviorType(context.getParameter(PARAM_SELECTION_BEHAVIOR_TYPE));</span>
+		
+<span class="fc" id="L62">		m_SpQueueAttribFilterBoxPC = new SPQueueAttributeFilterBoxPC(m_context, &quot;spQueueFilterBox&quot;);</span>
+<span class="fc" id="L63">		addChildComponent(m_SpQueueAttribFilterBoxPC);</span>
+<span class="fc" id="L64">		m_filterBoxPC = m_SpQueueAttribFilterBoxPC;</span>
+<span class="fc" id="L65">		m_filterBoxPC.setUseWrapper(true);</span>
+<span class="fc" id="L66">	}</span>
+	
+	/** 
+	 * Called via reflection from the request
+	 * @param ignorePageDirty
+	 */
+	public void setIgnorePageDirty(boolean ignorePageDirty) {
+<span class="fc" id="L73">		((SPQueueSelectionPC)m_treePC).setIgnorePageDirty(ignorePageDirty);</span>
+<span class="fc" id="L74">	}</span>
+	
+	private Map&lt;ID, Media&gt; filterMediaByExcludedMediaTypes(Map&lt;ID, Media&gt; media)
+	{
+<span class="fc" id="L78">		m_excludeMediaRawParam = m_context.getParameter(PARAM_EXCLUDE_MEDIA);</span>
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">		if (m_excludeMediaRawParam == null) return media;</span>
+		
+<span class="fc" id="L81">		String[] mediaTypes = m_excludeMediaRawParam.split(&quot;,&quot;);</span>
+<span class="fc" id="L82">		List&lt;ID&gt; lookup = new ArrayList&lt;ID&gt;(mediaTypes.length);</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">		for(String mediaType : mediaTypes) { lookup.add(new ID(mediaType.trim())); }</span>
+		
+<span class="fc" id="L85">		HashMap&lt;ID, Media&gt; filteredMedia = new HashMap&lt;ID, Media&gt;();</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">		for (ID key : media.keySet()) {</span>
+<span class="fc bfc" id="L87" title="All 2 branches covered.">			if (!lookup.contains(key)) {</span>
+<span class="fc" id="L88">				filteredMedia.put(key, media.get(key));</span>
+			}
+<span class="fc" id="L90">		}</span>
+
+<span class="fc" id="L92">		return filteredMedia;</span>
+	}
+	
+	protected void preLoadData() throws Exception 
+	{
+		//Needs to be synchronized because the work frame (Applet) and the queue  
+		//selection frame (this class) both load at the same time.
+<span class="fc" id="L99">		synchronized (m_context.getRequest().getSession())</span>
+		{	
+			// Retrieve the defined media types.
+<span class="fc" id="L102">			Map&lt;ID, Media&gt; mediaMap = WorkloadModelHandler.getMediaMap(m_context);</span>
+<span class="fc" id="L103">			mediaMap = filterMediaByExcludedMediaTypes(mediaMap);</span>
+			
+<span class="fc" id="L105">			m_isDistributedCampaignEnabled = Boolean.parseBoolean(m_context.getParameter(PARAM_IS_DISTRIBUTED_CAMPAIGN_ENABLED));</span>
+			
+<span class="fc" id="L107">			Collection&lt;Media&gt; mediaList = SortUtil.sortBasicVO(mediaMap.values(), m_localizer);</span>
+<span class="fc" id="L108">			m_SpQueueAttribFilterBoxPC.init(mediaList, m_isDistributedCampaignEnabled, m_isDistributedCampaignOnly);</span>
+			
+			// Get the filter values.
+<span class="fc" id="L111">			m_campaignID = m_SpQueueAttribFilterBoxPC.getCampaignID();</span>
+<span class="fc" id="L112">			ID mediaID = m_SpQueueAttribFilterBoxPC.getMediaID();</span>
+<span class="fc" id="L113">			m_schedulingPeriodID = m_SpQueueAttribFilterBoxPC.getSchedulingPeriodID();</span>
+			
+<span class="fc" id="L115">			ID queueAttribID = m_SpQueueAttribFilterBoxPC.getQueueAttributeID();</span>
+			
+<span class="pc bpc" id="L117" title="1 of 2 branches missed.">			if(mediaID != null) {</span>
+<span class="nc" id="L118">				Media media = (Media)mediaMap.get(mediaID);</span>
+<span class="nc" id="L119">				mediaMap = new HashMap&lt;ID, Media&gt;();</span>
+<span class="nc" id="L120">				mediaMap.put(mediaID, media);</span>
+			}
+			
+			// Configure the selection page component based on the filter.
+<span class="fc" id="L124">			SPQueueSelectionPC spQueuePC = (SPQueueSelectionPC)m_treePC;</span>
+<span class="fc" id="L125">			spQueuePC.setMultiRowSelectable(false);</span>
+<span class="fc" id="L126">			spQueuePC.setIsComplexIDs(true);</span>
+			//spQueuePC.setIsHideProcessQueues(true);
+			
+<span class="fc" id="L129">			WorkloadManager wlm = WfmManagerFactory.getWorkloadManager(m_context.isInWhatIfMode());</span>
+<span class="fc" id="L130">			Collection&lt;ID&gt; rootQueues = java.util.Collections.emptyList();</span>
+<span class="pc bpc" id="L131" title="1 of 2 branches missed.">			if(m_schedulingPeriodID != null) {</span>
+<span class="fc" id="L132">				rootQueues = wlm.getRootLinkQueueIDs(m_schedulingPeriodID);</span>
+			}
+
+<span class="fc" id="L135">			spQueuePC.bind(m_campaignID, m_schedulingPeriodID, queueAttribID, mediaMap, rootQueues);</span>
+			
+			//NOTE: the below commented code causes a loop when the user hits &quot;cancel&quot; when prompted to save
+			//if the page is dirty.  Other than that, this code will maintain the sync between the left and right frames.
+			//Some work will be needed to prevent the looping issue if we want to include this code again.
+//			if(isNewCampaignSelected(m_lastCampaignID, m_campaignID, m_isInfoSubmittedFromSelf) ||
+//					isNewSchedulingPeriodSelected(m_lastSchedulingPeriodID, m_schedulingPeriodID, m_isInfoSubmittedFromSelf) ||
+//					!isSelectionInScope(spQueuePC))
+//			{
+//				clearCachedSelectedID();
+//				setSelectedID(null);
+//				setRefreshWorkpane(true);
+//			}
+			
+<span class="pc" id="L149">		} // synchronized</span>
+<span class="fc" id="L150">	}</span>
+	
+//	private boolean isSelectionInScope(SPQueueSelectionPC queueSelector) {
+//		ArrayList&lt;SPQueueSelection&gt; selection = SPQueueSelection.parseFromIDString(getSelectedID());
+//		boolean selectionInScope = false;
+//		int selectionsInScope = 0;
+//		for(SPQueueSelection sel : selection)
+//		{
+//			if(sel.getCampaignID().compareTo(m_campaignID) == 0 
+//					&amp;&amp; sel.getSchedulingPeriodID().compareTo(m_schedulingPeriodID) == 0 &amp;&amp; 
+//					queueSelector.containsId(sel.getQueueID())) {
+//				selectionsInScope++;
+//			}
+//		}
+//		// If every selection is in the current scope don't reset, otherwise force a rest on the workpane.
+//		if(selectionsInScope == selection.size()) selectionInScope = true;
+//		return selectionInScope;
+//	}
+//	
+//	/**
+//	 * Determines whether the currently selected campaign is 
+//	 * different from the previously selected campaign.
+//	 * @param lastCampaignID
+//	 * @param currentCampaignID
+//	 * @param isInfoSubmittedFromSelf
+//	 * @return true/false
+//	 */
+//	private static boolean isNewCampaignSelected(ID lastCampaignID, ID currentCampaignID, boolean isInfoSubmittedFromSelf) {
+//		boolean result = false;
+//
+//		// if Page Refreshed then need to make sure that last and current selected campaign is not the same
+//		if (isInfoSubmittedFromSelf &amp;&amp; (currentCampaignID!=null || lastCampaignID != null)) {
+//			result = !currentCampaignID.equals(lastCampaignID);
+//		}
+//
+//		return result;
+//	}
+//	
+//	/**
+//	 * Determines whether the currently selected scheduling period is 
+//	 * different from the previously selected campaign.
+//	 * @param lastSchedulingPeriodID
+//	 * @param currentSchedulingPeriodID
+//	 * @param isInfoSubmittedFromSelf
+//	 * @return true/false
+//	 */
+//	private static boolean isNewSchedulingPeriodSelected(ID lastSchedulingPeriodID, ID currentSchedulingPeriodID, boolean isInfoSubmittedFromSelf) {
+//		boolean result = false;
+//		
+//		// if Page Refreshed then need to make sure that last and current selected campaign is not the same
+//		if (isInfoSubmittedFromSelf &amp;&amp; (currentSchedulingPeriodID!=null || lastSchedulingPeriodID != null)) {
+//			result = !currentSchedulingPeriodID.equals(lastSchedulingPeriodID);
+//		}
+//		
+//		return result;
+//	}
+	
+	/**
+	 * Return an instance of the model that is ready for rendering
+	 */
+	public static PageModel getInstance(RequestContext context) {
+<span class="fc" id="L211">		return getInstance(context, SPQueueSelectionPM.class);</span>
+	}
+	
+	/**
+	 * Return Required HTML
+	 */
+	public String getRequiredHTML() {
+<span class="fc" id="L218">		return super.getRequiredHTML() +</span>
+<span class="fc" id="L219">				HtmlUtil.makeHiddenInput(LAST_CAMPAIGN_ID_FN, m_campaignID) +</span>
+<span class="fc" id="L220">				HtmlUtil.makeHiddenInput(LAST_SCHEDULING_PERIOD_ID_FN, m_schedulingPeriodID) +</span>
+<span class="fc" id="L221">				HtmlUtil.makeHiddenInput(IS_INFO_SUBMITTED_FROM_SELF_FN, true) + </span>
+<span class="fc" id="L222">				HtmlUtil.makeHiddenInput(PARAM_IS_DISTRIBUTED_CAMPAIGN_ONLY, m_isDistributedCampaignOnly);</span>
+	}
+	
+	/**
+	 * Initialize Toolbar, override for selection because multi 
+	 * select restricted to groups doesn't have a good 
+	 * implementation for select all.
+	 */
+	protected void initToolbar() {
+<span class="fc" id="L231">		useDefaultToolbar(false, true);</span>
+<span class="fc" id="L232">	}</span>
+	
+	/**
+	 * Called via reflection from request
+	 * @param val
+	 */
+	public void setIsDistributedCampaignOnly(boolean val) {
+<span class="fc" id="L239">		m_isDistributedCampaignOnly = val;</span>
+<span class="fc" id="L240">	}</span>
+	
+	public void setIsDistributedCampaignEnabled(boolean bValue)
+	{
+<span class="fc" id="L244">		m_isDistributedCampaignEnabled = bValue;</span>
+<span class="fc" id="L245">	}</span>
+	
+	/** 
+	 * Called via reflection from the request
+	 * @param selectionBehaviorType
+	 */
+	public void setSelectionBehaviorType(String selectionBehaviorType) {
+<span class="fc" id="L252">		((SPQueueSelectionPC)m_treePC).setSelectionBehaviorType(selectionBehaviorType);</span>
+<span class="fc" id="L253">	}</span>
+	
+	/**
+	 * Return URL for HTML Form Action
+	 */
+	public String getFormAction() {
+<span class="pc bpc" id="L259" title="2 of 4 branches missed.">		return QUEUE_CAMPAIGN_SP_FORM_ACTION + </span>
+			&quot;?&quot; + PARAM_IS_DISTRIBUTED_CAMPAIGN_ENABLED + &quot;=&quot; + m_isDistributedCampaignEnabled +
+			(m_excludeMediaRawParam==null ? &quot;&quot; : &quot;&amp;&quot; + PARAM_EXCLUDE_MEDIA + &quot;=&quot; + m_excludeMediaRawParam) +
+			(m_selectionBehaviorType==null ? &quot;&quot; : &quot;&amp;&quot; + PARAM_SELECTION_BEHAVIOR_TYPE + &quot;=&quot; + m_selectionBehaviorType);
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

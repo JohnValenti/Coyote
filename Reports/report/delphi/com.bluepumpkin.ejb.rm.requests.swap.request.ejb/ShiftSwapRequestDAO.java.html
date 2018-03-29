@@ -1,0 +1,559 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftSwapRequestDAO.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.swap.request.ejb</a> &gt; <span class="el_source">ShiftSwapRequestDAO.java</span></div><h1>ShiftSwapRequestDAO.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.swap.request.ejb;
+
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.jdmo.Jdmo;
+import com.bluepumpkin.common.jdmo.JdmoException;
+import com.bluepumpkin.common.jdmo.JdmoQuery;
+import com.bluepumpkin.common.jdmo.JdmoRowset;
+import com.bluepumpkin.common.jdmo.JdmoUtil;
+import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.common.util.TimeZoneUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.dao.DAOBase;
+import com.bluepumpkin.ejb.bbm.rm.ShiftSwapCalendarInfo;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.vo.FieldInfo;
+import com.bluepumpkin.ejb.bbm.vo.ValueObjectBase;
+import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateDAO;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.model.Request;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequestFieldInfo;
+import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.requests.swap.withdraw.ejb.ShiftSwapWithdrawDAO;
+import com.bluepumpkin.ejb.rm.util.DAOUtil;
+import com.bluepumpkin.ejb.rm.util.DateUtil;
+import com.bluepumpkin.ejb.rm.util.JdmoPreparedStatement;
+import com.bluepumpkin.ejb.rm.util.JdmoPreparedStatementBuilder;
+import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.bluepumpkin.ejb.rm.util.ShiftSwapRequestUtil;
+
+
+/**
+ * Title:        ShiftSwapRequestDAO
+ * Description:  DAO class for ShiftSwapRequest
+ * Copyright:    Copyright (c) 2002
+ * Company:      Blue Pumpkin Software, Inc.
+ * @author       Robert Granat
+ * @version 1.0
+ */
+public class ShiftSwapRequestDAO extends RequestAggregateDAO {
+<span class="nc" id="L53">    private static FieldInfo fieldInfo = new ShiftSwapRequestFieldInfo();</span>
+
+<span class="nc" id="L55">    private static Category log = Log.initCategory(ShiftSwapRequestDAO.class.getName());</span>
+
+    /*
+     * Common portion of a query that selects IDs of ShiftSwapRequests that have
+     * at least one ShiftSwapItem whose EmployeeID matches. The employee match
+     * condition must be appended to this string. It (the employee match condition)
+     * will either be &quot; = employeeID&quot; or &quot; IN collectionOfEmployeeIDs&quot;
+     */
+    //NOTE: *** removed DISTINCT keyword from query below.  Believe it is not required ***
+    private static final String m_requestIDsForEmpQuery = &quot;select SSRI.SHIFTSWAPREQUESTID &quot; +
+        &quot;from SHIFTSWAPREQUESTITEM SSRI, SHIFTSWAPITEM SSI &quot; +
+        &quot;where SSRI.SHIFTSWAPITEMID = SSI.ID and SSI.EMPLOYEEID&quot;;
+    /*
+    private static final String m_employeeQry = &quot;select distinct REQ.ID &quot; +
+        &quot;from REQUEST REQ, SHIFTSWAPREQUESTITEM SSRI, SHIFTSWAPITEM SSI &quot; +
+        &quot;where REQ.ID = SSRI.SHIFTSWAPREQUESTID and SSRI.SHIFTSWAPITEMID = SSI.ID &quot; + &quot;and SSI.EMPLOYEEID&quot;;
+     */
+
+    /*
+     * Common portion of a query that selects distinct Employee IDs from
+     * ShiftSwapRequests. The request match condition must be appended to this
+     * string. It (the request match condition) will either be &quot; = requestID &quot;
+     * or &quot; IN collectionOfRequestIDs&quot;
+     */
+    /*
+    private static final String employeeIDQry =
+        &quot;select distinct A.EMPLOYEEID from SHIFTSWAPITEM A, SHIFTSWAPREQUESTITEM B &quot; +
+        &quot;where A.ID = B.SHIFTSWAPITEMID &quot; + &quot;and B.SHIFTSWAPREQUESTID&quot;;
+     */
+
+    public ShiftSwapRequestDAO(long detailLevel) {
+<span class="nc" id="L86">        super(detailLevel);</span>
+<span class="nc" id="L87">    }</span>
+
+    /*public ShiftSwapRequestDAO(Jdmo dmo) {
+        super(dmo);
+    }*/
+
+    @Override
+	protected ValueObjectBase createValueObject() {
+<span class="nc" id="L95">        return (new ShiftSwapRequest(getDetailLevel()));</span>
+    }
+
+    @Override
+	protected FieldInfo getFieldInfo() {
+<span class="nc" id="L100">        return fieldInfo;</span>
+    }
+
+    /** create a child DAO object given the type */
+    @Override
+	protected DAOBase createChildDAO(int childType) {
+<span class="nc bnc" id="L106" title="All 2 branches missed.">        if (childType == ShiftSwapRequestFieldInfo.REQUESTITEM_CHILD_TYPE) {</span>
+<span class="nc" id="L107">            return new ShiftSwapRequestItemDAO(m_dmo);</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">        } else if (childType == ShiftSwapRequestFieldInfo.SS_WITHDRAW_CHILD_TYPE) {</span>
+<span class="nc" id="L109">            return new ShiftSwapWithdrawDAO(m_dmo);</span>
+        }
+
+<span class="nc" id="L112">        throw new IllegalArgumentException(&quot;childType = &quot; + childType);</span>
+    }
+
+    /**
+     * Fetches the ShiftSwapRequests in which the specified employee is a participant.
+     *
+     * &lt;p&gt; Speciailization of the superclass method since ShiftSwapReqs involve two employees.
+     *
+     * @param id An employee ID
+     * @return A Collection of ShiftSwapRequest items
+     * @throws Exception
+     */
+    @Override
+	public Collection getRequestsByEmployee(ID id, long detailLevel)
+        throws Exception
+    {
+<span class="nc" id="L128">        Collection requests = Collections.EMPTY_LIST;</span>
+
+        /* Query:
+              select &lt;columns for ShiftSwapRequest table&gt;
+              from REQUEST A, SHIFTSWAPREQUEST B
+              where B.ID = A.ID
+                and B.ID in (
+                    select SSRI.SHIFTSWAPREQUESTID
+                    from SHIFTSWAPREQUESTITEM SSRI, SHIFTSWAPITEM SSI
+                    where SSI.ID = SSRI.SHIFTSWAPITEMID
+                      and SSI.EMPLOYEEID=id )
+         */
+
+<span class="nc" id="L141">        saveAndSetDetailLevel(detailLevel);</span>
+        try   {
+<span class="nc" id="L143">            StringBuffer strQuery = new StringBuffer(512);</span>
+            
+            // instead of using a single query (using the query below as a subquery),  processing 
+            // in 2 steps: get IDs, then get requests using these IDs.  In another instance, this 2 step
+            // processing was faster than the single step one (with the subquery).
+<span class="nc" id="L148">            List reqIDsForEmp = DAOUtil.getIDsUsingSQLQuery(getDMO(), m_requestIDsForEmpQuery + &quot; = &quot; + id);            </span>
+
+<span class="nc" id="L150">            requests = getObjectsByIDs(reqIDsForEmp);</span>
+
+<span class="nc" id="L152">            return requests;</span>
+        } finally  {
+<span class="nc" id="L154">            resetDetailLevel();</span>
+        }
+    }
+
+    /**
+     * Finds ShiftSwapRequests given an employee id.
+     *
+     * &lt;br&gt; Specialization of the super class method as shiftswaprequests, unlike other requests,
+     * are assoicated with 2 employees.
+     *
+     * @param id an Employee ID
+     * @return a Collection of ShiftSwapRequests &quot;belonging to&quot; the employee
+     * @throws Exception
+     */
+    @Override
+	public Collection getRequestIDsByEmployee(ID id, long detailLevel)
+        throws Exception
+    {
+<span class="nc" id="L172">        saveAndSetDetailLevel(detailLevel);</span>
+
+        try   {
+<span class="nc" id="L175">            StringBuffer strQuery = new StringBuffer(512);</span>
+<span class="nc" id="L176">            strQuery.append(m_requestIDsForEmpQuery).append(&quot; = &quot;).append(id);</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">            if ( (detailLevel &amp; Request.DL_INCLUDE_EXPIRED) != 0 ) {</span>
+<span class="nc" id="L178">				strQuery.append(&quot; AND A.EXPIRATIONDATE &gt;= '&quot;).append(JdmoUtil.formatDBString(new Date())).append('\'');</span>
+			}
+
+<span class="nc" id="L181">            return DAOUtil.getIDsUsingSQLQuery(m_dmo, strQuery.toString());</span>
+//            Collection ids = new ArrayList();
+//            JdmoRowset rs = null;
+//
+//            try {
+//                rs = m_dmo.createRowset(strQuery.toString());
+//
+//                while (rs.next()) {
+//                    ids.add(rs.getID(1));
+//                }
+//            } c_atch (Exception e) {
+//                t_hrow new BbmFinderException(e);
+//            } finally {
+//                if (rs != null) {
+//                    try {
+//                        rs.close();
+//                    } c_atch (Exception e) {
+//                    }
+//                }
+//            }
+//
+//            return ids;
+        } finally  {
+<span class="nc" id="L204">            resetDetailLevel();</span>
+        }
+    }
+
+//    /**
+//     * Find all pending shift swap requests for an employee receiving a shift
+//     * which overlaps the given time interval.
+//     *
+//     * Note: this method was commented since the complexity of the SQL query made it very slow (from profiler).
+//     * 
+//     * @param empID the id of the employee
+//     * @param dtStrt the beginning of the interval
+//     * @param dtEnd  the end of the interval
+//     * @return a collection of shift swap requests.  If no requests match, then
+//     * an empty collection is returned.
+//     * @throws Exception
+//     */
+//    public Collection getPendingRequestsByEmployeeInRange(ID empID, Date dtStrt, Date dtEnd, long detailLevel)
+//        throws Exception
+//    {
+//        saveAndSetDetailLevel(detailLevel);
+//        try  {
+//            Collection requests = Collections.EMPTY_LIST;
+//
+//            /*
+//             * A.ID in (
+//             * SELECT
+//             *    R.ID
+//             * FROM
+//             *    REQUEST R,
+//             *    SHIFTSWAPREQUESTITEM RI1,
+//             *    SHIFTSWAPREQUESTITEM RI2,
+//             *    SHIFTSWAPITEM I1,
+//             *    SHIFTSWAPITEM I2
+//             * WHERE
+//             *    R.REQUESTSTATUS IN (PENDING, ESCALATED, NEGOTIATION) AND
+//             *    R.EXPIRATIONDATE &gt; &lt;now&gt; AND
+//             *    R.ID=RI1.SHIFTSWAPREQUESTID AND
+//             *    R.ID = RI2.SHIFTSWAPREQUESTID AND
+//             *    RI1.SHIFTSWAPITEMID = I1.ID AND
+//             *    RI2.SHIFTSWAPITEMID=I2.ID AND
+//             *    NOT I1.ID=I2.ID AND
+//             *    I1.EMPLOYEEID = &lt;employeeID&gt; AND
+//             *    I2.SWAPITEMTYPE_=&quot;SHIFT&quot; AND
+//             *    I2.ENDTIME &gt; &lt;dateStart&gt; AND
+//             *    I2.STARTTIME &lt; &lt;dateEnd&gt;)
+//             */
+//            StringBuffer qry = new StringBuffer(1024);
+//            qry.append(&quot;A.ID in (select R.ID from REQUEST R, SHIFTSWAPREQUESTITEM RI1, &quot;)
+//               .append(&quot;SHIFTSWAPREQUESTITEM RI2, SHIFTSWAPITEM I1, &quot;)
+//               .append(&quot;SHIFTSWAPITEM I2 WHERE R.REQUESTSTATUS in ('&quot;)
+//               .append(RequestAuditTrail.STATUS_PENDING).append(&quot;','&quot;)
+//               .append(RequestAuditTrail.STATUS_ESCALATED).append(&quot;','&quot;)
+//               .append(RequestAuditTrail.STATUS_NEGOTIATION).append(&quot;') and &quot;)
+//               .append(&quot;R.EXPIRATIONDATE &gt; '&quot;)
+//               .append(JdmoUtil.formatDBString(new Date()))
+//               .append(&quot;' and R.ID=RI1.SHIFTSWAPREQUESTID and R.ID=RI2.SHIFTSWAPREQUESTID and &quot;)
+//               .append(&quot;RI1.SHIFTSWAPITEMID=I1.ID and &quot; + &quot;RI2.SHIFTSWAPITEMID=I2.ID and &quot;)
+//               .append(&quot;NOT I1.ID=I2.ID and &quot; + &quot;I1.EMPLOYEEID=&quot;).append(empID.toString())
+//               .append(&quot; and    I2.SHIFTTYPE='&quot;).append(ShiftSwapItem.SWAPITEMTYPE_SHIFT)
+//               .append(&quot;' and '&quot;).append(JdmoUtil.formatDBString(dtStrt))
+//               .append(&quot;' &lt; I2.ENDTIME and '&quot;).append(JdmoUtil.formatDBString(dtEnd))
+//               .append(&quot;' &gt; I2.STARTTIME&quot;).append(&quot;)&quot;);  //TODO: last ')' seems to be unbalanced.
+//
+//            requests = getObjects(qry.toString());
+//
+//            return requests;
+//        } finally  {
+//            resetDetailLevel();
+//        }
+//    }
+
+    /* (non-Javadoc)
+     * @see com.bluepumpkin.ejb.rm.requests.common.ejb.RequestAggregateDAO#getRequestType()
+     */
+	@Override
+	protected String getRequestType() {
+<span class="nc" id="L281">        return Request.REQUESTTYPE_SHIFTSWAP;</span>
+    }
+    
+    /**
+     * Delete all Shift Swap requests for employees in the given organization
+     * with shift swap items starting during the given range.
+     */
+    public void deleteRequestsByStartDateRange(ID organizationID, boolean isForBranch, TimeRange range,
+        ID subType) throws Exception {
+<span class="nc" id="L290">    	Collection orgEmpIDs = RequestUtil.getEmployeeIDsInOrganization(organizationID, isForBranch,</span>
+<span class="nc" id="L291">    														range.getStartDate(), range.getEndDate());</span>
+  
+<span class="nc" id="L293">        StringBuffer sb = new StringBuffer(128);</span>
+<span class="nc" id="L294">    	sb.append(&quot;SELECT DISTINCT REQ.ID &quot;)</span>
+<span class="nc" id="L295">	    	.append(&quot;FROM   REQUEST REQ, &quot;)</span>
+<span class="nc" id="L296">	    	.append(&quot;SHIFTSWAPREQUESTITEM SSRITEM, &quot;)</span>
+<span class="nc" id="L297">	    	.append(&quot;SHIFTSWAPITEM SSITEM &quot;)</span>
+<span class="nc" id="L298">	    	.append(&quot;WHERE  REQ.EMPLOYEEID IN &quot;).append(m_dmo.createInClause(orgEmpIDs))</span>
+<span class="nc" id="L299">	    	.append(&quot;AND REQ.ID = SSRITEM.SHIFTSWAPREQUESTID &quot;)</span>
+<span class="nc" id="L300">	    	.append(&quot;AND SSITEM.ID = SSRITEM.SHIFTSWAPITEMID &quot;)</span>
+<span class="nc" id="L301">	    	.append(&quot; AND SSITEM.STARTTIME BETWEEN '&quot;).append(JdmoUtil.formatDBString(range.getStartDate()))</span>
+<span class="nc" id="L302">	        .append(&quot;' AND '&quot;).append(JdmoUtil.formatDBString(range.getEndDate())).append('\'');                                    </span>
+    	
+<span class="nc bnc" id="L304" title="All 2 branches missed.">    	if (!StringUtil.isEmpty(sb.toString())) {</span>
+<span class="nc" id="L305">			deleteObjects(sb.toString());</span>
+		}
+<span class="nc" id="L307">    }</span>
+
+	/**
+	 * Get the number of approved 1-way shift swaps per employee in the given time range. For each employee, we only count
+	 * those requests where he is giving up a shift.
+	 */
+	public Map&lt;ID, Integer&gt; getNumberOfOneWaySwapsForEmployees(Collection&lt;ID&gt; employeeIDs, Date start, Date end)
+			throws Exception {
+<span class="nc" id="L315">		Map&lt;ID, Integer&gt; map = new HashMap&lt;ID, Integer&gt;();</span>
+<span class="nc bnc" id="L316" title="All 6 branches missed.">		if (employeeIDs == null || start == null || end == null) {</span>
+<span class="nc" id="L317">			return map;</span>
+		}
+<span class="nc" id="L319">		StringBuilder sb = new StringBuilder();</span>
+
+<span class="nc" id="L321">		sb.append(&quot;SELECT SI.EMPLOYEEID, COUNT(*) AS NUMBEROFSWAPS &quot;).append(&quot;FROM REQUEST R &quot;)</span>
+<span class="nc" id="L322">				.append(&quot;JOIN SHIFTSWAPREQUEST SR ON SR.ID=R.ID &quot;)</span>
+<span class="nc" id="L323">				.append(&quot;JOIN SHIFTSWAPREQUESTITEM SRI ON SHIFTSWAPREQUESTID=SR.ID &quot;)</span>
+<span class="nc" id="L324">				.append(&quot;JOIN SHIFTSWAPITEM SI ON SRI.SHIFTSWAPITEMID=SI.ID &quot;).append(&quot;WHERE &quot;)</span>
+<span class="nc" id="L325">				.append(&quot;SR.SWAPTYPE='one-way' AND &quot;).append(&quot;R.REQUESTSTATUS='approved' AND &quot;).append(&quot;SI.EMPLOYEEID IN &quot;)</span>
+<span class="nc" id="L326">				.append(m_dmo.createInClause(employeeIDs)).append(&quot; AND SI.STARTTIME &gt;= ? AND SI.STARTTIME &lt; ? AND &quot;)</span>
+<span class="nc" id="L327">				.append(&quot;SI.SHIFTTYPE='shift'&quot;).append(&quot; group by SI.EMPLOYEEID&quot;);</span>
+
+<span class="nc" id="L329">		JdmoQuery jQuery1 = m_dmo.createQuery(sb.toString(), Jdmo.PARAM_QUERY);</span>
+<span class="nc" id="L330">		jQuery1.setParTimestamp(1, new Timestamp(start.getTime()));</span>
+<span class="nc" id="L331">		jQuery1.setParTimestamp(2, new Timestamp(end.getTime()));</span>
+<span class="nc" id="L332">		JdmoRowset rs = m_dmo.createRowset(jQuery1, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+
+<span class="nc bnc" id="L334" title="All 2 branches missed.">		while (rs.next()) {</span>
+<span class="nc" id="L335">			ID empID = rs.getID(&quot;EMPLOYEEID&quot;);</span>
+<span class="nc" id="L336">			Integer count = rs.getInt(&quot;NUMBEROFSWAPS&quot;);</span>
+<span class="nc" id="L337">			map.put(empID, count);</span>
+<span class="nc" id="L338">		}</span>
+<span class="nc" id="L339">		rs.close();</span>
+<span class="nc" id="L340">		return map;</span>
+	}
+
+    public boolean isBelowNumberOfSwapsForShift(int numberOfSwaps, ID employeeID, Date shiftStart, Date shiftEnd) throws Exception {
+
+<span class="nc bnc" id="L345" title="All 8 branches missed.">    	if (employeeID==null || shiftStart == null || shiftEnd == null || numberOfSwaps &lt;=0){</span>
+<span class="nc" id="L346">    		return false;</span>
+    	}
+    	
+<span class="nc" id="L349">    	boolean ret = false;</span>
+    	
+<span class="nc" id="L351">		JdmoQuery jQuery1 = m_dmo.createQuery(&quot;RM_VR_MAX_COUNT_SHIFT_SWAPS_FOR_SHIFT&quot;,Jdmo.STORPROC_QUERY);</span>
+<span class="nc" id="L352">		jQuery1.setParInt(1, numberOfSwaps);</span>
+<span class="nc" id="L353">		jQuery1.setParID(2, employeeID);</span>
+<span class="nc" id="L354">		jQuery1.setParTimestamp(3, new Timestamp(shiftStart.getTime()));</span>
+<span class="nc" id="L355">		jQuery1.setParTimestamp(4, new Timestamp(shiftEnd.getTime()));</span>
+		
+<span class="nc" id="L357">		JdmoRowset res = m_dmo.createRowset(jQuery1, Jdmo.FORWARD_ONLY, Jdmo.READ_ONLY);</span>
+		
+<span class="nc bnc" id="L359" title="All 2 branches missed.">		while (res.next()) {</span>
+<span class="nc" id="L360">			int withinMax = res.getInt(&quot;WITHINMAX&quot;);</span>
+<span class="nc bnc" id="L361" title="All 2 branches missed.">			ret = (withinMax==1);</span>
+<span class="nc" id="L362">		}</span>
+    	
+<span class="nc" id="L364">    	return ret;</span>
+    }
+	
+    /**
+	 * Returns the number of partial shift swaps for a given day and shift as a collecton of employee IDs
+	 * 
+	 * @param shiftID ID of the shift to be swapped
+	 * @param shiftStartTime Start Time of the shift
+	 * @param shiftEndTime End Time for the shift
+	 * @return The number of partial shift swaps for a shift as a collection of employee IDs.
+     * @throws BbmFinderException If there is a error in the query.
+     */
+    public Collection&lt;ID&gt; getEployeeIDsOfPartialSwapsPerShift(ID shiftID, Date shiftStartTime, Date shiftEndTime) throws BbmFinderException {
+<span class="nc" id="L377">		JdmoRowset rs = null;</span>
+<span class="nc" id="L378">		int result = 0;</span>
+<span class="nc" id="L379">		Collection&lt;ID&gt; employeeIDs = new ArrayList&lt;ID&gt;();</span>
+		
+		try {
+<span class="nc" id="L382">			String sqlString = String</span>
+<span class="nc" id="L383">			.format(&quot;SELECT DISTINCT A.EMPLOYEEID AS EMPLOYEEID FROM&quot; </span>
+					+ &quot; (SELECT SSI.EMPLOYEEID&quot;
+					+ &quot; FROM REQUEST REQ, SHIFTSWAPREQUESTITEM SSRI, SHIFTSWAPITEM SSI, WORKRESOURCEORGANIZATION WKRO&quot;
+					+ &quot; WHERE REQ.ID = SSRI.SHIFTSWAPREQUESTID&quot;
+					+ &quot; AND SSRI.SHIFTSWAPITEMID = SSI.ID&quot;
+					+ &quot; AND SSRI.ITEMORDER = 1&quot;
+					+ &quot; AND REQ.REQUESTTYPE = 'shift-swap'&quot;
+					+ &quot; AND REQ.REQUESTSTATUS = 'approved'&quot;
+					+ &quot; AND SSI.SHIFTTYPE != 'shift'&quot;
+					+ &quot; AND REQ.EMPLOYEEID = WKRO.WORKRESOURCEID&quot;
+					+ &quot; AND (WKRO.STARTTIME &lt;= '%s' AND Isnull(WKRO.ENDTIME,'20700101') &gt;= '%s')&quot;
+					+ &quot; AND EXISTS (SELECT 1 FROM SHIFTSWAPREQUESTITEM SSRI2 JOIN SHIFTSWAPITEM SSI2 ON SSRI2.SHIFTSWAPITEMID = SSI2.ID&quot;
+					+ &quot; WHERE SSRI2.SHIFTSWAPREQUESTID = SSRI.SHIFTSWAPREQUESTID AND SSRI2.ITEMORDER = 0 AND SSI2.ISPARTIAL = 1 AND SSI2.SHIFTID = %d&quot;
+					+ &quot; AND SSI2.SHIFTTYPE = 'shift'&quot;
+					+ &quot; AND (SSI2.STARTTIME &gt;= '%s' AND SSI2.ENDTIME &lt;= '%s'))&quot;
+					+ &quot; UNION&quot;
+					+ &quot; SELECT SSI.EMPLOYEEID&quot;
+					+ &quot; FROM REQUEST REQ, SHIFTSWAPREQUESTITEM SSRI, SHIFTSWAPITEM SSI, WORKRESOURCEORGANIZATION WKRO&quot;
+					+ &quot; WHERE REQ.ID = SSRI.SHIFTSWAPREQUESTID&quot;
+					+ &quot; AND SSRI.SHIFTSWAPITEMID = SSI.ID&quot;
+					+ &quot; AND SSRI.ITEMORDER = 0&quot;
+					+ &quot; AND REQ.REQUESTTYPE = 'shift-swap'&quot;
+					+ &quot; AND REQ.REQUESTSTATUS = 'approved'&quot;
+					+ &quot; AND SSI.SHIFTTYPE = 'shift'&quot;
+					+ &quot; AND REQ.EMPLOYEEID = WKRO.WORKRESOURCEID&quot;
+					+ &quot; AND (WKRO.STARTTIME &lt;= '%s' AND Isnull(WKRO.ENDTIME,'20700101') &gt;= '%s')&quot;
+					+ &quot; AND EXISTS (SELECT 1 FROM SHIFTSWAPREQUESTITEM SSRI2 JOIN SHIFTSWAPITEM SSI2 ON SSRI2.SHIFTSWAPITEMID = SSI2.ID&quot;
+					+ &quot; WHERE SSRI2.SHIFTSWAPREQUESTID = SSRI.SHIFTSWAPREQUESTID AND SSRI2.ITEMORDER = 1 AND SSI2.ISPARTIAL = 1 AND SSI2.SHIFTID = %d&quot;
+					+ &quot; AND SSI2.SHIFTTYPE = 'shift'&quot;
+					+ &quot; AND (SSI2.STARTTIME &gt;= '%s' AND SSI2.ENDTIME &lt;= '%s'))&quot;
+					+ &quot;) A&quot;,
+<span class="nc" id="L414">					JdmoUtil.formatDBString(shiftStartTime),</span>
+<span class="nc" id="L415">					JdmoUtil.formatDBString(shiftStartTime),</span>
+<span class="nc" id="L416">					shiftID.toInt(),</span>
+<span class="nc" id="L417">					JdmoUtil.formatDBString(shiftStartTime),</span>
+<span class="nc" id="L418">					JdmoUtil.formatDBString(shiftEndTime),</span>
+<span class="nc" id="L419">					JdmoUtil.formatDBString(shiftStartTime),</span>
+<span class="nc" id="L420">					JdmoUtil.formatDBString(shiftStartTime),</span>
+<span class="nc" id="L421">					shiftID.toInt(),</span>
+<span class="nc" id="L422">					JdmoUtil.formatDBString(shiftStartTime),</span>
+<span class="nc" id="L423">					JdmoUtil.formatDBString(shiftEndTime));</span>
+			
+<span class="nc" id="L425">			rs = m_dmo.createRowset(sqlString);</span>
+<span class="nc bnc" id="L426" title="All 4 branches missed.">			while (rs != null &amp;&amp; rs.next()) {</span>
+<span class="nc" id="L427">				result = rs.getInt(&quot;EMPLOYEEID&quot;);</span>
+<span class="nc" id="L428">				employeeIDs.add(new ID(result));</span>
+			}
+<span class="nc" id="L430">		} catch (JdmoException e) {</span>
+<span class="nc" id="L431">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L432">		}</span>
+		
+<span class="nc" id="L434">		return employeeIDs;</span>
+    }
+
+    /**
+	 * Check if there is any approved shiftSwap for the employee received the shift swap in 1 day.
+	 * For debug: If 1-way swap, his shift type returned is TimeOff, If 2-way swap, his shift return is Shift
+	 * @param employeeId
+	 * @param startDate
+	 * @param endDate
+	 * @return boolean
+	 * */
+	public boolean employeeReceivedShiftSwapApproved(ID employeeId,Date startDate, Date endDate) throws BbmFinderException {
+<span class="nc" id="L446">		JdmoRowset rs = null;</span>
+<span class="nc" id="L447">		boolean result = false;</span>
+		try {
+			//@formatter:off
+<span class="nc" id="L450">			String sqlString = String</span>
+<span class="nc" id="L451">					.format(&quot;SELECT 1 from SHIFTSWAPITEM SI&quot;</span>
+							//For debug	SELECT SI.*,SSI.* from SHIFTSWAPITEM SI					
+							+ &quot; Inner Join SHIFTSWAPREQUESTITEM SSI on SSI.SHIFTSWAPITEMID = SI.ID&quot;
+							+ &quot; Inner join SHIFTSWAPREQUEST SR ON  SSI.SHIFTSWAPREQUESTID = SR.ID&quot;
+							+ &quot; Inner join request R on R.ID=SR.ID&quot;
+							+ &quot; Inner join WORKRESOURCEORGANIZATION WR ON SI.EMPLOYEEID  = WR.WORKRESOURCEID&quot;
+							+ &quot; WHERE R.REQUESTTYPE='shift-swap' and R.REQUESTSTATUS='approved'&quot;
+							+ &quot; and (WR.STARTTIME&lt;SI.ENDTIME AND Isnull(WR.ENDTIME,'20700101')&gt;SI.STARTTIME)&quot;
+							+ &quot; and '%s'&lt;=SI.STARTTIME AND SI.ENDTIME&lt;='%s'&quot;
+<span class="nc" id="L460">							+ &quot; and SI.EMPLOYEEID=%d&quot;, JdmoUtil.formatDBString(startDate),JdmoUtil.formatDBString(endDate),employeeId.toInt());</span>
+			//@formatter:on
+<span class="nc" id="L462">			rs = m_dmo.createRowset(sqlString);</span>
+<span class="nc bnc" id="L463" title="All 4 branches missed.">			if (rs != null &amp;&amp; rs.next()) {</span>
+<span class="nc" id="L464">				result = true;</span>
+			}
+<span class="nc" id="L466">		} catch (JdmoException e) {</span>
+<span class="nc" id="L467">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L468">		}</span>
+<span class="nc" id="L469">		return result;</span>
+	}
+
+	//
+	// This SQL will find swapped shift items for the employee for a date range. It returns both the swapped shift (the one 
+	// the employee is currently working) and the Original shift that was given away and to whom (the Original shift/employees).
+	//
+	public List&lt;ShiftSwapCalendarInfo&gt; getListApprovedShiftSwapCalendarInfo(Date startDateTimeGMT, Date endDateTimeGMT, List&lt;ID&gt; employeeIds)
+			throws BbmFinderException {
+
+<span class="nc bnc" id="L479" title="All 4 branches missed.">		if (employeeIds == null || employeeIds.isEmpty()) {</span>
+<span class="nc" id="L480">			return Collections.emptyList();</span>
+		}
+
+<span class="nc" id="L483">		List&lt;ShiftSwapCalendarInfo&gt; list = new ArrayList&lt;ShiftSwapCalendarInfo&gt;();</span>
+
+		try {
+			
+			//@formatter:off
+<span class="nc" id="L488">			String sql = </span>
+					&quot;	;with SwappedShift as ( &quot;  +
+					&quot;	select R.ID as RequestID, ssi.EmployeeID,  ssi.StartTime, ssi.EndTime , ssi.SHIFTTYPE, ssr.SWAPTYPE, ssi.HASHCODE &quot; +
+					&quot;	from SHIFTSWAPITEM ssi &quot; +
+					&quot;	inner join SHIFTSWAPREQUESTITEM ssri on ssi.ID = ssri.SHIFTSWAPITEMID  &quot; +
+					&quot;	inner join SHIFTSWAPREQUEST ssr on ssri.SHIFTSWAPREQUESTID = ssr.ID  &quot; +
+					&quot;	inner join Request R on ssr.ID = R.ID &quot; +
+					&quot;	where R.RequestType = 'shift-swap'  AND R.REQUESTSTATUS in ('approved' ,'tentative') &quot; +
+					&quot;	), &quot; +
+					&quot;	SwappedShiftsInInterval as ( &quot; +
+					&quot;		select RequestID, EmployeeID, StartTime,EndTime, SwapType, ShiftType, HASHCODE &quot; +
+					&quot;		from SwappedShift &quot; +
+					&quot;		where StartTime &lt;= ?  AND EndTime &gt;= ?  and StartTime &gt; ? &quot; +
+					&quot;	)  &quot; +
+					&quot;	select B.EmployeeID, A.StartTime, A.EndTime, A.SwapType, A.SHIFTTYPE, A.EMPLOYEEID, B.STARTTIME, B.ENDTIME, B.SHIFTTYPE, A.HASHCODE, B.HASHCODE &quot; +
+					&quot;	from SwappedShiftsInInterval A &quot; +
+					&quot;	inner join  SwappedShift   B  &quot; +
+					&quot;	on A.RequestID = B.RequestID and A.EmployeeID &lt;&gt; B.EmployeeID &quot; +
+					&quot;	where B.EmployeeID in  ? &quot;;
+
+		
+			//@formatter:on
+
+			// Set the start min to a week before. This is only for performance and doesn't affect the logic
+<span class="nc" id="L512">			Date startDateTimeWeekBefore = DateUtil.addDays(startDateTimeGMT, -7);</span>
+
+<span class="nc" id="L514">			JdmoRowset rs = JdmoPreparedStatement.createRowset(m_dmo, sql, endDateTimeGMT, startDateTimeGMT, startDateTimeWeekBefore, employeeIds  );</span>
+
+<span class="nc bnc" id="L516" title="All 2 branches missed.">			while (rs.next()) {</span>
+<span class="nc" id="L517">				ShiftSwapCalendarInfo info = new ShiftSwapCalendarInfo();</span>
+<span class="nc" id="L518">				info.setEmployeeID(rs.getID(1));</span>
+<span class="nc" id="L519">				Date dateStart = TimeZoneUtil.toDate(rs.getTimestamp(2));</span>
+<span class="nc" id="L520">				Date dateEnd = TimeZoneUtil.toDate(rs.getTimestamp(3));</span>
+<span class="nc" id="L521">				info.setStartOfSwapItem(dateStart);</span>
+<span class="nc" id="L522">				info.setEndOfSwapItem(dateEnd);</span>
+<span class="nc" id="L523">				info.setShiftSwapType(rs.getString(4));</span>
+<span class="nc" id="L524">				info.setShiftType(rs.getString(5));</span>
+				
+				// The person we swapped with
+<span class="nc" id="L527">				info.setOriginalEmployeeID(rs.getID(6));</span>
+				// The original item we swapped away
+<span class="nc" id="L529">				Date dateOriginalStart = TimeZoneUtil.toDate(rs.getTimestamp(7));</span>
+<span class="nc" id="L530">				Date dateOriginalEnd = TimeZoneUtil.toDate(rs.getTimestamp(8));</span>
+<span class="nc" id="L531">				info.setStartOriginalItem(dateOriginalStart);</span>
+<span class="nc" id="L532">				info.setEndOriginalSwapItem(dateOriginalEnd);</span>
+<span class="nc" id="L533">				info.setOriginalShiftType(rs.getString(9));</span>
+				
+				//hashcodes of shifts
+				
+				//The received shift
+<span class="nc" id="L538">				info.setShiftHash( (Integer) rs.getInt(10));</span>
+				//The given-away shift
+<span class="nc" id="L540">				info.setOriginalShiftHash( (Integer) rs.getInt(11));</span>
+			
+<span class="nc" id="L542">				list.add(info);</span>
+<span class="nc" id="L543">			}</span>
+
+<span class="nc" id="L545">		} catch (JdmoException e) {</span>
+<span class="nc" id="L546">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L547">		}</span>
+		
+<span class="nc bnc" id="L549" title="All 2 branches missed.">		if(log.isDebugEnabled() ){</span>
+<span class="nc" id="L550">			log.debug(RmUtil.dumpCollection(list));</span>
+		}
+
+<span class="nc" id="L553">		return list;</span>
+
+	}
+
+		
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

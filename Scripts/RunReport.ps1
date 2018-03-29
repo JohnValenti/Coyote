@@ -7,19 +7,19 @@
 		[string] $buildno
 	)
 
-	$basepath = "C:\Coyote\"+$teamname
+	$basepath = "C:\Coyote\"
 	$teamfilter=$teamname
 	$antCmd = "cmd.exe /C C:\jacoco\apache-ant-1.9.2-bin\bin\ant -Dbasedir=""C:\jacoco"" -f C:\jacoco\build.xml "+$teamfilter
 	$antCmdAll = "cmd.exe /C C:\jacoco\apache-ant-1.9.2-bin\bin\ant -Dbasedir='C:\jacoco' -f C:\jacoco\build.xml coreteams"
 	$sourceDirectoryTeamReport  = "C:\jacoco\report\"
-	$destinationDirectoryTeamReport = $basepath+"Reports\"
+	$destinationDirectoryTeamReport = $basepath+"\Reports\"
 	$destinationDirectoryDump = "C:\jacoco\dump-out\jacoco"
-	$sourceDirectoryIndividualTeam = $basepath+"TeamResources\"+$teamname+"\"+$buildno+"\"
-	$sourceDirectoryAllTeams  = $basepath"TeamResources\CoreTeams\"+$buildno
-	$sourceDirectoryAllTeamsCopy = $basepath+"TeamResources\CoreTeams\"
+	$sourceDirectoryIndividualTeam = $basepath+"\TeamResources\"+$teamname+"\"+$buildno+"\"
+	$sourceDirectoryAllTeams  = $basepath+"\TeamResources\CoreTeams\"+$buildno
+	$sourceDirectoryAllTeamsCopy = $basepath+"\TeamResources\CoreTeams\"
 	$destinationDirectoryBuildDump = "C:\jacoco\dump-out\jacoco\"+$buildno
 	$destinationJacocoLatest = "C:\jacoco\latest\"
-	$sourceDirectoryTestResource = $basepath+"TestResources\"+$buildno+".jar"
+	$sourceDirectoryTestResource = $basepath+"\TestResources\"+$buildno+".jar"
 	
 	#### STAGE ONE - RUN ANT ON CURRENT EXEC THAT IS ALREADY IN DUMP-OUT FOLDER COPY REQUIRED TEST RESOURCE AND EXTRACT
 	Copy-item -Force -Recurse -Verbose $sourceDirectoryIndividualTeam -Destination $destinationDirectoryDump
