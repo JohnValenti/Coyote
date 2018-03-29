@@ -18,11 +18,8 @@
              else if($teamName === 'Delphi'){
            header( 'Location: http://coyote.lab.local/Reports/report/delphi/index.html' ) ;
              }
-             else if($teamName === 'QueueX'){
-           header( 'Location: http://coyote.lab.local/Reports/report/queuex/index.html' ) ;
-             }
-             else if($teamName === 'Firebirds'){
-           header( 'Location: http://coyote.lab.local/Reports/report/firebirds/index.html' ) ;
+             else if($teamName === 'Mixtape'){
+           header( 'Location: http://coyote.lab.local/Reports/report/mixtape/index.html' ) ;
              }
              else if($teamName === 'Fis'){
            header( 'Location: http://coyote.lab.local/Reports/report/fis/index.html' ) ;
