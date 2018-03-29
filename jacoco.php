@@ -23,27 +23,27 @@
    <body>
       <section class="main-contents">
          <h1 class="text-center page-title"><b>Project Coyote</b></h1>
+          <h2 class="text-center"><b>(Jacoco Reports)</b></h2>
       </section>
       <div class="logo">
          <a href="index.html"><img src="assets/images/ProjectCoyoteLogo.png" width="300" align="center"></a>
+          <br><br> 
       </div>
-      <div class="navbar navbar-inverse">
+       <!-- Removed nav bar as now only one page, may add more later-->
+      <!-- <div class="navbar navbar-inverse">
          <div class="container">
             <div class="navbar-header">
                <!-- Button for smallest screens -->
-               <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse"><span class="icon-bar"></span><span class="icon-bar"></span><span class="icon-bar"></span></button>
-            </div>
-            <div class="navbar-collapse collapse">
+            <!--   <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse"><span class="icon-bar"></span><span class="icon-bar"></span><span class="icon-bar"></span></button>
+          <!--  </div>
+          <!--  <div class="navbar-collapse collapse">
                <ul class="nav navbar-nav  mainNav">
-                  <li><a href="index.html">Home</a></li>
-                  <li class="active"><a href="jacoco.php">Jacoco</a></li>
-                  <li><a href="futureWork.html">Future Work</a></li>
-                  <li><a href="about.html">About</a></li>
+                  <li class="active"><a href="jacoco.php" class="text-center">Jacoco</a></li>
                </ul>
-            </div>
+            </div> -->
             <!--/.nav-collapse -->
-         </div>
-      </div>
+        <!-- </div>
+      <!--</div> 
       <!-- Progress bars-->
       <?php
          echo'<section class="main-contents">';
@@ -51,8 +51,8 @@
           echo'<div class="container">';
           echo'<hr>';
              echo'<div class="item-section col-md-12 col-sm-4 col-xs-12">';
-                 echo'<p class="text-center"> <br><br><b>Teams Current Progress</b></p>';
-                 echo'<br><br>';
+                 echo'<p class="text-center"> <b>Teams Current Progress</b></p>';
+                 echo'<p class="text-center"><iframe src="https://giphy.com/embed/yhRhIgnJIRD0I" width="300" height="200" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><a href="https://giphy.com/gifs/beycreative-yhRhIgnJIRD0I"></a></p>';
          
          //Combined progress bar
          //Extract the most recent jacoco coverage value from the html report for All of the core teams
