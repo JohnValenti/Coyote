@@ -87,31 +87,31 @@
          // QueueX progress 
          //Extract the most recent jacoco coverage value from the html report for QX
          
-         $qxdoc = new DOMDocument();
-         $qxdoc->loadHTMLFile('C:\Coyote\Reports\report\queuex\index.html');
-         $x= new DOMXpath($qxdoc);
+        // $qxdoc = new DOMDocument();
+       //  $qxdoc->loadHTMLFile('C:\Coyote\Reports\report\queuex\index.html');
+       //  $x= new DOMXpath($qxdoc);
+      //   foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
+      //   $qxProgress = $node->textContent;
+      //   echo'<div class="progress">';
+     //    echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $qxProgress .'"
+//aria-valuemin="0" aria-valuemax="100" style="width:'. $qxProgress .'">';
+    ///     echo' '. $qxProgress .'   QUEUEX';
+     //    echo'</div>';
+     //    echo'</div>';
+         
+         // Mixtape progress mixtape is now firebirds and queuex
+         //Extract the most recent jacoco coverage value from the html report for Mixtape
+         
+         $mixtapedoc = new DOMDocument();
+         $mixtapedoc->loadHTMLFile('C:\Coyote\Reports\report\mixtape\index.html');
+         $x= new DOMXpath($mixtapedoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
-         $qxProgress = $node->textContent;
+         
+         $mixtapeProgress = $node->textContent;
          echo'<div class="progress">';
-         echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $qxProgress .'"
-         aria-valuemin="0" aria-valuemax="100" style="width:'. $qxProgress .'">';
-         echo' '. $qxProgress .'   QUEUEX';
-         echo'</div>';
-         echo'</div>';
-         
-         // Firebirds progress
-         //Extract the most recent jacoco coverage value from the html report for Firebirds
-         
-         $fbdoc = new DOMDocument();
-         $fbdoc->loadHTMLFile('C:\Coyote\Reports\report\firebirds\index.html');
-         $x= new DOMXpath($fbdoc);
-         foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
-         
-         $fbProgress = $node->textContent;
-         echo'<div class="progress">';
-         echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $fbProgress .'"
-         aria-valuemin="0" aria-valuemax="100" style="width:'. $fbProgress .'">';
-         echo' '. $fbProgress .'   FIREBIRDS';
+         echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $mixtapeProgress .'"
+         aria-valuemin="0" aria-valuemax="100" style="width:'. $mixtapeProgress .'">';
+         echo' '. $mixtapeProgress .'   MIXTAPE';
          echo'</div>';
          echo'</div>';
          
@@ -161,8 +161,7 @@
                   <select name="teamName">
                      <option value="AllTeams">ALL TEAMS</option>
                      <option value="Delphi">DELPHI</option>
-                     <option value="QueueX">QUEUEX</option>
-                     <option value="Firebirds">FIREBIRDS</option>
+                     <option value="Mixtape">MIXTAPE</option>
                      <option value="Fis">FIS</option>
                      <option value="Sustaining">SUSTAINING</option>
                   </select>
