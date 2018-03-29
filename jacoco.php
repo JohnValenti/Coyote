@@ -52,7 +52,7 @@
           echo'<hr>';
              echo'<div class="item-section col-md-12 col-sm-4 col-xs-12">';
                  echo'<p class="text-center"> <b>Teams Current Progress</b></p>';
-                 echo'<p class="text-center"><iframe src="https://giphy.com/embed/yhRhIgnJIRD0I" width="300" height="200" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><a href="https://giphy.com/gifs/beycreative-yhRhIgnJIRD0I"></a></p>';
+                 echo'<br>';
          
          //Combined progress bar
          //Extract the most recent jacoco coverage value from the html report for All of the core teams
@@ -80,7 +80,7 @@
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $delphiProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $delphiProgress .'">';
-         echo' '. $delphiProgress .' %  DELPHI';
+         echo' '. $delphiProgress .'   DELPHI';
          echo'</div>';
          echo'</div>';
          
@@ -95,7 +95,7 @@
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $qxProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $qxProgress .'">';
-         echo' '. $qxProgress .' %  QUEUEX';
+         echo' '. $qxProgress .'   QUEUEX';
          echo'</div>';
          echo'</div>';
          
@@ -111,7 +111,7 @@
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $fbProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $fbProgress .'">';
-         echo' '. $fbProgress .' %  FIREBIRDS';
+         echo' '. $fbProgress .'   FIREBIRDS';
          echo'</div>';
          echo'</div>';
          
@@ -126,7 +126,7 @@
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $fisProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $fisProgress .'">';
-         echo' '. $fisProgress .' %  FIS';
+         echo' '. $fisProgress .'   FIS';
          echo'</div>';
          echo'</div>';
          
@@ -141,7 +141,7 @@
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $susProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $susProgress .'">';
-         echo' '. $susProgress .' %  SUSTAINING';
+         echo' '. $susProgress .'   SUSTAINING';
          echo'</div>';
          echo'</div>';
          echo'</section>';
@@ -151,8 +151,8 @@
          <div class="container">
             <hr>
             <div class="item-section col-md-12 col-sm-4 col-xs-12">
-               <p class="text-center"> <br><br>Select which team report you would like to view</p>
-               <br><br>
+               <p class="text-center"> <b>View Jacoco Report</b></p>
+               <br>
             </div>
          </div>
          <div class="text-center">
@@ -168,6 +168,8 @@
                   </select>
                   <br>
                   <button type="submit">Get Jacoco'd</button>
+				  <br><br>
+				  <p class="text-center"><iframe src="https://giphy.com/embed/yhRhIgnJIRD0I" width="300" height="200" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><a href="https://giphy.com/gifs/beycreative-yhRhIgnJIRD0I"></a></p>
                </fieldset>
             </form>
          </div>
