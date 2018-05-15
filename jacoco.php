@@ -22,13 +22,8 @@
    </head>
    <body>
       <section class="main-contents">
-         <h1 class="text-center page-title"><b>Project Coyote</b></h1>
-          <h2 class="text-center"><b>(JaCoCo Reports)</b></h2>
+         <h1 class="text-center page-title"><b>JaCoCo Coverage Reporting</b></h1>
       </section>
-      <div class="logo">
-         <a href="index.html"><img src="assets/images/ProjectCoyoteLogo.png" width="300" align="center"></a>
-          <br><br> 
-      </div>
        <!-- Removed nav bar as now only one page, may add more later-->
       <!-- <div class="navbar navbar-inverse">
          <div class="container">
@@ -155,7 +150,7 @@
          <div class="container">
             <hr>
             <div class="item-section col-md-12 col-sm-4 col-xs-12">
-               <p class="text-center"> <b>View JaCoCo Report</b></p>
+               <p class="text-center"> <b>Select a team below to view their coverage report.</b></p>
                <br>
             </div>
          </div>
@@ -170,9 +165,7 @@
                      <option value="Sustaining">SUSTAINING</option>
                   </select>
                   <br>
-                  <button type="submit">Get Jacoco'd</button>
-				  <br><br>
-				  <p class="text-center"><iframe src="https://giphy.com/embed/yhRhIgnJIRD0I" width="300" height="200" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><a href="https://giphy.com/gifs/beycreative-yhRhIgnJIRD0I"></a></p>
+                  <button type="submit">Display Report</button>
                </fieldset>
             </form>
          </div>
@@ -181,17 +174,8 @@
          <div class="footer-bottom">
             <div class="container">
                <div class="item-section col-md-4 col-sm-4 col-xs-12">
-                  <p><i class="fa fa-envelope-o pull-left"> Contact</i><br></p>
-                  <p class="text-left">seamus.mackie@verint.com</p>
-                  <p class="text-left">john.valenti@verint.com</p>
-               </div>
-               <div class="item-section col-md-4 col-sm-4 col-xs-12">
-                  <p class="text-center"><br><br><br><br>Copyright © 2018 - Project Coyote Productions. All Rights Reserved </p>
-               </div>
-               <div class="item-section col-md-4 col-sm-4 col-xs-12">
-                  <p class="text-right">A Team Auton Production by<br></p>
-                  <p class="text-right">Seamus Mackie</p>
-                  <p class="text-right">John Valenti</p>
+                  <p><i class="fa fa-envelope-o pull-left"> Contact Us</i><br></p>
+                  <a class="text-left" href='mailto:auton@verint.com'>Email</a>
                </div>
             </div>
          </div>
