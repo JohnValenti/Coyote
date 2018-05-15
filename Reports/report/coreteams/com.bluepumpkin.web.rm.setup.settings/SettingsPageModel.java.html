@@ -1,19 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SettingsPageModel.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.setup.settings</a> &gt; <span class="el_source">SettingsPageModel.java</span></div><h1>SettingsPageModel.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.setup.settings;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.ResourceBundle;
+import java.util.TimeZone;
+
+import javax.servlet.http.HttpServletRequest;
 
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.datatypes.StringsPair;
+import com.bluepumpkin.common.localization.Localizer;
 import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.common.util.StringUtil;
 import com.bluepumpkin.ejb.bbm.workresource.OrganizationScopeManagerProxy;
 import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
 import com.bluepumpkin.ejb.rm.l10n.RmSettingKey;
+import com.bluepumpkin.ejb.rm.requests.timeoff.requiredpayperiodhours.RequiredPayPeriodHoursUtil;
 import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
 import com.bluepumpkin.ejb.rm.util.LicenseUtil;
 import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
@@ -31,6 +39,7 @@ import com.witness.web.uif.pagecomponent.container.Collapsible2ColFormPC;
 import com.witness.web.uif.pagecomponent.container.CollapsibleContainerPC;
 import com.witness.web.uif.pagecomponent.container.ListContainerPC;
 import com.witness.web.uif.pagecomponent.form.FormInputPC;
+import com.witness.web.uif.pagecomponent.picker.date.DatePickerPC;
 import com.witness.web.uif.pagecomponent.toolbar.ToolbarUtil;
 import com.witness.web.uif.system.RequestContext;
 import com.witness.web.uif.util.HtmlUtil;
@@ -49,8 +58,13 @@ import com.witness.web.uif.validator.IsPosIntegerFieldValidator;
  * @version       1.0
  */
 public class SettingsPageModel extends OrgWorkpaneFormPageModel {
-<span class="fc" id="L52">	private static final Category log =</span>
-<span class="fc" id="L53">			Log.initCategory(SettingsPageModel.class.getName());</span>
+	/**
+	 *
+	 */
+	private static final long serialVersionUID = 4005255559348081000L;
+
+<span class="fc" id="L66">	private static final Category log =</span>
+<span class="fc" id="L67">			Log.initCategory(SettingsPageModel.class.getName());</span>
 
 	/**
 	 * Set the characteristics of the ListContainerPC
@@ -60,6 +74,12 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 
 	//default time off calendar color
 	private static final String DEFAULT_COLOR = &quot;#000000&quot;; // black
+
+	private static final String DATE_FN  = &quot;date&quot;;
+
+
+
+
 
 	//Time Off Management Activation Container
 	private ListContainerPC m_activationContainerPC;
@@ -78,10 +98,10 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	private ListContainerPC m_shiftSwapPC;
 
 	//Shift Swap Org Selector
-	private OrganizationSelectorPC m_shiftSwapOrgSelectorPC;
+	private final OrganizationSelectorPC m_shiftSwapOrgSelectorPC;
 
 	//Schedule Viewing Org Selector
-	private OrganizationSelectorPC m_groupViewOrgSelectorPC;
+	private final OrganizationSelectorPC m_groupViewOrgSelectorPC;
 
 	//Time Off Accrual Container
 	private ListContainerPC m_toYearContainerPC;
@@ -95,11 +115,16 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	//Custom Shift Container
 	private ListContainerPC m_customShiftContainerPC;
 
-	private HtmlChoiceInput m_choiceInput;
-	private FormInputPC m_formInputPC;
+	private final HtmlChoiceInput m_choiceInput;
+	private final FormInputPC m_formInputPC;
+
+
+	//Required Pay Period Hours
+	private ListContainerPC requiredPayPeriodHoursContainerPC;
+	private final DatePickerPC    datePickerPC;
 
 	//Policy Containers
-<span class="fc" id="L102">	private Map&lt;String, CollapsibleContainerPC&gt; m_settingsPolicyContainerMap =</span>
+<span class="nc" id="L127">	private final Map&lt;String, CollapsibleContainerPC&gt; m_settingsPolicyContainerMap =</span>
 			new HashMap&lt;String, CollapsibleContainerPC&gt;(5);
 	private static final String POLICY_CONTAINER = &quot;policyContainer&quot;;
 	public static final String TO_POLICY=&quot;TO_POLICY&quot;;
@@ -114,52 +139,52 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	public static final int CS_POLICY_INDEX = 3;
 	public static final int FT_POLICY_INDEX = 4;
 
-	private ResourceBundle m_rmBundle;
+	private final ResourceBundle m_rmBundle;
 	//Settings and inheritance variables
 	private OrganizationSetting m_settings; //the settings for the selected org (includes inheritted settings)
     private Map m_ancestors; //maps each inheritted key to the ancestor orgName from which it was inheritted
-<span class="fc" id="L121">    private boolean m_hasChildren = false; //tells us whether the current org has any children.</span>
-    private static final String _1MINUTE = &quot;1&quot;;
-    private static final String _15MINUTE = &quot;15&quot;;
-    private static final String HOUR = &quot;60&quot;;
-    private static final String DAY = &quot;1440&quot;;
+<span class="nc" id="L146">    private boolean m_hasChildren = false; //tells us whether the current org has any children.</span>
+    static final String _1MINUTE = &quot;1&quot;;
+    static final String _15MINUTE = &quot;15&quot;;
+    static final String HOUR = &quot;60&quot;;
+    static final String DAY = &quot;1440&quot;;
+
 
 	/**
 	 * Constructor
 	 */
 	public SettingsPageModel(RequestContext context) {
-<span class="fc" id="L131">		super(context);</span>
+<span class="nc" id="L157">		super(context);</span>
 
-<span class="fc" id="L133">		m_rmBundle = m_localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
-<span class="fc" id="L134">		m_localizer.getBundle(UIFWebBundleKey.BUNDLE_NAME);</span>
-<span class="fc" id="L135">		m_formInputPC = new FormInputPC(context);</span>
-<span class="fc" id="L136">		addChildComponent(m_formInputPC);</span>
+<span class="nc" id="L159">		m_rmBundle = m_localizer.getBundle(RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L160">		m_localizer.getBundle(UIFWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L161">		m_formInputPC = new FormInputPC(context);</span>
+<span class="nc" id="L162">		addChildComponent(m_formInputPC);</span>
 
-		/*
-		String durationNameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_EXTEND_FIRST_ACTIVITY_DURATION);
-		firstActivityDurationPC = new DurationSpinnerPC(m_context, durationNameKey);
-		this.addChildComponent(firstActivityDurationPC);
 
-		durationNameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_EXTEND_LAST_ACTIVITY_DURATION);
-		lastActivityDurationPC = new DurationSpinnerPC(m_context, durationNameKey);
-		this.addChildComponent(lastActivityDurationPC);
-		 */
+<span class="nc" id="L165">		datePickerPC = new DatePickerPC(m_context, DATE_FN);</span>
+<span class="nc" id="L166">		datePickerPC.setIsTimeEnabled(false);</span>
+<span class="nc" id="L167">		datePickerPC.setTimeZone(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+
+
+
+
 
 		// Component specific required JavaScript Files
-<span class="fc" id="L149">		addRequiredJavaScriptFile(JavaScriptFileID.MEDIATOR_WORKPANE);</span>
-<span class="fc" id="L150">		setJSMediator(JavaScriptFileID.MEDIATOR_WORKPANE_GENERIC);</span>
+<span class="nc" id="L174">		addRequiredJavaScriptFile(JavaScriptFileID.MEDIATOR_WORKPANE);</span>
+<span class="nc" id="L175">		setJSMediator(JavaScriptFileID.MEDIATOR_WORKPANE_GENERIC);</span>
 
-<span class="fc" id="L152">		addRequiredJavaScriptFile(JavaScriptFileID.MODULE_POPUPBUTTON);</span>
-<span class="fc" id="L153">		addRequiredJavaScriptFile(JavaScriptFileID.MEDIATOR_DIALOG);</span>
-<span class="fc" id="L154">		addRequiredJavaScriptFile(JavaScriptFileID.MODULE_DIALOGBOX);</span>
-<span class="fc" id="L155">		addRequiredJavaScriptFile(JavaScriptFileID.DIALOG_PICKERS);</span>
-<span class="fc" id="L156">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="nc" id="L177">		addRequiredJavaScriptFile(JavaScriptFileID.MODULE_POPUPBUTTON);</span>
+<span class="nc" id="L178">		addRequiredJavaScriptFile(JavaScriptFileID.MEDIATOR_DIALOG);</span>
+<span class="nc" id="L179">		addRequiredJavaScriptFile(JavaScriptFileID.MODULE_DIALOGBOX);</span>
+<span class="nc" id="L180">		addRequiredJavaScriptFile(JavaScriptFileID.DIALOG_PICKERS);</span>
+<span class="nc" id="L181">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
 
-<span class="fc" id="L158">		m_toolbar.setName(getName() + &quot;_toolbar&quot;);</span>
-<span class="fc" id="L159">		m_shiftSwapOrgSelectorPC = createAndAddOrgSelectorPC(&quot;shiftSwapOrgSelectorPC&quot;);</span>
-<span class="fc" id="L160">		m_groupViewOrgSelectorPC = createAndAddOrgSelectorPC(&quot;groupViewOrgSelectorPC&quot;);</span>
-<span class="fc" id="L161">		m_choiceInput = new HtmlChoiceInput();</span>
-<span class="fc" id="L162">	}</span>
+<span class="nc" id="L183">		m_toolbar.setName(getName() + &quot;_toolbar&quot;);</span>
+<span class="nc" id="L184">		m_shiftSwapOrgSelectorPC = createAndAddOrgSelectorPC(&quot;shiftSwapOrgSelectorPC&quot;);</span>
+<span class="nc" id="L185">		m_groupViewOrgSelectorPC = createAndAddOrgSelectorPC(&quot;groupViewOrgSelectorPC&quot;);</span>
+<span class="nc" id="L186">		m_choiceInput = new HtmlChoiceInput();</span>
+<span class="nc" id="L187">	}</span>
 
 	/**
 	 * Create and Add OrganizationSelectorPC
@@ -168,11 +193,11 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 * @return OrganizationSelectorPC
 	 */
 	private OrganizationSelectorPC createAndAddOrgSelectorPC(String name) {
-<span class="fc" id="L171">		OrganizationSelectorPC orgSelPC =</span>
+<span class="nc" id="L196">		OrganizationSelectorPC orgSelPC =</span>
 				new OrganizationSelectorPC(m_context, m_toolbar);
-<span class="fc" id="L173">		orgSelPC.setName(name);</span>
-<span class="fc" id="L174">		addChildComponent(orgSelPC);</span>
-<span class="fc" id="L175">		return orgSelPC;</span>
+<span class="nc" id="L198">		orgSelPC.setName(name);</span>
+<span class="nc" id="L199">		addChildComponent(orgSelPC);</span>
+<span class="nc" id="L200">		return orgSelPC;</span>
 	}
 
 	/**
@@ -181,7 +206,7 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 * @return  SettingsPageModel  instance of SettingsPageModel
 	 */
 	public static SettingsPageModel getInstance(RequestContext context) {
-<span class="fc" id="L184">		return (SettingsPageModel)getInstance(context, SettingsPageModel.class);</span>
+<span class="nc" id="L209">		return (SettingsPageModel)getInstance(context, SettingsPageModel.class);</span>
 	}
 
 	/**
@@ -190,21 +215,20 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 */
 	@Override
 	protected void initToolbar() {
-<span class="fc" id="L193">		m_toolbar.setName(getName() + &quot;_toolbar&quot;);</span>
-<span class="fc" id="L194">		boolean isBtnEnabled = isAuthorizedToConfigure();</span>
+<span class="nc" id="L218">		m_toolbar.setName(getName() + &quot;_toolbar&quot;);</span>
+<span class="nc" id="L219">		boolean isBtnEnabled = isAuthorizedToConfigure();</span>
 
         //Add &quot;Save&quot; button
-<span class="fc" id="L197">        ToolbarUtil.addValidateSaveBtn(m_toolbar, isBtnEnabled); //CONFIRM_SUBMIT_TYPE</span>
+<span class="nc" id="L222">        ToolbarUtil.addValidateSaveBtn(m_toolbar, isBtnEnabled); //CONFIRM_SUBMIT_TYPE</span>
 
         //Add &quot;Save and apply to sub-orgs&quot; button. When user clicks it, it will pop-up a JavaScript confirmation message.
-<span class="fc" id="L200">        addJSVariable(&quot;CONFIRM_SAVE_AND_APPLY_MSG&quot;, m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_CONFIRM_SAVE_AND_APPLY);</span>
-<span class="fc" id="L201">        String lbl = i18n(m_rmBundle, CommonWebBundleKey.BUTTON_SAVE_APPLY_TO_SUB_ORGS);</span>
-<span class="pc bpc" id="L202" title="2 of 4 branches missed.">		m_toolbar.addConfirmSubmitTextButton(PageAction.SAVE_AS, lbl, isBtnEnabled &amp;&amp; hasChildOrgs(),</span>
-<span class="fc" id="L203">				&quot;CONFIRM_SAVE_AND_APPLY_MSG&quot;).setConditionJS(&quot;pageMediator.handleValidateForm();&quot;);</span>
+<span class="nc" id="L225">        addJSVariable(&quot;CONFIRM_SAVE_AND_APPLY_MSG&quot;, m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_CONFIRM_SAVE_AND_APPLY);</span>
+<span class="nc" id="L226">        String lbl = i18n(m_rmBundle, CommonWebBundleKey.BUTTON_SAVE_APPLY_TO_SUB_ORGS);</span>
+<span class="nc bnc" id="L227" title="All 4 branches missed.">        m_toolbar.addConfirmSubmitTextButton(PageAction.SAVE_AS, lbl, isBtnEnabled&amp;&amp;hasChildOrgs(), &quot;CONFIRM_SAVE_AND_APPLY_MSG&quot;);</span>
 
         //Add &quot;Revert&quot; button
-<span class="fc" id="L206">		ToolbarUtil.addResetBtn(m_toolbar, isBtnEnabled);</span>
-<span class="fc" id="L207">	}</span>
+<span class="nc" id="L230">		ToolbarUtil.addResetBtn(m_toolbar, isBtnEnabled);</span>
+<span class="nc" id="L231">	}</span>
 
 	/**
 	 * Return the form title
@@ -212,7 +236,14 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 */
 	@Override
 	public String getFormTitle() {
-<span class="nc" id="L215">		return &quot;&quot;;</span>
+<span class="nc" id="L239">		return &quot;&quot;;</span>
+
+	}
+
+	@Override
+	public String getJavaScriptInitCode(){
+<span class="nc" id="L245">		return super.getJavaScriptInitCode();</span>
+
 	}
 
 	/**
@@ -221,7 +252,7 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 */
 	@Override
 	protected String getTitleEntityType() {
-<span class="fc" id="L224">		return getEntityName();</span>
+<span class="nc" id="L255">		return getEntityName();</span>
 	}
 
 	/**
@@ -230,7 +261,7 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 */
 	@Override
 	protected String getEntityName() {
-<span class="fc" id="L233">		return i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_LABEL);</span>
+<span class="nc" id="L264">		return i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_LABEL);</span>
 	}
 
 	/**
@@ -238,7 +269,7 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 */
 	@Override
 	public String getFormAction() {
-<span class="fc" id="L241">		return &quot;request_processing_settings&quot;;</span>
+<span class="nc" id="L272">		return &quot;request_processing_settings&quot;;</span>
 	}
 
 	/**
@@ -247,49 +278,50 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	@Override
 	protected void createFormModel() {
 		try {
-<span class="fc" id="L250">			ID selectedOrgID = getSelectedIDObject();</span>
-<span class="pc bpc" id="L251" title="1 of 2 branches missed.">			if (selectedOrgID != null) {</span>
-<span class="fc" id="L252">				m_settings = SettingsModelHandler.getSettings(selectedOrgID);</span>
-<span class="fc" id="L253">				m_ancestors = m_settings.getAncestors();</span>
-<span class="fc" id="L254">				m_hasChildren = SettingsModelHandler.getHasChildren(m_context, selectedOrgID);</span>
+<span class="nc" id="L281">			ID selectedOrgID = getSelectedIDObject();</span>
+<span class="nc bnc" id="L282" title="All 2 branches missed.">			if (selectedOrgID != null) {</span>
+<span class="nc" id="L283">				m_settings = SettingsModelHandler.getSettings(selectedOrgID);</span>
+<span class="nc" id="L284">				m_ancestors = m_settings.getAncestors();</span>
+<span class="nc" id="L285">				m_hasChildren = SettingsModelHandler.getHasChildren(m_context, selectedOrgID);</span>
 			} else {
-<span class="nc" id="L256">				m_settings = new OrganizationSetting(new HashMap());</span>
+<span class="nc" id="L287">				m_settings = new OrganizationSetting(new HashMap());</span>
 			}
-<span class="pc bpc" id="L258" title="1 of 2 branches missed.">			if (!isAuthorizedToConfigure()) {</span>
+<span class="nc bnc" id="L289" title="All 2 branches missed.">			if (!isAuthorizedToConfigure()) {</span>
 				String key;
-<span class="nc" id="L260">				key = BbmWebBundleKey.NOT_AUTHORIZED_TO_CONFIG_SELECTED_ORG;</span>
-<span class="nc" id="L261">				String msg = i18n(m_bbmBundle, key);</span>
-<span class="nc" id="L262">				addPageMessage(Message.RESPONSE_TYPE, msg);</span>
+<span class="nc" id="L291">				key = BbmWebBundleKey.NOT_AUTHORIZED_TO_CONFIG_SELECTED_ORG;</span>
+<span class="nc" id="L292">				String msg = i18n(m_bbmBundle, key);</span>
+<span class="nc" id="L293">				addPageMessage(Message.RESPONSE_TYPE, msg);</span>
 			}
-<span class="fc" id="L264">            m_workFlowContainerPC = new ListContainerPC(m_context);</span>
-<span class="fc" id="L265">			m_activationContainerPC = new ListContainerPC(m_context);</span>
-<span class="fc" id="L266">			m_toOptionsContainerPC = new ListContainerPC(m_context);</span>
-<span class="fc" id="L267">			m_toYearContainerPC = new ListContainerPC(m_context);</span>
-<span class="fc" id="L268">			m_calendarColorPC = new ColorGenericPC(m_context);</span>
-<span class="fc" id="L269">			m_shiftBidContainerPC = new Collapsible2ColFormPC(m_context);</span>
-<span class="fc" id="L270">			m_shiftSwapPC = new ListContainerPC(m_context);</span>
-<span class="fc" id="L271">			m_customShiftContainerPC = new ListContainerPC(m_context);</span>
-<span class="fc" id="L272">			flexTimeContainerPC = new ListContainerPC(m_context);</span>
+<span class="nc" id="L295">            m_workFlowContainerPC = new ListContainerPC(m_context);</span>
+<span class="nc" id="L296">			m_activationContainerPC = new ListContainerPC(m_context);</span>
+<span class="nc" id="L297">			m_toOptionsContainerPC = new ListContainerPC(m_context);</span>
+<span class="nc" id="L298">			m_toYearContainerPC = new ListContainerPC(m_context);</span>
+<span class="nc" id="L299">			m_calendarColorPC = new ColorGenericPC(m_context);</span>
+<span class="nc" id="L300">			m_shiftBidContainerPC = new Collapsible2ColFormPC(m_context);</span>
+<span class="nc" id="L301">			m_shiftSwapPC = new ListContainerPC(m_context);</span>
+<span class="nc" id="L302">			m_customShiftContainerPC = new ListContainerPC(m_context);</span>
+<span class="nc" id="L303">			flexTimeContainerPC = new ListContainerPC(m_context);</span>
+<span class="nc" id="L304">			requiredPayPeriodHoursContainerPC = new ListContainerPC(m_context);</span>
 
-<span class="nc" id="L274">		} catch (Exception ex) {</span>
-<span class="nc" id="L275">			handleUnableToLoadDataError(log, ex);</span>
-<span class="fc" id="L276">		}</span>
-<span class="fc" id="L277">	}</span>
+<span class="nc" id="L306">		} catch (Exception ex) {</span>
+<span class="nc" id="L307">			handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L308">		}</span>
+<span class="nc" id="L309">	}</span>
 
 	public OrganizationSetting getConfiguration() {
-<span class="fc" id="L280">		return m_settings;</span>
+<span class="nc" id="L312">		return m_settings;</span>
 	}
 
 	public void setConfiguration(OrganizationSetting setting) {
-<span class="nc" id="L284">		m_settings = setting;</span>
-<span class="nc" id="L285">	}</span>
+<span class="nc" id="L316">		m_settings = setting;</span>
+<span class="nc" id="L317">	}</span>
 
 	public String getGroupViewOrgIDs() {
-<span class="fc" id="L288">		return m_groupViewOrgSelectorPC.getSelectedIDs();</span>
+<span class="nc" id="L320">		return m_groupViewOrgSelectorPC.getSelectedIDs();</span>
 	}
 
 	public String getShiftSwapOrgIDs() {
-<span class="fc" id="L292">		return m_shiftSwapOrgSelectorPC.getSelectedIDs();</span>
+<span class="nc" id="L324">		return m_shiftSwapOrgSelectorPC.getSelectedIDs();</span>
 	}
 
 	/**
@@ -297,161 +329,200 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 */
 	@Override
 	protected void initForm() {
-<span class="pc bpc" id="L300" title="1 of 2 branches missed.">		if (getSelectedIDObject() != null) {</span>
-<span class="pc bpc" id="L301" title="1 of 2 branches missed.">			if (m_settings == null) {</span>
-<span class="nc" id="L302">				createFormModel();</span>
+<span class="nc bnc" id="L332" title="All 2 branches missed.">		if (getSelectedIDObject() != null) {</span>
+<span class="nc bnc" id="L333" title="All 2 branches missed.">			if (m_settings == null) {</span>
+<span class="nc" id="L334">				createFormModel();</span>
 			}
-<span class="pc bpc" id="L304" title="1 of 2 branches missed.">			if (m_settings != null) {</span>
+<span class="nc bnc" id="L336" title="All 2 branches missed.">			if (m_settings != null) {</span>
 
 				//NOTE: Whenever adding or removing a container, you must also update settings.jsp.
 
-<span class="fc" id="L308">				createWorkFlowForm();</span>
+<span class="nc" id="L340">				createWorkFlowForm();</span>
+<span class="nc bnc" id="L341" title="All 2 branches missed.">				if (LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L342">					createRequiredPayPeriodHoursForm();</span>
+				}
+<span class="nc" id="L344">				createTimeOffActivationForm();</span>
+<span class="nc" id="L345">				createTimeOfOptionsForm();</span>
+<span class="nc" id="L346">				createTimeOffYearForm();</span>
+<span class="nc" id="L347">				createCalendarColorForm();</span>
+<span class="nc" id="L348">				createTOPoliciesForm();</span>
 
-<span class="fc" id="L310">				createTimeOffActivationForm();</span>
-<span class="fc" id="L311">				createTimeOfOptionsForm();</span>
-<span class="fc" id="L312">				createTimeOffYearForm();</span>
-<span class="fc" id="L313">				createCalendarColorForm();</span>
-<span class="fc" id="L314">				createTOPoliciesForm();</span>
-
-<span class="pc bpc" id="L316" title="1 of 2 branches missed.">				if (LicenseUtil.isAdvancedRMLicense()) {</span>
-<span class="nc" id="L317">					createFlexTimeForm();</span>
-<span class="nc" id="L318">					createFTPoliciesForm();</span>
+<span class="nc bnc" id="L350" title="All 2 branches missed.">				if (LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L351">					createFlexTimeForm();</span>
+<span class="nc" id="L352">					createFTPoliciesForm();</span>
 				}
 
-<span class="fc" id="L321">				createShiftBidForm();</span>
-<span class="fc" id="L322">				createSBPoliciesForm();</span>
+<span class="nc" id="L355">				createShiftBidForm();</span>
+<span class="nc" id="L356">				createSBPoliciesForm();</span>
 
-<span class="fc" id="L324">				createShiftSwapForm();</span>
-<span class="fc" id="L325">				createSSPoliciesForm();</span>
+<span class="nc" id="L358">				createShiftSwapForm();</span>
+<span class="nc" id="L359">				createSSPoliciesForm();</span>
 
-<span class="fc" id="L327">				createCustomShiftForm();</span>
-<span class="fc" id="L328">				createCSPoliciesForm();</span>
+<span class="nc" id="L361">				createCustomShiftForm();</span>
+<span class="nc" id="L362">				createCSPoliciesForm();</span>
 			}
 		}
-<span class="fc" id="L331">	}</span>
+<span class="nc" id="L365">	}</span>
+
 
 	/**
 	 * Creates the Flex Time Form
 	 */
 	private void createFlexTimeForm() {
 
-<span class="nc" id="L338">		flexTimeContainerPC.setWidth(WIDTH);</span>
-<span class="nc" id="L339">		flexTimeContainerPC.setWrapperCSSClass(FWRAPPER);</span>
-<span class="nc" id="L340">		flexTimeContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
-<span class="nc bnc" id="L341" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureFlexTime();</span>
-<span class="nc" id="L342">		String ancestor = null;</span>
-<span class="nc" id="L343">		addJSVariable(&quot;ORG_RM_SETTINGS_FT_MUST_ENABLE_AT_LEAST_ONE_MAKEUP&quot;, m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_FT_MUST_ENABLE_AT_LEAST_ONE_MAKEUP);</span>
+<span class="nc" id="L373">		flexTimeContainerPC.setWidth(WIDTH);</span>
+<span class="nc" id="L374">		flexTimeContainerPC.setWrapperCSSClass(FWRAPPER);</span>
+<span class="nc" id="L375">		flexTimeContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
+<span class="nc bnc" id="L376" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureFlexTime();</span>
+<span class="nc" id="L377">		String ancestor = null;</span>
+<span class="nc" id="L378">		addJSVariable(&quot;ORG_RM_SETTINGS_FT_MUST_ENABLE_AT_LEAST_ONE_MAKEUP&quot;, m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_FT_MUST_ENABLE_AT_LEAST_ONE_MAKEUP);</span>
 
 		//Allow makeup extensions before shift
-<span class="nc" id="L346">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_BEFORE_SHIFT);</span>
-<span class="nc" id="L347">		String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_BEFORE_SHIFT;</span>
-<span class="nc" id="L348">		boolean checked = m_settings.getAllowMakeupBeforeShift();</span>
-<span class="nc" id="L349">		String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="nc" id="L350">		String label = i18n(m_rmBundle, key);</span>
-<span class="nc" id="L351">		flexTimeContainerPC.addRowData(checkbox + &quot; &amp;nbsp; &quot; + label);</span>
-<span class="nc bnc" id="L352" title="All 2 branches missed.">		ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_BEFORE_SHIFT);</span>
+<span class="nc" id="L381">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_BEFORE_SHIFT);</span>
+<span class="nc" id="L382">		String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_BEFORE_SHIFT;</span>
+<span class="nc" id="L383">		boolean checked = m_settings.getAllowMakeupBeforeShift();</span>
+<span class="nc" id="L384">		String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L385">		String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L386">		flexTimeContainerPC.addRowData(checkbox + HtmlUtil.NBSP + label);</span>
+<span class="nc bnc" id="L387" title="All 2 branches missed.">		ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_BEFORE_SHIFT);</span>
 
 		//Allow makeup extensions after shift
-<span class="nc" id="L355">		nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_AFTER_SHIFT);</span>
-<span class="nc" id="L356">		key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_AFTER_SHIFT;</span>
-<span class="nc" id="L357">		checked = m_settings.getAllowMakeupAfterShift();</span>
-<span class="nc" id="L358">		checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="nc" id="L359">		label = i18n(m_rmBundle, key);</span>
-<span class="nc" id="L360">		flexTimeContainerPC.addRowData(checkbox + &quot; &amp;nbsp; &quot; + label);</span>
-<span class="nc bnc" id="L361" title="All 2 branches missed.">		ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_AFTER_SHIFT);</span>
+<span class="nc" id="L390">		nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_AFTER_SHIFT);</span>
+<span class="nc" id="L391">		key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_AFTER_SHIFT;</span>
+<span class="nc" id="L392">		checked = m_settings.getAllowMakeupAfterShift();</span>
+<span class="nc" id="L393">		checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L394">		label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L395">		flexTimeContainerPC.addRowData(checkbox + HtmlUtil.NBSP  + label);</span>
+<span class="nc bnc" id="L396" title="All 2 branches missed.">		ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_AFTER_SHIFT);</span>
 
-<span class="nc" id="L363">		flexTimeContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME), ancestor));</span>
+		//Allow makeup in gaps
+<span class="nc" id="L399">		nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_IN_GAP);</span>
+<span class="nc" id="L400">		key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_IN_GAP;</span>
+<span class="nc" id="L401">		checked = m_settings.getAllowMakeupInGap();</span>
+<span class="nc" id="L402">		checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L403">		label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L404">		flexTimeContainerPC.addRowData(checkbox + &quot; &amp;nbsp; &quot; + label);</span>
+<span class="nc bnc" id="L405" title="All 2 branches missed.">		ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_MAKEUP_IN_GAP);</span>
+
+		//Limit time off request to beginning of shift block
+<span class="nc" id="L408">		nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_LIMIT_FLEX_TIMEOFF_TO_START_SHIFT_BLOCK);</span>
+<span class="nc" id="L409">		key = RmWebBundleKey.ORG_RM_SETTINGS_LIMIT_FLEX_TIMEOFF_TO_START_SHIFT_BLOCK;</span>
+<span class="nc" id="L410">		checked = m_settings.getLimitFlexTimeOffToStartOfShiftBlock();</span>
+<span class="nc" id="L411">		checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L412">		label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L413">		flexTimeContainerPC.addRowData(checkbox + &quot; &amp;nbsp; &quot; + label);</span>
+<span class="nc bnc" id="L414" title="All 2 branches missed.">		ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_LIMIT_FLEX_TIMEOFF_TO_START_SHIFT_BLOCK);</span>
+
+		//Allow consecutive flex requests
+<span class="nc" id="L417">		nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_CONSEC_FLEX);</span>
+<span class="nc" id="L418">		key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_CONSEC_FLEX;</span>
+<span class="nc" id="L419">		checked = m_settings.getAllowConsecutiveFlex();</span>
+<span class="nc" id="L420">		checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L421">		label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L422">		flexTimeContainerPC.addRowData(checkbox + &quot; &amp;nbsp; &quot; + label);</span>
+<span class="nc bnc" id="L423" title="All 2 branches missed.">		ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_CONSEC_FLEX);</span>
+
+<span class="nc" id="L425">		flexTimeContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME), ancestor));</span>
 
 		// Add the Workflow Form
-<span class="nc" id="L366">		addChildComponent(flexTimeContainerPC);</span>
-<span class="nc" id="L367">	}</span>
+<span class="nc" id="L428">		addChildComponent(flexTimeContainerPC);</span>
+<span class="nc" id="L429">	}</span>
 
 	/**
 	 * Creates the Activation Form
 	 */
 	private void createTimeOffActivationForm() {
 
-<span class="fc" id="L374">		m_activationContainerPC.setWidth(WIDTH);</span>
-<span class="fc" id="L375">		m_activationContainerPC.setWrapperCSSClass(FWRAPPER);</span>
-<span class="fc" id="L376">		m_activationContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
-<span class="pc bpc" id="L377" title="1 of 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureTOMWorkflow();</span>
-<span class="fc" id="L378">		String ancestor = null;</span>
+<span class="nc" id="L436">		m_activationContainerPC.setWidth(WIDTH);</span>
+<span class="nc" id="L437">		m_activationContainerPC.setWrapperCSSClass(FWRAPPER);</span>
+<span class="nc" id="L438">		m_activationContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
+<span class="nc bnc" id="L439" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureTOMWorkflow();</span>
+<span class="nc" id="L440">		String ancestor = null;</span>
 
 		{
 			//Activate Manager Workflow
-<span class="fc" id="L382">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_PROCESS_VACATION_REQUEST);</span>
-<span class="fc" id="L383">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ACTIVATE_MANAGER_ACTION;</span>
-<span class="fc" id="L384">			boolean checked = m_settings.getManagerTimeOffWorkflowActive();</span>
-<span class="fc" id="L385">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L386">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L387">			m_activationContainerPC.addRowData(checkbox + &quot; &quot; + label);</span>
-<span class="pc bpc" id="L388" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_PROCESS_VACATION_REQUEST);</span>
+<span class="nc" id="L444">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_PROCESS_VACATION_REQUEST);</span>
+<span class="nc" id="L445">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ACTIVATE_MANAGER_ACTION;</span>
+<span class="nc" id="L446">			boolean checked = m_settings.getManagerTimeOffWorkflowActive();</span>
+<span class="nc" id="L447">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L448">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L449">			m_activationContainerPC.addRowData(checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L450" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_PROCESS_VACATION_REQUEST);</span>
 		}
 
 		{
 			//Activate Agent Workflow
-<span class="fc" id="L393">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_REQUEST_VACATION);</span>
-<span class="fc" id="L394">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ACTIVATE_AGENT_ACTION;</span>
-<span class="fc" id="L395">			boolean checked = m_settings.getAgentTimeOffWorkflowActive();</span>
-<span class="fc" id="L396">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L397">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L398">			m_activationContainerPC.addRowData(checkbox + &quot; &quot; + label);</span>
-<span class="fc bfc" id="L399" title="All 2 branches covered.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_REQUEST_VACATION);</span>
+<span class="nc" id="L455">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_REQUEST_VACATION);</span>
+<span class="nc" id="L456">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ACTIVATE_AGENT_ACTION;</span>
+<span class="nc" id="L457">			boolean checked = m_settings.getAgentTimeOffWorkflowActive();</span>
+<span class="nc" id="L458">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L459">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L460">			m_activationContainerPC.addRowData(checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L461" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_REQUEST_VACATION);</span>
 		}
 
-<span class="fc" id="L402">		m_activationContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
+<span class="nc" id="L464">		m_activationContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
 		        RmWebBundleKey.ORG_RM_SETTINGS_TO_ACTIVATION_TITLE), ancestor));
 
 		// Add the Workflow Form
-<span class="fc" id="L406">		addChildComponent(m_activationContainerPC);</span>
-<span class="fc" id="L407">	}</span>
+<span class="nc" id="L468">		addChildComponent(m_activationContainerPC);</span>
+<span class="nc" id="L469">	}</span>
+
+
+
 	/**
 	 * Creates the TimeOfOptionsForm, 15.1.1, tpham
 	 */
 	private void createTimeOfOptionsForm(){
-<span class="fc" id="L412">		m_toOptionsContainerPC.setWidth(WIDTH);</span>
-<span class="fc" id="L413">		m_toOptionsContainerPC.setWrapperCSSClass(FWRAPPER);</span>
-<span class="fc" id="L414">		m_toOptionsContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
-<span class="fc" id="L415">		String ancestor = null;</span>
-<span class="pc bpc" id="L416" title="1 of 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureTORequestOptions();</span>
-<span class="fc" id="L417">        String nameKey = getNameKey(RmSettingKey.ORG_RM_TIME_OFF_TIME_INTERVAL);</span>
+<span class="nc" id="L477">		m_toOptionsContainerPC.setWidth(WIDTH);</span>
+<span class="nc" id="L478">		m_toOptionsContainerPC.setWrapperCSSClass(FWRAPPER);</span>
+<span class="nc" id="L479">		m_toOptionsContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
+<span class="nc" id="L480">		String ancestor = null;</span>
+<span class="nc bnc" id="L481" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureTORequestOptions();</span>
+<span class="nc" id="L482">        String nameKey = getNameKey(RmSettingKey.ORG_RM_TIME_OFF_TIME_INTERVAL);</span>
 
 
-<span class="fc" id="L420">        int valueRounding = m_settings.getTimeOffRoudingOption(); //Default</span>
-<span class="fc" id="L421">		Collection&lt;StringsPair&gt; roundingOptions = new ArrayList&lt;StringsPair&gt;();</span>
-<span class="fc" id="L422">		roundingOptions.add(new StringsPair(_1MINUTE, i18n(RmWebBundleKey.TIMEOFF_ROUNDING_1MIN)));</span>
-<span class="fc" id="L423">		roundingOptions.add(new StringsPair(_15MINUTE, i18n(RmWebBundleKey.TIMEOFF_ROUNDING_15MIN)));</span>
-<span class="fc" id="L424">		roundingOptions.add(new StringsPair(HOUR, i18n(RmWebBundleKey.TIMEOFF_ROUNDING_HOUR)));</span>
-<span class="fc" id="L425">		roundingOptions.add(new StringsPair(DAY, i18n(RmWebBundleKey.TIMEOFF_ROUNDING_DAY)));</span>
+<span class="nc" id="L485">        int valueRounding = m_settings.getTimeOffRoundingOption(); //Default</span>
+<span class="nc" id="L486">		Collection&lt;StringsPair&gt; roundingOptions = getTimeOffRoundingOptionPairs(m_localizer);</span>
         //Round Options
-<span class="fc" id="L427">        String roundingSelector = HtmlUtil.makeSelectInput(nameKey,</span>
-<span class="fc" id="L428">		        new String[]{Integer.toString(valueRounding)},</span>
-<span class="pc bpc" id="L429" title="1 of 2 branches missed.">		        getOnChangeJS(), roundingOptions, false, !disabled);</span>
-<span class="fc" id="L430">		String roundingLabel = i18n(RmWebBundleKey.TIMEOFF_ROUNDING_OPTIONS);</span>
-<span class="fc" id="L431">		m_toOptionsContainerPC.addRowData(roundingLabel + &quot; &quot; + roundingSelector);</span>
-<span class="pc bpc" id="L432" title="1 of 2 branches missed.">		ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_TIME_OFF_TIME_INTERVAL);</span>
+<span class="nc" id="L488">        String roundingSelector = HtmlUtil.makeSelectInput(nameKey,</span>
+<span class="nc" id="L489">		        new String[]{Integer.toString(valueRounding)},</span>
+<span class="nc bnc" id="L490" title="All 2 branches missed.">		        getOnChangeJS(), roundingOptions, false, !disabled);</span>
+<span class="nc" id="L491">		String roundingLabel = i18n(RmWebBundleKey.TIMEOFF_ROUNDING_OPTIONS);</span>
+<span class="nc" id="L492">		m_toOptionsContainerPC.addRowData(roundingLabel + &quot; &quot; + roundingSelector);</span>
+<span class="nc bnc" id="L493" title="All 2 branches missed.">		ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_TIME_OFF_TIME_INTERVAL);</span>
 
         {
         	//Maximum Allowed Time Off Choice(s) Per Request
-<span class="fc" id="L436">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TIME_OFF_CHOICES_COUNT);</span>
-<span class="fc" id="L437">			int value = m_settings.getTimeOffChoicesCount();</span>
-<span class="fc" id="L438">			Collection options = new ArrayList();</span>
-<span class="fc bfc" id="L439" title="All 2 branches covered.">			for (int i = 1; i &lt;= OrganizationSetting.MAX_TIME_OFF_CHOICES_COUNT; i++) {</span>
-<span class="fc" id="L440">				String temp = Integer.toString(i);</span>
-<span class="fc" id="L441">				options.add(new StringsPair(temp, temp));</span>
+<span class="nc" id="L497">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TIME_OFF_CHOICES_COUNT);</span>
+<span class="nc" id="L498">			int value = m_settings.getTimeOffChoicesCount();</span>
+<span class="nc" id="L499">			Collection options = new ArrayList();</span>
+<span class="nc bnc" id="L500" title="All 2 branches missed.">			for (int i = 1; i &lt;= OrganizationSetting.MAX_TIME_OFF_CHOICES_COUNT; i++) {</span>
+<span class="nc" id="L501">				String temp = Integer.toString(i);</span>
+<span class="nc" id="L502">				options.add(new StringsPair(temp, temp));</span>
 			}
-<span class="fc" id="L443">			String selector = HtmlUtil.makeSelectInput(nameKey,</span>
-<span class="fc" id="L444">			        new String[]{Integer.toString(value)},</span>
-<span class="pc bpc" id="L445" title="1 of 2 branches missed.">			        getOnChangeJS(), options, false, !disabled);</span>
-<span class="fc" id="L446">			String label = i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_TIME_OFF_CHOICES_COUNT);</span>
-<span class="fc" id="L447">			m_toOptionsContainerPC.addRowData(label + &quot; &quot; + selector);</span>
-<span class="pc bpc" id="L448" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TIME_OFF_CHOICES_COUNT);</span>
+<span class="nc" id="L504">			String selector = HtmlUtil.makeSelectInput(nameKey,</span>
+<span class="nc" id="L505">			        new String[]{Integer.toString(value)},</span>
+<span class="nc bnc" id="L506" title="All 2 branches missed.">			        getOnChangeJS(), options, false, !disabled);</span>
+<span class="nc" id="L507">			String label = i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_TIME_OFF_CHOICES_COUNT);</span>
+<span class="nc" id="L508">			m_toOptionsContainerPC.addRowData(label + &quot; &quot; + selector);</span>
+<span class="nc bnc" id="L509" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TIME_OFF_CHOICES_COUNT);</span>
 		}
-<span class="fc" id="L450">        m_toOptionsContainerPC.setTitle(getSectionTitle(i18n(RmWebBundleKey.TIMEOFF_REQUEST_OPTIONS), ancestor));</span>
-<span class="fc" id="L451">	        addChildComponent(m_toOptionsContainerPC);</span>
-<span class="fc" id="L452">	}</span>
+<span class="nc bnc" id="L511" title="All 2 branches missed.">        if( LicenseUtil.isAdvancedRMLicense())</span>
+        //Allow Time Off Bid requests to be copied
+        {
+<span class="nc" id="L514">        	nameKey = getNameKey(RmSettingKey.ORG_RM_ALLOW_COPY_TIME_OFF_BID_REQUEST);</span>
+<span class="nc" id="L515">			boolean checked = m_settings.getAllowCopyTimeOffBidRequest();</span>
+<span class="nc" id="L516">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L517">			m_toOptionsContainerPC.addRowData(checkbox + &quot; &quot; + i18n(RmWebBundleKey.ALLOW_COPY_TOB_REQUEST));</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_ALLOW_COPY_TIME_OFF_BID_REQUEST);</span>
+        }
+<span class="nc" id="L520">        m_toOptionsContainerPC.setTitle(getSectionTitle(i18n(RmWebBundleKey.TIMEOFF_REQUEST_OPTIONS), ancestor));</span>
+<span class="nc" id="L521">	        addChildComponent(m_toOptionsContainerPC);</span>
+<span class="nc" id="L522">	}</span>
+
 	private String i18n(String key) {
-<span class="fc" id="L454">		return i18n(m_rmBundle, key);</span>
+<span class="nc" id="L525">		return i18n(m_rmBundle, key);</span>
 	}
 
 
@@ -460,10 +531,10 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 */
 	private void createWorkFlowForm() {
 
-<span class="fc" id="L463">		m_workFlowContainerPC.setWidth(WIDTH);</span>
-<span class="fc" id="L464">		m_workFlowContainerPC.setWrapperCSSClass(FWRAPPER);</span>
-<span class="fc" id="L465">		m_workFlowContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
-<span class="fc" id="L466">        String ancestor = null;</span>
+<span class="nc" id="L534">		m_workFlowContainerPC.setWidth(WIDTH);</span>
+<span class="nc" id="L535">		m_workFlowContainerPC.setWrapperCSSClass(FWRAPPER);</span>
+<span class="nc" id="L536">		m_workFlowContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
+<span class="nc" id="L537">        String ancestor = null;</span>
 
         //TODO:  The &quot;allow escalation of denied requests&quot; and &quot;show auto processing rules to employees&quot; checkboxes
         //should probably be removed from this screen.  When they were added (a long time ago) there were only time off
@@ -475,66 +546,66 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 
 		// Fetch the workflow options
 		{
-<span class="fc" id="L478">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ESCALATION);</span>
-<span class="fc" id="L479">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_ESCALATION;</span>
-<span class="fc" id="L480">			boolean checked = m_settings.getAllowAgentEscalations();</span>
-<span class="fc" id="L481">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, false, true);</span>
-<span class="fc" id="L482">			String label = i18n(m_rmBundle,key);</span>
-<span class="fc" id="L483">			m_workFlowContainerPC.addRowData(checkbox +&quot; &quot;+label);</span>
-<span class="pc bpc" id="L484" title="1 of 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ESCALATION);</span>
+<span class="nc" id="L549">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ESCALATION);</span>
+<span class="nc" id="L550">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_ESCALATION;</span>
+<span class="nc" id="L551">			boolean checked = m_settings.getAllowAgentEscalations();</span>
+<span class="nc" id="L552">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, false, true);</span>
+<span class="nc" id="L553">			String label = i18n(m_rmBundle,key);</span>
+<span class="nc" id="L554">			m_workFlowContainerPC.addRowData(checkbox +&quot; &quot;+label);</span>
+<span class="nc bnc" id="L555" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ESCALATION);</span>
 		}
 		{
-<span class="fc" id="L487">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SHOW_AUTOPROCESSING_RULES);</span>
-<span class="fc" id="L488">			String key = RmWebBundleKey.ORG_RM_SETTINGS_SHOW_AUTOPROCESSING_RULES;</span>
-<span class="fc" id="L489">			boolean checked = m_settings.getAllowAgentsViewAutoProcessingRules();</span>
-<span class="fc" id="L490">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, false, true);</span>
-<span class="fc" id="L491">			String label = i18n(m_rmBundle,key);</span>
-<span class="fc" id="L492">			m_workFlowContainerPC.addRowData(checkbox +&quot; &quot;+label);</span>
-<span class="fc bfc" id="L493" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_SHOW_AUTOPROCESSING_RULES);</span>
+<span class="nc" id="L558">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SHOW_AUTOPROCESSING_RULES);</span>
+<span class="nc" id="L559">			String key = RmWebBundleKey.ORG_RM_SETTINGS_SHOW_AUTOPROCESSING_RULES;</span>
+<span class="nc" id="L560">			boolean checked = m_settings.getAllowAgentsViewAutoProcessingRules();</span>
+<span class="nc" id="L561">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, false, true);</span>
+<span class="nc" id="L562">			String label = i18n(m_rmBundle,key);</span>
+<span class="nc" id="L563">			m_workFlowContainerPC.addRowData(checkbox +&quot; &quot;+label);</span>
+<span class="nc bnc" id="L564" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_SHOW_AUTOPROCESSING_RULES);</span>
 		}
 		{
-<span class="fc" id="L496">			String key = RmWebBundleKey.ORG_RM_SETTINGS_GROUP_VIEW_ORG_LIST;</span>
-<span class="fc" id="L497">			String orgList =m_settings.getGroupViewOrgList();</span>
+<span class="nc" id="L567">			String key = RmWebBundleKey.ORG_RM_SETTINGS_GROUP_VIEW_ORG_LIST;</span>
+<span class="nc" id="L568">			String orgList =m_settings.getGroupViewOrgList();</span>
 
-<span class="fc" id="L499">			Collection orgIdCollection = null;</span>
-<span class="fc bfc" id="L500" title="All 2 branches covered.">			if (!StringUtil.isEmpty(orgList)) {</span>
-<span class="fc" id="L501">				ID ids[] = StringUtil.parseIDString(orgList);</span>
-<span class="pc bpc" id="L502" title="2 of 4 branches missed.">				if (ids != null &amp;&amp; ids.length != 0) {</span>
-<span class="fc" id="L503">					orgIdCollection = Arrays.asList(ids);</span>
+<span class="nc" id="L570">			Collection orgIdCollection = null;</span>
+<span class="nc bnc" id="L571" title="All 2 branches missed.">			if (!StringUtil.isEmpty(orgList)) {</span>
+<span class="nc" id="L572">				ID ids[] = StringUtil.parseIDString(orgList);</span>
+<span class="nc bnc" id="L573" title="All 4 branches missed.">				if (ids != null &amp;&amp; ids.length != 0) {</span>
+<span class="nc" id="L574">					orgIdCollection = Arrays.asList(ids);</span>
 				}
 			}
 
-<span class="fc bfc" id="L507" title="All 2 branches covered.">			if (orgIdCollection != null) {</span>
+<span class="nc bnc" id="L578" title="All 2 branches missed.">			if (orgIdCollection != null) {</span>
 				try {
-<span class="fc" id="L509">					m_groupViewOrgSelectorPC.initIDs( orgIdCollection );</span>
-<span class="nc" id="L510">				}	catch (Exception e) {</span>
-<span class="nc" id="L511">					log.error(&quot;&quot;, e);</span>
-<span class="fc" id="L512">				}</span>
+<span class="nc" id="L580">					m_groupViewOrgSelectorPC.initIDs( orgIdCollection );</span>
+<span class="nc" id="L581">				}	catch (Exception e) {</span>
+<span class="nc" id="L582">					log.error(&quot;&quot;, e);</span>
+<span class="nc" id="L583">				}</span>
 			}
 
-<span class="fc" id="L515">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L516">			m_workFlowContainerPC.addRowData(label+&quot; &quot;+m_groupViewOrgSelectorPC);</span>
+<span class="nc" id="L586">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L587">			m_workFlowContainerPC.addRowData(label+&quot; &quot;+m_groupViewOrgSelectorPC);</span>
 
-<span class="fc bfc" id="L518" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_GROUP_VIEW_ORG_LIST);</span>
+<span class="nc bnc" id="L589" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_GROUP_VIEW_ORG_LIST);</span>
 		}
 
-<span class="fc" id="L521">        m_workFlowContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
+<span class="nc" id="L592">        m_workFlowContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
                 RmWebBundleKey.ORG_RM_SETTINGS_AGENT_WORKFLOW_TITLE), ancestor));
 
 		// Add the Workflow Form
-<span class="fc" id="L525">		addChildComponent(m_workFlowContainerPC);</span>
-<span class="fc" id="L526">	}</span>
+<span class="nc" id="L596">		addChildComponent(m_workFlowContainerPC);</span>
+<span class="nc" id="L597">	}</span>
 
 	private String getNumberInput(String name, String value, String desc, int type, boolean isEnabled, boolean isRequired) {
-<span class="fc" id="L529">		m_formInputPC.reset();</span>
-<span class="fc" id="L530">		m_formInputPC.setInputType(type);</span>
-<span class="fc" id="L531">		m_formInputPC.setInputFN(name);</span>
-<span class="fc" id="L532">		m_formInputPC.setInputValue(value);</span>
-<span class="fc" id="L533">		m_formInputPC.setInputFieldDesc(desc);</span>
-<span class="pc bpc" id="L534" title="1 of 2 branches missed.">		m_formInputPC.setIsReadOnly(!isEnabled);</span>
-<span class="fc" id="L535">		m_formInputPC.setIsRequired(isRequired);</span>
+<span class="nc" id="L600">		m_formInputPC.reset();</span>
+<span class="nc" id="L601">		m_formInputPC.setInputType(type);</span>
+<span class="nc" id="L602">		m_formInputPC.setInputFN(name);</span>
+<span class="nc" id="L603">		m_formInputPC.setInputValue(value);</span>
+<span class="nc" id="L604">		m_formInputPC.setInputFieldDesc(desc);</span>
+<span class="nc bnc" id="L605" title="All 2 branches missed.">		m_formInputPC.setIsReadOnly(!isEnabled);</span>
+<span class="nc" id="L606">		m_formInputPC.setIsRequired(isRequired);</span>
 
-<span class="fc" id="L537">		return m_formInputPC.getHtmlDisplay();</span>
+<span class="nc" id="L608">		return m_formInputPC.getHtmlDisplay();</span>
 	}
 
 	/**
@@ -542,282 +613,293 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 */
 	private void createShiftBidForm() {
 
-<span class="fc" id="L545">        m_shiftBidContainerPC.setWidth(WIDTH);</span>
-<span class="fc" id="L546">		boolean enabled = isAuthorizedToConfigureShiftBid();</span>
+<span class="nc" id="L616">        m_shiftBidContainerPC.setWidth(WIDTH);</span>
+<span class="nc" id="L617">		boolean enabled = isAuthorizedToConfigureShiftBid();</span>
 		//90278- Null pointer exceptions occur when they try to empty the shiftbidding options
 		// So making this required also when it is enabled.
-<span class="fc" id="L549">		boolean required = enabled;</span>
-<span class="fc" id="L550">        String ancestor = null;</span>
+<span class="nc" id="L620">		boolean required = enabled;</span>
+<span class="nc" id="L621">        String ancestor = null;</span>
 
 		// Fetch the shiftBid options
 		{
-<span class="fc" id="L554">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_MAX_PREFERENCE_VALUE);</span>
-<span class="fc" id="L555">			String key = RmWebBundleKey.ORG_RM_SETTINGS_MAX_PREFERENCE_VALUE;</span>
-<span class="fc" id="L556">			int amount  = m_settings.getShiftBidMaxPref();</span>
-<span class="fc" id="L557">			String label = i18n(m_rmBundle,key);</span>
-<span class="fc" id="L558">			String editor   = getNumberInput(nameKey, Integer.toString(amount), label, FormInputPC.TYPE_INTEGER, enabled,required);</span>
-<span class="fc" id="L559">			m_shiftBidContainerPC.addRow(label, editor);</span>
-<span class="pc bpc" id="L560" title="1 of 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_MAX_PREFERENCE_VALUE);</span>
+<span class="nc" id="L625">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_MAX_PREFERENCE_VALUE);</span>
+<span class="nc" id="L626">			String key = RmWebBundleKey.ORG_RM_SETTINGS_MAX_PREFERENCE_VALUE;</span>
+<span class="nc" id="L627">			int amount  = m_settings.getShiftBidMaxPref();</span>
+<span class="nc" id="L628">			String label = i18n(m_rmBundle,key);</span>
+<span class="nc" id="L629">			String editor   = getNumberInput(nameKey, Integer.toString(amount), label, FormInputPC.TYPE_INTEGER, enabled,required);</span>
+<span class="nc" id="L630">			m_shiftBidContainerPC.addRow(label, editor);</span>
+<span class="nc bnc" id="L631" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_MAX_PREFERENCE_VALUE);</span>
+		}
+<span class="nc bnc" id="L633" title="All 2 branches missed.">		if( LicenseUtil.isAdvancedRMLicense()) {</span>
+			//Enforce Bid Preference to be unique
+<span class="nc bnc" id="L635" title="All 2 branches missed.">			boolean disabled = !isAuthorizedToConfigureShiftBid();</span>
+<span class="nc" id="L636">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ENFORCE_UNIQUE_PREFERENCE);</span>
+<span class="nc" id="L637">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ENFORCE_UNIQUE_PREFERENCES;</span>
+<span class="nc" id="L638">			boolean checked = m_settings.getEnforceUniquePreferences();</span>
+<span class="nc" id="L639">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L640">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L641">			m_shiftBidContainerPC.addRow(label, checkbox);</span>
+<span class="nc bnc" id="L642" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ENFORCE_UNIQUE_PREFERENCE);</span>
 		}
 		{
-<span class="fc" id="L563">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_MAX_BIDS_PER_EMPLOYEE);</span>
-<span class="fc" id="L564">			String key = RmWebBundleKey.ORG_RM_SETTINGS_MAX_BIDS_PER_EMPLOYEE;</span>
-<span class="fc" id="L565">			int amount  = m_settings.getShiftBidMaxBidsPerEmployee();</span>
-<span class="fc" id="L566">			String label = i18n(m_rmBundle,key);</span>
-<span class="fc" id="L567">			String editor = getNumberInput(nameKey, Integer.toString(amount), label, FormInputPC.TYPE_INTEGER, enabled, required);</span>
-<span class="fc" id="L568">			m_shiftBidContainerPC.addRow(label, editor);</span>
-<span class="fc bfc" id="L569" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_MAX_BIDS_PER_EMPLOYEE);</span>
+<span class="nc" id="L645">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_MAX_BIDS_PER_EMPLOYEE);</span>
+<span class="nc" id="L646">			String key = RmWebBundleKey.ORG_RM_SETTINGS_MAX_BIDS_PER_EMPLOYEE;</span>
+<span class="nc" id="L647">			int amount  = m_settings.getShiftBidMaxBidsPerEmployee();</span>
+<span class="nc" id="L648">			String label = i18n(m_rmBundle,key);</span>
+<span class="nc" id="L649">			String editor = getNumberInput(nameKey, Integer.toString(amount), label, FormInputPC.TYPE_INTEGER, enabled, required);</span>
+<span class="nc" id="L650">			m_shiftBidContainerPC.addRow(label, editor);</span>
+<span class="nc bnc" id="L651" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_MAX_BIDS_PER_EMPLOYEE);</span>
 		}
 		{
-<span class="fc" id="L572">			String key = RmWebBundleKey.ORG_RM_SETTINGS_SHIFT_FACTOR_MESSAGE;</span>
-<span class="fc" id="L573">			String message = i18n(m_rmBundle,key);</span>
-<span class="fc" id="L574">			m_shiftBidContainerPC.addMessageRow(message);</span>
+<span class="nc" id="L654">			String key = RmWebBundleKey.ORG_RM_SETTINGS_SHIFT_FACTOR_MESSAGE;</span>
+<span class="nc" id="L655">			String message = i18n(m_rmBundle,key);</span>
+<span class="nc" id="L656">			m_shiftBidContainerPC.addMessageRow(message);</span>
 		}
 		{
-<span class="fc" id="L577">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SENIORITY_FACTOR);</span>
-<span class="fc" id="L578">			String key1 = RmWebBundleKey.ORG_RM_SETTINGS_SENIORITY_FACTOR;</span>
-<span class="fc" id="L579">			String key2 = RmWebBundleKey.ORG_RM_SETTINGS_SENIORITY_FACTOR_SUFFIX;</span>
-<span class="fc" id="L580">			float factor  = m_settings.getShiftBidSeniorityFactor();</span>
-<span class="fc" id="L581">			String label = i18n(m_rmBundle,key1);</span>
-<span class="fc" id="L582">			String suffix = i18n(m_rmBundle,key2);</span>
-<span class="fc" id="L583">			String editor = getNumberInput(nameKey, Float.toString(factor), label, FormInputPC.TYPE_NUMERIC, enabled, required);</span>
-<span class="fc" id="L584">			m_shiftBidContainerPC.addRow(label, editor + suffix);</span>
-<span class="fc bfc" id="L585" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_SENIORITY_FACTOR);</span>
+<span class="nc" id="L659">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SENIORITY_FACTOR);</span>
+<span class="nc" id="L660">			String key1 = RmWebBundleKey.ORG_RM_SETTINGS_SENIORITY_FACTOR;</span>
+<span class="nc" id="L661">			String key2 = RmWebBundleKey.ORG_RM_SETTINGS_SENIORITY_FACTOR_SUFFIX;</span>
+<span class="nc" id="L662">			float factor  = m_settings.getShiftBidSeniorityFactor();</span>
+<span class="nc" id="L663">			String label = i18n(m_rmBundle,key1);</span>
+<span class="nc" id="L664">			String suffix = i18n(m_rmBundle,key2);</span>
+<span class="nc" id="L665">			String editor = getNumberInput(nameKey, Float.toString(factor), label, FormInputPC.TYPE_NUMERIC, enabled, required);</span>
+<span class="nc" id="L666">			m_shiftBidContainerPC.addRow(label, editor + suffix);</span>
+<span class="nc bnc" id="L667" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_SENIORITY_FACTOR);</span>
 		}
 
 		{
-<span class="fc" id="L589">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_RANK_FACTOR);</span>
-<span class="fc" id="L590">			String key1 = RmWebBundleKey.ORG_RM_SETTINGS_RANK_FACTOR;</span>
-<span class="fc" id="L591">			String key2 = RmWebBundleKey.ORG_RM_SETTINGS_RANK_FACTOR_SUFFIX;</span>
-<span class="fc" id="L592">			float factor  = m_settings.getShiftBidRankFactor();</span>
-<span class="fc" id="L593">			String label = i18n(m_rmBundle,key1);</span>
-<span class="fc" id="L594">			String suffix = i18n(m_rmBundle,key2);</span>
-<span class="fc" id="L595">			String editor = getNumberInput(nameKey, Float.toString(factor), label, FormInputPC.TYPE_NUMERIC, enabled, required);</span>
-<span class="fc" id="L596">			m_shiftBidContainerPC.addRow(label, editor + suffix);</span>
-<span class="fc bfc" id="L597" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_RANK_FACTOR);</span>
+<span class="nc" id="L671">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_RANK_FACTOR);</span>
+<span class="nc" id="L672">			String key1 = RmWebBundleKey.ORG_RM_SETTINGS_RANK_FACTOR;</span>
+<span class="nc" id="L673">			String key2 = RmWebBundleKey.ORG_RM_SETTINGS_RANK_FACTOR_SUFFIX;</span>
+<span class="nc" id="L674">			float factor  = m_settings.getShiftBidRankFactor();</span>
+<span class="nc" id="L675">			String label = i18n(m_rmBundle,key1);</span>
+<span class="nc" id="L676">			String suffix = i18n(m_rmBundle,key2);</span>
+<span class="nc" id="L677">			String editor = getNumberInput(nameKey, Float.toString(factor), label, FormInputPC.TYPE_NUMERIC, enabled, required);</span>
+<span class="nc" id="L678">			m_shiftBidContainerPC.addRow(label, editor + suffix);</span>
+<span class="nc bnc" id="L679" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_RANK_FACTOR);</span>
 		}
 		{
-<span class="fc" id="L600">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR);</span>
-<span class="fc" id="L601">			String key1 = RmWebBundleKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR;</span>
-<span class="fc" id="L602">			String key2 = RmWebBundleKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR_SUFFIX;</span>
-<span class="fc" id="L603">			float factor  = m_settings.getShiftBidBonusPointFactor();</span>
-<span class="fc" id="L604">			String label = i18n(m_rmBundle,key1);</span>
-<span class="fc" id="L605">			String suffix = i18n(m_rmBundle,key2);</span>
-<span class="fc" id="L606">			String editor = getNumberInput(nameKey, Float.toString(factor), label, FormInputPC.TYPE_NUMERIC, enabled, required);</span>
-<span class="fc" id="L607">			m_shiftBidContainerPC.addRow(label, editor + suffix);</span>
-<span class="fc bfc" id="L608" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR);</span>
+<span class="nc" id="L682">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR);</span>
+<span class="nc" id="L683">			String key1 = RmWebBundleKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR;</span>
+<span class="nc" id="L684">			String key2 = RmWebBundleKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR_SUFFIX;</span>
+<span class="nc" id="L685">			float factor  = m_settings.getShiftBidBonusPointFactor();</span>
+<span class="nc" id="L686">			String label = i18n(m_rmBundle,key1);</span>
+<span class="nc" id="L687">			String suffix = i18n(m_rmBundle,key2);</span>
+<span class="nc" id="L688">			String editor = getNumberInput(nameKey, Float.toString(factor), label, FormInputPC.TYPE_NUMERIC, enabled, required);</span>
+<span class="nc" id="L689">			m_shiftBidContainerPC.addRow(label, editor + suffix);</span>
+<span class="nc bnc" id="L690" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR);</span>
 		}
-<span class="pc bpc" id="L610" title="1 of 2 branches missed.">		if( LicenseUtil.isAdvancedRMLicense())</span>
+<span class="nc bnc" id="L692" title="All 2 branches missed.">		if( LicenseUtil.isAdvancedRMLicense())</span>
 		{
-<span class="nc" id="L612">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_FILTER_BID_OPTIONS_BY_EMPLOYEE_TYPE);</span>
-<span class="nc" id="L613">			String key1 = RmWebBundleKey.RM_SA_FILTER_OPTIONS_BY_EMPLOYEE_TYPE;</span>
-<span class="nc" id="L614">			String key2 = RmWebBundleKey.RM_SA_BID_OPTIONS;</span>
-<span class="nc" id="L615">			String suffix = i18n(m_rmBundle,key1);</span>
-<span class="nc" id="L616">			String label = i18n(m_rmBundle,key2);</span>
-<span class="nc bnc" id="L617" title="All 2 branches missed.">			boolean disabled = !isAuthorizedToConfigureShiftBid();</span>
-<span class="nc" id="L618">			boolean checked = m_settings.getFilterBidOptionsByEmpType();</span>
+<span class="nc" id="L694">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_FILTER_BID_OPTIONS_BY_EMPLOYEE_TYPE);</span>
+<span class="nc" id="L695">			String key1 = RmWebBundleKey.RM_SA_FILTER_OPTIONS_BY_EMPLOYEE_TYPE;</span>
+<span class="nc" id="L696">			String key2 = RmWebBundleKey.RM_SA_BID_OPTIONS;</span>
+<span class="nc" id="L697">			String suffix = i18n(m_rmBundle,key1);</span>
+<span class="nc" id="L698">			String label = i18n(m_rmBundle,key2);</span>
+<span class="nc bnc" id="L699" title="All 2 branches missed.">			boolean disabled = !isAuthorizedToConfigureShiftBid();</span>
+<span class="nc" id="L700">			boolean checked = m_settings.getFilterBidOptionsByEmpType();</span>
 
-<span class="nc" id="L620">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="nc" id="L621">			m_shiftBidContainerPC.addRow(label,checkbox +&quot; &quot;+suffix);</span>
-<span class="nc bnc" id="L622" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_FILTER_BID_OPTIONS_BY_EMPLOYEE_TYPE);</span>
+<span class="nc" id="L702">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L703">			m_shiftBidContainerPC.addRow(label,checkbox +&quot; &quot;+suffix);</span>
+<span class="nc bnc" id="L704" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_FILTER_BID_OPTIONS_BY_EMPLOYEE_TYPE);</span>
 
-<span class="nc" id="L624">            nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_DISPLAY_TEMPLATE_DESCRIPTION);</span>
-<span class="nc" id="L625">			key1 = RmWebBundleKey.RM_SA_DISPLAY_TEMPLATE_DESCRIPTION;</span>
-<span class="nc" id="L626">			suffix = i18n(m_rmBundle,key1);</span>
-<span class="nc bnc" id="L627" title="All 2 branches missed.">			disabled = !isAuthorizedToConfigureShiftBid();</span>
-<span class="nc" id="L628">			checked = m_settings.getDisplayBidTemplateDes();</span>
+<span class="nc" id="L706">            nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_DISPLAY_TEMPLATE_DESCRIPTION);</span>
+<span class="nc" id="L707">			key1 = RmWebBundleKey.RM_SA_DISPLAY_TEMPLATE_DESCRIPTION;</span>
+<span class="nc" id="L708">			suffix = i18n(m_rmBundle,key1);</span>
+<span class="nc bnc" id="L709" title="All 2 branches missed.">			disabled = !isAuthorizedToConfigureShiftBid();</span>
+<span class="nc" id="L710">			checked = m_settings.getDisplayBidTemplateDes();</span>
 
-<span class="nc" id="L630">			checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="nc" id="L631">			m_shiftBidContainerPC.addRow(&quot;&quot;,checkbox +&quot; &quot;+suffix);</span>
-<span class="nc bnc" id="L632" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_DISPLAY_TEMPLATE_DESCRIPTION);</span>
+<span class="nc" id="L712">			checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L713">			m_shiftBidContainerPC.addRow(&quot;&quot;,checkbox +&quot; &quot;+suffix);</span>
+<span class="nc bnc" id="L714" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_DISPLAY_TEMPLATE_DESCRIPTION);</span>
 		}
 
-<span class="fc" id="L635">        m_shiftBidContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
+<span class="nc" id="L717">        m_shiftBidContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
                 RmWebBundleKey.ORG_RM_SETTINGS_SHIFT_BIDDING_TITLE), ancestor));
 
 		// Add the shiftBid Form
-<span class="fc" id="L639">		addChildComponent(m_shiftBidContainerPC);</span>
-<span class="fc" id="L640">	}</span>
+<span class="nc" id="L721">		addChildComponent(m_shiftBidContainerPC);</span>
+<span class="nc" id="L722">	}</span>
 
 	/**
 	 * Creates the Time Off Accrual Form
 	 */
 	private void createTimeOffYearForm() {
 
-<span class="fc" id="L647">		String ancestor = null;</span>
-<span class="fc" id="L648">		String choiceNameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ANIVERSARY_DATE);</span>
-<span class="pc bpc" id="L649" title="1 of 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureTOMEmployeeYear();</span>
+<span class="nc" id="L729">		String ancestor = null;</span>
+<span class="nc" id="L730">		String choiceNameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ANIVERSARY_DATE);</span>
+<span class="nc bnc" id="L731" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureTOMEmployeeYear();</span>
 		String anniversaryDateHtml;
 		{
-<span class="fc" id="L652">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ANIVERSARY_DATE;</span>
-<span class="fc" id="L653">			boolean checked = m_settings.getUseEmployeeAniversaryDate();</span>
-<span class="fc" id="L654">			String radio = makeChoiceInput(choiceNameKey, &quot;true&quot;, checked, disabled, false);</span>
-<span class="fc" id="L655">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L656">			anniversaryDateHtml = radio +&quot; &quot;+label;</span>
-<span class="pc bpc" id="L657" title="1 of 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ANIVERSARY_DATE);</span>
+<span class="nc" id="L734">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ANIVERSARY_DATE;</span>
+<span class="nc" id="L735">			boolean checked = m_settings.getUseEmployeeAniversaryDate();</span>
+<span class="nc" id="L736">			String radio = makeChoiceInput(choiceNameKey, &quot;true&quot;, checked, disabled, false);</span>
+<span class="nc" id="L737">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L738">			anniversaryDateHtml = radio +&quot; &quot;+label;</span>
+<span class="nc bnc" id="L739" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ANIVERSARY_DATE);</span>
 		}
 
 		String fixedDateHtml;
 		{
-<span class="fc" id="L662">			String key = RmWebBundleKey.ORG_RM_SETTINGS_FIXED_DATE;</span>
-<span class="fc bfc" id="L663" title="All 2 branches covered.">			boolean checked = !m_settings.getUseEmployeeAniversaryDate();</span>
+<span class="nc" id="L744">			String key = RmWebBundleKey.ORG_RM_SETTINGS_FIXED_DATE;</span>
+<span class="nc bnc" id="L745" title="All 2 branches missed.">			boolean checked = !m_settings.getUseEmployeeAniversaryDate();</span>
 
-<span class="fc" id="L665">			String radio = makeChoiceInput(choiceNameKey, &quot;false&quot;, checked, disabled, false);</span>
-<span class="fc" id="L666">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L747">			String radio = makeChoiceInput(choiceNameKey, &quot;false&quot;, checked, disabled, false);</span>
+<span class="nc" id="L748">			String label = i18n(m_rmBundle, key);</span>
 
-<span class="fc" id="L668">			int month = m_settings.getEmployeeFixedDateMonth();</span>
-<span class="fc" id="L669">			int day = m_settings.getEmployeeFixedDateDay();</span>
+<span class="nc" id="L750">			int month = m_settings.getEmployeeFixedDateMonth();</span>
+<span class="nc" id="L751">			int day = m_settings.getEmployeeFixedDateDay();</span>
 
-<span class="fc" id="L671">			String monthKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_FIXED_DATE_MONTH);</span>
-<span class="fc" id="L672">			String dayKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_FIXED_DATE_DAY);</span>
+<span class="nc" id="L753">			String monthKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_FIXED_DATE_MONTH);</span>
+<span class="nc" id="L754">			String dayKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_FIXED_DATE_DAY);</span>
 
-<span class="fc" id="L674">			String monthDay = HtmlDateDDUtil.makeMonthDayDD(monthKey,</span>
+<span class="nc" id="L756">			String monthDay = HtmlDateDDUtil.makeMonthDayDD(monthKey,</span>
 					dayKey,
 					month,
 					day,
-<span class="fc" id="L678">					getOnChangeJS(),</span>
+<span class="nc" id="L760">					getOnChangeJS(),</span>
 					&quot; &quot;,
 					disabled,
 					m_localizer);
-<span class="fc" id="L682">			fixedDateHtml = radio+&quot; &quot;+label+&quot; &quot;+monthDay;</span>
-<span class="fc bfc" id="L683" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_FIXED_DATE_MONTH);</span>
-<span class="fc bfc" id="L684" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_FIXED_DATE_DAY);</span>
+<span class="nc" id="L764">			fixedDateHtml = radio+&quot; &quot;+label+&quot; &quot;+monthDay;</span>
+<span class="nc bnc" id="L765" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_FIXED_DATE_MONTH);</span>
+<span class="nc bnc" id="L766" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_FIXED_DATE_DAY);</span>
 		}
 
 		String accrualDayOfMonthHtml;
 		{
-<span class="fc" id="L689">			String label = i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_MONTH);</span>
-<span class="fc" id="L690">			String monthdayKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_MONTH);</span>
-<span class="fc" id="L691">			int monthday = m_settings.getAccrualDayOfMonth();</span>
-<span class="fc" id="L692">			String selector = HtmlDateDDUtil.makeDayDD(monthdayKey, null, monthday,</span>
-<span class="fc" id="L693">					getOnChangeJS(), false, disabled, true, m_localizer);</span>
-<span class="fc" id="L694">			accrualDayOfMonthHtml = label + &quot; &quot; + selector;</span>
-<span class="fc bfc" id="L695" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_MONTH);</span>
+<span class="nc" id="L771">			String label = i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_MONTH);</span>
+<span class="nc" id="L772">			String monthdayKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_MONTH);</span>
+<span class="nc" id="L773">			int monthday = m_settings.getAccrualDayOfMonth();</span>
+<span class="nc" id="L774">			String selector = HtmlDateDDUtil.makeDayDD(monthdayKey, null, monthday,</span>
+<span class="nc" id="L775">					getOnChangeJS(), false, disabled, true, m_localizer);</span>
+<span class="nc" id="L776">			accrualDayOfMonthHtml = label + &quot; &quot; + selector;</span>
+<span class="nc bnc" id="L777" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_MONTH);</span>
 		}
 
 		String accrualDayOfWeekHtml;
 		{
-<span class="fc" id="L700">			String label = i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_WEEK);</span>
-<span class="fc" id="L701">			String weekdayKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_WEEK);</span>
-<span class="fc" id="L702">			int weekday = m_settings.getAccrualDayOfWeek();</span>
-<span class="fc" id="L703">			String selector = HtmlUtil.getDayOfWeekDropDown(weekdayKey, weekday,</span>
-<span class="fc" id="L704">					getOnChangeJS(), false, m_localizer);//TODO: unable to Disable this selector</span>
-<span class="fc" id="L705">			accrualDayOfWeekHtml = label + &quot; &quot; + selector;</span>
-<span class="fc bfc" id="L706" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_WEEK);</span>
+<span class="nc" id="L782">			String label = i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_WEEK);</span>
+<span class="nc" id="L783">			String weekdayKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_WEEK);</span>
+<span class="nc" id="L784">			int weekday = m_settings.getAccrualDayOfWeek();</span>
+<span class="nc" id="L785">			String selector = HtmlUtil.getDayOfWeekDropDown(weekdayKey, weekday,</span>
+<span class="nc" id="L786">					getOnChangeJS(), false, m_localizer);//TODO: unable to Disable this selector</span>
+<span class="nc" id="L787">			accrualDayOfWeekHtml = label + &quot; &quot; + selector;</span>
+<span class="nc bnc" id="L788" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ACCRUAL_DAY_OF_WEEK);</span>
 		}
 
-<span class="fc" id="L709">		m_toYearContainerPC.setWidth(WIDTH);</span>
-<span class="fc" id="L710">		m_toYearContainerPC.setWrapperCSSClass(FWRAPPER);</span>
-<span class="fc" id="L711">		m_toYearContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
-<span class="fc" id="L712">		m_toYearContainerPC.addRowData( i18n(m_rmBundle,</span>
+<span class="nc" id="L791">		m_toYearContainerPC.setWidth(WIDTH);</span>
+<span class="nc" id="L792">		m_toYearContainerPC.setWrapperCSSClass(FWRAPPER);</span>
+<span class="nc" id="L793">		m_toYearContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
+<span class="nc" id="L794">		m_toYearContainerPC.addRowData( i18n(m_rmBundle,</span>
 				RmWebBundleKey.ORG_RM_SETTINGS_TO_YEAR_TITLE)
 				+ HtmlUtil.NEW_LINE + anniversaryDateHtml
 				+ HtmlUtil.NBSP + fixedDateHtml);
-<span class="fc" id="L716">		m_toYearContainerPC.addRowData(accrualDayOfMonthHtml);</span>
-<span class="fc" id="L717">		m_toYearContainerPC.addRowData(accrualDayOfWeekHtml);</span>
+<span class="nc" id="L798">		m_toYearContainerPC.addRowData(accrualDayOfMonthHtml);</span>
+<span class="nc" id="L799">		m_toYearContainerPC.addRowData(accrualDayOfWeekHtml);</span>
 
-<span class="fc" id="L719">        m_toYearContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle, RmWebBundleKey.TIME_OFF_ACCRUAL), ancestor));</span>
+<span class="nc" id="L801">        m_toYearContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle, RmWebBundleKey.TIME_OFF_ACCRUAL), ancestor));</span>
 
         // Add the TimeOff Year Form
-<span class="fc" id="L722">		addChildComponent(m_toYearContainerPC);</span>
-<span class="fc" id="L723">	}</span>
+<span class="nc" id="L804">		addChildComponent(m_toYearContainerPC);</span>
+<span class="nc" id="L805">	}</span>
 
 	/**
 	 * Creates the ShiftSwap Form
 	 */
 	private void createShiftSwapForm() {
 
-<span class="fc" id="L730">		m_shiftSwapPC.setWidth(WIDTH);</span>
-<span class="fc" id="L731">		m_shiftSwapPC.setWrapperCSSClass(FWRAPPER);</span>
-<span class="fc" id="L732">		m_shiftSwapPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
-<span class="fc" id="L733">        String ancestor = null;</span>
+<span class="nc" id="L812">		m_shiftSwapPC.setWidth(WIDTH);</span>
+<span class="nc" id="L813">		m_shiftSwapPC.setWrapperCSSClass(FWRAPPER);</span>
+<span class="nc" id="L814">		m_shiftSwapPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
+<span class="nc" id="L815">        String ancestor = null;</span>
 
-<span class="fc" id="L735">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ENABLE_SHIFT_SWAP);</span>
-<span class="pc bpc" id="L736" title="1 of 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureShiftSwap();</span>
+<span class="nc" id="L817">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ENABLE_SHIFT_SWAP);</span>
+<span class="nc bnc" id="L818" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureShiftSwap();</span>
 		{
-<span class="fc" id="L738">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ENABLE_SHIFT_SWAP;</span>
-<span class="fc" id="L739">			boolean checked = m_settings.getEnableShiftSwap();</span>
-<span class="fc" id="L740">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L741">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L742">			m_shiftSwapPC.addRowData(checkbox +&quot; &quot;+label);</span>
-<span class="pc bpc" id="L743" title="1 of 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ENABLE_SHIFT_SWAP);</span>
+<span class="nc" id="L820">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ENABLE_SHIFT_SWAP;</span>
+<span class="nc" id="L821">			boolean checked = m_settings.getEnableShiftSwap();</span>
+<span class="nc" id="L822">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L823">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L824">			m_shiftSwapPC.addRowData(checkbox +&quot; &quot;+label);</span>
+<span class="nc bnc" id="L825" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ENABLE_SHIFT_SWAP);</span>
 		}
 		{
-<span class="fc" id="L746">			String key = RmWebBundleKey.ORG_RM_SETTINGS_SHIFT_SWAP_ORG_LIST;</span>
-<span class="fc" id="L747">			String orgList = m_settings.getShiftSwapOrgList();</span>
-<span class="fc" id="L748">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SHIFT_SWAP_ORG_LIST);</span>
-<span class="pc bpc" id="L749" title="1 of 2 branches missed.">			m_shiftSwapOrgSelectorPC.setEnabled(!disabled);</span>
-<span class="pc bpc" id="L750" title="1 of 2 branches missed.">			m_shiftSwapOrgSelectorPC.setIsEditable(!disabled);</span>
+<span class="nc" id="L828">			String key = RmWebBundleKey.ORG_RM_SETTINGS_SHIFT_SWAP_ORG_LIST;</span>
+<span class="nc" id="L829">			String orgList = m_settings.getShiftSwapOrgList();</span>
+<span class="nc" id="L830">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SHIFT_SWAP_ORG_LIST);</span>
+<span class="nc bnc" id="L831" title="All 2 branches missed.">			m_shiftSwapOrgSelectorPC.setEnabled(!disabled);</span>
+<span class="nc bnc" id="L832" title="All 2 branches missed.">			m_shiftSwapOrgSelectorPC.setIsEditable(!disabled);</span>
 
-<span class="fc" id="L752">			Collection orgIdCollection = null;</span>
-<span class="fc bfc" id="L753" title="All 2 branches covered.">			if (!StringUtil.isEmpty(orgList)) {</span>
-<span class="fc" id="L754">				ID ids[] = StringUtil.parseIDString(orgList);</span>
-<span class="pc bpc" id="L755" title="2 of 4 branches missed.">				if (ids != null &amp;&amp; ids.length != 0) {</span>
-<span class="fc" id="L756">					orgIdCollection = Arrays.asList(ids);</span>
+<span class="nc" id="L834">			Collection orgIdCollection = null;</span>
+<span class="nc bnc" id="L835" title="All 2 branches missed.">			if (!StringUtil.isEmpty(orgList)) {</span>
+<span class="nc" id="L836">				ID ids[] = StringUtil.parseIDString(orgList);</span>
+<span class="nc bnc" id="L837" title="All 4 branches missed.">				if (ids != null &amp;&amp; ids.length != 0) {</span>
+<span class="nc" id="L838">					orgIdCollection = Arrays.asList(ids);</span>
 				}
 			}
 
-<span class="fc bfc" id="L760" title="All 2 branches covered.">			if (orgIdCollection != null) {</span>
+<span class="nc bnc" id="L842" title="All 2 branches missed.">			if (orgIdCollection != null) {</span>
 				try {
-<span class="fc" id="L762">					m_shiftSwapOrgSelectorPC.initIDs( orgIdCollection );</span>
-<span class="nc" id="L763">				}	catch (Exception e) {</span>
-<span class="nc" id="L764">					log.error(&quot;&quot;, e);</span>
-<span class="fc" id="L765">				}</span>
+<span class="nc" id="L844">					m_shiftSwapOrgSelectorPC.initIDs( orgIdCollection );</span>
+<span class="nc" id="L845">				}	catch (Exception e) {</span>
+<span class="nc" id="L846">					log.error(&quot;&quot;, e);</span>
+<span class="nc" id="L847">				}</span>
 			}
 
-<span class="fc" id="L768">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L769">			m_shiftSwapPC.addRowData(label+&quot; &quot;+m_shiftSwapOrgSelectorPC);</span>
-<span class="pc bpc" id="L770" title="1 of 4 branches missed.">			if (orgIdCollection != null &amp;&amp; orgIdCollection.size() &gt; 0) {</span>
-<span class="fc" id="L771">				m_shiftSwapPC.addRowData(i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_SHIFT_SWAP_ORG_LIST_WARNING));</span>
+<span class="nc" id="L850">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L851">			m_shiftSwapPC.addRowData(label+&quot; &quot;+m_shiftSwapOrgSelectorPC);</span>
+<span class="nc bnc" id="L852" title="All 4 branches missed.">			if (orgIdCollection != null &amp;&amp; !orgIdCollection.isEmpty()) {</span>
+<span class="nc" id="L853">				m_shiftSwapPC.addRowData(i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_SHIFT_SWAP_ORG_LIST_WARNING));</span>
 			}
-<span class="fc bfc" id="L773" title="All 2 branches covered.">           ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_SHIFT_SWAP_ORG_LIST);</span>
+<span class="nc bnc" id="L855" title="All 2 branches missed.">           ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_SHIFT_SWAP_ORG_LIST);</span>
 		}
 		{
-<span class="fc" id="L776">			String key = RmWebBundleKey.ORG_RM_SETTINGS_DISABLE_ONE_WAY_SHIFT_SWAP;</span>
-<span class="fc" id="L777">			boolean checked = m_settings.getDisableOneWayShiftSwap();</span>
-<span class="fc" id="L778">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_DISABLE_ONE_WAY_SHIFT_SWAP);</span>
-<span class="fc" id="L779">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L780">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L781">			m_shiftSwapPC.addRowData(checkbox +&quot; &quot;+label);</span>
-<span class="fc bfc" id="L782" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_DISABLE_ONE_WAY_SHIFT_SWAP);</span>
+<span class="nc" id="L858">			String key = RmWebBundleKey.ORG_RM_SETTINGS_DISABLE_ONE_WAY_SHIFT_SWAP;</span>
+<span class="nc" id="L859">			boolean checked = m_settings.getDisableOneWayShiftSwap();</span>
+<span class="nc" id="L860">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_DISABLE_ONE_WAY_SHIFT_SWAP);</span>
+<span class="nc" id="L861">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L862">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L863">			m_shiftSwapPC.addRowData(checkbox +&quot; &quot;+label);</span>
+<span class="nc bnc" id="L864" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_DISABLE_ONE_WAY_SHIFT_SWAP);</span>
 		}
 
 		{//Allow partial day shift swap requests
-<span class="fc" id="L786">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_SWAP;</span>
-<span class="fc" id="L787">			boolean checked = m_settings.getAllowPartialShiftSwap();</span>
-<span class="fc" id="L788">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_SWAP);</span>
-<span class="fc" id="L789">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L790">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L791">			m_shiftSwapPC.addRowData(checkbox +&quot; &quot;+label);</span>
-<span class="fc bfc" id="L792" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_SWAP);</span>
+<span class="nc" id="L868">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_SWAP;</span>
+<span class="nc" id="L869">			boolean checked = m_settings.getAllowPartialShiftSwap();</span>
+<span class="nc" id="L870">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_SWAP);</span>
+<span class="nc" id="L871">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L872">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L873">			m_shiftSwapPC.addRowData(checkbox +&quot; &quot;+label);</span>
+<span class="nc bnc" id="L874" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_SWAP);</span>
 		}
 
 		{//Allow pickup of a portion of a posted shift
-<span class="fc" id="L796">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_PICKUP;</span>
-<span class="fc" id="L797">			boolean checked = m_settings.getAllowPartialShiftPickup();</span>
-<span class="fc" id="L798">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_PICKUP);</span>
-<span class="fc" id="L799">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L800">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L801">			m_shiftSwapPC.addRowData(checkbox +&quot; &quot;+label);</span>
-<span class="fc bfc" id="L802" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_PICKUP);</span>
+<span class="nc" id="L878">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_PICKUP;</span>
+<span class="nc" id="L879">			boolean checked = m_settings.getAllowPartialShiftPickup();</span>
+<span class="nc" id="L880">			nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_PICKUP);</span>
+<span class="nc" id="L881">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L882">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L883">			m_shiftSwapPC.addRowData(checkbox +&quot; &quot;+label);</span>
+<span class="nc bnc" id="L884" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_PARTIAL_SHIFT_PICKUP);</span>
 		}
 
         {
-<span class="fc" id="L806">            nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_MAX_SWAP_NEGOTIATIONS);</span>
-<span class="fc" id="L807">            String key = RmWebBundleKey.ORG_RM_SETTINGS_MAX_SWAP_NEGOTIATIONS;</span>
-<span class="fc" id="L808">            int amount  = m_settings.getShiftSwapMaxNegotiationUpdates();</span>
-<span class="fc" id="L809">            String label = i18n(m_rmBundle,key);</span>
-<span class="pc bpc" id="L810" title="1 of 2 branches missed.">            String editor = getNumberInput(nameKey, Integer.toString(amount), label, FormInputPC.TYPE_INTEGER, !disabled, false);</span>
-<span class="fc" id="L811">            m_shiftSwapPC.addRowData(label +&quot; &quot;+ editor);</span>
-<span class="fc bfc" id="L812" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_MAX_SWAP_NEGOTIATIONS);</span>
+<span class="nc" id="L888">            nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_MAX_SWAP_NEGOTIATIONS);</span>
+<span class="nc" id="L889">            String key = RmWebBundleKey.ORG_RM_SETTINGS_MAX_SWAP_NEGOTIATIONS;</span>
+<span class="nc" id="L890">            int amount  = m_settings.getShiftSwapMaxNegotiationUpdates();</span>
+<span class="nc" id="L891">            String label = i18n(m_rmBundle,key);</span>
+<span class="nc bnc" id="L892" title="All 2 branches missed.">            String editor = getNumberInput(nameKey, Integer.toString(amount), label, FormInputPC.TYPE_INTEGER, !disabled, false);</span>
+<span class="nc" id="L893">            m_shiftSwapPC.addRowData(label +&quot; &quot;+ editor);</span>
+<span class="nc bnc" id="L894" title="All 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_MAX_SWAP_NEGOTIATIONS);</span>
         }
 
-<span class="fc" id="L815">        m_shiftSwapPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
+<span class="nc" id="L897">        m_shiftSwapPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
                 RmWebBundleKey.ORG_RM_SETTINGS_SHIFT_SWAP), ancestor));
 
 		// Add the shift swap Form
-<span class="fc" id="L819">		addChildComponent(m_shiftSwapPC);</span>
-<span class="fc" id="L820">	}</span>
+<span class="nc" id="L901">		addChildComponent(m_shiftSwapPC);</span>
+<span class="nc" id="L902">	}</span>
 
 	/**
 	 * Default hex color codes are being stored in the DB without the &quot;#&quot; character
@@ -825,110 +907,110 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 * rendered, otherwise the color will not appear in standards mode.
 	 */
 	private String enforceHexColorStringStandards(String colorCode) {
-<span class="pc bpc" id="L828" title="1 of 2 branches missed.">		if (StringUtil.isEmpty(colorCode)) {</span>
-<span class="nc" id="L829">			return colorCode;</span>
+<span class="nc bnc" id="L910" title="All 2 branches missed.">		if (StringUtil.isEmpty(colorCode)) {</span>
+<span class="nc" id="L911">			return colorCode;</span>
 		}
-<span class="fc bfc" id="L831" title="All 2 branches covered.">		if (colorCode.startsWith(&quot;#&quot;) == false) {</span>
-<span class="fc" id="L832">			return &quot;#&quot; + colorCode;</span>
+<span class="nc bnc" id="L913" title="All 2 branches missed.">		if (!colorCode.startsWith(&quot;#&quot;)) {</span>
+<span class="nc" id="L914">			return &quot;#&quot; + colorCode;</span>
 		}
-<span class="fc" id="L834">		return colorCode;</span>
+<span class="nc" id="L916">		return colorCode;</span>
 	}
+
 
 	/**
 	 * Creates the CalendarColor Form
 	 */
 	private void createCalendarColorForm() {
 
-<span class="fc" id="L842">		m_calendarColorPC.setWidth(WIDTH);</span>
-<span class="fc" id="L843">        String ancestor = null;</span>
-<span class="fc" id="L844">		boolean enabled = isAuthorizedToConfigureTOMCalendarColors();</span>
+<span class="nc" id="L925">		m_calendarColorPC.setWidth(WIDTH);</span>
+<span class="nc" id="L926">		String ancestor = null;</span>
+<span class="nc" id="L927">		boolean enabled = isAuthorizedToConfigureTOMCalendarColors();</span>
 		{
-<span class="fc" id="L846">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_AVAILABLE_COLOR);</span>
-<span class="fc" id="L847">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_AVAILABLE_LABEL;</span>
-<span class="fc" id="L848">			String value = enforceHexColorStringStandards(m_settings.getAvailableVactionColor());</span>
-<span class="pc bpc" id="L849" title="1 of 2 branches missed.">			if (value == null) {</span>
-<span class="nc" id="L850">				value = DEFAULT_COLOR;</span>
+<span class="nc" id="L929">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_AVAILABLE_COLOR);</span>
+<span class="nc" id="L930">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_AVAILABLE_LABEL;</span>
+<span class="nc" id="L931">			String value = enforceHexColorStringStandards(m_settings.getAvailableVactionColor());</span>
+<span class="nc bnc" id="L932" title="All 2 branches missed.">			if (value == null) {</span>
+<span class="nc" id="L933">				value = DEFAULT_COLOR;</span>
 			}
-<span class="fc" id="L852">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
-<span class="pc bpc" id="L853" title="1 of 2 branches missed.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_AVAILABLE_COLOR);</span>
+<span class="nc" id="L935">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
+<span class="nc bnc" id="L936" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_AVAILABLE_COLOR);</span>
 		}
 		{
-<span class="fc" id="L856">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_BLACKOUT_COLOR);</span>
-<span class="fc" id="L857">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_BLACKOUT_LABEL;</span>
-<span class="fc" id="L858">			String value = enforceHexColorStringStandards(m_settings.getBlackoutColor());</span>
-<span class="pc bpc" id="L859" title="1 of 2 branches missed.">			if (value == null) {</span>
-<span class="nc" id="L860">				value = DEFAULT_COLOR;</span>
+<span class="nc" id="L939">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_BLACKOUT_COLOR);</span>
+<span class="nc" id="L940">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_BLACKOUT_LABEL;</span>
+<span class="nc" id="L941">			String value = enforceHexColorStringStandards(m_settings.getBlackoutColor());</span>
+<span class="nc bnc" id="L942" title="All 2 branches missed.">			if (value == null) {</span>
+<span class="nc" id="L943">				value = DEFAULT_COLOR;</span>
 			}
-<span class="fc" id="L862">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
-<span class="fc bfc" id="L863" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_BLACKOUT_COLOR);</span>
+<span class="nc" id="L945">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
+<span class="nc bnc" id="L946" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_BLACKOUT_COLOR);</span>
 		}
 		{
-<span class="fc" id="L866">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_NON_OPERATION_COLOR);</span>
-<span class="fc" id="L867">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_NON_OPERATION_LABEL;</span>
-<span class="fc" id="L868">			String value = enforceHexColorStringStandards(m_settings.getNonOperationDayColor());</span>
-<span class="pc bpc" id="L869" title="1 of 2 branches missed.">			if (value == null) {</span>
-<span class="nc" id="L870">				value = DEFAULT_COLOR;</span>
+<span class="nc" id="L949">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_NON_OPERATION_COLOR);</span>
+<span class="nc" id="L950">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_NON_OPERATION_LABEL;</span>
+<span class="nc" id="L951">			String value = enforceHexColorStringStandards(m_settings.getNonOperationDayColor());</span>
+<span class="nc bnc" id="L952" title="All 2 branches missed.">			if (value == null) {</span>
+<span class="nc" id="L953">				value = DEFAULT_COLOR;</span>
 			}
-<span class="fc" id="L872">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
-<span class="fc bfc" id="L873" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_NON_OPERATION_COLOR);</span>
+<span class="nc" id="L955">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
+<span class="nc bnc" id="L956" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_NON_OPERATION_COLOR);</span>
 		}
 		{
-<span class="fc" id="L876">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_NON_WORKING_COLOR);</span>
-<span class="fc" id="L877">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_NON_WORKING_LABEL;</span>
-<span class="fc" id="L878">			String value = enforceHexColorStringStandards(m_settings.getNonWorkingHolidayColor());</span>
-<span class="pc bpc" id="L879" title="1 of 2 branches missed.">			if (value == null) {</span>
-<span class="nc" id="L880">				value = DEFAULT_COLOR;</span>
+<span class="nc" id="L959">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_NON_WORKING_COLOR);</span>
+<span class="nc" id="L960">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_NON_WORKING_LABEL;</span>
+<span class="nc" id="L961">			String value = enforceHexColorStringStandards(m_settings.getNonWorkingHolidayColor());</span>
+<span class="nc bnc" id="L962" title="All 2 branches missed.">			if (value == null) {</span>
+<span class="nc" id="L963">				value = DEFAULT_COLOR;</span>
 			}
-<span class="fc" id="L882">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
-<span class="fc bfc" id="L883" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_NON_WORKING_COLOR);</span>
+<span class="nc" id="L965">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
+<span class="nc bnc" id="L966" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_NON_WORKING_COLOR);</span>
 		}
 		{
-<span class="fc" id="L886">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_NO_AVAILABLE_COLOR);</span>
-<span class="fc" id="L887">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_NO_AVAILABLE_LABEL;</span>
-<span class="fc" id="L888">			String value = enforceHexColorStringStandards(m_settings.getNoAvailableVacationColor());</span>
-<span class="pc bpc" id="L889" title="1 of 2 branches missed.">			if (value == null) {</span>
-<span class="nc" id="L890">				value = DEFAULT_COLOR;</span>
+<span class="nc" id="L969">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_NO_AVAILABLE_COLOR);</span>
+<span class="nc" id="L970">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_NO_AVAILABLE_LABEL;</span>
+<span class="nc" id="L971">			String value = enforceHexColorStringStandards(m_settings.getNoAvailableVacationColor());</span>
+<span class="nc bnc" id="L972" title="All 2 branches missed.">			if (value == null) {</span>
+<span class="nc" id="L973">				value = DEFAULT_COLOR;</span>
 			}
-<span class="fc" id="L892">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
-<span class="fc bfc" id="L893" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_NO_AVAILABLE_COLOR);</span>
+<span class="nc" id="L975">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
+<span class="nc bnc" id="L976" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_NO_AVAILABLE_COLOR);</span>
 		}
 		{
-<span class="fc" id="L896">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_WORKING_COLOR);</span>
-<span class="fc" id="L897">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_WORKING_LABEL;</span>
-<span class="fc" id="L898">			String value = enforceHexColorStringStandards(m_settings.getWorkingHolidayColor());</span>
-<span class="pc bpc" id="L899" title="1 of 2 branches missed.">			if (value == null) {</span>
-<span class="nc" id="L900">				value = DEFAULT_COLOR;</span>
+<span class="nc" id="L979">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_WORKING_COLOR);</span>
+<span class="nc" id="L980">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_WORKING_LABEL;</span>
+<span class="nc" id="L981">			String value = enforceHexColorStringStandards(m_settings.getWorkingHolidayColor());</span>
+<span class="nc bnc" id="L982" title="All 2 branches missed.">			if (value == null) {</span>
+<span class="nc" id="L983">				value = DEFAULT_COLOR;</span>
 			}
-<span class="fc" id="L902">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
-<span class="fc bfc" id="L903" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_WORKING_COLOR);</span>
+<span class="nc" id="L985">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
+<span class="nc bnc" id="L986" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_WORKING_COLOR);</span>
 		}
 		{
-<span class="fc" id="L906">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_PENDING_COLOR);</span>
-<span class="fc" id="L907">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_PENDING_LABEL;</span>
-<span class="fc" id="L908">			String value = enforceHexColorStringStandards(m_settings.getPendingColor());</span>
-<span class="pc bpc" id="L909" title="1 of 2 branches missed.">			if (value == null) {</span>
-<span class="nc" id="L910">				value = DEFAULT_COLOR;</span>
+<span class="nc" id="L989">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_PENDING_COLOR);</span>
+<span class="nc" id="L990">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_PENDING_LABEL;</span>
+<span class="nc" id="L991">			String value = enforceHexColorStringStandards(m_settings.getPendingColor());</span>
+<span class="nc bnc" id="L992" title="All 2 branches missed.">			if (value == null) {</span>
+<span class="nc" id="L993">				value = DEFAULT_COLOR;</span>
 			}
-<span class="fc" id="L912">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
-<span class="fc bfc" id="L913" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_PENDING_COLOR);</span>
+<span class="nc" id="L995">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
+<span class="nc bnc" id="L996" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_PENDING_COLOR);</span>
 		}
 		{
-<span class="fc" id="L916">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_SCHEDULED_COLOR);</span>
-<span class="fc" id="L917">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_SCHEDULED_LABEL;</span>
-<span class="fc" id="L918">			String value = enforceHexColorStringStandards(m_settings.getScheduledColor());</span>
-<span class="pc bpc" id="L919" title="1 of 2 branches missed.">			if (value == null) {</span>
-<span class="nc" id="L920">				value = DEFAULT_COLOR;</span>
+<span class="nc" id="L999">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_SCHEDULED_COLOR);</span>
+<span class="nc" id="L1000">			String key = RmWebBundleKey.ORG_RM_SETTINGS_TO_SCHEDULED_LABEL;</span>
+<span class="nc" id="L1001">			String value = enforceHexColorStringStandards(m_settings.getScheduledColor());</span>
+<span class="nc bnc" id="L1002" title="All 2 branches missed.">			if (value == null) {</span>
+<span class="nc" id="L1003">				value = DEFAULT_COLOR;</span>
 			}
-<span class="fc" id="L922">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
-<span class="fc bfc" id="L923" title="All 2 branches covered.">            ancestor = (ancestor!=null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_SCHEDULED_COLOR);</span>
+<span class="nc" id="L1005">			m_calendarColorPC.addColorFields(nameKey, key, value, enabled);</span>
+<span class="nc bnc" id="L1006" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_SCHEDULED_COLOR);</span>
 		}
 
-<span class="fc" id="L926">        m_calendarColorPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
-                RmWebBundleKey.ORG_RM_SETTINGS_TO_CALENDAR_COLOR_TITLE), ancestor));
+<span class="nc" id="L1009">		m_calendarColorPC.setTitle(getSectionTitle(i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_TO_CALENDAR_COLOR_TITLE), ancestor));</span>
 
 		// Add the CalendarColor Form
-<span class="fc" id="L930">		addChildComponent(m_calendarColorPC);</span>
-<span class="fc" id="L931">	}</span>
+<span class="nc" id="L1012">		addChildComponent(m_calendarColorPC);</span>
+<span class="nc" id="L1013">	}</span>
 
 
 
@@ -938,148 +1020,148 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	static final String POLICY_TEMPLATE = &quot;&lt;span style=\&quot;padding:5px;\&quot;&gt;{0}&lt;/span&gt;&quot;;
 	private void createTOPoliciesForm() {
 		CollapsibleContainerPC policiesPC;
-<span class="fc" id="L941">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_POLICY);</span>
-<span class="fc" id="L942">		String policy = m_settings.getTimeOffPolicy();</span>
-<span class="pc bpc" id="L943" title="1 of 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureTOMPolicies();</span>
-<span class="fc" id="L944">		int idx = TO_POLICY_INDEX;</span>
+<span class="nc" id="L1023">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_TO_POLICY);</span>
+<span class="nc" id="L1024">		String policy = m_settings.getTimeOffPolicy();</span>
+<span class="nc bnc" id="L1025" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureTOMPolicies();</span>
+<span class="nc" id="L1026">		int idx = TO_POLICY_INDEX;</span>
 
-<span class="fc bfc" id="L946" title="All 2 branches covered.">		if (policy == null) {</span>
-<span class="fc" id="L947">			policy = &quot;&quot;;</span>
+<span class="nc bnc" id="L1028" title="All 2 branches missed.">		if (policy == null) {</span>
+<span class="nc" id="L1029">			policy = &quot;&quot;;</span>
 		}
 
-<span class="fc" id="L950">		policiesPC = new CollapsibleContainerPC(m_context);</span>
-<span class="fc" id="L951">		String title = (&quot; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_TO_POLICY_TITLE));</span>
-<span class="fc" id="L952">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
-<span class="fc" id="L953">		policiesPC.setWidth(WIDTH);</span>
-<span class="fc" id="L954">		policiesPC.setStyleClass(FWRAPPER);</span>
+<span class="nc" id="L1032">		policiesPC = new CollapsibleContainerPC(m_context);</span>
+<span class="nc" id="L1033">		String title = (&quot; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_TO_POLICY_TITLE));</span>
+<span class="nc" id="L1034">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
+<span class="nc" id="L1035">		policiesPC.setWidth(WIDTH);</span>
+<span class="nc" id="L1036">		policiesPC.setStyleClass(FWRAPPER);</span>
 
-<span class="fc" id="L956">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
+<span class="nc" id="L1038">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
 
-<span class="fc" id="L958">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
+<span class="nc" id="L1040">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
 		        135,
 		        7,
-<span class="fc" id="L961">		        getOnChangeJS(),</span>
+<span class="nc" id="L1043">		        getOnChangeJS(),</span>
 		        true,
 		        disabled,
 		        policy);
-<span class="fc" id="L965">		policiesPC.addComponent(textArea);</span>
+<span class="nc" id="L1047">		policiesPC.addComponent(textArea);</span>
 
-<span class="fc" id="L967">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_POLICY);</span>
-<span class="fc" id="L968">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
+<span class="nc" id="L1049">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_TO_POLICY);</span>
+<span class="nc" id="L1050">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
 
-<span class="fc" id="L970">		m_settingsPolicyContainerMap.put(TO_POLICY,policiesPC);</span>
-<span class="fc" id="L971">		addChildComponent(policiesPC);</span>
-<span class="fc" id="L972">	}</span>
+<span class="nc" id="L1052">		m_settingsPolicyContainerMap.put(TO_POLICY,policiesPC);</span>
+<span class="nc" id="L1053">		addChildComponent(policiesPC);</span>
+<span class="nc" id="L1054">	}</span>
 
 	private void createSSPoliciesForm() {
 		CollapsibleContainerPC policiesPC;
-<span class="fc" id="L976">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SS_POLICY);</span>
-<span class="fc" id="L977">		String policy = m_settings.getShiftSwapPolicy();</span>
-<span class="pc bpc" id="L978" title="1 of 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureSSPolicies();</span>
-<span class="fc" id="L979">		int idx = SS_POLICY_INDEX;</span>
+<span class="nc" id="L1058">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SS_POLICY);</span>
+<span class="nc" id="L1059">		String policy = m_settings.getShiftSwapPolicy();</span>
+<span class="nc bnc" id="L1060" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureSSPolicies();</span>
+<span class="nc" id="L1061">		int idx = SS_POLICY_INDEX;</span>
 
-<span class="fc bfc" id="L981" title="All 2 branches covered.">		if (policy == null) {</span>
-<span class="fc" id="L982">			policy = &quot;&quot;;</span>
+<span class="nc bnc" id="L1063" title="All 2 branches missed.">		if (policy == null) {</span>
+<span class="nc" id="L1064">			policy = &quot;&quot;;</span>
 		}
 
-<span class="fc" id="L985">		policiesPC = new CollapsibleContainerPC(m_context);</span>
-<span class="fc" id="L986">		String title = (&quot; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_SS_POLICY_TITLE));</span>
-<span class="fc" id="L987">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
-<span class="fc" id="L988">		policiesPC.setWidth(WIDTH);</span>
-<span class="fc" id="L989">		policiesPC.setStyleClass(FWRAPPER);</span>
+<span class="nc" id="L1067">		policiesPC = new CollapsibleContainerPC(m_context);</span>
+<span class="nc" id="L1068">		String title = (&quot; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_SS_POLICY_TITLE));</span>
+<span class="nc" id="L1069">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
+<span class="nc" id="L1070">		policiesPC.setWidth(WIDTH);</span>
+<span class="nc" id="L1071">		policiesPC.setStyleClass(FWRAPPER);</span>
 
-<span class="fc" id="L991">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
+<span class="nc" id="L1073">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
 
-<span class="fc" id="L993">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
+<span class="nc" id="L1075">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
 		        135,
 		        7,
-<span class="fc" id="L996">		        getOnChangeJS(),</span>
+<span class="nc" id="L1078">		        getOnChangeJS(),</span>
 		        true,
 		        disabled,
 		        policy);
-<span class="fc" id="L1000">		policiesPC.addComponent(textArea);</span>
+<span class="nc" id="L1082">		policiesPC.addComponent(textArea);</span>
 
-<span class="fc" id="L1002">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_SS_POLICY);</span>
-<span class="fc" id="L1003">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
+<span class="nc" id="L1084">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_SS_POLICY);</span>
+<span class="nc" id="L1085">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
 
-<span class="fc" id="L1005">		m_settingsPolicyContainerMap.put(SS_POLICY,policiesPC);</span>
-<span class="fc" id="L1006">		addChildComponent(policiesPC);</span>
-<span class="fc" id="L1007">	}</span>
+<span class="nc" id="L1087">		m_settingsPolicyContainerMap.put(SS_POLICY,policiesPC);</span>
+<span class="nc" id="L1088">		addChildComponent(policiesPC);</span>
+<span class="nc" id="L1089">	}</span>
 
 	private void createSBPoliciesForm() {
 		CollapsibleContainerPC policiesPC;
-<span class="fc" id="L1011">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SB_POLICY);</span>
-<span class="fc" id="L1012">		String policy = m_settings.getShiftBidPolicy();</span>
-<span class="pc bpc" id="L1013" title="1 of 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureSBPolicies();</span>
-<span class="fc" id="L1014">		int idx = SB_POLICY_INDEX;</span>
+<span class="nc" id="L1093">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_SB_POLICY);</span>
+<span class="nc" id="L1094">		String policy = m_settings.getShiftBidPolicy();</span>
+<span class="nc bnc" id="L1095" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureSBPolicies();</span>
+<span class="nc" id="L1096">		int idx = SB_POLICY_INDEX;</span>
 
-<span class="fc bfc" id="L1016" title="All 2 branches covered.">		if (policy == null) {</span>
-<span class="fc" id="L1017">			policy = &quot;&quot;;</span>
+<span class="nc bnc" id="L1098" title="All 2 branches missed.">		if (policy == null) {</span>
+<span class="nc" id="L1099">			policy = &quot;&quot;;</span>
 		}
 
-<span class="fc" id="L1020">		policiesPC = new CollapsibleContainerPC(m_context);</span>
-<span class="fc" id="L1021">		String title = (&quot; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_SB_POLICY_TITLE));</span>
-<span class="fc" id="L1022">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
-<span class="fc" id="L1023">		policiesPC.setWidth(WIDTH);</span>
-<span class="fc" id="L1024">		policiesPC.setStyleClass(FWRAPPER);</span>
+<span class="nc" id="L1102">		policiesPC = new CollapsibleContainerPC(m_context);</span>
+<span class="nc" id="L1103">		String title = (&quot; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_SB_POLICY_TITLE));</span>
+<span class="nc" id="L1104">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
+<span class="nc" id="L1105">		policiesPC.setWidth(WIDTH);</span>
+<span class="nc" id="L1106">		policiesPC.setStyleClass(FWRAPPER);</span>
 
-<span class="fc" id="L1026">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
+<span class="nc" id="L1108">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
 
-<span class="fc" id="L1028">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
+<span class="nc" id="L1110">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
 		        135,
 		        7,
-<span class="fc" id="L1031">		        getOnChangeJS(),</span>
+<span class="nc" id="L1113">		        getOnChangeJS(),</span>
 		        true,
 		        disabled,
 		        policy);
-<span class="fc" id="L1035">		policiesPC.addComponent(textArea);</span>
+<span class="nc" id="L1117">		policiesPC.addComponent(textArea);</span>
 
-<span class="fc" id="L1037">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_SB_POLICY);</span>
-<span class="fc" id="L1038">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
+<span class="nc" id="L1119">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_SB_POLICY);</span>
+<span class="nc" id="L1120">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
 
-<span class="fc" id="L1040">		m_settingsPolicyContainerMap.put(SB_POLICY,policiesPC);</span>
-<span class="fc" id="L1041">		addChildComponent(policiesPC);</span>
-<span class="fc" id="L1042">	}</span>
+<span class="nc" id="L1122">		m_settingsPolicyContainerMap.put(SB_POLICY,policiesPC);</span>
+<span class="nc" id="L1123">		addChildComponent(policiesPC);</span>
+<span class="nc" id="L1124">	}</span>
 
 	private void createFTPoliciesForm() {
 		CollapsibleContainerPC policiesPC;
-<span class="nc" id="L1046">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_FT_POLICY);</span>
-<span class="nc" id="L1047">		String policy = m_settings.getFlexTimePolicy();</span>
-<span class="nc bnc" id="L1048" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureFTPolicies();</span>
-<span class="nc" id="L1049">		int idx = FT_POLICY_INDEX;</span>
+<span class="nc" id="L1128">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_FT_POLICY);</span>
+<span class="nc" id="L1129">		String policy = m_settings.getFlexTimePolicy();</span>
+<span class="nc bnc" id="L1130" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureFTPolicies();</span>
+<span class="nc" id="L1131">		int idx = FT_POLICY_INDEX;</span>
 
-<span class="nc bnc" id="L1051" title="All 2 branches missed.">		if (policy == null) {</span>
-<span class="nc" id="L1052">			policy = &quot;&quot;;</span>
+<span class="nc bnc" id="L1133" title="All 2 branches missed.">		if (policy == null) {</span>
+<span class="nc" id="L1134">			policy = &quot;&quot;;</span>
 		}
 
-<span class="nc" id="L1055">		policiesPC = new CollapsibleContainerPC(m_context);</span>
-<span class="nc" id="L1056">		String title = (&quot; &amp;nbsp; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_FT_POLICY_TITLE));</span>
-<span class="nc" id="L1057">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
-<span class="nc" id="L1058">		policiesPC.setWidth(WIDTH);</span>
-<span class="nc" id="L1059">		policiesPC.setStyleClass(FWRAPPER);</span>
+<span class="nc" id="L1137">		policiesPC = new CollapsibleContainerPC(m_context);</span>
+<span class="nc" id="L1138">		String title = (HtmlUtil.NBSP + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_FT_POLICY_TITLE));</span>
+<span class="nc" id="L1139">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
+<span class="nc" id="L1140">		policiesPC.setWidth(WIDTH);</span>
+<span class="nc" id="L1141">		policiesPC.setStyleClass(FWRAPPER);</span>
 
-<span class="nc" id="L1061">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
+<span class="nc" id="L1143">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
 
-<span class="nc" id="L1063">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
+<span class="nc" id="L1145">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
 		        135,
 		        7,
-<span class="nc" id="L1066">		        getOnChangeJS(),</span>
+<span class="nc" id="L1148">		        getOnChangeJS(),</span>
 		        true,
 		        disabled,
 		        policy);
-<span class="nc" id="L1070">		policiesPC.addComponent(textArea);</span>
+<span class="nc" id="L1152">		policiesPC.addComponent(textArea);</span>
 
-<span class="nc" id="L1072">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_FT_POLICY);</span>
-<span class="nc" id="L1073">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
+<span class="nc" id="L1154">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_FT_POLICY);</span>
+<span class="nc" id="L1155">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
 
-<span class="nc" id="L1075">		m_settingsPolicyContainerMap.put(FT_POLICY, policiesPC);</span>
-<span class="nc" id="L1076">		addChildComponent(policiesPC);</span>
-<span class="nc" id="L1077">	}</span>
+<span class="nc" id="L1157">		m_settingsPolicyContainerMap.put(FT_POLICY, policiesPC);</span>
+<span class="nc" id="L1158">		addChildComponent(policiesPC);</span>
+<span class="nc" id="L1159">	}</span>
 
 	// required by base class
 	@Override
 	protected void initFieldValidators() {
-<span class="fc" id="L1082">		final String intKeys[][] = {</span>
+<span class="nc" id="L1164">		final String intKeys[][] = {</span>
 			{RmSettingKey.ORG_RM_SETTINGS_MAX_PREFERENCE_VALUE,
 			 RmWebBundleKey.ORG_RM_SETTINGS_MAX_PREFERENCE_VALUE},
 			{RmSettingKey.ORG_RM_SETTINGS_MAX_BIDS_PER_EMPLOYEE,
@@ -1088,17 +1170,17 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
              RmWebBundleKey.ORG_RM_SETTINGS_MAX_SWAP_NEGOTIATIONS},
 		};
 		int l;
-<span class="fc" id="L1091">		l = intKeys.length;</span>
-<span class="fc bfc" id="L1092" title="All 2 branches covered.">		for (int i = 0; i &lt; l; i++) {</span>
-<span class="fc" id="L1093">			String nameKey = getNameKey(intKeys[i][0]);</span>
-<span class="fc" id="L1094">			String resKey = intKeys[i][1];</span>
-<span class="fc" id="L1095">			addValidator(new IsPosIntegerFieldValidator(this,</span>
+<span class="nc" id="L1173">		l = intKeys.length;</span>
+<span class="nc bnc" id="L1174" title="All 2 branches missed.">		for (int i = 0; i &lt; l; i++) {</span>
+<span class="nc" id="L1175">			String nameKey = getNameKey(intKeys[i][0]);</span>
+<span class="nc" id="L1176">			String resKey = intKeys[i][1];</span>
+<span class="nc" id="L1177">			addValidator(new IsPosIntegerFieldValidator(this,</span>
 					nameKey,
 					resKey,
 					RmWebBundleKey.BUNDLE_NAME));
 		}
 
-<span class="fc" id="L1101">		final String floatKeys[][] = {</span>
+<span class="nc" id="L1183">		final String floatKeys[][] = {</span>
 			{RmSettingKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR,
 			 RmWebBundleKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR},
 			{RmSettingKey.ORG_RM_SETTINGS_SENIORITY_FACTOR,
@@ -1106,23 +1188,23 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 			{RmSettingKey.ORG_RM_SETTINGS_RANK_FACTOR,
 			 RmWebBundleKey.ORG_RM_SETTINGS_RANK_FACTOR},
 		};
-<span class="fc" id="L1109">		l = floatKeys.length;</span>
-<span class="fc bfc" id="L1110" title="All 2 branches covered.">		for (int i = 0; i &lt; l; i++) {</span>
-<span class="fc" id="L1111">			String nameKey = getNameKey(floatKeys[i][0]);</span>
-<span class="fc" id="L1112">			String resKey = floatKeys[i][1];</span>
-<span class="fc" id="L1113">			addValidator(new IsNonNegativeNumberFieldValidator(this,</span>
+<span class="nc" id="L1191">		l = floatKeys.length;</span>
+<span class="nc bnc" id="L1192" title="All 2 branches missed.">		for (int i = 0; i &lt; l; i++) {</span>
+<span class="nc" id="L1193">			String nameKey = getNameKey(floatKeys[i][0]);</span>
+<span class="nc" id="L1194">			String resKey = floatKeys[i][1];</span>
+<span class="nc" id="L1195">			addValidator(new IsNonNegativeNumberFieldValidator(this,</span>
 					nameKey,
 					resKey,
 					RmWebBundleKey.BUNDLE_NAME));
 		}
-<span class="fc" id="L1118">	}</span>
+<span class="nc" id="L1200">	}</span>
 
 	/**
 	 * Gets the Flex Time form
 	 * @return	ListContainerPC	Instance of ListContainerPC
 	 */
 	public ListContainerPC getFlexTimeForm() {
-<span class="nc" id="L1125">		return flexTimeContainerPC;</span>
+<span class="nc" id="L1207">		return flexTimeContainerPC;</span>
 	}
 
 	/**
@@ -1130,22 +1212,22 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 * @return	ListContainerPC	Instance of ListContainerPC
 	 */
 	public ListContainerPC getActivationForm() {
-<span class="fc" id="L1133">		return m_activationContainerPC;</span>
+<span class="nc" id="L1215">		return m_activationContainerPC;</span>
 	}
 	/**
 	 * Renders the ActivationForm
 	 * @return	ListContainerPC	Instance of ListContainerPC
 	 */
 	public ListContainerPC getTOOptionsContainerForm() {
-<span class="fc" id="L1140">		return m_toOptionsContainerPC;</span>
+<span class="nc" id="L1222">		return m_toOptionsContainerPC;</span>
 	}
 
 	/**
-	 * Renders the WorkflowForm
+	 * Renders the requiredPayPeriodHoursContainerPC
 	 * @return	ListContainerPC	Instance of ListContainerPC
 	 */
-	public ListContainerPC getWorkFlowForm() {
-<span class="fc" id="L1148">		return m_workFlowContainerPC;</span>
+	public ListContainerPC getRequiredPayPeriodHoursForm() {
+<span class="nc" id="L1230">		return requiredPayPeriodHoursContainerPC;</span>
 	}
 
 	/**
@@ -1153,7 +1235,7 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 * @return	ListContainerPC	Instance of ListContainerPC
 	 */
 	public ListContainerPC getTOYearForm() {
-<span class="fc" id="L1156">		return m_toYearContainerPC;</span>
+<span class="nc" id="L1238">		return m_toYearContainerPC;</span>
 	}
 
 	/**
@@ -1161,7 +1243,7 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 * @return	ListContainerPC	Instance of ListContainerPC
 	 */
 	public ListContainerPC getShiftSwapForm() {
-<span class="fc" id="L1164">		return m_shiftSwapPC;</span>
+<span class="nc" id="L1246">		return m_shiftSwapPC;</span>
 	}
 
 	/**
@@ -1169,14 +1251,14 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 * @return	ListContainerPC	Instance of ListContainerPC
 	 */
 	public Collapsible2ColFormPC getShiftBidForm() {
-<span class="fc" id="L1172">		return m_shiftBidContainerPC;</span>
+<span class="nc" id="L1254">		return m_shiftBidContainerPC;</span>
 	}
 	/**
 	 * Renders the CalendarColor Form
 	 * @return	ColorGenericPC	Instance of ColorGenericPC
 	 */
 	public ColorGenericPC getCalendarColorForm() {
-<span class="fc" id="L1179">		return m_calendarColorPC;</span>
+<span class="nc" id="L1261">		return m_calendarColorPC;</span>
 	}
 
 	/**
@@ -1184,7 +1266,11 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 * @return	ListContainerPC	Instance of ListContainerPC
 	 */
 	public ListContainerPC getCustomShiftForm() {
-<span class="fc" id="L1187">		return m_customShiftContainerPC;</span>
+<span class="nc" id="L1269">		return m_customShiftContainerPC;</span>
+	}
+
+	public ListContainerPC getWorkFlowForm() {
+<span class="nc" id="L1273">		return m_workFlowContainerPC;</span>
 	}
 
 	/**
@@ -1193,18 +1279,18 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 *                      Shift Swap and Shift Bid
 	 */
 	public Map&lt;String, CollapsibleContainerPC&gt; getPoliciesForm() {
-<span class="fc" id="L1196">		return m_settingsPolicyContainerMap;</span>
+<span class="nc" id="L1282">		return m_settingsPolicyContainerMap;</span>
 	}
 
     public CollapsibleContainerPC  getPolicyForm(String reqType) {
-<span class="fc" id="L1200">		return m_settingsPolicyContainerMap.get(reqType);</span>
+<span class="nc" id="L1286">		return m_settingsPolicyContainerMap.get(reqType);</span>
 	}
 	/**
 	 * Javascript method to call when a control changes.
 	 * @return String javascript expression
 	 */
 	private static String getOnChangeJS() {
-<span class="fc" id="L1207">		return JSUtil.ON_CHANGE;</span>
+<span class="nc" id="L1293">		return JSUtil.ON_CHANGE;</span>
 	}
 
 	/**
@@ -1213,10 +1299,10 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 */
 	@Override
 	public String getRequiredHTML() {
-<span class="fc" id="L1216">		StringBuffer sb = new StringBuffer(128);</span>
-<span class="fc" id="L1217">		sb.append(super.getRequiredHTML());</span>
-<span class="fc" id="L1218">		sb.append(HtmlUtil.makeColorPicker());</span>
-<span class="fc" id="L1219">		return sb.toString();</span>
+<span class="nc" id="L1302">		StringBuilder sb = new StringBuilder(128);</span>
+<span class="nc" id="L1303">		sb.append(super.getRequiredHTML());</span>
+<span class="nc" id="L1304">		sb.append(HtmlUtil.makeColorPicker());</span>
+<span class="nc" id="L1305">		return sb.toString();</span>
 	}
 
 	/**
@@ -1229,102 +1315,102 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	 * @return String  form field name (with '/' replaced by '_')
 	 */
 	public static String getNameKey(String key) {
-<span class="fc" id="L1232">		return key.replace('/', '_');</span>
+<span class="nc" id="L1318">		return key.replace('/', '_');</span>
 	}
 
 	@Override
 	protected boolean isAuthorizedToConfigure() {
-<span class="fc" id="L1237">		return</span>
-<span class="pc bpc" id="L1238" title="1 of 2 branches missed.">				isAuthorizedToConfigureTOMWorkflow() ||</span>
-<span class="nc bnc" id="L1239" title="All 2 branches missed.">				isAuthorizedToConfigureTORequestOptions()||</span>
-<span class="nc bnc" id="L1240" title="All 2 branches missed.">				isAuthorizedToConfigureShiftSwap() ||</span>
-<span class="nc bnc" id="L1241" title="All 2 branches missed.">				isAuthorizedToConfigureTOMEmployeeYear() ||</span>
-<span class="nc bnc" id="L1242" title="All 2 branches missed.">				isAuthorizedToConfigureTOMCalendarColors() ||</span>
-<span class="nc bnc" id="L1243" title="All 2 branches missed.">				isAuthorizedToConfigureTOMPolicies() ||</span>
-<span class="nc bnc" id="L1244" title="All 2 branches missed.">				isAuthorizedToConfigureSSPolicies() ||</span>
-<span class="nc bnc" id="L1245" title="All 2 branches missed.">				isAuthorizedToConfigureShiftBid() ||</span>
-<span class="nc bnc" id="L1246" title="All 2 branches missed.">				isAuthorizedToConfigureSBPolicies() ||</span>
-<span class="nc bnc" id="L1247" title="All 2 branches missed.">				isAuthorizedToConfigureCustomShift() ||</span>
-<span class="nc bnc" id="L1248" title="All 2 branches missed.">				isAuthorizedToConfigureCSPolicies() ||</span>
-<span class="nc bnc" id="L1249" title="All 2 branches missed.">				isAuthorizedToConfigureFlexTime() ||</span>
-<span class="pc bnc" id="L1250" title="All 2 branches missed.">				isAuthorizedToConfigureFTPolicies();</span>
+<span class="nc" id="L1323">		return</span>
+<span class="nc bnc" id="L1324" title="All 2 branches missed.">				isAuthorizedToConfigureTOMWorkflow() ||</span>
+<span class="nc bnc" id="L1325" title="All 2 branches missed.">				isAuthorizedToConfigureTORequestOptions()||</span>
+<span class="nc bnc" id="L1326" title="All 2 branches missed.">				isAuthorizedToConfigureShiftSwap() ||</span>
+<span class="nc bnc" id="L1327" title="All 2 branches missed.">				isAuthorizedToConfigureTOMEmployeeYear() ||</span>
+<span class="nc bnc" id="L1328" title="All 2 branches missed.">				isAuthorizedToConfigureTOMCalendarColors() ||</span>
+<span class="nc bnc" id="L1329" title="All 2 branches missed.">				isAuthorizedToConfigureTOMPolicies() ||</span>
+<span class="nc bnc" id="L1330" title="All 2 branches missed.">				isAuthorizedToConfigureSSPolicies() ||</span>
+<span class="nc bnc" id="L1331" title="All 2 branches missed.">				isAuthorizedToConfigureShiftBid() ||</span>
+<span class="nc bnc" id="L1332" title="All 2 branches missed.">				isAuthorizedToConfigureSBPolicies() ||</span>
+<span class="nc bnc" id="L1333" title="All 2 branches missed.">				isAuthorizedToConfigureCustomShift() ||</span>
+<span class="nc bnc" id="L1334" title="All 2 branches missed.">				isAuthorizedToConfigureCSPolicies() ||</span>
+<span class="nc bnc" id="L1335" title="All 2 branches missed.">				isAuthorizedToConfigureFlexTime() ||</span>
+<span class="nc bnc" id="L1336" title="All 2 branches missed.">				isAuthorizedToConfigureFTPolicies();</span>
 	}
 	protected boolean isAuthorizedToConfigureTORequestOptions() {
-<span class="pc bpc" id="L1253" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1254" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1255">						PrivilegeKeys.TOM_CONFIGURETIMEOFFOPTIONS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1339" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1340" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1341">						PrivilegeKeys.TOM_CONFIGURETIMEOFFOPTIONS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureTOMWorkflow() {
-<span class="pc bpc" id="L1259" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1260" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1261">						PrivilegeKeys.TOM_ACTIVATETIMEOFFWORKFLOW, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1345" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1346" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1347">						PrivilegeKeys.TOM_ACTIVATETIMEOFFWORKFLOW, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureFlexTime() {
-<span class="pc bpc" id="L1265" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1266" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1267">						PrivilegeKeys.FT_SETTINGS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1351" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1352" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1353">						PrivilegeKeys.FT_SETTINGS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureShiftSwap() {
-<span class="pc bpc" id="L1271" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1272" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1273">						PrivilegeKeys.SS_SETTINGS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1357" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1358" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1359">						PrivilegeKeys.SS_SETTINGS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureTOMEmployeeYear() {
-<span class="pc bpc" id="L1277" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1278" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1279">						PrivilegeKeys.TOM_SETYEARFOREMPLOYEE, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1363" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1364" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1365">						PrivilegeKeys.TOM_SETYEARFOREMPLOYEE, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureTOMCalendarColors() {
-<span class="pc bpc" id="L1283" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1284" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1285">						PrivilegeKeys.TOM_CONFIGURECALENDARCOLORS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1369" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1370" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1371">						PrivilegeKeys.TOM_CONFIGURECALENDARCOLORS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureTOMPolicies() {
-<span class="pc bpc" id="L1289" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1290" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1291">						PrivilegeKeys.TOM_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1375" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1376" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1377">						PrivilegeKeys.TOM_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureFTPolicies() {
-<span class="nc bnc" id="L1295" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="nc bnc" id="L1296" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="nc" id="L1297">						PrivilegeKeys.FT_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1381" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1382" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1383">						PrivilegeKeys.FT_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureSSPolicies() {
-<span class="pc bpc" id="L1301" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1302" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1303">						PrivilegeKeys.SS_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1387" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1388" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1389">						PrivilegeKeys.SS_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureSBPolicies() {
-<span class="pc bpc" id="L1307" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1308" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1309">						PrivilegeKeys.SB_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1393" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1394" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1395">						PrivilegeKeys.SB_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureShiftBid() {
-<span class="pc bpc" id="L1313" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1314" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1315">						PrivilegeKeys.SB_SETTINGS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1399" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1400" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1401">						PrivilegeKeys.SB_SETTINGS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureCSPolicies() {
-<span class="pc bpc" id="L1319" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1320" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1321">						PrivilegeKeys.CS_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1405" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1406" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1407">						PrivilegeKeys.CS_SETPOLICIES, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	protected boolean isAuthorizedToConfigureCustomShift() {
-<span class="pc bpc" id="L1325" title="1 of 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
-<span class="pc bpc" id="L1326" title="1 of 2 branches missed.">				m_context.getUser().isAuthorized(</span>
-<span class="fc" id="L1327">						PrivilegeKeys.CS_SETTINGS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+<span class="nc bnc" id="L1411" title="All 2 branches missed.">		return isValidSelectedOrg() &amp;&amp;</span>
+<span class="nc bnc" id="L1412" title="All 2 branches missed.">				m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1413">						PrivilegeKeys.CS_SETTINGS, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
 	}
 
 	/*
@@ -1337,19 +1423,19 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 
 	private String makeChoiceInput(String name, String value, boolean checked,
 			boolean disabled, boolean isMultiSelect) {
-<span class="fc" id="L1340">		return makeChoiceInput(name, value, checked, disabled, isMultiSelect, JSUtil.ON_CHANGE);</span>
+<span class="nc" id="L1426">		return makeChoiceInput(name, value, checked, disabled, isMultiSelect, JSUtil.ON_CHANGE);</span>
 	}
 
 	private String makeChoiceInput(String name, String value, boolean checked,
 			boolean disabled, boolean isMultiSelect, String onClickJS) {
-<span class="fc" id="L1345">		m_choiceInput.reset();</span>
-<span class="fc" id="L1346">		m_choiceInput.setIsMultiSelect(isMultiSelect);</span>
-<span class="fc" id="L1347">		m_choiceInput.setInputName(name);</span>
-<span class="fc" id="L1348">		m_choiceInput.setValue(value);</span>
-<span class="fc" id="L1349">		m_choiceInput.setIsChecked(checked);</span>
-<span class="fc" id="L1350">		m_choiceInput.setIsDisabled(disabled);</span>
-<span class="fc" id="L1351">		m_choiceInput.setOnClickJS(onClickJS);</span>
-<span class="fc" id="L1352">		return m_choiceInput.getHtmlDisplay();</span>
+<span class="nc" id="L1431">		m_choiceInput.reset();</span>
+<span class="nc" id="L1432">		m_choiceInput.setIsMultiSelect(isMultiSelect);</span>
+<span class="nc" id="L1433">		m_choiceInput.setInputName(name);</span>
+<span class="nc" id="L1434">		m_choiceInput.setValue(value);</span>
+<span class="nc" id="L1435">		m_choiceInput.setIsChecked(checked);</span>
+<span class="nc" id="L1436">		m_choiceInput.setIsDisabled(disabled);</span>
+<span class="nc" id="L1437">		m_choiceInput.setOnClickJS(onClickJS);</span>
+<span class="nc" id="L1438">		return m_choiceInput.getHtmlDisplay();</span>
 	}
 
 
@@ -1359,26 +1445,21 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
      * @param ancestorOrgName The name of the ancestor from which the settings of this section were inheritted.
      * @return The complete title of the section.
      */
-    private String getSectionTitle(String mainTitle, String ancestorOrgName)
-    {
-<span class="fc" id="L1364">        ID myID = getSelectedIDObject();</span>
+	private String getSectionTitle(String mainTitle, String ancestorOrgName) {
+<span class="nc" id="L1449">		ID myID = getSelectedIDObject();</span>
 
-<span class="pc bpc" id="L1366" title="2 of 4 branches missed.">        if (myID.equals(Organization.ROOT_ORG_ID_OBJ) || myID.equals(Organization.YOUR_COMPANY_ID_OBJ)) {</span>
-<span class="nc" id="L1367">			return (mainTitle);</span>
+<span class="nc bnc" id="L1451" title="All 4 branches missed.">		if (myID.equals(Organization.ROOT_ORG_ID_OBJ) || myID.equals(Organization.YOUR_COMPANY_ID_OBJ)) {</span>
+<span class="nc" id="L1452">			return (mainTitle);</span>
 		}
 
-<span class="fc bfc" id="L1370" title="All 2 branches covered.">        if (ancestorOrgName != null)</span>
-        {
-<span class="fc" id="L1372">            Object[] args = new Object[] {ancestorOrgName};</span>
-<span class="fc" id="L1373">            return mainTitle + &quot; &quot; + m_localizer.i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_INHERITED_FROM_ORG, args);  //&quot;(Settings inherited from organization:&quot;</span>
-        }
-        else
-        {
-<span class="fc" id="L1377">            return (mainTitle + &quot; &quot; +</span>
-<span class="fc" id="L1378">                i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_OVERRIDE_PARENT_ORG)); //&quot;(Settings override parent org)&quot;</span>
-        }
+<span class="nc bnc" id="L1455" title="All 2 branches missed.">		if (ancestorOrgName != null) {</span>
+<span class="nc" id="L1456">			Object[] args = new Object[] { ancestorOrgName };</span>
+<span class="nc" id="L1457">			return mainTitle + &quot; &quot; + m_localizer.i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_INHERITED_FROM_ORG, args); //&quot;(Settings inherited from organization:&quot;</span>
+		} else {
+<span class="nc" id="L1459">			return (mainTitle + &quot; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_OVERRIDE_PARENT_ORG)); //&quot;(Settings override parent org)&quot;</span>
+		}
 
-    }
+	}
 
     /**
      * Given a key, return the name of the ancestor org from which it was inheritted, or null if none.
@@ -1386,140 +1467,162 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
      * @param key An RM settings key.
      * @return The name of the ancestor org from which it was inheritted, or null if none.
      */
-    private String getAncestor(String key)
-    {
-<span class="pc bpc" id="L1391" title="1 of 2 branches missed.">        if (m_ancestors == null) {</span>
-<span class="nc" id="L1392">			return null;</span>
+	private String getAncestor(String key) {
+<span class="nc bnc" id="L1471" title="All 2 branches missed.">		if (m_ancestors == null) {</span>
+<span class="nc" id="L1472">			return null;</span>
 		}
-<span class="fc" id="L1394">        return (String)m_ancestors.get(key);</span>
-    }
+<span class="nc" id="L1474">		return (String) m_ancestors.get(key);</span>
+	}
 
     /**
      * Determines whether the current org has any children.
      * @return True if the current org has any children, false otherwise.
      */
-    private boolean hasChildOrgs()
-    {
-    	//return m_settings!=null &amp;&amp; m_settings.getHasChildren();
-<span class="fc" id="L1404">    	return m_hasChildren;</span>
-    }
+	private boolean hasChildOrgs() {
+<span class="nc" id="L1482">		return m_hasChildren;</span>
+	}
 
 	/**
 	 * Creates the Custom Shift Requests Form
 	 */
 	private void createCustomShiftForm() {
 
-<span class="fc" id="L1412">		m_customShiftContainerPC.setWidth(WIDTH);</span>
-<span class="fc" id="L1413">		m_customShiftContainerPC.setWrapperCSSClass(FWRAPPER);</span>
-<span class="fc" id="L1414">		m_customShiftContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
+<span class="nc" id="L1490">		m_customShiftContainerPC.setWidth(WIDTH);</span>
+<span class="nc" id="L1491">		m_customShiftContainerPC.setWrapperCSSClass(FWRAPPER);</span>
+<span class="nc" id="L1492">		m_customShiftContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
 
-<span class="pc bpc" id="L1416" title="1 of 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureCustomShift();</span>
-<span class="fc" id="L1417">		String ancestor = null;</span>
-<span class="fc" id="L1418">		String TAB = &quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&quot;;</span>
-<span class="fc" id="L1419">		addJSVariable(&quot;MUST_ENABLE_CS_SUB_SETTING&quot;, m_rmBundle, RmWebBundleKey.MUST_ENABLE_CS_SUB_SETTING);</span>
-<span class="fc" id="L1420">		addJSVariable(&quot;MUST_ENABLE_NEW_SHIFT_SUB_SETTING&quot;, m_rmBundle, RmWebBundleKey.MUST_ENABLE_NEW_SHIFT_SUB_SETTING);</span>
+<span class="nc bnc" id="L1494" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureCustomShift();</span>
+<span class="nc" id="L1495">		String ancestor = null;</span>
+<span class="nc" id="L1496">		String TAB = &quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&quot;;</span>
+<span class="nc" id="L1497">		addJSVariable(&quot;MUST_ENABLE_CS_SUB_SETTING&quot;, m_rmBundle, RmWebBundleKey.MUST_ENABLE_CS_SUB_SETTING);</span>
+<span class="nc" id="L1498">		addJSVariable(&quot;MUST_ENABLE_NEW_SHIFT_SUB_SETTING&quot;, m_rmBundle, RmWebBundleKey.MUST_ENABLE_NEW_SHIFT_SUB_SETTING);</span>
 
 		{
 			//Allow requests for new shifts
-<span class="fc" id="L1424">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ENABLE_CUSTOM_SHIFT_REQUESTS);</span>
-<span class="fc" id="L1425">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ENABLE_CUSTOM_SHIFT_REQUESTS;</span>
-<span class="fc" id="L1426">			boolean checked = m_settings.getEnableCustomShiftRequests();</span>
-<span class="fc" id="L1427">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true, JSUtil.ON_CHANGE + &quot;;maybeEnableOrDisableAllCSSettings()&quot;);</span>
-<span class="fc" id="L1428">			String label = i18n(m_rmBundle, key);</span>
-			//m_customShiftContainerPC.addRowData(&quot;Enable Custom Shift Requests: &quot; + checkbox + &quot; &quot; + label);
-<span class="pc bpc" id="L1430" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ENABLE_CUSTOM_SHIFT_REQUESTS);</span>
+<span class="nc" id="L1502">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ENABLE_CUSTOM_SHIFT_REQUESTS);</span>
+<span class="nc" id="L1503">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ENABLE_CUSTOM_SHIFT_REQUESTS;</span>
+<span class="nc" id="L1504">			boolean checked = m_settings.getEnableCustomShiftRequests();</span>
+<span class="nc" id="L1505">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true, JSUtil.ON_CHANGE + &quot;;maybeEnableOrDisableAllCSSettings()&quot;);</span>
+<span class="nc" id="L1506">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc bnc" id="L1507" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ENABLE_CUSTOM_SHIFT_REQUESTS);</span>
 
 			//Allow requests for changes to existing shifts
-<span class="fc" id="L1433">			String nameKey2 = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_SHIFT_CHANGE_REQUESTS);</span>
-<span class="fc" id="L1434">			String key2 = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_SHIFT_CHANGE_REQUESTS;</span>
-<span class="fc" id="L1435">			boolean checked2 = m_settings.getAllowShiftChangeRequests();</span>
-<span class="fc" id="L1436">			String checkbox2 = makeChoiceInput(nameKey2, &quot;true&quot;, checked2, disabled, true, JSUtil.ON_CHANGE + &quot;;maybeEnableOrDisableAllCSSettings()&quot;);</span>
-<span class="fc" id="L1437">			String label2 = i18n(m_rmBundle, key2);</span>
+<span class="nc" id="L1510">			String nameKey2 = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_SHIFT_CHANGE_REQUESTS);</span>
+<span class="nc" id="L1511">			String key2 = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_SHIFT_CHANGE_REQUESTS;</span>
+<span class="nc" id="L1512">			boolean checked2 = m_settings.getAllowShiftChangeRequests();</span>
+<span class="nc" id="L1513">			String checkbox2 = makeChoiceInput(nameKey2, &quot;true&quot;, checked2, disabled, true, JSUtil.ON_CHANGE + &quot;;maybeEnableOrDisableAllCSSettings()&quot;);</span>
+<span class="nc" id="L1514">			String label2 = i18n(m_rmBundle, key2);</span>
 
-<span class="fc" id="L1439">			String enableString = i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_ENABLE_ANY_SHIFT_REQUESTS); //&quot;Enable Shift Requests &amp; Changes&quot;</span>
-<span class="fc" id="L1440">			m_customShiftContainerPC.addRowData(enableString + &quot;: &amp;nbsp;&amp;nbsp; &quot; + checkbox + &quot; &quot; + label + &quot; &amp;nbsp;&amp;nbsp; &quot; + checkbox2 + &quot; &quot; + label2);</span>
-
-			//m_customShiftContainerPC.addRowData(checkbox2 + &quot; &quot; + label2);
-<span class="pc bpc" id="L1443" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_SHIFT_CHANGE_REQUESTS);</span>
+<span class="nc" id="L1516">			String enableString = i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_ENABLE_ANY_SHIFT_REQUESTS); //&quot;Enable Shift Requests &amp; Changes&quot;</span>
+<span class="nc" id="L1517">			m_customShiftContainerPC.addRowData(enableString + &quot;: &amp;nbsp;&amp;nbsp; &quot; + checkbox + &quot; &quot; + label + &quot; &amp;nbsp;&amp;nbsp; &quot; + checkbox2 + &quot; &quot; + label2);</span>
+<span class="nc bnc" id="L1518" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_SHIFT_CHANGE_REQUESTS);</span>
 
 			//all the other settings are disabled if both of these are unchecked
-<span class="pc bpc" id="L1446" title="4 of 6 branches missed.">			disabled = disabled || (!checked &amp;&amp; !checked2);</span>
+<span class="nc bnc" id="L1521" title="All 6 branches missed.">			disabled = disabled || (!checked &amp;&amp; !checked2);</span>
 		}
 
 		{
 			//Allow requests for regular (non-overtime) shifts
-<span class="fc" id="L1451">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_REGULAR_SHIFT);</span>
-<span class="fc" id="L1452">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_REGULAR_SHIFT;</span>
-<span class="fc" id="L1453">			boolean checked = m_settings.getAllowEntireRegularShift();</span>
-<span class="fc" id="L1454">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L1455">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L1456">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
-<span class="pc bpc" id="L1457" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_REGULAR_SHIFT);</span>
+<span class="nc" id="L1526">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_REGULAR_SHIFT);</span>
+<span class="nc" id="L1527">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_REGULAR_SHIFT;</span>
+<span class="nc" id="L1528">			boolean checked = m_settings.getAllowEntireRegularShift();</span>
+<span class="nc" id="L1529">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L1530">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1531">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1532" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_REGULAR_SHIFT);</span>
 		}
 
 		{
 			//Allow requests for overtime shifts
-<span class="fc" id="L1462">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_OT_SHIFT);</span>
-<span class="fc" id="L1463">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_OT_SHIFT;</span>
-<span class="fc" id="L1464">			boolean checked = m_settings.getAllowEntireOTShift();</span>
-<span class="fc" id="L1465">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L1466">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L1467">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
-<span class="pc bpc" id="L1468" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_OT_SHIFT);</span>
+<span class="nc" id="L1537">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_OT_SHIFT);</span>
+<span class="nc" id="L1538">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_OT_SHIFT;</span>
+<span class="nc" id="L1539">			boolean checked = m_settings.getAllowEntireOTShift();</span>
+<span class="nc" id="L1540">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L1541">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1542">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1543" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_ENTIRE_OT_SHIFT);</span>
 		}
 
 		{
 			//Allow requests for regular (non-overtime) extensions before a shift
-<span class="fc" id="L1473">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_BEFORE_SHIFT);</span>
-<span class="fc" id="L1474">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_BEFORE_SHIFT;</span>
-<span class="fc" id="L1475">			boolean checked = m_settings.getAllowRegularExtensionBeforeShift();</span>
-<span class="fc" id="L1476">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L1477">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L1478">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
-<span class="pc bpc" id="L1479" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_BEFORE_SHIFT);</span>
+<span class="nc" id="L1548">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_BEFORE_SHIFT);</span>
+<span class="nc" id="L1549">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_BEFORE_SHIFT;</span>
+<span class="nc" id="L1550">			boolean checked = m_settings.getAllowRegularExtensionBeforeShift();</span>
+<span class="nc" id="L1551">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L1552">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1553">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1554" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_BEFORE_SHIFT);</span>
 		}
 
 		{
 			//Allow requests for regular (non-overtime) extensions after a shift
-<span class="fc" id="L1484">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_AFTER_SHIFT);</span>
-<span class="fc" id="L1485">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_AFTER_SHIFT;</span>
-<span class="fc" id="L1486">			boolean checked = m_settings.getAllowRegularExtensionAfterShift();</span>
-<span class="fc" id="L1487">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L1488">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L1489">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
-<span class="pc bpc" id="L1490" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_AFTER_SHIFT);</span>
+<span class="nc" id="L1559">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_AFTER_SHIFT);</span>
+<span class="nc" id="L1560">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_AFTER_SHIFT;</span>
+<span class="nc" id="L1561">			boolean checked = m_settings.getAllowRegularExtensionAfterShift();</span>
+<span class="nc" id="L1562">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L1563">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1564">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1565" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_AFTER_SHIFT);</span>
 		}
-
+<span class="nc bnc" id="L1567" title="All 2 branches missed.">		if (LicenseUtil.isAdvancedRMLicense()) {</span>
+			//Allow requests for extensions in gaps
+<span class="nc" id="L1569">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_DURING_GAP);</span>
+<span class="nc" id="L1570">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_DURING_GAP;</span>
+<span class="nc" id="L1571">			boolean checked = m_settings.getAllowRegularExtensionDuringGap();</span>
+<span class="nc" id="L1572">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L1573">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1574">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1575" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_REGULAR_EXTENSION_DURING_GAP);</span>
+		}
 		{
 			//Allow requests for overtime extensions before a shift
-<span class="fc" id="L1495">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_OT_BEFORE_SHIFT);</span>
-<span class="fc" id="L1496">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_OT_BEFORE_SHIFT;</span>
-<span class="fc" id="L1497">			boolean checked = m_settings.getAllowOTBeforeShift();</span>
-<span class="fc" id="L1498">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L1499">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L1500">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
-<span class="pc bpc" id="L1501" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_OT_BEFORE_SHIFT);</span>
+<span class="nc" id="L1579">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_OT_BEFORE_SHIFT);</span>
+<span class="nc" id="L1580">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_OT_BEFORE_SHIFT;</span>
+<span class="nc" id="L1581">			boolean checked = m_settings.getAllowOTBeforeShift();</span>
+<span class="nc" id="L1582">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L1583">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1584">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1585" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_OT_BEFORE_SHIFT);</span>
 		}
 
 		{
 			//Allow requests for overtime extensions after a shift
-<span class="fc" id="L1506">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_OT_AFTER_SHIFT);</span>
-<span class="fc" id="L1507">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_OT_AFTER_SHIFT;</span>
-<span class="fc" id="L1508">			boolean checked = m_settings.getAllowOTAfterShift();</span>
-<span class="fc" id="L1509">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
-<span class="fc" id="L1510">			String label = i18n(m_rmBundle, key);</span>
-<span class="fc" id="L1511">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
-<span class="pc bpc" id="L1512" title="1 of 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_OT_AFTER_SHIFT);</span>
+<span class="nc" id="L1590">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_OT_AFTER_SHIFT);</span>
+<span class="nc" id="L1591">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_OT_AFTER_SHIFT;</span>
+<span class="nc" id="L1592">			boolean checked = m_settings.getAllowOTAfterShift();</span>
+<span class="nc" id="L1593">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L1594">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1595">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1596" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_OT_AFTER_SHIFT);</span>
 		}
-		
-		
+		{
+			//Allow editing of duration for overtime extension requests
+<span class="nc" id="L1600">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_EDIT_OT_REQUESTS_DURATION);</span>
+<span class="nc" id="L1601">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_EDIT_OT_REQUESTS_DURATION;</span>
+<span class="nc" id="L1602">			boolean checked = m_settings.getAllowEditOvertimeDuration();</span>
+<span class="nc" id="L1603">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L1604">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1605">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1606" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_EDIT_OT_REQUESTS_DURATION);</span>
+		}
+		{
+			//Allow editing of gap for overtime extension requests
+<span class="nc" id="L1610">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_ALLOW_EDIT_OT_REQUESTS_GAP);</span>
+<span class="nc" id="L1611">			String key = RmWebBundleKey.ORG_RM_SETTINGS_ALLOW_EDIT_OT_REQUESTS_GAP;</span>
+<span class="nc" id="L1612">			boolean checked = m_settings.getAllowEditOvertimeGap();</span>
+<span class="nc" id="L1613">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, checked, disabled, true);</span>
+<span class="nc" id="L1614">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1615">			m_customShiftContainerPC.addRowData(TAB + checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1616" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_ALLOW_EDIT_OT_REQUESTS_GAP);</span>
+		}
 
-<span class="fc" id="L1517">		m_customShiftContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
+
+<span class="nc" id="L1620">		m_customShiftContainerPC.setTitle(getSectionTitle(i18n(m_rmBundle,</span>
 		        RmWebBundleKey.ORG_RM_SETTINGS_CUSTOM_SHIFT_REQUESTS_TITLE), ancestor));
 
 		// Add the Custom Shift Form
-<span class="fc" id="L1521">		addChildComponent(m_customShiftContainerPC);</span>
-<span class="fc" id="L1522">	}</span>
+<span class="nc" id="L1624">		addChildComponent(m_customShiftContainerPC);</span>
+<span class="nc" id="L1625">	}</span>
 
 	/**
 	 * Create the Custom Shift Request Policies form
@@ -1527,38 +1630,200 @@ public class SettingsPageModel extends OrgWorkpaneFormPageModel {
 	private void createCSPoliciesForm()
 	{
 		CollapsibleContainerPC policiesPC;
-<span class="fc" id="L1530">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_CS_POLICY);</span>
-<span class="fc" id="L1531">		String policy = m_settings.getCustomShiftPolicy();</span>
-<span class="pc bpc" id="L1532" title="1 of 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureCSPolicies();</span>
-<span class="fc" id="L1533">		int idx = CS_POLICY_INDEX;</span>
+<span class="nc" id="L1633">		String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_CS_POLICY);</span>
+<span class="nc" id="L1634">		String policy = m_settings.getCustomShiftPolicy();</span>
+<span class="nc bnc" id="L1635" title="All 2 branches missed.">		boolean disabled = !isAuthorizedToConfigureCSPolicies();</span>
+<span class="nc" id="L1636">		int idx = CS_POLICY_INDEX;</span>
 
-<span class="pc bpc" id="L1535" title="1 of 2 branches missed.">		if (policy == null) {</span>
-<span class="fc" id="L1536">			policy = &quot;&quot;;</span>
+<span class="nc bnc" id="L1638" title="All 2 branches missed.">		if (policy == null) {</span>
+<span class="nc" id="L1639">			policy = &quot;&quot;;</span>
 		}
 
-<span class="fc" id="L1539">		policiesPC = new CollapsibleContainerPC(m_context);</span>
-<span class="fc" id="L1540">		String title = (&quot; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_CS_POLICY_TITLE));</span>
-<span class="fc" id="L1541">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
-<span class="fc" id="L1542">		policiesPC.setWidth(WIDTH);</span>
-<span class="fc" id="L1543">		policiesPC.setStyleClass(FWRAPPER);</span>
+<span class="nc" id="L1642">		policiesPC = new CollapsibleContainerPC(m_context);</span>
+<span class="nc" id="L1643">		String title = (&quot; &quot; + i18n(m_rmBundle, RmWebBundleKey.ORG_RM_SETTINGS_CS_POLICY_TITLE));</span>
+<span class="nc" id="L1644">		policiesPC.setName(POLICY_CONTAINER + idx);</span>
+<span class="nc" id="L1645">		policiesPC.setWidth(WIDTH);</span>
+<span class="nc" id="L1646">		policiesPC.setStyleClass(FWRAPPER);</span>
 
-<span class="fc" id="L1545">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
+<span class="nc" id="L1648">		policiesPC.setTemplate(POLICY_TEMPLATE);</span>
 
-<span class="fc" id="L1547">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
+<span class="nc" id="L1650">		String textArea = HtmlUtil.makeTextAreaInput(nameKey,</span>
 		        135,
 		        7,
-<span class="fc" id="L1550">		        getOnChangeJS(),</span>
+<span class="nc" id="L1653">		        getOnChangeJS(),</span>
 		        true,
 		        disabled,
 		        policy);
-<span class="fc" id="L1554">		policiesPC.addComponent(textArea);</span>
+<span class="nc" id="L1657">		policiesPC.addComponent(textArea);</span>
 
-<span class="fc" id="L1556">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_CS_POLICY);</span>
-<span class="fc" id="L1557">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
+<span class="nc" id="L1659">		String ancestor = getAncestor(RmSettingKey.ORG_RM_SETTINGS_CS_POLICY);</span>
+<span class="nc" id="L1660">		policiesPC.setTitle(getSectionTitle(title, ancestor));</span>
 
-<span class="fc" id="L1559">		m_settingsPolicyContainerMap.put(CS_POLICY,policiesPC);</span>
-<span class="fc" id="L1560">		addChildComponent(policiesPC);</span>
-<span class="fc" id="L1561">	}</span>
+<span class="nc" id="L1662">		m_settingsPolicyContainerMap.put(CS_POLICY,policiesPC);</span>
+<span class="nc" id="L1663">		addChildComponent(policiesPC);</span>
+<span class="nc" id="L1664">	}</span>
 
+	@Override
+	public boolean extractParameters(HttpServletRequest request){
+<span class="nc" id="L1668">		return super.extractParameters(request);</span>
+
+	}
+
+	@Override
+	public boolean validate(){
+<span class="nc" id="L1674">		return super.validate();</span>
+	}
+
+
+	/**
+	 * Creates the Required Pay Period Hours Form
+	 */
+
+	private void createRequiredPayPeriodHoursForm(){
+
+
+<span class="nc" id="L1685">		requiredPayPeriodHoursContainerPC.setWidth(WIDTH);</span>
+<span class="nc" id="L1686">		requiredPayPeriodHoursContainerPC.setWrapperCSSClass(FWRAPPER);</span>
+<span class="nc" id="L1687">		requiredPayPeriodHoursContainerPC.setLastRowType(ListContainerPC.LAST_ROW_NONE);</span>
+<span class="nc" id="L1688">		String ancestor = null;</span>
+<span class="nc" id="L1689">		boolean enabled = isAuthorizedToConfigureRequiredPayPeriodHours();</span>
+
+<span class="nc" id="L1691">		boolean payPeriodHoursChecked = m_settings.getRequiredPayPeriodHoursTrack();</span>
+		{
+			//Track required hours checkbox
+<span class="nc" id="L1694">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_REQUIRED_PAY_PERIOD_TRACK);</span>
+<span class="nc" id="L1695">			String key = RmWebBundleKey.REQUIRED_PAY_PERIOD_HOURS_TRACK;</span>
+
+<span class="nc bnc" id="L1697" title="All 2 branches missed.">			String checkbox = makeChoiceInput(nameKey, &quot;true&quot;, payPeriodHoursChecked, !enabled, true, JSUtil.ON_CHANGE</span>
+					+ &quot;;enableDisableAllRequiredPayPeriodSettings();&quot;);
+<span class="nc" id="L1699">			String label = i18n(m_rmBundle, key);</span>
+<span class="nc" id="L1700">			requiredPayPeriodHoursContainerPC.addRowData(checkbox + &quot; &quot; + label);</span>
+<span class="nc bnc" id="L1701" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_REQUIRED_PAY_PERIOD_TRACK);</span>
+		}
+
+
+<span class="nc" id="L1705">		String selectedPayPeriod = &quot;&quot;;</span>
+		{
+<span class="nc" id="L1707">			List&lt;StringsPair&gt; options = getRequiredPayPeriodOptions(m_localizer);</span>
+
+<span class="nc" id="L1709">			selectedPayPeriod = m_settings.getRequiredPayPeriodHoursPeriod();</span>
+<span class="nc bnc" id="L1710" title="All 4 branches missed.">			if(selectedPayPeriod==null || selectedPayPeriod.isEmpty()){</span>
+<span class="nc" id="L1711">				selectedPayPeriod = i18n(m_rmBundle, RmWebBundleKey.REQUIRED_PAY_PERIOD_HOURS_PERIOD_WEEKLY);</span>
+			}
+
+<span class="nc" id="L1714">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_REQUIRED_PAY_PERIOD_PERIOD);</span>
+<span class="nc" id="L1715">            String payPeriodLabel = i18n(m_rmBundle, RmWebBundleKey.REQUIRED_PAY_PERIOD_HOURS_PERIOD);</span>
+<span class="nc" id="L1716">			String dropDown = HtmlUtil.makeSelectInput(nameKey, options, null, selectedPayPeriod, payPeriodLabel, getOnChangeJS()</span>
+					+ &quot; onChangeRequiredPayPeriodPeriod(this); &quot;, enabled);
+
+<span class="nc" id="L1719">            requiredPayPeriodHoursContainerPC.addRowData(payPeriodLabel + &quot; &quot; + dropDown);</span>
+
+<span class="nc bnc" id="L1721" title="All 2 branches missed.">            ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_REQUIRED_PAY_PERIOD_PERIOD);</span>
+		}
+
+		//Start Date
+		{
+<span class="nc" id="L1726">			String dateLabel = i18n(m_rmBundle, RmWebBundleKey.REQUIRED_PAY_PERIOD_HOURS_STARTDATE);</span>
+<span class="nc" id="L1727">			String nameKey = getNameKey(RmSettingKey.ORG_RM_SETTINGS_REQUIRED_PAY_PERIOD_STARTDATE);</span>
+<span class="nc" id="L1728">			datePickerPC.setDateInputFieldName(nameKey);</span>
+<span class="nc" id="L1729">			datePickerPC.setName(&quot;RequiredHoursPayPeriodDatePicker&quot;);</span>
+
+<span class="nc" id="L1731">			datePickerPC.setIsTimeEnabled(false);</span>
+<span class="nc" id="L1732">			Date startDate = m_settings.getRequiredPayPeriodHoursStartDate();</span>
+<span class="nc" id="L1733">			datePickerPC.setDate(startDate);</span>
+<span class="nc bnc" id="L1734" title="All 2 branches missed.">			if (selectedPayPeriod.equalsIgnoreCase(RequiredPayPeriodHoursUtil.PERIOD_MONTHLY)) {</span>
+				//Fix after foundation
+				//datePickerPC.setMaxDayOfMonth(28);
+			}
+<span class="nc bnc" id="L1738" title="All 2 branches missed.">			if (!enabled) {</span>
+<span class="nc" id="L1739">				datePickerPC.setIsPickerEnabled(false);</span>
+<span class="nc" id="L1740">				datePickerPC.setIsControlEnabled(false);</span>
+<span class="nc" id="L1741">				datePickerPC.setInputType(DatePickerPC.INPUT_TYPE_READONLY);</span>
+			}
+
+<span class="nc" id="L1744">			datePickerPC.initForDisplay();</span>
+<span class="nc" id="L1745">			addChildComponent(datePickerPC);</span>
+
+<span class="nc" id="L1747">			requiredPayPeriodHoursContainerPC.addRowData(dateLabel + &quot; &quot; + datePickerPC.getHtmlDisplay());</span>
+
+<span class="nc bnc" id="L1749" title="All 2 branches missed.">			ancestor = (ancestor != null) ? ancestor : getAncestor(RmSettingKey.ORG_RM_SETTINGS_REQUIRED_PAY_PERIOD_STARTDATE);</span>
+		}
+
+<span class="nc" id="L1752">		String title = getSectionTitle(i18n(RmWebBundleKey.REQUIRED_PAY_PERIOD_HOURS), ancestor);</span>
+<span class="nc" id="L1753">		requiredPayPeriodHoursContainerPC.setTitle(title);</span>
+<span class="nc" id="L1754">	    addChildComponent(requiredPayPeriodHoursContainerPC);</span>
+
+<span class="nc" id="L1756">	}</span>
+	String getStartDateString (String dateString){
+<span class="nc" id="L1758">		Date dt = datePickerPC.convertStrToDate(dateString);</span>
+<span class="nc bnc" id="L1759" title="All 2 branches missed.">		if(dt==null){</span>
+<span class="nc" id="L1760">			return &quot;&quot;;</span>
+		}
+<span class="nc" id="L1762">		SimpleDateFormat simpleDateFormat = new SimpleDateFormat(</span>
+				&quot;yyyy-MM-dd&quot;);
+<span class="nc" id="L1764">		simpleDateFormat.setTimeZone(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="nc" id="L1765">		String formatted = simpleDateFormat.format(dt);</span>
+<span class="nc" id="L1766">		return formatted;</span>
+	}
+
+
+
+	public boolean isAuthorizedToConfigureRequiredPayPeriodHours() {
+<span class="nc bnc" id="L1772" title="All 2 branches missed.">		return isValidSelectedOrg()</span>
+<span class="nc bnc" id="L1773" title="All 2 branches missed.">			&amp;&amp; m_context.getUser().isAuthorized(</span>
+<span class="nc" id="L1774">					PrivilegeKeys.FS_CONFIGUREPREQUIREDPAYPERIOD, OrganizationScopeManagerProxy.getScopeID(getSelectedIDObject()));</span>
+	}
+
+	public boolean isAdvancedRMLicense(){
+<span class="nc" id="L1778">		return LicenseUtil.isAdvancedRMLicense();</span>
+	}
+
+
+
+	// QC 201019: Adding getters for the validators.
+
+	public String getBluepumpkin_rm_settings_shiftbiding_maxprefvalue() { // NOSONAR
+<span class="nc" id="L1786">		return m_context.getParameter(getNameKey(RmSettingKey.ORG_RM_SETTINGS_MAX_PREFERENCE_VALUE));</span>
+	}
+
+	public String getBluepumpkin_rm_settings_shiftbiding_maxBidsPerEmployee() { // NOSONAR
+<span class="nc" id="L1790">		return m_context.getParameter(getNameKey(RmSettingKey.ORG_RM_SETTINGS_MAX_BIDS_PER_EMPLOYEE));</span>
+	}
+
+	public String getBluepumpkin_rm_maxSwapNegotiations() { // NOSONAR
+<span class="nc" id="L1794">		return m_context.getParameter(getNameKey(RmSettingKey.ORG_RM_SETTINGS_MAX_SWAP_NEGOTIATIONS));</span>
+	}
+
+	public String getBluepumpkin_rm_settings_shiftbiding_bonuspointfactor() { // NOSONAR
+<span class="nc" id="L1798">		return m_context.getParameter(getNameKey(RmSettingKey.ORG_RM_SETTINGS_BONUSPOINT_FACTOR));</span>
+	}
+
+	public String getBluepumpkin_rm_settings_shiftbiding_seniorityfactor() { // NOSONAR
+<span class="nc" id="L1802">		return m_context.getParameter(getNameKey(RmSettingKey.ORG_RM_SETTINGS_SENIORITY_FACTOR));</span>
+	}
+
+	public String getBluepumpkin_rm_settings_shiftbiding_rankfactor() { // NOSONAR
+<span class="nc" id="L1806">		return m_context.getParameter(getNameKey(RmSettingKey.ORG_RM_SETTINGS_RANK_FACTOR));</span>
+	}
+
+	public static List&lt;StringsPair&gt; getRequiredPayPeriodOptions(Localizer localizer) {
+<span class="nc" id="L1810">		List&lt;StringsPair&gt; options = new ArrayList&lt;StringsPair&gt;(3);</span>
+<span class="nc" id="L1811">		options.add(new StringsPair(RequiredPayPeriodHoursUtil.PERIOD_WEEKLY,</span>
+<span class="nc" id="L1812">				localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.REQUIRED_PAY_PERIOD_HOURS_PERIOD_WEEKLY)));</span>
+<span class="nc" id="L1813">		options.add(new StringsPair(RequiredPayPeriodHoursUtil.PERIOD_BIWEEKLY,</span>
+<span class="nc" id="L1814">				localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.REQUIRED_PAY_PERIOD_HOURS_PERIOD_BIWEEKLY)));</span>
+<span class="nc" id="L1815">		options.add(new StringsPair(RequiredPayPeriodHoursUtil.PERIOD_MONTHLY,</span>
+<span class="nc" id="L1816">				localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.REQUIRED_PAY_PERIOD_HOURS_PERIOD_MONTHLY)));</span>
+<span class="nc" id="L1817">		return options;</span>
+	}
+
+	public static Collection&lt;StringsPair&gt; getTimeOffRoundingOptionPairs(Localizer localizer) {
+<span class="nc" id="L1821">		Collection&lt;StringsPair&gt; roundingOptions = new ArrayList&lt;StringsPair&gt;();</span>
+<span class="nc" id="L1822">		roundingOptions.add(new StringsPair(_1MINUTE, localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.TIMEOFF_ROUNDING_1MIN)));</span>
+<span class="nc" id="L1823">		roundingOptions.add(new StringsPair(_15MINUTE, localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.TIMEOFF_ROUNDING_15MIN)));</span>
+<span class="nc" id="L1824">		roundingOptions.add(new StringsPair(HOUR, localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.TIMEOFF_ROUNDING_HOUR)));</span>
+<span class="nc" id="L1825">		roundingOptions.add(new StringsPair(DAY, localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.TIMEOFF_ROUNDING_DAY)));</span>
+<span class="nc" id="L1826">		return roundingOptions;</span>
+	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

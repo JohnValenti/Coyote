@@ -20,11 +20,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.datatypes.LocalDate;
 import com.bluepumpkin.common.datatypes.Pair;
 import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.jdmo.JdmoException;
 import com.bluepumpkin.common.localization.Localizer;
 import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.common.util.NumberFactory;
@@ -65,6 +67,7 @@ import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResultAggregator;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
 import com.bluepumpkin.ejb.rm.requests.timeoff.ejb.TORequestDAO;
 import com.bluepumpkin.ejb.rm.requests.timeoff.hoursperday.ejb.TOHoursPerDayUtil;
@@ -82,132 +85,139 @@ import com.verint.ejb.wfm.WfmManagerFactory;
  *         To change this generated comment go to
  *         Window&gt;Preferences&gt;Java&gt;Code Generation&gt;Code and Comments
  */
-<span class="nc" id="L85">public class TORequestUtil {</span>
+public class TORequestUtil {
 
-<span class="nc" id="L87">	private static final Category m_cat = Log.initCategory(TORequestUtil.class.getName());</span>
-<span class="nc" id="L88">	private static float MINUTE_IN_MILLIS = 60.0f * 1000.0f;</span>
-<span class="nc" id="L89">	private static String m_className = TORequestUtil.class.getName();</span>
+<span class="nc" id="L90">	private static final Category LOG = Log.initCategory(TORequestUtil.class.getName());</span>
+	private static final float MINUTE_IN_MILLIS = 60.0f * 1000.0f;
+<span class="nc" id="L92">	private static final String CLASSNAME = TORequestUtil.class.getName();</span>
+	
+	
 
+<span class="nc" id="L96">	private TORequestUtil(){</span>
+		//hidden private  constructor for static util
+<span class="nc" id="L98">	}</span>
+	
 	public static void updateTOEventMinutes(TimeOffEvent toEvt, TORequest toReq, TOChoice choice) throws BbmFinderException,
 			TimeOffCalculatorException {
-<span class="nc" id="L93">		toEvt.setCountsMinutesTowardsRules(choice.getHoursPerDay().getTotalMinutes());</span>
-		/*TO CALC Performance Enhancement, Rel 7.8.1, Sameet, July 2007
-		TimeOffLengthCalculator calc = TimeOffLengthCalculatorHelper.getCalculator(toReq.getEmployeeID(),
-		        choice.getStartDate(), choice.getEndDate());
-
-		float len = calc.calculateTotalLength(choice.getStartDate(), choice.getEndDate(),
-		    toReq.getTimeOffType());
-
-		// set the length of the time off event.
-		// For approved requests of type &quot;debit&quot;, this length is the final value.
-		// After approval, it doesn't change even if the underlying shifts or
-		// other factors that affect time off length changes.
-		toEvt.setCountsMinutesTowardsRules((int) (len * 60.0)); */
-<span class="nc" id="L106">	}</span>
+<span class="nc" id="L102">		toEvt.setCountsMinutesTowardsRules(choice.getHoursPerDay().getTotalMinutes());</span>
+		
+<span class="nc" id="L104">	}</span>
 
 	public static CalendarEventAssignment getCalEventAssignForTOChoiceAligned(TORequest toReq, TOChoice apprChoice, boolean published,
 			ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L110">		Collection events = null;</span>
+<span class="nc" id="L108">		Collection events = getCalEventAssignsForTOChoice(toReq, apprChoice, published, true, sam);</span>
 
-<span class="nc" id="L112">		events = getCalEventAssignsForTOChoice(toReq, apprChoice, published, true, sam);</span>
-
-<span class="nc bnc" id="L114" title="All 2 branches missed.">		if (events.isEmpty()) {</span>
-<span class="nc" id="L115">			return null;</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">		if (events.isEmpty()) {</span>
+<span class="nc" id="L111">			return null;</span>
 		}
 
-<span class="nc" id="L118">		return (CalendarEventAssignment) events.iterator().next();</span>
+<span class="nc" id="L114">		return (CalendarEventAssignment) events.iterator().next();</span>
 	}
 
 	public static Collection getCalEventAssignsForTOChoiceOverlapped(TORequest toReq, TOChoice apprChoice, boolean published,
 			ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L123">		return getCalEventAssignsForTOChoice(toReq, apprChoice, published, false, sam);</span>
+<span class="nc" id="L119">		return getCalEventAssignsForTOChoice(toReq, apprChoice, published, false, sam);</span>
 	}
 
 	//TESTME updateCalendarEventAssignment
 	public static void updateCalendarEventAssignment(TORequest toReq, TOChoice apprChoice) throws Exception {
-<span class="nc" id="L128">		ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
-<span class="nc" id="L129">		String debitType = toReq.getTimeOffDebitType();</span>
-<span class="nc" id="L130">		TimeOffEvent toEvent = null;</span>
-<span class="nc bnc" id="L131" title="All 2 branches missed.">		if (debitType.equals(TORequest.DEBITTYPE_DEBIT)) {</span>
+<span class="nc" id="L124">		ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc" id="L125">		String debitType = toReq.getTimeOffDebitType();</span>
+<span class="nc" id="L126">		TimeOffEvent toEvent = null;</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">		if (debitType.equals(TORequest.DEBITTYPE_DEBIT)) {</span>
 
-<span class="nc" id="L133">			toEvent = (TimeOffEvent) getCalEventAssignForTOChoiceAligned(toReq, apprChoice, false, sam);</span>
+<span class="nc" id="L129">			toEvent = (TimeOffEvent) getCalEventAssignForTOChoiceAligned(toReq, apprChoice, false, sam);</span>
 
-<span class="nc" id="L135">			updateTOEventMinutes(toEvent, toReq, apprChoice);</span>
+<span class="nc" id="L131">			updateTOEventMinutes(toEvent, toReq, apprChoice);</span>
 
-<span class="nc" id="L137">			sam.updateCalendarEventAssignment(toEvent);</span>
+<span class="nc" id="L133">			sam.updateCalendarEventAssignment(toEvent);</span>
 		}
-<span class="nc" id="L139">	}</span>
+<span class="nc" id="L135">	}</span>
+
+	public static List&lt;CalendarEventAssignment&gt; deleteCalendarEventAssignments(TORequest toReq, Collection&lt;TOChoice&gt; apprChoice)
+			throws Exception {
+
+<span class="nc" id="L140">		List&lt;CalendarEventAssignment&gt; result = new ArrayList&lt;CalendarEventAssignment&gt;(apprChoice.size());</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">		for (TOChoice choice : apprChoice) {</span>
+<span class="nc" id="L142">			result.add(deleteCalendarEventAssignment(toReq, choice));</span>
+<span class="nc" id="L143">		}</span>
+<span class="nc" id="L144">		return result;</span>
+	}
 
 	public static CalendarEventAssignment deleteCalendarEventAssignment(TORequest toReq, TOChoice apprChoice) throws Exception {
-<span class="nc" id="L142">		m_cat.debug(&quot;Deleting calendarEventAssignment for TOReq, apprChoice: &quot; + toReq + '\n' + apprChoice);</span>
+<span class="nc" id="L148">		LOG.debug(&quot;Deleting calendarEventAssignment for TOReq, apprChoice: &quot; + toReq + '\n' + apprChoice);</span>
 
-<span class="nc" id="L144">		ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
-<span class="nc" id="L145">		CalendarEventAssignment event = getCalEventAssignForTOChoiceAligned(toReq, apprChoice, false, sam);</span>
+<span class="nc" id="L150">		ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc" id="L151">		CalendarEventAssignment event = getCalEventAssignForTOChoiceAligned(toReq, apprChoice, false, sam);</span>
 		//fix for ONYX QA 78879, we are deleting the calendareventassignment object when it falls within the request,
 		//which will also delete all the attendee records. instead only the relevant attendee needs to be deleted
-<span class="nc" id="L148">		event.removeWorkResourceID(toReq.getEmployeeID());</span>
+<span class="nc" id="L154">		event.removeWorkResourceID(toReq.getEmployeeID());</span>
 		//event= sam.getCalendarEventAssignmentByID(event.getID());
 		//sam.deleteCalendarEventAssignments(Collections.singleton(event.getID()));
-<span class="nc" id="L151">		sam.updateCalendarEventAssignment(event);</span>
-<span class="nc" id="L152">		return event;</span>
+<span class="nc" id="L157">		sam.updateCalendarEventAssignment(event);</span>
+<span class="nc" id="L158">		return event;</span>
 	}
 
 	public static void verifyTORequest(ID reqID) throws Exception {
-<span class="nc" id="L156">		TORequestDAO toDAO = null;</span>
+<span class="nc" id="L162">		TORequestDAO toDAO = null;</span>
 		try {
-<span class="nc" id="L158">			toDAO = new TORequestDAO(TORequest.getDetailLevelForValidation());</span>
-<span class="nc" id="L159">			TORequest dbTOReq = (TORequest) toDAO.getRequestByID(reqID, TORequest.getDetailLevelForValidation());</span>
+<span class="nc" id="L164">			toDAO = new TORequestDAO(TORequest.getDetailLevelForValidation());</span>
+<span class="nc" id="L165">			TORequest dbTOReq = (TORequest) toDAO.getRequestByID(reqID, TORequest.getDetailLevelForValidation());</span>
 
 			// verify audit trail ordering
-<span class="nc" id="L162">			RequestUtil.verifyAuditTrailOrdering(dbTOReq);</span>
+<span class="nc" id="L168">			RequestUtil.verifyAuditTrailOrdering(dbTOReq);</span>
 
 			// verify TOChoice ordering and expiration date computation
-<span class="nc" id="L165">			int lastOrderNo = -1;</span>
+<span class="nc" id="L171">			int lastOrderNo = -1;</span>
 			// Get the earliest TOChoice.
-<span class="nc" id="L167">			Date earliest = new Date(Long.MAX_VALUE);</span>
+<span class="nc" id="L173">			Date earliest = new Date(Long.MAX_VALUE);</span>
 
 			// returns a sorted list of TOChoices by rank.
-<span class="nc" id="L170">			Collection toChoices = dbTOReq.getRequestChoiceList();</span>
-<span class="nc bnc" id="L171" title="All 2 branches missed.">			for (Iterator itr = toChoices.iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L172">				TOChoice toChoice = (TOChoice) itr.next();</span>
+<span class="nc" id="L176">			Collection toChoices = dbTOReq.getRequestChoiceList();</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">			for (Iterator itr = toChoices.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L178">				TOChoice toChoice = (TOChoice) itr.next();</span>
 
-<span class="nc bnc" id="L174" title="All 2 branches missed.">				if (lastOrderNo &gt; toChoice.getRank()) {</span>
-<span class="nc" id="L175">					throw RequestUtil.createRmException(RmEjbLogBundleKey.TO_CHOICE_ORDERING_INCORR, dbTOReq.getID(), toChoice.getID(),</span>
-							m_cat);
+<span class="nc bnc" id="L180" title="All 2 branches missed.">				if (lastOrderNo &gt; toChoice.getRank()) {</span>
+<span class="nc" id="L181">					throw RequestUtil.createRmException(RmEjbLogBundleKey.TO_CHOICE_ORDERING_INCORR, dbTOReq.getID(), toChoice.getID(),</span>
+							LOG);
 				}
 
-<span class="nc" id="L179">				Date TOChoiceStart = toChoice.getStartDate();</span>
-<span class="nc bnc" id="L180" title="All 2 branches missed.">				if (TOChoiceStart.before(earliest)) {</span>
-<span class="nc" id="L181">					earliest = TOChoiceStart;</span>
+<span class="nc" id="L185">				Date TOChoiceStart = toChoice.getStartDate();</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">				if (TOChoiceStart.before(earliest)) {</span>
+<span class="nc" id="L187">					earliest = TOChoiceStart;</span>
 				}
-<span class="nc" id="L183">			}</span>
+<span class="nc" id="L189">			}</span>
 			// TOReq expiration must equal the start date of earliest TOChoice
-<span class="nc bnc" id="L185" title="All 2 branches missed.">			if (earliest.after(dbTOReq.getExpirationDate())) {</span>
-<span class="nc" id="L186">				throw RequestUtil.createRmException(RmEjbLogBundleKey.INVALID_VALUE3, dbTOReq.getID(), new Long(dbTOReq.getExpirationDate()</span>
-<span class="nc" id="L187">						.getTime()), new Long(earliest.getTime()), m_cat);</span>
+<span class="nc bnc" id="L191" title="All 2 branches missed.">			if (earliest.after(dbTOReq.getExpirationDate())) {</span>
+<span class="nc" id="L192">				throw RequestUtil.createRmException(RmEjbLogBundleKey.INVALID_VALUE3, dbTOReq.getID(), new Long(dbTOReq.getExpirationDate()</span>
+<span class="nc" id="L193">						.getTime()), new Long(earliest.getTime()), LOG);</span>
 			}
 
 			// verify timeoff lengths
 
 			// verify calendar event was created.
-<span class="nc" id="L193">			String reqStatus = dbTOReq.getRequestStatus();</span>
-<span class="nc bnc" id="L194" title="All 4 branches missed.">			if (reqStatus.equals(RequestAuditTrail.STATUS_APPROVED) || reqStatus.equals(RequestAuditTrail.STATUS_TENTATIVE)) {</span>
-<span class="nc bnc" id="L195" title="All 2 branches missed.">				boolean published = reqStatus.equals(RequestAuditTrail.STATUS_APPROVED) ? true : false;</span>
-
-<span class="nc" id="L197">				TOChoice apprChoice = dbTOReq.getApprovedChoice();</span>
-<span class="nc" id="L198">				CalendarEventAssignment calEvent = getCalEventAssignForTOChoiceAligned(dbTOReq, apprChoice, published, null);</span>
-
-<span class="nc bnc" id="L200" title="All 2 branches missed.">				if (calEvent == null) {</span>
-<span class="nc" id="L201">					throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.TO_CAL_EVENT_ASSN_NOT_FOUND_FOR_CHOICE,</span>
-<span class="nc" id="L202">							apprChoice.getStartDate(), apprChoice.getEndDate(), dbTOReq.getEmployeeID(), apprChoice.getID(), m_cat);</span>
-				}
-			}
-			//      } c_atch (Exception e) {
-			//          t_hrow RequestUtil.createRmExceptionWrapper(e, m_cat);
+<span class="nc" id="L199">			verifyCalendarEventExists(dbTOReq);</span>
 		} finally {
-<span class="nc" id="L208">			toDAO.cleanUp();</span>
-<span class="nc" id="L209">		}</span>
-<span class="nc" id="L210">	}</span>
+<span class="nc" id="L201">			toDAO.cleanUp();</span>
+<span class="nc" id="L202">		}</span>
+<span class="nc" id="L203">	}</span>
+
+	private static void verifyCalendarEventExists(TORequest dbTOReq) throws Exception, RmHardValidationException {
+<span class="nc" id="L206">		String reqStatus = dbTOReq.getRequestStatus();</span>
+<span class="nc bnc" id="L207" title="All 4 branches missed.">		if (reqStatus.equals(RequestAuditTrail.STATUS_APPROVED) || reqStatus.equals(RequestAuditTrail.STATUS_TENTATIVE)) {</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">			boolean published = reqStatus.equals(RequestAuditTrail.STATUS_APPROVED) ? true : false;</span>
+
+<span class="nc bnc" id="L210" title="All 2 branches missed.">			for (TOChoice apprChoice : dbTOReq.getApprovedChoices()) {</span>
+
+<span class="nc" id="L212">				CalendarEventAssignment calEvent = getCalEventAssignForTOChoiceAligned(dbTOReq, apprChoice, published, null);</span>
+
+<span class="nc bnc" id="L214" title="All 2 branches missed.">				if (calEvent == null) {</span>
+<span class="nc" id="L215">					throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.TO_CAL_EVENT_ASSN_NOT_FOUND_FOR_CHOICE,</span>
+<span class="nc" id="L216">							apprChoice.getStartDate(), apprChoice.getEndDate(), dbTOReq.getEmployeeID(), apprChoice.getID(), LOG);</span>
+				}
+<span class="nc" id="L218">			}</span>
+		}
+<span class="nc" id="L220">	}</span>
 
 	/**
 	 * @param toReq
@@ -222,33 +232,37 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	//  TESTME getCalendarEventAssignmentForChoice
 	protected static Collection getCalEventAssignsForTOChoice(TORequest toReq, TOChoice apprChoice, boolean published, boolean aligned,
 			ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L225">		String methodName = &quot;getCalEventAssignsForTOChoice&quot;;</span>
-<span class="nc bnc" id="L226" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L227">			m_cat.debug(RmUtil.dumpEnterMethod(methodName, toReq, apprChoice, new Boolean(published), new Boolean(aligned)));</span>
+<span class="nc" id="L235">		String methodName = &quot;getCalEventAssignsForTOChoice&quot;;</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">		if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L237">			LOG.debug(RmUtil.dumpEnterMethod(methodName, toReq, apprChoice, new Boolean(published), new Boolean(aligned)));</span>
 		}
 
 		//      try {
 		// identify event type
-<span class="nc" id="L232">		Collection events = null;</span>
-<span class="nc" id="L233">		String debitType = toReq.getTimeOffDebitType();</span>
-<span class="nc bnc" id="L234" title="All 2 branches missed.">		int eventType = debitType.equals(TORequest.DEBITTYPE_DONT_DEBIT) ? Event.EVENT_TYPE_UNAVAILABILITY : Event.EVENT_TYPE_TIME_OFF;</span>
+<span class="nc" id="L242">		Collection events = null;</span>
+<span class="nc" id="L243">		String debitType = toReq.getTimeOffDebitType();</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">		int eventType = debitType.equals(TORequest.DEBITTYPE_DONT_DEBIT) ? Event.EVENT_TYPE_UNAVAILABILITY : Event.EVENT_TYPE_TIME_OFF;</span>
 
-<span class="nc" id="L236">		events = RequestUtil.getEventsDuringPeriod(toReq.getEmployeeID(), eventType, published, apprChoice.getStartDate(),</span>
-<span class="nc" id="L237">				apprChoice.getEndDate(), sam);</span>
+<span class="nc" id="L246">		events = RequestUtil.getEventsDuringPeriod(toReq.getEmployeeID(), eventType, published, apprChoice.getStartDate(),</span>
+<span class="nc" id="L247">				apprChoice.getEndDate(), sam);</span>
 
-<span class="nc bnc" id="L239" title="All 2 branches missed.">		if (aligned) {</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">		if (aligned) {</span>
 
-<span class="nc bnc" id="L241" title="All 2 branches missed.">			for (Iterator iterator = events.iterator(); iterator.hasNext();) {</span>
-<span class="nc" id="L242">				CalendarEventAssignment event = (CalendarEventAssignment) iterator.next();</span>
-<span class="nc bnc" id="L243" title="All 2 branches missed.">				if (event.getActivityID().equals(toReq.getTimeOffType())</span>
-<span class="nc bnc" id="L244" title="All 4 branches missed.">						&amp;&amp; (event.getStartTime().equals(apprChoice.getStartDate()) || event.getEndTime().equals(apprChoice.getEndDate()))) {</span>
-<span class="nc" id="L245">					ArrayList aList = new ArrayList();</span>
-<span class="nc" id="L246">					aList.add(event);</span>
-<span class="nc" id="L247">					return aList;</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">			for (Iterator iterator = events.iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L252">				CalendarEventAssignment event = (CalendarEventAssignment) iterator.next();</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">				if (event.getActivityID().equals(toReq.getTimeOffType())</span>
+<span class="nc bnc" id="L254" title="All 4 branches missed.">						&amp;&amp; (event.getStartTime().equals(apprChoice.getStartDate()) || event.getEndTime().equals(apprChoice.getEndDate()))) {</span>
+<span class="nc" id="L255">					List&lt;CalendarEventAssignment&gt; aList = new ArrayList&lt;CalendarEventAssignment&gt;();</span>
+<span class="nc" id="L256">					aList.add(event);</span>
+<span class="nc" id="L257">					return aList;</span>
 				}
-<span class="nc" id="L249">			}</span>
-<span class="nc bnc" id="L250" title="All 2 branches missed.">			if (events.size() == 1) {</span>
-<span class="nc" id="L251">				CalendarEventAssignment event = (CalendarEventAssignment) events.iterator().next();</span>
+<span class="nc" id="L259">			}</span>
+
+<span class="nc" id="L261">			String empName = toReq.getCache().getEmployeeNameByID();</span>
+<span class="nc" id="L262">			Integer rank = NumberFactory.newInteger(apprChoice.getRank());</span>
+
+<span class="nc bnc" id="L264" title="All 2 branches missed.">			if (events.size() == 1) {</span>
+<span class="nc" id="L265">				CalendarEventAssignment event = (CalendarEventAssignment) events.iterator().next();</span>
 				//      |-----------TOEVENT---------------|
 				//throw exception in following conditions
 				//|-------TOCHOICE-----||-------TOCHOICE-----|
@@ -258,121 +272,120 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 				//          |-------TOCHOICE-----|
 				//dont throw exception if either the start or end are aligned.
 
-<span class="nc bnc" id="L261" title="All 4 branches missed.">				if (event.getStartTime().before(apprChoice.getStartDate()) || event.getEndTime().after(apprChoice.getEndDate())) {</span>
+<span class="nc bnc" id="L275" title="All 4 branches missed.">				if (event.getStartTime().before(apprChoice.getStartDate()) || event.getEndTime().after(apprChoice.getEndDate())) {</span>
 					// LOCAL: Calendar event between {0, date} and {1, date} is not aligned with time off choice (ID = {2}).
-<span class="nc" id="L263">					throw RequestUtil.createAndLogRmHardValidationException(RmEjbBundleKey.TO_CALEVENT_NOT_ALIGNED_WITH_TOCHOICE,</span>
+<span class="nc" id="L277">					throw RequestUtil.createAndLogRmHardValidationException(RmEjbBundleKey.TO_CALEVENT_NOT_ALIGNED_WITH_TOCHOICE,</span>
 							RmEjbLogBundleKey.TO_CALEVENT_NOT_ALIGNED_WITH_TOCHOICE,
-<span class="nc" id="L265">							new Object[] { event.getStartTime(), event.getEndTime(), NumberFactory.newInteger(apprChoice.getRank()),</span>
-<span class="nc" id="L266">									apprChoice.getID() }, m_cat);</span>
+<span class="nc" id="L279">							new Object[] { event.getStartTime(), event.getEndTime(), rank }, LOG);</span>
 				} else {
-<span class="nc" id="L268">					throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.TO_CAL_EVENT_ASSN_NOT_FOUND_FOR_CHOICE,</span>
-<span class="nc" id="L269">							apprChoice.getStartDate(), apprChoice.getEndDate(), toReq.getEmployeeID(), apprChoice.getID(), m_cat);</span>
+<span class="nc" id="L281">					throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.TO_CAL_EVENT_ASSN_NOT_FOUND_FOR_CHOICE,</span>
+<span class="nc" id="L282">							apprChoice.getStartDate(), apprChoice.getEndDate(), empName, rank, LOG);</span>
 
 				}
-<span class="nc bnc" id="L272" title="All 2 branches missed.">			} else if (events.size() &gt; 1) {</span>
-<span class="nc" id="L273">				throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.TO_CAL_EVENT_TOO_MANY_FOR_CHOICE,</span>
-<span class="nc" id="L274">						apprChoice.getStartDate(), apprChoice.getEndDate(), toReq.getEmployeeID(), apprChoice.getID(), m_cat);</span>
+<span class="nc bnc" id="L285" title="All 2 branches missed.">			} else if (events.size() &gt; 1) {</span>
+<span class="nc" id="L286">				throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.TO_CAL_EVENT_TOO_MANY_FOR_CHOICE,</span>
+<span class="nc" id="L287">						apprChoice.getStartDate(), apprChoice.getEndDate(), empName, rank, LOG);</span>
 			}
 		}
 
-<span class="nc bnc" id="L278" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L279">			m_cat.debug(RmUtil.dumpExitMethod(methodName, events));</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">		if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L292">			LOG.debug(RmUtil.dumpExitMethod(methodName, events));</span>
 		}
-<span class="nc" id="L281">		return events;</span>
+<span class="nc" id="L294">		return events;</span>
 		//      } c_atch (Exception e) {
-		//          //m_cat.error(e, e);
-		//          t_hrow RequestUtil.createValidationExceptionWrapper(e, m_cat);
+		//          //LOG.error(e, e);
+		//          t_hrow RequestUtil.createValidationExceptionWrapper(e, LOG);
 		//      }
 	}
 
 	public static void trimOverlappingEvents(TORequest toReq, TOChoice apprChoice, ScheduleAccessManager sam, boolean publish)
 			throws RmHardValidationException, Exception {
 		//get overlapping calendar events
-<span class="nc" id="L291">		Collection overlapEvents = TORequestUtil.getCalEventAssignsForTOChoiceOverlapped(toReq, apprChoice, false, sam);</span>
-<span class="nc bnc" id="L292" title="All 4 branches missed.">		if (overlapEvents != null &amp;&amp; overlapEvents.size() &gt; 0) {</span>
+<span class="nc" id="L304">		Collection overlapEvents = TORequestUtil.getCalEventAssignsForTOChoiceOverlapped(toReq, apprChoice, false, sam);</span>
+<span class="nc bnc" id="L305" title="All 4 branches missed.">		if (overlapEvents != null &amp;&amp; overlapEvents.size() &gt; 0) {</span>
 			//iterate over the events and trim
-<span class="nc bnc" id="L294" title="All 2 branches missed.">			for (Iterator it = overlapEvents.iterator(); it.hasNext();) {</span>
+<span class="nc bnc" id="L307" title="All 2 branches missed.">			for (Iterator it = overlapEvents.iterator(); it.hasNext();) {</span>
 				Date pubStartDate;
 				Date pubEndDate;
-<span class="nc" id="L297">				CalendarEventAssignment calAssgn = (CalendarEventAssignment) it.next();</span>
-<span class="nc bnc" id="L298" title="All 2 branches missed.">				if (calAssgn.getID() == null) {</span>
-<span class="nc" id="L299">					throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.TO_UNABLE_TO_APPROVE_TOR, m_cat);</span>
+<span class="nc" id="L310">				CalendarEventAssignment calAssgn = (CalendarEventAssignment) it.next();</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">				if (calAssgn.getID() == null) {</span>
+<span class="nc" id="L312">					throw RequestUtil.createRmHardValidationException(RmEjbBundleKey.TO_UNABLE_TO_APPROVE_TOR, LOG);</span>
 				}
 				//create a new calendar event
-<span class="nc" id="L302">				CalendarEventAssignment newEvt = (CalendarEventAssignment) calAssgn.clone();</span>
-<span class="nc" id="L303">				newEvt.setID(null);</span>
-<span class="nc" id="L304">				boolean isDeletedTOCalendarEvent = false;</span>
-<span class="nc bnc" id="L305" title="All 4 branches missed.">				if (!calAssgn.getStartTime().before(apprChoice.getStartDate()) &amp;&amp; !calAssgn.getEndTime().after(apprChoice.getEndDate())) {</span>
+<span class="nc" id="L315">				CalendarEventAssignment newEvt = (CalendarEventAssignment) calAssgn.clone();</span>
+<span class="nc" id="L316">				newEvt.setID(null);</span>
+<span class="nc" id="L317">				boolean isDeletedTOCalendarEvent = false;</span>
+<span class="nc bnc" id="L318" title="All 4 branches missed.">				if (!calAssgn.getStartTime().before(apprChoice.getStartDate()) &amp;&amp; !calAssgn.getEndTime().after(apprChoice.getEndDate())) {</span>
 					//1st case: event lies within the new request
-<span class="nc" id="L307">					pubStartDate = calAssgn.getStartTime();</span>
-<span class="nc" id="L308">					pubEndDate = calAssgn.getEndTime();</span>
+<span class="nc" id="L320">					pubStartDate = calAssgn.getStartTime();</span>
+<span class="nc" id="L321">					pubEndDate = calAssgn.getEndTime();</span>
 					//delete the event
-<span class="nc" id="L310">					isDeletedTOCalendarEvent = true;</span>
+<span class="nc" id="L323">					isDeletedTOCalendarEvent = true;</span>
 					//sam.deleteCalendarEventAssignments(Collections.singleton(calAssgn.getID()));
-<span class="nc" id="L312">					calAssgn.removeWorkResourceID(toReq.getEmployeeID());</span>
-<span class="nc" id="L313">					sam.updateCalendarEventAssignment(calAssgn);</span>
+<span class="nc" id="L325">					calAssgn.removeWorkResourceID(toReq.getEmployeeID());</span>
+<span class="nc" id="L326">					sam.updateCalendarEventAssignment(calAssgn);</span>
 
 				} else {
 
-<span class="nc bnc" id="L317" title="All 4 branches missed.">					if (calAssgn.getStartTime().before(apprChoice.getStartDate()) &amp;&amp; !calAssgn.getEndTime().after(apprChoice.getEndDate())) {</span>
+<span class="nc bnc" id="L330" title="All 4 branches missed.">					if (calAssgn.getStartTime().before(apprChoice.getStartDate()) &amp;&amp; !calAssgn.getEndTime().after(apprChoice.getEndDate())) {</span>
 						//2nd case: event starts before new request and ends before new request end
 						// |----EXIST TOEVENT-----|
 						//          |----NEW TO REQ------|
-<span class="nc" id="L321">						int duration = Math</span>
-<span class="nc" id="L322">								.round(((apprChoice.getStartDate().getTime() - calAssgn.getStartTime().getTime()) / MINUTE_IN_MILLIS));</span>
-<span class="nc" id="L323">						newEvt.setDuration(duration);</span>
-<span class="nc" id="L324">						newEvt.setStartTime(calAssgn.getStartTime());</span>
-<span class="nc" id="L325">						pubStartDate = calAssgn.getStartTime();</span>
-<span class="nc" id="L326">						pubEndDate = new Date(apprChoice.getStartDate().getTime() - (long) MINUTE_IN_MILLIS);</span>
-<span class="nc" id="L327">					} else {</span>
+<span class="nc" id="L334">						int duration = Math</span>
+<span class="nc" id="L335">								.round(((apprChoice.getStartDate().getTime() - calAssgn.getStartTime().getTime()) / MINUTE_IN_MILLIS));</span>
+<span class="nc" id="L336">						newEvt.setDuration(duration);</span>
+<span class="nc" id="L337">						newEvt.setStartTime(calAssgn.getStartTime());</span>
+<span class="nc" id="L338">						pubStartDate = calAssgn.getStartTime();</span>
+<span class="nc" id="L339">						pubEndDate = new Date(apprChoice.getStartDate().getTime() - (long) MINUTE_IN_MILLIS);</span>
+<span class="nc" id="L340">					} else {</span>
 						//3rd case: event end after new request and start &gt;= new request
 						//get event start time 1 minute after request end
 						//            |----EXIST TOEVENT-----|
 						// |----NEW TO REQ------|
-<span class="nc" id="L332">						Date eventStartDate = new Date(apprChoice.getEndDate().getTime());</span>
-<span class="nc" id="L333">						int duration = Math.round(((calAssgn.getEndTime().getTime() - eventStartDate.getTime()) / MINUTE_IN_MILLIS));</span>
-<span class="nc" id="L334">						newEvt.setDuration(duration);</span>
-<span class="nc" id="L335">						newEvt.setStartTime(eventStartDate);</span>
-<span class="nc" id="L336">						pubStartDate = eventStartDate;</span>
-<span class="nc" id="L337">						pubEndDate = new Date(calAssgn.getEndTime().getTime());</span>
+<span class="nc" id="L345">						Date eventStartDate = new Date(apprChoice.getEndDate().getTime());</span>
+<span class="nc" id="L346">						int duration = Math.round(((calAssgn.getEndTime().getTime() - eventStartDate.getTime()) / MINUTE_IN_MILLIS));</span>
+<span class="nc" id="L347">						newEvt.setDuration(duration);</span>
+<span class="nc" id="L348">						newEvt.setStartTime(eventStartDate);</span>
+<span class="nc" id="L349">						pubStartDate = eventStartDate;</span>
+<span class="nc" id="L350">						pubEndDate = new Date(calAssgn.getEndTime().getTime());</span>
 					}
 					//delete the event
 					//sam.deleteCalendarEventAssignments(Collections.singleton(calAssgn.getID()));
 					//cannot delete the old event, since it might be linked to other employees.
 					// need only to remove the relevant employee instead
-<span class="nc" id="L343">					calAssgn.removeWorkResourceID(toReq.getEmployeeID());</span>
-<span class="nc" id="L344">					sam.updateCalendarEventAssignment(calAssgn);</span>
-<span class="nc bnc" id="L345" title="All 2 branches missed.">					if (newEvt.getEventType() == Event.EVENT_TYPE_TIME_OFF) {</span>
-<span class="nc" id="L346">						int toMinutes = getTOEventMinutes((TimeOffEvent) newEvt, toReq.getEmployeeID());</span>
-<span class="nc" id="L347">						((TimeOffEvent) newEvt).setCountsMinutesTowardsRules(toMinutes);//set the length</span>
+<span class="nc" id="L356">					calAssgn.removeWorkResourceID(toReq.getEmployeeID());</span>
+<span class="nc" id="L357">					sam.updateCalendarEventAssignment(calAssgn);</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">					if (newEvt.getEventType() == Event.EVENT_TYPE_TIME_OFF) {</span>
+<span class="nc" id="L359">						int toMinutes = getTOEventMinutes((TimeOffEvent) newEvt, toReq.getEmployeeID());</span>
+<span class="nc" id="L360">						((TimeOffEvent) newEvt).setCountsMinutesTowardsRules(toMinutes);//set the length</span>
 					}
 					//remove all other ids &amp; set only the relevant workresource id
-<span class="nc" id="L350">					newEvt.deleteAllChildren(CalendarEventAssignmentFields.CHILD_ATTENDEE);</span>
-<span class="nc" id="L351">					newEvt.addWorkResourceID(toReq.getEmployeeID());</span>
+<span class="nc" id="L363">					newEvt.deleteAllChildren(CalendarEventAssignmentFields.CHILD_ATTENDEE);</span>
+<span class="nc" id="L364">					newEvt.addWorkResourceID(toReq.getEmployeeID());</span>
 					//create new trimmed event
-<span class="nc" id="L353">					sam.createCalendarEventAssignment(newEvt);</span>
+<span class="nc" id="L366">					sam.createCalendarEventAssignment(newEvt);</span>
 				}
 				//publish the schedule if not tent approval
-<span class="nc bnc" id="L356" title="All 2 branches missed.">				if (publish) {</span>
-<span class="nc bnc" id="L357" title="All 2 branches missed.">					if (isDeletedTOCalendarEvent) {</span>
-<span class="nc" id="L358">						sam.unPublishTimeOffEvents(Collections.singleton(toReq.getEmployeeID()), pubStartDate, pubEndDate);</span>
+<span class="nc bnc" id="L369" title="All 2 branches missed.">				if (publish) {</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">					if (isDeletedTOCalendarEvent) {</span>
+<span class="nc" id="L371">						sam.unPublishTimeOffEvents(Collections.singleton(toReq.getEmployeeID()), pubStartDate, pubEndDate);</span>
 					} else {
-<span class="nc" id="L360">						sam.publishTimeOffEvents(Collections.singleton(toReq.getEmployeeID()), pubStartDate, pubEndDate);</span>
+<span class="nc" id="L373">						sam.publishTimeOffEvents(Collections.singleton(toReq.getEmployeeID()), pubStartDate, pubEndDate);</span>
 					}
 				}
-<span class="nc" id="L363">			}</span>
+<span class="nc" id="L376">			}</span>
 		}
-<span class="nc" id="L365">	}</span>
+<span class="nc" id="L378">	}</span>
 
-	private static int getTOEventMinutes(TimeOffEvent newEvt, ID employeeID) throws Exception {
-<span class="nc" id="L368">		int totalMinutes = 0;</span>
-<span class="nc bnc" id="L369" title="All 2 branches missed.">		if (newEvt.getTimeOffRule() == TimeOffEvent.TIME_OFF_RULE_USE_MINSTOWARDSRULES) {</span>
-<span class="nc" id="L370">			TimeOffLengthCalculator calc = TimeOffLengthCalculatorHelper.getCalculator(employeeID, null, newEvt.getStartTime(),</span>
-<span class="nc" id="L371">					newEvt.getEndTime(), null);</span>
+	private static int getTOEventMinutes(TimeOffEvent newEvt, ID employeeID) throws Exception {//NOSONAR
+<span class="nc" id="L381">		int totalMinutes = 0;</span>
+<span class="nc bnc" id="L382" title="All 2 branches missed.">		if (newEvt.getTimeOffRule() == TimeOffEvent.TIME_OFF_RULE_USE_MINSTOWARDSRULES) {</span>
+<span class="nc" id="L383">			TimeOffLengthCalculator calc = TimeOffLengthCalculatorHelper.getCalculator(employeeID, null, newEvt.getStartTime(),</span>
+<span class="nc" id="L384">					newEvt.getEndTime(), null);</span>
 			// Calculate the length of the time off event only in case of use mins towards rules.
-<span class="nc" id="L373">			totalMinutes = (int) calc.calculateTotalLength(newEvt.getStartTime(), newEvt.getEndTime(), newEvt.getActivityID()) * 60;</span>
+<span class="nc" id="L386">			totalMinutes = (int) calc.calculateTotalLength(newEvt.getStartTime(), newEvt.getEndTime(), newEvt.getActivityID()) * 60;</span>
 		}
-<span class="nc" id="L375">		return totalMinutes;</span>
+<span class="nc" id="L388">		return totalMinutes;</span>
 	}
 
 	/**
@@ -385,136 +398,92 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 */
 	public static void fillTOChoicesLengthIfNecess(TORequest toReq, boolean onlyApprChoiceLen) throws RmException {
 		try {
-<span class="nc bnc" id="L388" title="All 2 branches missed.">			if (toReq.getTimeOffDebitType().equals(TORequest.DEBITTYPE_DONT_DEBIT)) {</span>
-<span class="nc" id="L389">				toReq.resetLengths();// For (&quot;don't debit&quot;) length = 0</span>
+<span class="nc bnc" id="L401" title="All 2 branches missed.">			if (toReq.getTimeOffDebitType().equals(TORequest.DEBITTYPE_DONT_DEBIT)) {</span>
+<span class="nc" id="L402">				toReq.resetLengths();// For (&quot;don't debit&quot;) length = 0</span>
 			} else {
-<span class="nc" id="L391">				calculateTOChoicesLenIfNecess(toReq, onlyApprChoiceLen);</span>
+<span class="nc" id="L404">				calculateTOChoicesLenIfNecess(toReq, onlyApprChoiceLen);</span>
 			}
-<span class="nc" id="L393">		} catch (Exception e) {</span>
-<span class="nc" id="L394">			throw RequestUtil.createRmExceptionWrapper(e, m_cat);</span>
-<span class="nc" id="L395">		}</span>
-<span class="nc" id="L396">	}</span>
+<span class="nc" id="L406">		} catch (Exception e) {</span>
+<span class="nc" id="L407">			throw RequestUtil.createRmExceptionWrapper(e, LOG);</span>
+<span class="nc" id="L408">		}</span>
+<span class="nc" id="L409">	}</span>
 
-	/*
-	public static void fillTOChoicesLengthIfNecess(TORequest toReq, boolean onlyApprChoiceLen) throws RmException {
-	    try {
-	        String debitType = toReq.getTimeOffDebitType();
-	        String reqStatus = toReq.getRequestStatus();
 
-	        if (debitType.equals(TORequest.DEBITTYPE_DEBIT)) {
-	            if (!reqStatus.equals(RequestAuditTrail.STATUS_APPROVED)) {
-	                // For (unapproved, &quot;debit&quot;) compute
-	                if (onlyApprChoiceLen) {
-	                    calculateTOChoicesLenIfNecess(toReq, Collections.singleton(toReq.getApprovedChoice()));
-	                } else {
-	                    calculateTOChoicesLenIfNecess(toReq, toReq.getRequestChoiceList());
-	                }
-	            } else {
-	                // For (approved, &quot;debit&quot;) use persisted length.
-	                TOChoice apprChoice = toReq.getApprovedChoice();
-	                //TODO: what if the published event was removed?
-	                Collection evts = TORequestUtil.getCalEventAssignsForTOChoice(toReq, apprChoice, true, false, null);
-	                TimeOffEvent toEvt = null;
-	                if (evts != null &amp;&amp; evts.size()&gt;0){
-	                	toEvt = (TimeOffEvent) evts.iterator().next();
-	                }
-
-	                //IN40562
-	                if (toEvt != null){
-	                    //get length as per the type of time off, since it could have been changed in DE
-	                    if ((int)toEvt.getTimeOffRule() == 1){
-	                    	calculateTOChoicesLenIfNecess(toReq, Collections.singleton(toReq.getApprovedChoice()));
-	                    } else {
-	                    	apprChoice.setLength(toEvt.getCountsMinutesTowardsRules() / 60.0f);
-	                    }
-	                } else {
-	                	apprChoice.setLength(0.0f);
-	                }
-	            }
-	        } else if (debitType.equals(TORequest.DEBITTYPE_DEBIT_ONLY_IF)) {
-	            if (!reqStatus.equals(RequestAuditTrail.STATUS_APPROVED)) {
-	                // For (&quot;debit-if&quot;) compute
-	                if (onlyApprChoiceLen) {
-	                    calculateTOChoicesLenIfNecess(toReq, Collections.singleton(toReq.getRequestChoiceList()));
-	                } else {
-	                    calculateTOChoicesLenIfNecess(toReq, toReq.getRequestChoiceList());
-	                }
-	            } else {
-	                calculateTOChoicesLenIfNecess(toReq, Collections.singleton(toReq.getApprovedChoice()));
-	            }
-	        } else if (debitType.equals(TORequest.DEBITTYPE_DONT_DEBIT)) {
-	            // For (&quot;don't debit&quot;) length = 0
-	            toReq.resetLengths();
-	        } else {
-	            throw RequestUtil.createIllegalArgumentException(null, m_cat);
-	        }
-	    } catch (Exception e) {
-	        throw RequestUtil.createRmExceptionWrapper(e, m_cat);
-	    }
-	}*/
 
 	protected static void calculateTOChoicesLenIfNecess(TORequest toReq, boolean onlyApprChoiceLen) throws Exception {
-<span class="nc" id="L457">		Collection choiceList = null;</span>
-<span class="nc bnc" id="L458" title="All 2 branches missed.">		if (onlyApprChoiceLen) {</span>
-<span class="nc" id="L459">			choiceList = Collections.singleton(toReq.getApprovedChoice());</span>
+<span class="nc" id="L414">		Collection&lt;TOChoice&gt; choiceList = null;</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">		if (onlyApprChoiceLen) {</span>
+<span class="nc" id="L416">			choiceList = toReq.getApprovedChoices();</span>
 		} else {
-<span class="nc" id="L461">			choiceList = toReq.getRequestChoiceList();</span>
+<span class="nc" id="L418">			choiceList = toReq.getRequestChoiceList();</span>
 		}
-<span class="nc" id="L463">		boolean isDebitIf = (toReq.getTimeOffDebitType().equals(TORequest.DEBITTYPE_DONT_DEBIT));</span>
-<span class="nc" id="L464">		TimeOffLengthCalculator calc = null;</span>
-<span class="nc bnc" id="L465" title="All 2 branches missed.">		for (Iterator it = choiceList.iterator(); it.hasNext();) {</span>
-<span class="nc" id="L466">			TOChoice choice = (TOChoice) it.next();</span>
-<span class="nc bnc" id="L467" title="All 2 branches missed.">			if (choice.isLengthSet()) {// if length was already computed, skip.</span>
-<span class="nc" id="L468">				continue;</span>
+<span class="nc" id="L420">		boolean isDebitIf = (toReq.getTimeOffDebitType().equals(TORequest.DEBITTYPE_DONT_DEBIT));</span>
+<span class="nc" id="L421">		TimeOffLengthCalculator calc = null;</span>
+<span class="nc bnc" id="L422" title="All 2 branches missed.">		for (TOChoice choice : choiceList) {</span>
+
+<span class="nc bnc" id="L424" title="All 2 branches missed.">			if (choice.isLengthSet()) {// if length was already computed, skip.</span>
+<span class="nc" id="L425">				continue;</span>
 			}
-<span class="nc" id="L470">			TOHoursPerDay hoursPerDay = choice.getHoursPerDay();</span>
-<span class="nc bnc" id="L471" title="All 2 branches missed.">			if (isDebitIf) { //No need to get or compute hourPerday for this request type</span>
-<span class="nc" id="L472">				hoursPerDay = new TOHoursPerDay();</span>
-<span class="nc" id="L473">				choice.setHoursPerDay(hoursPerDay);</span>
+<span class="nc" id="L427">			TOHoursPerDay hoursPerDay = choice.getHoursPerDay();</span>
+<span class="nc bnc" id="L428" title="All 2 branches missed.">			if (isDebitIf) { //No need to get or compute hourPerday for this request type</span>
+<span class="nc" id="L429">				hoursPerDay = new TOHoursPerDay();</span>
+<span class="nc" id="L430">				choice.setHoursPerDay(hoursPerDay);</span>
 			} else {
-<span class="nc bnc" id="L475" title="All 4 branches missed.">				if (hoursPerDay == null || hoursPerDay.getIsDirty()) {</span>
-<span class="nc bnc" id="L476" title="All 2 branches missed.">					if (calc == null) {</span>
-<span class="nc" id="L477">						calc = toReq.getCache().getTimeOffLengthCalculator();</span>
+<span class="nc bnc" id="L432" title="All 4 branches missed.">				if (hoursPerDay == null || hoursPerDay.getIsDirty()) {</span>
+<span class="nc bnc" id="L433" title="All 2 branches missed.">					if (calc == null) {</span>
+<span class="nc" id="L434">						calc = toReq.getCache().getTimeOffLengthCalculator();</span>
 					}
-<span class="nc" id="L479">					hoursPerDay = TOHoursPerDayUtil.calcMinutesForToChoice(toReq, calc, choice);</span>
+<span class="nc" id="L436">					hoursPerDay = TOHoursPerDayUtil.calcMinutesForToChoice(toReq, calc, choice);</span>
 					// Note: we do not use calc.calculateDailyLengthsGivenTotalLength() for toReq of
 					// type 'debit' since the total length is not known.
-<span class="nc" id="L482">					choice.setHoursPerDay(hoursPerDay);</span>
+<span class="nc" id="L439">					choice.setHoursPerDay(hoursPerDay);</span>
 				}
 			}
-<span class="nc" id="L485">			choice.setLength(hoursPerDay.getTotalMinutes() / 60f);</span>
-<span class="nc" id="L486">			choice.setPeriodFlag(toReq.getPeriodFlag(choice));// set which period (sched, overlap, unsched) does choice represent</span>
-<span class="nc" id="L487">		}</span>
-<span class="nc" id="L488">	}</span>
+<span class="nc" id="L442">			choice.setLength(hoursPerDay.getTotalMinutes() / 60f);</span>
+<span class="nc" id="L443">			choice.setPeriodFlag(toReq.getPeriodFlag(choice));// set which period (sched, overlap, unsched) does choice represent</span>
+<span class="nc" id="L444">		}</span>
+<span class="nc" id="L445">	}</span>
 
 	public static boolean isTOWaitlistEnabled(RequestAggregate reqAgg) throws Exception {
-<span class="nc bnc" id="L491" title="All 4 branches missed.">		if (isTOWaitlistFeatureEnabled() &amp;&amp; reqAgg.getRequestType().equals(Request.REQUESTTYPE_TIMEOFF)) {</span>
-<span class="nc" id="L492">			TORequest req = (TORequest) reqAgg;</span>
-<span class="nc" id="L493">			TOPool toPool = req.getValidationCache().getTOPool();</span>
-<span class="nc bnc" id="L494" title="All 4 branches missed.">			return toPool != null &amp;&amp; toPool.isWaitlistEnabled();</span>
+<span class="nc bnc" id="L448" title="All 4 branches missed.">		if (isTOWaitlistFeatureEnabled() &amp;&amp; reqAgg.getRequestType().equals(Request.REQUESTTYPE_TIMEOFF)) {</span>
+<span class="nc" id="L449">			TORequest req = (TORequest) reqAgg;</span>
+<span class="nc" id="L450">			List&lt;TOPool&gt; poolList = req.getTOValidationCache().getAllTimeoffPools();</span>
+<span class="nc" id="L451">			return isTOWaitlistEnabledForAllPools(poolList);</span>
 		}
-<span class="nc" id="L496">		return false;</span>
+<span class="nc" id="L453">		return false;</span>
+	}
+	
+	static boolean isTOWaitlistEnabledForAllPools(List&lt;TOPool&gt; poolList) {
+<span class="nc bnc" id="L457" title="All 2 branches missed.">		if (poolList != null) {</span>
+<span class="nc bnc" id="L458" title="All 2 branches missed.">			for (TOPool pool : poolList) {</span>
+<span class="nc bnc" id="L459" title="All 2 branches missed.">				if (!pool.isWaitlistEnabled()){</span>
+<span class="nc" id="L460">					return false;</span>
+				}
+<span class="nc" id="L462">			}</span>
+<span class="nc" id="L463">			return true;</span>
+		}
+<span class="nc" id="L465">		return false;</span>
 	}
 
 	public static boolean isTOWaitlistFeatureEnabled() {
-<span class="nc" id="L500">		boolean returnVal = false;</span>
+<span class="nc" id="L469">		boolean returnVal = false;</span>
 		try {
-<span class="nc" id="L502">			returnVal = (&quot;true&quot;.equals(BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.TIMEOFF_WAITLIST_FEATURE_ENABLED)));</span>
-<span class="nc" id="L503">		} catch (Exception e) {</span>
-<span class="nc" id="L504">			m_cat.error(e);</span>
-<span class="nc" id="L505">		}</span>
-<span class="nc" id="L506">		return returnVal;</span>
+<span class="nc" id="L471">			returnVal = (&quot;true&quot;.equals(BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.TIMEOFF_WAITLIST_FEATURE_ENABLED)));</span>
+<span class="nc" id="L472">		} catch (Exception e) {</span>
+<span class="nc" id="L473">			LOG.error(e);</span>
+<span class="nc" id="L474">		}</span>
+<span class="nc" id="L475">		return returnVal;</span>
 	}
 
-<span class="nc" id="L509">	public static class TOWailistComparator implements Comparator {</span>
-<span class="nc" id="L510">		private Pair[] sortSeqPairArray = null;</span>
+	public static class TOWailistComparator implements Comparator {
+<span class="nc" id="L479">		private Pair[] sortSeqPairArray = null;</span>
 
 		/**
 		 * @param rankBy
 		 */
-<span class="nc" id="L515">		public TOWailistComparator(Pair[] sortSeqPairArray) {</span>
-<span class="nc" id="L516">			this.sortSeqPairArray = sortSeqPairArray;</span>
-<span class="nc" id="L517">		}</span>
+<span class="nc" id="L484">		public TOWailistComparator(Pair[] sortSeqPairArray) {</span>
+<span class="nc" id="L485">			this.sortSeqPairArray = sortSeqPairArray;</span>
+<span class="nc" id="L486">		}</span>
 
 		/* (non-Javadoc)
 		 * @see java.util.Comparator#compare(java.lang.Object, java.lang.Object)
@@ -524,343 +493,355 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 			// This compareTo works as follows.
 			// 1. get the field value stored in the first object &amp; 2nd object
 			// 3. compare the two values, and return result accordingly.
-<span class="nc" id="L527">			int result = 0;</span>
-<span class="nc bnc" id="L528" title="All 2 branches missed.">			for (int i = 0; i &lt; sortSeqPairArray.length; i++) {</span>
-<span class="nc" id="L529">				Pair pair = sortSeqPairArray[i];</span>
-<span class="nc bnc" id="L530" title="All 2 branches missed.">				if (pair == null) {</span>
-<span class="nc" id="L531">					break;</span>
+<span class="nc" id="L496">			int result = 0;</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">			for (int i = 0; i &lt; sortSeqPairArray.length; i++) {</span>
+<span class="nc" id="L498">				Pair pair = sortSeqPairArray[i];</span>
+<span class="nc bnc" id="L499" title="All 2 branches missed.">				if (pair == null) {</span>
+<span class="nc" id="L500">					break;</span>
 				}
-<span class="nc" id="L533">				String sortColumn = (String) pair.getFirst();</span>
-<span class="nc" id="L534">				String sorDirection = (String) pair.getSecond();</span>
-<span class="nc bnc" id="L535" title="All 4 branches missed.">				if (sortColumn == null || &quot;&quot;.equals(sortColumn)</span>
-<span class="nc bnc" id="L536" title="All 2 branches missed.">						|| sortColumn.equals(RmSettingKey.ORG_RM_SETTINGS_TO_WAITLIST_ORDER_COLUMN_NO_VALUE)) {</span>
-<span class="nc" id="L537">					break;</span>
+<span class="nc" id="L502">				String sortColumn = (String) pair.getFirst();</span>
+<span class="nc" id="L503">				String sorDirection = (String) pair.getSecond();</span>
+<span class="nc bnc" id="L504" title="All 4 branches missed.">				if (sortColumn == null || &quot;&quot;.equals(sortColumn)</span>
+<span class="nc bnc" id="L505" title="All 2 branches missed.">						|| sortColumn.equals(RmSettingKey.ORG_RM_SETTINGS_TO_WAITLIST_ORDER_COLUMN_NO_VALUE)) {</span>
+<span class="nc" id="L506">					break;</span>
 				}
-<span class="nc" id="L539">				result = sortByFieldName((TORequest) obj1, (TORequest) obj2,</span>
-<span class="nc" id="L540">						Request.getMethodForSortOrderColumn(Integer.parseInt(sortColumn)), sorDirection);</span>
-<span class="nc bnc" id="L541" title="All 2 branches missed.">				if (result != 0) { // if result is zero then items are equal then go to next level</span>
-<span class="nc" id="L542">					break;</span>
+<span class="nc" id="L508">				result = sortByFieldName((TORequest) obj1, (TORequest) obj2,</span>
+<span class="nc" id="L509">						Request.getMethodForSortOrderColumn(Integer.parseInt(sortColumn)), sorDirection);</span>
+<span class="nc bnc" id="L510" title="All 2 branches missed.">				if (result != 0) { // if result is zero then items are equal then go to next level</span>
+<span class="nc" id="L511">					break;</span>
 				}
 			}
-<span class="nc" id="L545">			return result;</span>
+<span class="nc" id="L514">			return result;</span>
 		}
 
 		public int sortByFieldName(TORequest obj1, TORequest obj2, String sortFieldMethod, String sortDir) {
-<span class="nc" id="L549">			int result = 0;</span>
-<span class="nc" id="L550">			Method method = null;</span>
-<span class="nc" id="L551">			Object fieldValue1 = null;</span>
-<span class="nc" id="L552">			Object fieldValue2 = null;</span>
+<span class="nc" id="L518">			int result = 0;</span>
+<span class="nc" id="L519">			Method method = null;</span>
+<span class="nc" id="L520">			Object fieldValue1 = null;</span>
+<span class="nc" id="L521">			Object fieldValue2 = null;</span>
 			try {
-<span class="nc" id="L554">				method = obj1.getClass().getMethod(sortFieldMethod, (Class[]) null);</span>
-<span class="nc" id="L555">				fieldValue1 = method.invoke(obj1, (Object[]) null);</span>
-<span class="nc" id="L556">				fieldValue2 = method.invoke(obj2, (Object[]) null);</span>
-<span class="nc bnc" id="L557" title="All 2 branches missed.">				if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L558">					m_cat.debug(&quot;.[compareTo] value1= &quot; + fieldValue1 + &quot; to value2= &quot; + fieldValue2 + &quot; in ORDER= &quot; + sortDir);</span>
+<span class="nc" id="L523">				method = obj1.getClass().getMethod(sortFieldMethod, (Class[]) null);</span>
+<span class="nc" id="L524">				fieldValue1 = method.invoke(obj1, (Object[]) null);</span>
+<span class="nc" id="L525">				fieldValue2 = method.invoke(obj2, (Object[]) null);</span>
+<span class="nc bnc" id="L526" title="All 2 branches missed.">				if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L527">					LOG.debug(&quot;.[compareTo] value1= &quot; + fieldValue1 + &quot; to value2= &quot; + fieldValue2 + &quot; in ORDER= &quot; + sortDir);</span>
 				}
-<span class="nc" id="L560">				result = ((Comparable) fieldValue1).compareTo(fieldValue2);</span>
-<span class="nc bnc" id="L561" title="All 4 branches missed.">				if (sortDir != null &amp;&amp; RequestUtil.SORTDIR_DESC.trim().equalsIgnoreCase(sortDir.trim())) {</span>
-<span class="nc" id="L562">					result = result * -1;</span>
+<span class="nc" id="L529">				result = ((Comparable) fieldValue1).compareTo(fieldValue2);</span>
+<span class="nc bnc" id="L530" title="All 4 branches missed.">				if (sortDir != null &amp;&amp; RequestUtil.SORTDIR_DESC.trim().equalsIgnoreCase(sortDir.trim())) {</span>
+<span class="nc" id="L531">					result = result * -1;</span>
 				}
-<span class="nc" id="L564">			} catch (Exception e) {</span>
-<span class="nc" id="L565">				StringBuffer sb = new StringBuffer(&quot;Exception is thrown in sortFieldMethod=&quot; + sortFieldMethod + &quot;\n:Val1=&quot; + fieldValue1</span>
-<span class="nc" id="L566">						+ &quot; :val2=&quot; + fieldValue2 + &quot;\n: ID1=&quot; + obj1.getID() + &quot; :ID2=&quot; + obj2.getID());</span>
-<span class="nc" id="L567">				m_cat.debug(sb.toString());</span>
-<span class="nc" id="L568">				e.printStackTrace();</span>
-<span class="nc" id="L569">				throw RequestUtil.createIllegalArgumentException(sb.toString(), m_cat);</span>
-<span class="nc" id="L570">			}</span>
-<span class="nc" id="L571">			StringBuffer sb = new StringBuffer(&quot;.[compareTo] return=&quot; + result + &quot;\t sortMethod=&quot; + sortFieldMethod + &quot; sort=&quot; + sortDir</span>
-<span class="nc" id="L572">					+ &quot;\t:Val1=&quot; + fieldValue1 + &quot; :val2=&quot; + fieldValue2 + &quot;\t: ID1=&quot; + obj1.getID() + &quot; :ID2=&quot; + obj2.getID());</span>
-<span class="nc bnc" id="L573" title="All 2 branches missed.">			if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L574">				m_cat.debug(sb.toString());</span>
+<span class="nc" id="L533">			} catch (Exception e) {</span>
+<span class="nc" id="L534">				StringBuilder sb = new StringBuilder(&quot;Exception is thrown in sortFieldMethod=&quot; + sortFieldMethod + &quot;\n:Val1=&quot; + fieldValue1</span>
+<span class="nc" id="L535">						+ &quot; :val2=&quot; + fieldValue2 + &quot;\n: ID1=&quot; + obj1.getID() + &quot; :ID2=&quot; + obj2.getID());</span>
+<span class="nc" id="L536">				LOG.debug(sb.toString());</span>
+<span class="nc" id="L537">				e.printStackTrace();</span>
+<span class="nc" id="L538">				throw RequestUtil.createIllegalArgumentException(sb.toString(), LOG);</span>
+<span class="nc" id="L539">			}</span>
+<span class="nc" id="L540">			StringBuilder sb = new StringBuilder(&quot;.[compareTo] return=&quot; + result + &quot;\t sortMethod=&quot; + sortFieldMethod + &quot; sort=&quot; + sortDir</span>
+<span class="nc" id="L541">					+ &quot;\t:Val1=&quot; + fieldValue1 + &quot; :val2=&quot; + fieldValue2 + &quot;\t: ID1=&quot; + obj1.getID() + &quot; :ID2=&quot; + obj2.getID());</span>
+<span class="nc bnc" id="L542" title="All 2 branches missed.">			if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L543">				LOG.debug(sb.toString());</span>
 			}
-<span class="nc" id="L576">			return result;</span>
+<span class="nc" id="L545">			return result;</span>
 		}
 	}
 
 	public static float calcMinutesForTOEvent(TOHoursPerDay hrsPerDay, Date start, Map empHoursHash) {
-<span class="nc" id="L581">		float mins = 0;</span>
-<span class="nc" id="L582">		ID empID = hrsPerDay.getEmployeeID();</span>
-<span class="nc" id="L583">		Localizer m_localizer = DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
-<span class="nc" id="L584">		SimpleDateFormat dtFrmt = new SimpleDateFormat(&quot;MMM-dd-yyyy HH:mm&quot;);</span>
-<span class="nc" id="L585">		Date startTime = hrsPerDay.getStartTime();</span>
-<span class="nc" id="L586">		Date endTime = hrsPerDay.getEndTime();</span>
-<span class="nc" id="L587">		ID activityID = hrsPerDay.getActivityID();</span>
-<span class="nc" id="L588">		int timeOffRule = hrsPerDay.getTimeOffRule();</span>
-<span class="nc" id="L589">		Collection col = (Collection) empHoursHash.get(empID);</span>
-<span class="nc bnc" id="L590" title="All 2 branches missed.">		if (col == null) {</span>
-<span class="nc" id="L591">			col = new ArrayList();</span>
-<span class="nc" id="L592">			empHoursHash.put(empID, col);</span>
+<span class="nc" id="L550">		float mins = 0;</span>
+<span class="nc" id="L551">		ID empID = hrsPerDay.getEmployeeID();</span>
+<span class="nc" id="L552">		Localizer m_localizer = DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
+<span class="nc" id="L553">		SimpleDateFormat dtFrmt = new SimpleDateFormat(&quot;MMM-dd-yyyy HH:mm&quot;);</span>
+<span class="nc" id="L554">		Date startTime = hrsPerDay.getStartTime();</span>
+<span class="nc" id="L555">		Date endTime = hrsPerDay.getEndTime();</span>
+<span class="nc" id="L556">		ID activityID = hrsPerDay.getActivityID();</span>
+<span class="nc" id="L557">		int timeOffRule = hrsPerDay.getTimeOffRule();</span>
+<span class="nc" id="L558">		Collection col = (Collection) empHoursHash.get(empID);</span>
+<span class="nc bnc" id="L559" title="All 2 branches missed.">		if (col == null) {</span>
+<span class="nc" id="L560">			col = new ArrayList();</span>
+<span class="nc" id="L561">			empHoursHash.put(empID, col);</span>
 		}
 		try {
-<span class="nc" id="L595">			Map actIDToDefDailyAndWeeklyTOAllotmentMap = new HashMap();</span>
-<span class="nc" id="L596">			Employee emp = ValidationUtil.getEmployeeByID(empID, null, Employee.DETAIL_LEVEL_EMPLOYEE_TIMEOFFDEFAULT);</span>
+<span class="nc" id="L564">			Map actIDToDefDailyAndWeeklyTOAllotmentMap = new HashMap();</span>
+<span class="nc" id="L565">			Employee emp = ValidationUtil.getEmployeeByID(empID, null, Employee.DETAIL_LEVEL_EMPLOYEE_TIMEOFFDEFAULT);</span>
 			//get the daily and weekly default time off allocation, for each activity, for given employee
-<span class="nc bnc" id="L598" title="All 2 branches missed.">			for (Iterator it = emp.getTimeOffDefaults().iterator(); it.hasNext();) {</span>
-<span class="nc" id="L599">				EmployeeTimeOffDefault TODailyWeeklyDef = (EmployeeTimeOffDefault) it.next();</span>
-<span class="nc" id="L600">				actIDToDefDailyAndWeeklyTOAllotmentMap.put(TODailyWeeklyDef.getActivityID(), TODailyWeeklyDef);</span>
-<span class="nc" id="L601">			}</span>
-<span class="nc" id="L602">			Collection wrOrg = BbmManagerFactory.getWorkResourceManager().getValidWorkResourceAssignments(empID, start, start);</span>
-<span class="nc" id="L603">			Organization empOrg = null;</span>
-<span class="nc bnc" id="L604" title="All 2 branches missed.">			if (!wrOrg.isEmpty()) {</span>
-<span class="nc" id="L605">				WorkResourceAssignment wra = (WorkResourceAssignment) wrOrg.iterator().next();</span>
-<span class="nc" id="L606">				empOrg = BbmManagerFactory.getWorkResourceManager().getOrganizationByID(wra.getOrganizationID());</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">			for (Iterator it = emp.getTimeOffDefaults().iterator(); it.hasNext();) {</span>
+<span class="nc" id="L568">				EmployeeTimeOffDefault TODailyWeeklyDef = (EmployeeTimeOffDefault) it.next();</span>
+<span class="nc" id="L569">				actIDToDefDailyAndWeeklyTOAllotmentMap.put(TODailyWeeklyDef.getActivityID(), TODailyWeeklyDef);</span>
+<span class="nc" id="L570">			}</span>
+<span class="nc" id="L571">			Collection wrOrg = BbmManagerFactory.getWorkResourceManager().getValidWorkResourceAssignments(empID, start, start);</span>
+<span class="nc" id="L572">			Organization empOrg = null;</span>
+<span class="nc bnc" id="L573" title="All 2 branches missed.">			if (!wrOrg.isEmpty()) {</span>
+<span class="nc" id="L574">				WorkResourceAssignment wra = (WorkResourceAssignment) wrOrg.iterator().next();</span>
+<span class="nc" id="L575">				empOrg = BbmManagerFactory.getWorkResourceManager().getOrganizationByID(wra.getOrganizationID());</span>
 			}
-<span class="nc" id="L608">			dtFrmt.setTimeZone(empOrg.getTimeZone());</span>
-<span class="nc" id="L609">			TimeOffLengthCalculator toCalc = TimeOffLengthCalculatorHelper.getCalculator(empID, empOrg.getID(),</span>
-<span class="nc" id="L610">					new Date(startTime.getTime() - 1000 * 60 * 60 * 24), new Date(endTime.getTime() + 1000 * 60 * 60 * 24),</span>
+<span class="nc" id="L577">			dtFrmt.setTimeZone(empOrg.getTimeZone());</span>
+<span class="nc" id="L578">			TimeOffLengthCalculator toCalc = TimeOffLengthCalculatorHelper.getCalculator(empID, empOrg.getID(),</span>
+<span class="nc" id="L579">					new Date(startTime.getTime() - 1000 * 60 * 60 * 24), new Date(endTime.getTime() + 1000 * 60 * 60 * 24),</span>
 					actIDToDefDailyAndWeeklyTOAllotmentMap);
-<span class="nc" id="L612">			float totalMins = toCalc.calculateTotalLength(startTime, endTime, activityID);</span>
-<span class="nc" id="L613">			DailyHoursBuckets srcBkt = toCalc.calculateDailyLengths(startTime, endTime, activityID);</span>
+<span class="nc" id="L581">			float totalMins = toCalc.calculateTotalLength(startTime, endTime, activityID);</span>
+<span class="nc" id="L582">			DailyHoursBuckets srcBkt = toCalc.calculateDailyLengths(startTime, endTime, activityID);</span>
 
-<span class="nc" id="L615">			Calendar cal = Calendar.getInstance(empOrg.getTimeZone());</span>
-<span class="nc" id="L616">			cal.setTime(start);</span>
-<span class="nc" id="L617">			cal = new LocalDate(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).getCal();</span>
-<span class="nc" id="L618">			Date srcDate = srcBkt.getOrgDayStart(cal);</span>
-<span class="nc bnc" id="L619" title="All 2 branches missed.">			if (srcBkt.isDateInRange(srcDate)) {</span>
-<span class="nc" id="L620">				mins = (srcBkt.getBucketHours(srcDate));</span>
-				//mins = (float) toCalc.calculatePartialLengthForTO(startTime, endTime, activityID, start, end);
-<span class="nc" id="L622">				EmployeeTimeOffDefault empTODef = (EmployeeTimeOffDefault) actIDToDefDailyAndWeeklyTOAllotmentMap.get(activityID);</span>
-<span class="nc bnc" id="L623" title="All 2 branches missed.">				double defHrsPerWeek = (empTODef == null ? 0 : empTODef.getHoursPerWeek());</span>
-<span class="nc bnc" id="L624" title="All 2 branches missed.">				double defHrsPerDay = (empTODef == null ? 0 : empTODef.getHoursPerDay());</span>
-<span class="nc bnc" id="L625" title="All 2 branches missed.">				String activityName = (empTODef == null ? (&quot;&quot; + activityID) : empTODef.getActivityName());</span>
-<span class="nc bnc" id="L626" title="All 4 branches missed.">				if (activityName == null || &quot;&quot;.equals(activityName)) {</span>
-<span class="nc" id="L627">					activityName = &quot;&quot; + activityID;</span>
+<span class="nc" id="L584">			Calendar cal = Calendar.getInstance(empOrg.getTimeZone());</span>
+<span class="nc" id="L585">			cal.setTime(start);</span>
+<span class="nc" id="L586">			cal = new LocalDate(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).getCal();</span>
+<span class="nc" id="L587">			Date srcDate = srcBkt.getOrgDayStart(cal);</span>
+<span class="nc bnc" id="L588" title="All 2 branches missed.">			if (srcBkt.isDateInRange(srcDate)) {</span>
+<span class="nc" id="L589">				mins = srcBkt.getBucketHours(srcDate);</span>
+<span class="nc" id="L590">				EmployeeTimeOffDefault empTODef = (EmployeeTimeOffDefault) actIDToDefDailyAndWeeklyTOAllotmentMap.get(activityID);</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">				double defHrsPerWeek = empTODef == null ? 0 : empTODef.getHoursPerWeek();</span>
+<span class="nc bnc" id="L592" title="All 2 branches missed.">				double defHrsPerDay = (empTODef == null ? 0 : empTODef.getHoursPerDay());</span>
+<span class="nc bnc" id="L593" title="All 2 branches missed.">				String activityName = (empTODef == null ? (&quot;&quot; + activityID) : empTODef.getActivityName());</span>
+<span class="nc bnc" id="L594" title="All 4 branches missed.">				if (activityName == null || &quot;&quot;.equals(activityName)) {</span>
+<span class="nc" id="L595">					activityName = &quot;&quot; + activityID;</span>
 				}
-<span class="nc" id="L629">				String minStr = &quot;&lt;TR&gt;&quot; + tdCellClause + empOrg.getName() + &quot; (&quot; + empOrg.getTimeZone().getDisplayName()</span>
-<span class="nc bnc" id="L630" title="All 2 branches missed.">						+ (empOrg.getDayBoundaryOffset() &gt; 0 ? &quot;+&quot; + empOrg.getDayBoundaryOffset() : &quot;&quot;) + &quot;)&quot; + &quot;&lt;/td&gt;&quot; + tdCellClause</span>
-<span class="nc" id="L631">						+ &quot;&quot; + emp.getLastName() + &quot;, &quot; + emp.getFirstName() + &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot;</span>
-<span class="nc" id="L632">						+ dtFrmt.format(toCalc.getLastPublishedShiftDayEnd()) + &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot; + dtFrmt.format(startTime)</span>
-<span class="nc bnc" id="L633" title="All 4 branches missed.">						+ &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot; + dtFrmt.format(endTime) + &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot; + timeOffRule + &quot;&lt;/td&gt;&quot;</span>
+<span class="nc" id="L597">				String minStr = &quot;&lt;TR&gt;&quot; + tdCellClause + empOrg.getName() + &quot; (&quot; + empOrg.getTimeZone().getDisplayName()</span>
+<span class="nc bnc" id="L598" title="All 2 branches missed.">						+ (empOrg.getDayBoundaryOffset() &gt; 0 ? &quot;+&quot; + empOrg.getDayBoundaryOffset() : &quot;&quot;) + &quot;)&quot; + &quot;&lt;/td&gt;&quot; + tdCellClause</span>
+<span class="nc" id="L599">						+ &quot;&quot; + emp.getLastName() + &quot;, &quot; + emp.getFirstName() + &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot;</span>
+<span class="nc" id="L600">						+ dtFrmt.format(toCalc.getLastPublishedShiftDayEnd()) + &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot; + dtFrmt.format(startTime)</span>
+<span class="nc bnc" id="L601" title="All 4 branches missed.">						+ &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot; + dtFrmt.format(endTime) + &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot; + timeOffRule + &quot;&lt;/td&gt;&quot;</span>
 						+ tdCellClause + &quot;&quot; + activityName + &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot;
 						+ (defHrsPerDay == (int) defHrsPerDay ? &quot;&quot; + ((int) defHrsPerDay) : &quot;&quot; + hrsPerDay) + &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot;
 						+ (defHrsPerWeek == (int) defHrsPerWeek ? &quot;&quot; + ((int) defHrsPerWeek) : &quot;&quot; + defHrsPerWeek) + &quot;&lt;/td&gt;&quot; + tdCellClause
 						+ &quot;&quot;;
 
-<span class="nc bnc" id="L639" title="All 2 branches missed.">				minStr += (Math.abs(totalMins - (int) totalMins) &lt; 0.001 ? &quot;&quot; + ((int) totalMins) : &quot;&quot;</span>
-<span class="nc" id="L640">						+ m_localizer.formatNumber(totalMins, 2))</span>
+<span class="nc bnc" id="L607" title="All 2 branches missed.">				minStr += (Math.abs(totalMins - (int) totalMins) &lt; 0.001 ? &quot;&quot; + ((int) totalMins) : &quot;&quot;</span>
+<span class="nc" id="L608">						+ m_localizer.formatNumber(totalMins, 2))</span>
 						+ &quot;&lt;/td&gt;&quot; + tdCellClause + &quot;&quot;;
-<span class="nc bnc" id="L642" title="All 2 branches missed.">				minStr += (Math.abs(mins - (int) mins) &lt; 0.001 ? &quot;&quot; + ((int) mins) : m_localizer.formatNumber(mins, 2)) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;;</span>
-<span class="nc" id="L643">				col.add(minStr);</span>
-<span class="nc" id="L644">			} else {</span>
-<span class="nc" id="L645">				m_cat.debug(&quot;dt=&quot; + cal.getTime() + &quot;\tSRC Date=&quot; + srcDate + &quot;\tSRC In Range=&quot; + srcBkt.isDateInRange(srcDate));</span>
+<span class="nc bnc" id="L610" title="All 2 branches missed.">				minStr += (Math.abs(mins - (int) mins) &lt; 0.001 ? &quot;&quot; + ((int) mins) : m_localizer.formatNumber(mins, 2)) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;;</span>
+<span class="nc" id="L611">				col.add(minStr);</span>
+<span class="nc" id="L612">			} else {</span>
+<span class="nc" id="L613">				LOG.debug(&quot;dt=&quot; + cal.getTime() + &quot;\tSRC Date=&quot; + srcDate + &quot;\tSRC In Range=&quot; + srcBkt.isDateInRange(srcDate));</span>
 			}
 
-<span class="nc" id="L648">		} catch (Exception e) {</span>
-<span class="nc" id="L649">			e.printStackTrace();</span>
-<span class="nc" id="L650">		}</span>
-<span class="nc" id="L651">		return mins;</span>
+<span class="nc" id="L616">		} catch (Exception e) {</span>
+<span class="nc" id="L617">			e.printStackTrace();</span>
+<span class="nc" id="L618">		}</span>
+<span class="nc" id="L619">		return mins;</span>
 	}
 
-<span class="nc" id="L654">	static String tdCellClause = &quot;&lt;td class=\&quot;tableItemNormal\&quot; style=\&quot;text-align:left\&quot; iscell=\&quot;true\&quot; id=\&quot;r3c1\&quot; nowrap&gt;&quot;;</span>
-<span class="nc" id="L655">	static String thHeaderCl = &quot;&lt;th scope=\&quot;col\&quot; class=\&quot;tbl2ndHdrLeft\&quot; &gt;&quot;;</span>
+<span class="nc" id="L622">	static String tdCellClause = &quot;&lt;td class=\&quot;tableItemNormal\&quot; style=\&quot;text-align:left\&quot; iscell=\&quot;true\&quot; id=\&quot;r3c1\&quot; nowrap&gt;&quot;;</span>
+<span class="nc" id="L623">	static String thHeaderCl = &quot;&lt;th scope=\&quot;col\&quot; class=\&quot;tbl2ndHdrLeft\&quot; &gt;&quot;;</span>
 
 	public static void formatEmpNames(Date date, Collection empIds, ID orgID, Map nameMap, TimeRange range, Collection activityIDs,
 			double schedTOHrs) throws Exception {
-<span class="nc" id="L659">		Localizer m_localizer = DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
-<span class="nc" id="L660">		SimpleDateFormat dtFrmt = new SimpleDateFormat(&quot;MMM-dd-yy&quot;);</span>
-<span class="nc" id="L661">		HashMap empHoursHash = new HashMap();</span>
-<span class="nc" id="L662">		Collection[] hrsPerDayCol = TOCalendarUtil.getHoursPerDayForCalendar(empIds, empIds, range, activityIDs);</span>
-<span class="nc" id="L663">		Collection hrsPerDayPendCol = hrsPerDayCol[TOCalendarUtil.BKT_PENDING]; //has pending data</span>
-<span class="nc" id="L664">		Collection hrsPerDaySchedCol = hrsPerDayCol[TOCalendarUtil.BKT_SCHED]; //this collection has scheduled data</span>
-<span class="nc" id="L665">		float computedMins = 0;</span>
-<span class="nc bnc" id="L666" title="All 2 branches missed.">		for (Iterator iter = hrsPerDaySchedCol.iterator(); iter.hasNext();) {</span>
-<span class="nc" id="L667">			computedMins += calcMinutesForTOEvent((TOHoursPerDay) iter.next(), date, empHoursHash);</span>
+<span class="nc" id="L627">		Localizer m_localizer = DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
+<span class="nc" id="L628">		SimpleDateFormat dtFrmt = new SimpleDateFormat(&quot;MMM-dd-yy&quot;);</span>
+<span class="nc" id="L629">		HashMap empHoursHash = new HashMap();</span>
+<span class="nc" id="L630">		Collection[] hrsPerDayCol = TOCalendarUtil.getHoursPerDayForCalendar(empIds, empIds, range, activityIDs);</span>
+<span class="nc" id="L631">		Collection hrsPerDayPendCol = hrsPerDayCol[TOCalendarUtil.BKT_PENDING]; //has pending data</span>
+<span class="nc" id="L632">		Collection hrsPerDaySchedCol = hrsPerDayCol[TOCalendarUtil.BKT_SCHED]; //this collection has scheduled data</span>
+<span class="nc" id="L633">		float computedMins = 0;</span>
+<span class="nc bnc" id="L634" title="All 2 branches missed.">		for (Iterator iter = hrsPerDaySchedCol.iterator(); iter.hasNext();) {</span>
+<span class="nc" id="L635">			computedMins += calcMinutesForTOEvent((TOHoursPerDay) iter.next(), date, empHoursHash);</span>
 		}
-<span class="nc" id="L669">		EmployeeName eNameX = new EmployeeName();</span>
-<span class="nc" id="L670">		eNameX.setID(new ID(-1));</span>
-<span class="nc" id="L671">		Organization org = BbmManagerFactory.getWorkResourceManager().getOrganizationByID(orgID);</span>
-<span class="nc" id="L672">		StringBuffer namestr = new StringBuffer(org.getName() + &quot;   time zone: &quot; + org.getTimeZone().getDisplayName() + &quot;&lt;TABLE BORDER=1&gt;&quot;);</span>
-<span class="nc" id="L673">		namestr.append(&quot;&lt;TR&gt;&quot; + thHeaderCl + &quot;ORG&lt;/TH&gt;&quot; + thHeaderCl + &quot;Name&lt;/TH&gt;&quot; + thHeaderCl + &quot;Pub Date&lt;/TH&gt;&quot; + thHeaderCl</span>
+<span class="nc" id="L637">		EmployeeName eNameX = new EmployeeName();</span>
+<span class="nc" id="L638">		eNameX.setID(new ID(-1));</span>
+<span class="nc" id="L639">		Organization org = BbmManagerFactory.getWorkResourceManager().getOrganizationByID(orgID);</span>
+<span class="nc" id="L640">		StringBuilder namestr = new StringBuilder(org.getName() + &quot;   time zone: &quot; + org.getTimeZone().getDisplayName() + &quot;&lt;TABLE BORDER=1&gt;&quot;);</span>
+<span class="nc" id="L641">		namestr.append(&quot;&lt;TR&gt;&quot; + thHeaderCl + &quot;ORG&lt;/TH&gt;&quot; + thHeaderCl + &quot;Name&lt;/TH&gt;&quot; + thHeaderCl + &quot;Pub Date&lt;/TH&gt;&quot; + thHeaderCl</span>
 				+ &quot;Start&lt;/TH&gt;&quot; + thHeaderCl + &quot;End&lt;/TH&gt;&quot; + thHeaderCl + &quot;Rule&lt;/TH&gt;&quot; + thHeaderCl + &quot;TO-Type&lt;/TH&gt;&quot; + thHeaderCl
 				+ &quot;hrs/day&lt;/TH&gt;&quot; + thHeaderCl + &quot;hrs/Wk&lt;/TH&gt;&quot; + thHeaderCl + &quot;TotHrs&lt;/TH&gt;&quot; + thHeaderCl + &quot;Hrs&lt;/TH&gt;&lt;/tr&gt;&quot;);
-<span class="nc bnc" id="L676" title="All 2 branches missed.">		for (Iterator iterator = empHoursHash.keySet().iterator(); iterator.hasNext();) {</span>
-<span class="nc" id="L677">			ID id = (ID) iterator.next();</span>
-<span class="nc" id="L678">			EmployeeName eName = (EmployeeName) nameMap.get(id);</span>
-<span class="nc bnc" id="L679" title="All 2 branches missed.">			if (empHoursHash.containsKey(id)) {</span>
-<span class="nc" id="L680">				Collection col = (Collection) empHoursHash.get(id);</span>
-<span class="nc bnc" id="L681" title="All 2 branches missed.">				for (Iterator iterator1 = col.iterator(); iterator1.hasNext();) {</span>
-<span class="nc" id="L682">					namestr.append(iterator1.next().toString());</span>
+<span class="nc bnc" id="L644" title="All 2 branches missed.">		for (Iterator iterator = empHoursHash.keySet().iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L645">			ID id = (ID) iterator.next();</span>
+<span class="nc" id="L646">			EmployeeName eName = (EmployeeName) nameMap.get(id);</span>
+<span class="nc bnc" id="L647" title="All 2 branches missed.">			if (empHoursHash.containsKey(id)) {</span>
+<span class="nc" id="L648">				Collection col = (Collection) empHoursHash.get(id);</span>
+<span class="nc bnc" id="L649" title="All 2 branches missed.">				for (Iterator iterator1 = col.iterator(); iterator1.hasNext();) {</span>
+<span class="nc" id="L650">					namestr.append(iterator1.next().toString());</span>
 				}
-<span class="nc" id="L684">			} else {</span>
-<span class="nc" id="L685">				namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause + &quot;&quot; + &quot;*****&quot; + eName.getDisplayName(eName, m_localizer) + &quot;&lt;/TD&gt;&quot; + tdCellClause</span>
+<span class="nc" id="L652">			} else {</span>
+<span class="nc" id="L653">				namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause + &quot;&quot; + &quot;*****&quot; + eName.getDisplayName(eName, m_localizer) + &quot;&lt;/TD&gt;&quot; + tdCellClause</span>
 						+ &quot;&quot; + &quot;NO DATA Found&quot; + &quot;&lt;/TD&gt;&lt;/tr&gt;&quot;);
 			}
-<span class="nc" id="L688">		}</span>
-<span class="nc bnc" id="L689" title="All 2 branches missed.">		String errorMsg = (nameMap.size() != empHoursHash.size() ? &quot; **PROB EMP name mismatch**&quot; : &quot;&quot;);</span>
-<span class="nc" id="L690">		namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause + &quot;&quot;).append(dtFrmt.format(date)).append(&quot;&lt;/TD&gt;&quot;);</span>
-<span class="nc" id="L691">		namestr.append(&quot;&lt;td class=\&quot;tableItemNormal\&quot; style=\&quot;text-align:left\&quot; iscell=\&quot;true\&quot; id=\&quot;r3c1\&quot; nowrap colspan=9&gt;&quot;);</span>
-<span class="nc" id="L692">		namestr.append(</span>
-<span class="nc bnc" id="L693" title="All 2 branches missed.">				errorMsg + &quot; ** Scheduled Accted Hrs &quot; + (Math.abs(computedMins - schedTOHrs) &gt; 0.001 ? &quot; mismatch*** &quot; : &quot; matched &quot;)</span>
-<span class="nc" id="L694">						+ schedTOHrs).append(&quot;&lt;/TD&gt;&quot;);</span>
-<span class="nc" id="L695">		namestr.append(tdCellClause);</span>
-<span class="nc" id="L696">		namestr.append(</span>
-<span class="nc bnc" id="L697" title="All 2 branches missed.">				Math.abs(computedMins - (int) computedMins) &lt; 0.001 ? &quot;&quot; + ((int) computedMins) : &quot;&quot;</span>
-<span class="nc" id="L698">						+ m_localizer.formatNumber(computedMins, 2)).append(&quot;&lt;/TD&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L656">		}</span>
+<span class="nc bnc" id="L657" title="All 2 branches missed.">		String errorMsg = (nameMap.size() != empHoursHash.size() ? &quot; **PROB EMP name mismatch**&quot; : &quot;&quot;);</span>
+<span class="nc" id="L658">		namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause + &quot;&quot;).append(dtFrmt.format(date)).append(&quot;&lt;/TD&gt;&quot;);</span>
+<span class="nc" id="L659">		namestr.append(&quot;&lt;td class=\&quot;tableItemNormal\&quot; style=\&quot;text-align:left\&quot; iscell=\&quot;true\&quot; id=\&quot;r3c1\&quot; nowrap colspan=9&gt;&quot;);</span>
+<span class="nc" id="L660">		namestr.append(</span>
+<span class="nc bnc" id="L661" title="All 2 branches missed.">				errorMsg + &quot; ** Scheduled Accted Hrs &quot; + (Math.abs(computedMins - schedTOHrs) &gt; 0.001 ? &quot; mismatch*** &quot; : &quot; matched &quot;)</span>
+<span class="nc" id="L662">						+ schedTOHrs).append(&quot;&lt;/TD&gt;&quot;);</span>
+<span class="nc" id="L663">		namestr.append(tdCellClause);</span>
+<span class="nc" id="L664">		namestr.append(</span>
+<span class="nc bnc" id="L665" title="All 2 branches missed.">				Math.abs(computedMins - (int) computedMins) &lt; 0.001 ? &quot;&quot; + ((int) computedMins) : &quot;&quot;</span>
+<span class="nc" id="L666">						+ m_localizer.formatNumber(computedMins, 2)).append(&quot;&lt;/TD&gt;&lt;/tr&gt;&quot;);</span>
 
-<span class="nc bnc" id="L700" title="All 4 branches missed.">		if (hrsPerDayPendCol != null &amp;&amp; !hrsPerDayPendCol.isEmpty()) {</span>
-<span class="nc" id="L701">			Set empIdsSet = new HashSet();</span>
-<span class="nc" id="L702">			empIdsSet.addAll(ValueObjectUtil.getFieldObjectCol(TOHoursPerDayFieldInfo.TIMEOFFHOURSPERDAY_I_EMPLOYEEID, hrsPerDayPendCol));</span>
-<span class="nc" id="L703">			WorkResourceManager wrm = BbmManagerFactory.getWorkResourceManager();</span>
-<span class="nc" id="L704">			empHoursHash = wrm.getEmployeeNamesByIDs(empIdsSet);</span>
-<span class="nc" id="L705">			namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause + &quot;&quot;).append(&quot;PENDING REQUESTS&quot;).append(&quot;&lt;/TD&gt;&lt;td colspan=9&gt;&quot;).append(&quot;&lt;/TD&gt;&lt;/tr&gt;&quot;);</span>
-<span class="nc" id="L706">			empHoursHash = new HashMap();</span>
-<span class="nc" id="L707">			computedMins = 0;</span>
-<span class="nc bnc" id="L708" title="All 2 branches missed.">			for (Iterator iter = hrsPerDayPendCol.iterator(); iter.hasNext();) {</span>
-<span class="nc" id="L709">				computedMins += calcMinutesForTOEvent((TOHoursPerDay) iter.next(), date, empHoursHash);</span>
+<span class="nc bnc" id="L668" title="All 4 branches missed.">		if (hrsPerDayPendCol != null &amp;&amp; !hrsPerDayPendCol.isEmpty()) {</span>
+<span class="nc" id="L669">			Set empIdsSet = new HashSet();</span>
+<span class="nc" id="L670">			empIdsSet.addAll(ValueObjectUtil.getFieldObjectCol(TOHoursPerDayFieldInfo.TIMEOFFHOURSPERDAY_I_EMPLOYEEID, hrsPerDayPendCol));</span>
+<span class="nc" id="L671">			WorkResourceManager wrm = BbmManagerFactory.getWorkResourceManager();</span>
+<span class="nc" id="L672">			empHoursHash = wrm.getEmployeeNamesByIDs(empIdsSet);</span>
+<span class="nc" id="L673">			namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause + &quot;&quot;).append(&quot;PENDING REQUESTS&quot;).append(&quot;&lt;/TD&gt;&lt;td colspan=9&gt;&quot;).append(&quot;&lt;/TD&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L674">			empHoursHash = new HashMap();</span>
+<span class="nc" id="L675">			computedMins = 0;</span>
+<span class="nc bnc" id="L676" title="All 2 branches missed.">			for (Iterator iter = hrsPerDayPendCol.iterator(); iter.hasNext();) {</span>
+<span class="nc" id="L677">				computedMins += calcMinutesForTOEvent((TOHoursPerDay) iter.next(), date, empHoursHash);</span>
 			}
-<span class="nc bnc" id="L711" title="All 2 branches missed.">			for (Iterator iterator = empHoursHash.keySet().iterator(); iterator.hasNext();) {</span>
-<span class="nc" id="L712">				ID id = (ID) iterator.next();</span>
-<span class="nc" id="L713">				EmployeeName eName = (EmployeeName) nameMap.get(id);</span>
-<span class="nc bnc" id="L714" title="All 2 branches missed.">				if (empHoursHash.containsKey(id)) {</span>
-<span class="nc" id="L715">					Collection col = (Collection) empHoursHash.get(id);</span>
-<span class="nc bnc" id="L716" title="All 2 branches missed.">					for (Iterator iterator1 = col.iterator(); iterator1.hasNext();) {</span>
-<span class="nc" id="L717">						namestr.append(iterator1.next().toString());</span>
+<span class="nc bnc" id="L679" title="All 2 branches missed.">			for (Iterator iterator = empHoursHash.keySet().iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L680">				ID id = (ID) iterator.next();</span>
+<span class="nc" id="L681">				EmployeeName eName = (EmployeeName) nameMap.get(id);</span>
+<span class="nc bnc" id="L682" title="All 2 branches missed.">				if (empHoursHash.containsKey(id)) {</span>
+<span class="nc" id="L683">					Collection col = (Collection) empHoursHash.get(id);</span>
+<span class="nc bnc" id="L684" title="All 2 branches missed.">					for (Iterator iterator1 = col.iterator(); iterator1.hasNext();) {</span>
+<span class="nc" id="L685">						namestr.append(iterator1.next().toString());</span>
 					}
-<span class="nc" id="L719">				} else {</span>
-<span class="nc" id="L720">					namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause + &quot;&quot; + &quot;*****&quot; + eName.getDisplayName(eName, m_localizer) + &quot;&lt;/TD&gt;&quot; + tdCellClause</span>
+<span class="nc" id="L687">				} else {</span>
+<span class="nc" id="L688">					namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause + &quot;&quot; + &quot;*****&quot; + eName.getDisplayName(eName, m_localizer) + &quot;&lt;/TD&gt;&quot; + tdCellClause</span>
 							+ &quot;&quot; + &quot;NO DATA Found&quot; + &quot;&lt;/TD&gt;&lt;/tr&gt;&quot;);
 				}
-<span class="nc" id="L723">			}</span>
-<span class="nc" id="L724">			namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause).append(dtFrmt.format(date)).append(&quot;&lt;/TD&gt;&quot;);</span>
-<span class="nc" id="L725">			namestr.append(&quot;&lt;td class=\&quot;tableItemNormal\&quot; style=\&quot;text-align:left\&quot; iscell=\&quot;true\&quot; id=\&quot;r3c1\&quot; nowrap colspan=9&gt;&quot;);</span>
-<span class="nc" id="L726">			namestr.append(&quot;*** Pending Accted Hrs &quot;).append(tdCellClause);</span>
-<span class="nc" id="L727">			namestr.append(</span>
-<span class="nc bnc" id="L728" title="All 2 branches missed.">					Math.abs(computedMins - (int) computedMins) &lt; 0.001 ? &quot;&quot; + ((int) computedMins) : &quot;&quot;</span>
-<span class="nc" id="L729">							+ m_localizer.formatNumber(computedMins, 2)).append(&quot;&lt;/TD&gt;&lt;/tr&gt;&quot;);</span>
+<span class="nc" id="L691">			}</span>
+<span class="nc" id="L692">			namestr.append(&quot;&lt;TR&gt;&quot; + tdCellClause).append(dtFrmt.format(date)).append(&quot;&lt;/TD&gt;&quot;);</span>
+<span class="nc" id="L693">			namestr.append(&quot;&lt;td class=\&quot;tableItemNormal\&quot; style=\&quot;text-align:left\&quot; iscell=\&quot;true\&quot; id=\&quot;r3c1\&quot; nowrap colspan=9&gt;&quot;);</span>
+<span class="nc" id="L694">			namestr.append(&quot;*** Pending Accted Hrs &quot;).append(tdCellClause);</span>
+<span class="nc" id="L695">			namestr.append(</span>
+<span class="nc bnc" id="L696" title="All 2 branches missed.">					Math.abs(computedMins - (int) computedMins) &lt; 0.001 ? &quot;&quot; + ((int) computedMins) : &quot;&quot;</span>
+<span class="nc" id="L697">							+ m_localizer.formatNumber(computedMins, 2)).append(&quot;&lt;/TD&gt;&lt;/tr&gt;&quot;);</span>
 		}
-<span class="nc" id="L731">		namestr.append(&quot;&lt;/TABLE&gt;&quot;);</span>
-<span class="nc" id="L732">		eNameX.setFirstName(namestr.toString());</span>
+<span class="nc" id="L699">		namestr.append(&quot;&lt;/TABLE&gt;&quot;);</span>
+<span class="nc" id="L700">		eNameX.setFirstName(namestr.toString());</span>
 		//nameMap.clear(); //clear the hashmap and put these values
-<span class="nc" id="L734">		nameMap.put(eNameX.getID(), eNameX);</span>
-<span class="nc" id="L735">	}</span>
+<span class="nc" id="L702">		nameMap.put(eNameX.getID(), eNameX);</span>
+<span class="nc" id="L703">	}</span>
 
 	public static boolean isTimeOffChoiceForPastDate(TORequest req, TOChoice choice) {
-<span class="nc" id="L738">		boolean flag = choice.getStartDate().before(req.getSubmittedOn());</span>
-<span class="nc" id="L739">		return flag;</span>
+<span class="nc bnc" id="L706" title="All 2 branches missed.">		Date choiceDate = req.isAdvancedVTORequest() ? choice.getEndDate() : choice.getStartDate();</span>
+<span class="nc" id="L707">        return choiceDate.before(req.getSubmittedOn());</span>
 	}
 
 	public static boolean isBlackOutDaySettingEnabledForOrg() {
-<span class="nc" id="L743">		boolean returnVal = false;</span>
+<span class="nc" id="L711">		boolean returnVal = false;</span>
 		try {
-<span class="nc" id="L745">			returnVal = &quot;true&quot;.equals(BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.TIMEOFF_ENABLE_BLACKOUT_DAYS_BY_ORG));</span>
-<span class="nc" id="L746">		} catch (Exception e) {</span>
-<span class="nc" id="L747">			m_cat.error(e);</span>
-<span class="nc" id="L748">		}</span>
-<span class="nc" id="L749">		return returnVal;</span>
+<span class="nc" id="L713">			returnVal = &quot;true&quot;.equals(BbmManagerFactory.getDBConfigManager().getValue(ConfigKey.TIMEOFF_ENABLE_BLACKOUT_DAYS_BY_ORG));</span>
+<span class="nc" id="L714">		} catch (Exception e) {</span>
+<span class="nc" id="L715">			LOG.error(e);</span>
+<span class="nc" id="L716">		}</span>
+<span class="nc" id="L717">		return returnVal;</span>
 	}
 
 	public static boolean isAnyTimeOffChoiceForPastDate(TORequest req) {
-<span class="nc" id="L753">		boolean result = false;</span>
-<span class="nc bnc" id="L754" title="All 2 branches missed.">		for (Iterator iterator = req.getRequestChoiceList().iterator(); iterator.hasNext();) {</span>
-<span class="nc" id="L755">			TOChoice choice = (TOChoice) iterator.next();</span>
-<span class="nc bnc" id="L756" title="All 2 branches missed.">			if (isTimeOffChoiceForPastDate(req, choice)) {</span>
-<span class="nc" id="L757">				result = true;</span>
-<span class="nc" id="L758">				break;</span>
+<span class="nc" id="L721">		boolean result = false;</span>
+<span class="nc bnc" id="L722" title="All 2 branches missed.">		for (Iterator iterator = req.getRequestChoiceList().iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L723">			TOChoice choice = (TOChoice) iterator.next();</span>
+<span class="nc bnc" id="L724" title="All 2 branches missed.">			if (isTimeOffChoiceForPastDate(req, choice)) {</span>
+<span class="nc" id="L725">				result = true;</span>
+<span class="nc" id="L726">				break;</span>
 			}
-<span class="nc" id="L760">		}</span>
-<span class="nc" id="L761">		return result;</span>
+<span class="nc" id="L728">		}</span>
+<span class="nc" id="L729">		return result;</span>
 	}
 
 	/*QA-103536 fix -
 	Method to validate if a approved TORequest is a valid candidate for withdraw */
-	public static ValidationResult validateApprovedRequestForWithdraw(Validatable validatable) throws Exception {
-<span class="nc" id="L767">		ValidationResult result = null;</span>
-<span class="nc" id="L768">		Date toReqStartdate = null;</span>
-<span class="nc" id="L769">		Date toReqEnddate = null;</span>
-<span class="nc" id="L770">		TORequest toReq = (TORequest) validatable;</span>
-<span class="nc bnc" id="L771" title="All 2 branches missed.">		if (toReq.isApproved()) {</span>
-<span class="nc" id="L772">			TOChoice apprChoice = toReq.getApprovedChoice();</span>
-<span class="nc" id="L773">			toReqStartdate = apprChoice.getStartDate();</span>
-<span class="nc" id="L774">			toReqEnddate = apprChoice.getEndDate();</span>
-<span class="nc" id="L775">			CalendarEventAssignment eventPub = null;</span>
-<span class="nc" id="L776">			CalendarEventAssignment eventUnPub = null;</span>
-			try {
-				// Check if underlying TO event is in published world or unpublished world.
-				// If an underlying TO event exists in either worlds, then its start date
-				// and end date should be the same as that of the TO request.
-<span class="nc" id="L781">				eventPub = getCalEventAssignForTOChoiceAligned(toReq, apprChoice, true, null); // check for event in published world</span>
+	public static ValidationResult validateApprovedRequestForWithdraw(Validatable validatable) throws Exception {//NOSONAR
+<span class="nc" id="L735">		ValidationResultAggregator result = new ValidationResultAggregator();</span>
 
-<span class="nc bnc" id="L783" title="All 6 branches missed.">				if (eventPub == null || !(toReqStartdate.equals(eventPub.getStartTime()) &amp;&amp; toReqEnddate.equals(eventPub.getEndTime()))) {</span>
-<span class="nc" id="L784">					eventUnPub = getCalEventAssignForTOChoiceAligned(toReq, apprChoice, false, null); // check for event in un-published world</span>
-
-<span class="nc bnc" id="L786" title="All 2 branches missed.">					if (eventUnPub == null</span>
-<span class="nc bnc" id="L787" title="All 4 branches missed.">							|| !(toReqStartdate.equals(eventUnPub.getStartTime()) &amp;&amp; toReqEnddate.equals(eventUnPub.getEndTime()))) {</span>
-<span class="nc" id="L788">						result = ValidationUtil.setHardValidationResult(toReq,</span>
-								RmEjbBundleKey.TIMEOFF_WITHDRAW_UNDERLYING_EVENT_NOT_EXIST_IN_UNPUB, m_className);
-					}
-				}
-<span class="nc" id="L792">			} catch (Exception e) {</span>
-				//m_cat.info(e.getMessage(), e);
-<span class="nc" id="L794">				result = ValidationUtil.setHardValidationResult(toReq, RmEjbBundleKey.TIMEOFF_WITHDRAW_UNDERLYING_EVENT_MISMATCH,</span>
-						m_className);
-<span class="nc" id="L796">			}</span>
-		}
-<span class="nc" id="L798">		return result;</span>
+<span class="nc" id="L737">		TORequest toReq = (TORequest) validatable;</span>
+<span class="nc bnc" id="L738" title="All 2 branches missed.">		for(TOChoice choice: toReq.getApprovedChoices()) {</span>
+<span class="nc" id="L739">			result.add(checkTOEvent(toReq, choice));</span>
+<span class="nc" id="L740">		}</span>
+<span class="nc" id="L741">		return result.get();</span>
 	}
 
+	private static ValidationResult checkTOEvent(TORequest toReq, TOChoice apprChoice) {
+
+<span class="nc" id="L746">		Date toReqStartdate = apprChoice.getStartDate();</span>
+<span class="nc" id="L747">		Date toReqEnddate = apprChoice.getEndDate();</span>
+
+<span class="nc" id="L749">		CalendarEventAssignment eventPub = null;</span>
+<span class="nc" id="L750">		CalendarEventAssignment eventUnPub = null;</span>
+		try {
+			// Check if underlying TO event is in published world or unpublished world.
+			// If an underlying TO event exists in either worlds, then its start date
+			// and end date should be the same as that of the TO request.
+<span class="nc" id="L755">			eventPub = getCalEventAssignForTOChoiceAligned(toReq, apprChoice, true, null); // check for event in published world</span>
+
+<span class="nc bnc" id="L757" title="All 6 branches missed.">			if (eventPub == null || !(toReqStartdate.equals(eventPub.getStartTime()) &amp;&amp; toReqEnddate.equals(eventPub.getEndTime()))) {</span>
+<span class="nc" id="L758">				eventUnPub = getCalEventAssignForTOChoiceAligned(toReq, apprChoice, false, null); // check for event in un-published world</span>
+
+<span class="nc bnc" id="L760" title="All 2 branches missed.">				if (eventUnPub == null</span>
+<span class="nc bnc" id="L761" title="All 4 branches missed.">						|| !(toReqStartdate.equals(eventUnPub.getStartTime()) &amp;&amp; toReqEnddate.equals(eventUnPub.getEndTime()))) {</span>
+<span class="nc" id="L762">					return ValidationUtil.setHardValidationResult(toReq,</span>
+							RmEjbBundleKey.TIMEOFF_WITHDRAW_UNDERLYING_EVENT_NOT_EXIST_IN_UNPUB, CLASSNAME);
+				}
+			}
+<span class="nc" id="L766">			return null;</span>
+<span class="nc" id="L767">		} catch (Exception e) {</span>
+<span class="nc" id="L768">			return ValidationUtil.setHardValidationResult(toReq, RmEjbBundleKey.TIMEOFF_WITHDRAW_UNDERLYING_EVENT_MISMATCH,</span>
+					CLASSNAME);
+		}
+
+	}
+
+
 	public static Activity getActivity(TORequest toRequest) throws Exception { // NOSONAR
-<span class="nc" id="L802">		ID activityID = toRequest.getTimeOffType();</span>
-<span class="nc" id="L803">		ActivityManager activityManager = WfmManagerFactory.getActivityManager();</span>
-<span class="nc" id="L804">		return activityManager.findActivityById(activityID);</span>
+<span class="nc" id="L776">		ID activityID = toRequest.getTimeOffType();</span>
+<span class="nc" id="L777">		ActivityManager activityManager = WfmManagerFactory.getActivityManager();</span>
+<span class="nc" id="L778">		return activityManager.findActivityById(activityID);</span>
 
 	}
 
 	public static ActivityProperties getActivityProperties(TORequest toRequest) throws Exception { // NOSONAR
-<span class="nc" id="L809">		ID activityID = toRequest.getTimeOffType();</span>
-<span class="nc" id="L810">		return getActivityProperties(activityID);</span>
+<span class="nc" id="L783">		ID activityID = toRequest.getTimeOffType();</span>
+<span class="nc" id="L784">		return getActivityProperties(activityID);</span>
 	}
 
 	public static ActivityProperties getActivityProperties(ID activityID) throws Exception { // NOSONAR
 
-<span class="nc bnc" id="L815" title="All 2 branches missed.">		if (activityID == null) {</span>
-<span class="nc" id="L816">			throw new IllegalArgumentException(&quot;activityID cannot be null&quot;);</span>
+<span class="nc bnc" id="L789" title="All 2 branches missed.">		if (activityID == null) {</span>
+<span class="nc" id="L790">			throw new IllegalArgumentException(&quot;activityID cannot be null&quot;);</span>
 		}
 
-<span class="nc" id="L819">		Map&lt;ID, ActivityProperties&gt; cache = ThreadLocalCache.getMap(&quot;TORequestUtil.getActivityProperties&quot;);</span>
-<span class="nc bnc" id="L820" title="All 2 branches missed.">		if (cache.containsKey(activityID)) {</span>
-<span class="nc" id="L821">			return cache.get(activityID);</span>
+<span class="nc" id="L793">		Map&lt;ID, ActivityProperties&gt; cache = ThreadLocalCache.getMap(&quot;TORequestUtil.getActivityProperties&quot;);</span>
+<span class="nc bnc" id="L794" title="All 2 branches missed.">		if (cache.containsKey(activityID)) {</span>
+<span class="nc" id="L795">			return cache.get(activityID);</span>
 		}
 
-<span class="nc" id="L824">		ActivityProperties result = getActivityPropertiesDB(activityID);</span>
-<span class="nc" id="L825">		cache.put(activityID, result);</span>
-<span class="nc" id="L826">		return result;</span>
+<span class="nc" id="L798">		ActivityProperties result = getActivityPropertiesDB(activityID);</span>
+<span class="nc" id="L799">		cache.put(activityID, result);</span>
+<span class="nc" id="L800">		return result;</span>
 	}
 
 	private static ActivityProperties getActivityPropertiesDB(ID activityID) throws Exception { // NOSONAR
 
-<span class="nc" id="L831">		ActivityManager activityManager = WfmManagerFactory.getActivityManager();</span>
-<span class="nc" id="L832">		return activityManager.findPropertiesForActivity(activityID);</span>
+<span class="nc" id="L805">		ActivityManager activityManager = WfmManagerFactory.getActivityManager();</span>
+<span class="nc" id="L806">		return activityManager.findPropertiesForActivity(activityID);</span>
 	}
 
 	public static boolean isUseIntervalTOPool(TORequest toRequest) throws Exception { // NOSONAR
 		// If no RM License, then we never expect to use intervals pool
-<span class="nc bnc" id="L837" title="All 2 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense()) {</span>
-<span class="nc" id="L838">			return false;</span>
+<span class="nc bnc" id="L811" title="All 2 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L812">			return false;</span>
 		}
 
-<span class="nc" id="L841">		ID activityID = toRequest.getTimeOffType();</span>
-<span class="nc" id="L842">		ActivityManager activityManager = WfmManagerFactory.getActivityManager();</span>
-<span class="nc" id="L843">		ActivityProperties property = activityManager.findPropertiesForActivity(activityID);</span>
-<span class="nc bnc" id="L844" title="All 2 branches missed.">		if (property != null) {</span>
-<span class="nc" id="L845">			return property.isUseIntervalTOPool();</span>
+<span class="nc" id="L815">		ID activityID = toRequest.getTimeOffType();</span>
+<span class="nc" id="L816">		return isActivityUseIntervalTOPool(activityID);</span>
+		
+	}
+	
+	public static boolean isActivityUseIntervalTOPool(ID activityID) throws Exception { // NOSONAR
+		// If no RM License, then we never expect to use intervals pool
+<span class="nc bnc" id="L822" title="All 2 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L823">			return false;</span>
 		}
-<span class="nc" id="L847">		return false;</span>
+<span class="nc" id="L825">		ActivityProperties property = getActivityProperties(activityID);</span>
+<span class="nc bnc" id="L826" title="All 2 branches missed.">		if (property != null) {</span>
+<span class="nc" id="L827">			return property.isUseIntervalTOPool();</span>
+		}
+<span class="nc" id="L829">		return false;</span>
 	}
 
 	public static boolean isUseDailyTOPool(TORequest toRequest) throws Exception { // NOSONAR
 
 		// If no RM License, then we expect to always use daily pool
-<span class="nc bnc" id="L853" title="All 2 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense()) {</span>
-<span class="nc" id="L854">			return true;</span>
+<span class="nc bnc" id="L835" title="All 2 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L836">			return true;</span>
 		}
 
-<span class="nc" id="L857">		ID activityID = toRequest.getTimeOffType();</span>
-<span class="nc" id="L858">		ActivityManager activityManager = WfmManagerFactory.getActivityManager();</span>
-<span class="nc" id="L859">		ActivityProperties property = activityManager.findPropertiesForActivity(activityID);</span>
-<span class="nc bnc" id="L860" title="All 2 branches missed.">		if (property != null) {</span>
-<span class="nc" id="L861">			return property.isUseDailyTOPool();</span>
+<span class="nc" id="L839">		ID activityID = toRequest.getTimeOffType();</span>
+<span class="nc" id="L840">		ActivityProperties property = getActivityProperties(activityID);</span>
+<span class="nc bnc" id="L841" title="All 2 branches missed.">		if (property != null) {</span>
+<span class="nc" id="L842">			return property.isUseDailyTOPool();</span>
 		}
-<span class="nc" id="L863">		return true;</span>
+<span class="nc" id="L844">		return true;</span>
 	}
 
 	/**
@@ -869,67 +850,101 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 * @throws Exception
 	 */
 	public static int getAccountedMinutes(TORequest toRequest) throws Exception {
-<span class="nc" id="L872">		int totalMins = 0;</span>
+<span class="nc" id="L853">		int totalMins = 0;</span>
 
-<span class="nc bnc" id="L874" title="All 2 branches missed.">		if (toRequest != null) {</span>
-<span class="nc" id="L875">			TOValidationCache validationCache = new TOValidationCache(toRequest);</span>
-<span class="nc" id="L876">			TimeOffLengthCalculator calc = validationCache.getTimeOffLengthCalculator();</span>
+<span class="nc bnc" id="L855" title="All 2 branches missed.">		if (toRequest != null) {</span>
+<span class="nc" id="L856">			TOValidationCache validationCache = new TOValidationCache(toRequest);</span>
+<span class="nc" id="L857">			TimeOffLengthCalculator calc = validationCache.getTimeOffLengthCalculator();</span>
 			@SuppressWarnings(&quot;unchecked&quot;)
-<span class="nc" id="L878">			List&lt;TOChoice&gt; choices = toRequest.getRequestChoiceList();</span>
-<span class="nc bnc" id="L879" title="All 2 branches missed.">			if (!choices.isEmpty()) {</span>
-<span class="nc" id="L880">				TOChoice choice = choices.get(0);</span>
-<span class="nc" id="L881">				TOHoursPerDay hoursPerDay = TOHoursPerDayUtil.calcMinutesForToChoice(toRequest, calc, choice);</span>
-<span class="nc" id="L882">				totalMins = hoursPerDay.getTotalMinutes();</span>
+<span class="nc" id="L859">			List&lt;TOChoice&gt; choices = toRequest.getRequestChoiceList();</span>
+<span class="nc bnc" id="L860" title="All 2 branches missed.">			if (!choices.isEmpty()) {</span>
+<span class="nc" id="L861">				TOChoice choice = choices.get(0);</span>
+<span class="nc" id="L862">				TOHoursPerDay hoursPerDay = TOHoursPerDayUtil.calcMinutesForToChoice(toRequest, calc, choice);</span>
+<span class="nc" id="L863">				totalMins = hoursPerDay.getTotalMinutes();</span>
 			}
 		}
 
-<span class="nc" id="L886">		return totalMins;</span>
+<span class="nc" id="L867">		return totalMins;</span>
 	}
 
-	public static Map&lt;ID, Integer&gt; getNumberOfRequestPerPeriod(RequestCountParam countParam) throws Exception {
-<span class="nc" id="L890">		RequestDAO dao = null;</span>
+	public static Map&lt;ID, Integer&gt; getNumberOfRequestPerPeriod(RequestCountParam countParam) throws Exception {//NOSONAR
+<span class="nc" id="L871">		RequestDAO dao = null;</span>
 		try {
-<span class="nc" id="L892">			dao = new RequestDAO(Request.REQUESTTYPE_FLEXTIME, Request.DL_BASIC);</span>
-<span class="nc" id="L893">			return dao.getNumberOfRequestPerPeriod(countParam);</span>
+<span class="nc" id="L873">			dao = new RequestDAO(Request.REQUESTTYPE_FLEXTIME, Request.DL_BASIC);</span>
+<span class="nc" id="L874">			return dao.getNumberOfRequestPerPeriod(countParam);</span>
 		} finally {
-<span class="nc bnc" id="L895" title="All 4 branches missed.">			if (dao != null) {</span>
-<span class="nc" id="L896">				dao.cleanUp();</span>
+<span class="nc bnc" id="L876" title="All 4 branches missed.">			if (dao != null) {</span>
+<span class="nc" id="L877">				dao.cleanUp();</span>
 			}
 		}
 	}
 
-	public static ID getValidChoiceIdCanBeApproved(TORequest toReq) {
-<span class="nc" id="L902">		ID apprChoiceID = null;</span>
-<span class="nc" id="L903">		List&lt;TOChoice&gt; choiceList = toReq.getRequestChoiceList();</span>
-<span class="nc" id="L904">		int maxUserRank = choiceList.size();</span>
-		//Since TO choices are sorted by user rank so we start with the smallest userRank
-<span class="nc" id="L906">		int indexUserRank = 0;</span>
-<span class="nc" id="L907">		boolean foundValidChoideId = false;</span>
-<span class="nc bnc" id="L908" title="All 4 branches missed.">		while (indexUserRank &lt; maxUserRank &amp;&amp; !foundValidChoideId) {</span>
-<span class="nc" id="L909">			TOChoice choice = choiceList.get(indexUserRank);</span>
-<span class="nc" id="L910">			Collection&lt;ValidationResult&gt; listValidator = choice.getValidationResults(true);</span>
-<span class="nc bnc" id="L911" title="All 2 branches missed.">			if (listValidator.isEmpty()) {</span>
-<span class="nc" id="L912">				apprChoiceID = choice.getID();</span>
-<span class="nc" id="L913">				foundValidChoideId = true;</span>
-			} else {
-<span class="nc" id="L915">				indexUserRank++;</span>
-			}
-<span class="nc" id="L917">		}</span>
-<span class="nc" id="L918">		return apprChoiceID;</span>
-	}
 
 	public static boolean checkHasSomeSpecificHardRulesViolated(ValidationResult hardValResult) {
-<span class="nc" id="L922">		boolean toContainedInSchedule = hardValResult.getMessageResource().equals(RmEjbBundleKey.TO_CONTAINED_IN_SCHEDTO);</span>
-<span class="nc" id="L923">		boolean toChoiceBeforeEmpStart = hardValResult.getMessageResource().equals(RmEjbBundleKey.TO_TIMEOFF_BEFORE_START);</span>
-<span class="nc" id="L924">		boolean toChoiceAfterEmpEnd = hardValResult.getMessageResource().equals(RmEjbBundleKey.TO_TIMEOFF_AFTER_TERM);</span>
-<span class="nc" id="L925">		boolean toBidChoiceViolateMinPeriod = hardValResult.getMessageResource().equals(</span>
+<span class="nc" id="L884">		boolean toContainedInSchedule = hardValResult.getMessageResource().equals(RmEjbBundleKey.TO_CONTAINED_IN_SCHEDTO);</span>
+<span class="nc" id="L885">		boolean toChoiceBeforeEmpStart = hardValResult.getMessageResource().equals(RmEjbBundleKey.TO_TIMEOFF_BEFORE_START);</span>
+<span class="nc" id="L886">		boolean toChoiceAfterEmpEnd = hardValResult.getMessageResource().equals(RmEjbBundleKey.TO_TIMEOFF_AFTER_TERM);</span>
+<span class="nc" id="L887">		boolean toBidChoiceViolateMinPeriod = hardValResult.getMessageResource().equals(</span>
 				RmEjbBundleKey.TIMEOFF_BID_TOCHOICE_VIOLATE_MIN_PERIOD_VALUE);
-<span class="nc" id="L927">		boolean toBidChoiceViolateMaxPeriod = hardValResult.getMessageResource().equals(</span>
+<span class="nc" id="L889">		boolean toBidChoiceViolateMaxPeriod = hardValResult.getMessageResource().equals(</span>
 				RmEjbBundleKey.TIMEOFF_BID_TOCHOICE_VIOLATE_MAX_PERIOD_VALUE);
-<span class="nc bnc" id="L929" title="All 4 branches missed.">		boolean toBidChoiceViolate = toBidChoiceViolateMinPeriod || toBidChoiceViolateMaxPeriod;</span>
-<span class="nc bnc" id="L930" title="All 4 branches missed.">		boolean empWorkingDateViolate = toChoiceBeforeEmpStart || toChoiceAfterEmpEnd;</span>
-<span class="nc bnc" id="L931" title="All 6 branches missed.">		boolean hasSomeSpecificHardRulesViolated = toContainedInSchedule || empWorkingDateViolate || toBidChoiceViolate;</span>
-<span class="nc" id="L932">		return hasSomeSpecificHardRulesViolated;</span>
+<span class="nc bnc" id="L891" title="All 4 branches missed.">		boolean toBidChoiceViolate = toBidChoiceViolateMinPeriod || toBidChoiceViolateMaxPeriod;</span>
+<span class="nc bnc" id="L892" title="All 4 branches missed.">		boolean empWorkingDateViolate = toChoiceBeforeEmpStart || toChoiceAfterEmpEnd;</span>
+<span class="nc bnc" id="L893" title="All 6 branches missed.">		boolean hasSomeSpecificHardRulesViolated = toContainedInSchedule || empWorkingDateViolate || toBidChoiceViolate;</span>
+<span class="nc" id="L894">		return hasSomeSpecificHardRulesViolated;</span>
 	}
+
+	/*
+	 * doesActivityUseRequiredPayPeriodHours. See if the timeoff activity uses Required Pay Period Hours feature.
+	 * RM Advanced license only.
+	 */
+	public static boolean doesActivityUseRequiredPayPeriodHours(TORequest toRequest) {
+		// If no RM License, then we never expect to use RequiredPayPeriodHours
+<span class="nc bnc" id="L903" title="All 2 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L904">			return false;</span>
+		}
+
+<span class="nc" id="L907">		ID activityID = toRequest.getTimeOffType();</span>
+<span class="nc" id="L908">		return doesActivityUseRequiredPayPeriodHours(activityID);</span>
+
+	}
+
+	public static boolean doesActivityUseRequiredPayPeriodHours(ID activityID) {
+		try {
+<span class="nc bnc" id="L914" title="All 2 branches missed.">			if (!LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L915">				return false;</span>
+			}
+
+<span class="nc" id="L918">			ActivityProperties property = getActivityProperties(activityID);</span>
+<span class="nc bnc" id="L919" title="All 2 branches missed.">			if (property != null) {</span>
+<span class="nc" id="L920">				return property.getUseRequiredPayPeriodHours();</span>
+			}
+<span class="nc" id="L922">			return false;</span>
+<span class="nc" id="L923">		} catch (Exception ex) {</span>
+<span class="nc" id="L924">			LOG.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L925">			return false;</span>
+		}
+	}
+	
+
+	public static Map&lt;TimeRange, Integer&gt; getApprovedChoiceCountForQuarters(ID empID, Date start, Date end, 
+			TimeZone orgTimeZone, ID activityID) 
+					throws JdmoException {
+
+<span class="nc" id="L934">		TORequestDAO dao = null;</span>
+		try {
+<span class="nc" id="L936">			dao = new TORequestDAO(TORequest.DL_BASIC);</span>
+<span class="nc" id="L937">			return dao.getApprovedChoiceCountForQuarter(empID, start, end, orgTimeZone, activityID);</span>
+		} finally {
+<span class="nc bnc" id="L939" title="All 4 branches missed.">			if(dao != null){</span>
+<span class="nc" id="L940">				dao.cleanUp();</span>
+			}
+		}
+	
+	}
+	
+	
+	
+	
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

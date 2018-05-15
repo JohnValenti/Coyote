@@ -1,110 +1,156 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>MakeupTimeComplyWithHOOValidationRule.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.flextime.validation</a> &gt; <span class="el_source">MakeupTimeComplyWithHOOValidationRule.java</span></div><h1>MakeupTimeComplyWithHOOValidationRule.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.ejb.rm.requests.flextime.validation;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.TimeZone;
 
 import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.LocalDate;
 import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.logging.Category;
-import com.bluepumpkin.ejb.bbm.workresource.model.OrganizationHOO;
+import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
+import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
+import com.bluepumpkin.ejb.bbm.effectivity.TimePeriod;
+import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
+import com.bluepumpkin.ejb.bbm.vo.HOOPeriod;
+import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
+import com.bluepumpkin.ejb.bbm.workresource.model.WorkResourceAssignment;
 import com.bluepumpkin.ejb.rm.Log;
 import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
-import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
+import com.bluepumpkin.ejb.rm.requests.custshift.validation.CustShiftValidationCache;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
 import com.bluepumpkin.ejb.rm.util.RmUtil;
+import com.verint.ejb.wfm.WfmManagerFactory;
 
 /**
  * This is a soft validation rule to validate all makeups of a Flex Time Request
  * must be inside the Hours Of Operation
  */
-<span class="nc" id="L26">public class MakeupTimeComplyWithHOOValidationRule implements Validator {</span>
+<span class="nc" id="L38">public class MakeupTimeComplyWithHOOValidationRule implements Validator {</span>
 	public static final String MAKEUP_TIME_COMPLY_HOO = &quot;MAKEUP_TIME_COMPLY_HOO&quot;;
 
-<span class="nc" id="L29">	public static final ID RULE_ID = new ID(-194069);</span>
-<span class="nc" id="L30">	private static final String CLASS_NAME = MakeupTimeComplyWithHOOValidationRule.class.getName();</span>
-<span class="nc" id="L31">	private static final Category LOG = Log.initCategory(CLASS_NAME);</span>
+<span class="nc" id="L41">	public static final ID RULE_ID = new ID(-194069);</span>
+<span class="nc" id="L42">	private static final String CLASS_NAME = MakeupTimeComplyWithHOOValidationRule.class.getName();</span>
+<span class="nc" id="L43">	private static final Category LOG = Log.initCategory(CLASS_NAME);</span>
 
 	@Override
 	public ValidationResult validate(Validatable validatable) throws Exception {
-<span class="nc" id="L35">		LOG.debug(RmUtil.dumpEnterMethod(&quot;validate&quot;, validatable));</span>
-<span class="nc" id="L36">		TORequest tor = (TORequest) validatable;</span>
-<span class="nc" id="L37">		ValidationResult result = null;</span>
+<span class="nc" id="L47">		LOG.debug(RmUtil.dumpEnterMethod(&quot;validate&quot;, validatable));</span>
 
-		// Find all makeup time ranges in this flex time
-<span class="nc" id="L40">		List&lt;TimeRange&gt; makeupTimeRanges = getMakeupDurations(tor);</span>
-<span class="nc" id="L41">		Date firstDate = makeupTimeRanges.get(0).getStartDate();</span>
-<span class="nc" id="L42">		Date lastDate = makeupTimeRanges.get(makeupTimeRanges.size() - 1).getEndDate();</span>
-<span class="nc" id="L43">		TimeRange makeupRange = new TimeRange(firstDate, lastDate);</span>
+<span class="nc" id="L49">		TORequest tor = (TORequest) validatable;</span>
 
-<span class="nc" id="L45">		Collection&lt;OrganizationHOO&gt; orgHOOs = getHOOAssignmentsDuringPeriod(tor, makeupRange);</span>
-<span class="nc" id="L46">		TimeZone orgTZ = getOrgTimeZone(tor);</span>
+		ValidationResult result;
 
-		//check each makeup time range against the HOOs
-<span class="nc bnc" id="L49" title="All 2 branches missed.">		if (!isMakeupsWithinHOO(orgTZ, makeupTimeRanges, orgHOOs)) {</span>
-			//violate the rule
-<span class="nc" id="L51">			result = ValidationUtil.setSoftValidationResult(tor, RmEjbBundleKey.FLEX_REQ_MAKE_UP_MUST_BE_WITHIN_HOO,</span>
-					CLASS_NAME);
+<span class="nc bnc" id="L53" title="All 2 branches missed.">		if (!validate(tor)) {</span>
+<span class="nc" id="L54">			result = ValidationUtil.setSoftValidationResult(tor, RmEjbBundleKey.FLEX_REQ_MAKE_UP_MUST_BE_WITHIN_HOO, CLASS_NAME);</span>
+		} else {
+<span class="nc" id="L56">			result = null;</span>
 		}
 
-<span class="nc" id="L55">		LOG.debug(RmUtil.dumpExitMethod(&quot;validate&quot;, result));</span>
-<span class="nc" id="L56">		return result;</span>
+<span class="nc" id="L59">		LOG.debug(RmUtil.dumpExitMethod(&quot;validate&quot;, result));</span>
+<span class="nc" id="L60">		return result;</span>
 	}
 
-	private boolean isMakeupsWithinHOO(TimeZone orgTZ, List&lt;TimeRange&gt; makeupDurations,
-			Collection&lt;OrganizationHOO&gt; orgHOOs) {
-<span class="nc bnc" id="L61" title="All 2 branches missed.">		for (TimeRange makeup : makeupDurations) {</span>
-<span class="nc" id="L62">			TimeRange hooTimeRange = getHOOOfGivenDay(orgTZ, makeup.getStartDate(), orgHOOs);</span>
+	private boolean validate(TORequest toReq) throws Exception {
 
-<span class="nc bnc" id="L64" title="All 6 branches missed.">			if (hooTimeRange == null || (!makeup.equals(hooTimeRange) &amp;&amp; !makeup.isInside(hooTimeRange))) {</span>
-<span class="nc" id="L65">				return false;</span>
+<span class="nc" id="L65">		boolean valid = true;</span>
+
+<span class="nc" id="L67">		List&lt;TimeRange&gt; makeupTimeRanges = getMakeupDurations(toReq);</span>
+
+<span class="nc bnc" id="L69" title="All 2 branches missed.">		for (TimeRange makeupTimeRange : makeupTimeRanges) {</span>
+
+<span class="nc" id="L71">			Date makeupStartRange = makeupTimeRange.getStartDate();</span>
+<span class="nc" id="L72">			Date makeupEndRange = makeupTimeRange.getEndDate();</span>
+
+			// Find organization for shift duration
+<span class="nc" id="L75">			Organization org = getOrganization(toReq, makeupStartRange, makeupEndRange);</span>
+
+			// Find organization HOO for for shift duration
+<span class="nc" id="L78">			HOOPeriod orgHOOs = getHOOPeriod(org.getID(), makeupStartRange, makeupEndRange);</span>
+
+
+<span class="nc bnc" id="L81" title="All 2 branches missed.">			if (orgHOOs == null) {</span>
+<span class="nc" id="L82">				valid = false;</span>
+			} else {
+<span class="nc" id="L84">				Collection&lt;TimePeriod&gt; pClosedTimes = orgHOOs.getClosePeriods(makeupStartRange, makeupEndRange);</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">				for (TimePeriod closedTime: pClosedTimes) {</span>
+<span class="nc bnc" id="L86" title="All 2 branches missed.">					if (makeupTimeRange.getOverlapDuration(new TimeRange(closedTime.getStartTime(), closedTime.getEndTime())) &gt; 0) {</span>
+<span class="nc" id="L87">						valid = false;</span>
+<span class="nc" id="L88">						break;</span>
+					}
+<span class="nc" id="L90">				}</span>
+
 			}
 
-<span class="nc" id="L68">		}</span>
-
-<span class="nc" id="L70">		return true;</span>
-	}
-
-	private TimeRange getHOOOfGivenDay(TimeZone tz, Date dateToGetHOO, Collection&lt;OrganizationHOO&gt; organizationHOOs) {
-<span class="nc bnc" id="L74" title="All 2 branches missed.">		for (OrganizationHOO hoo : organizationHOOs) {</span>
-<span class="nc bnc" id="L75" title="All 4 branches missed.">			if (hoo.isActive() &amp;&amp; RequestUtil.isDateBetween(dateToGetHOO, hoo.getStartTime(), hoo.getEndTime())) {</span>
-				//Opening hour
-<span class="nc" id="L77">				Date open = hoo.getDayOpen(dateToGetHOO, tz);</span>
-<span class="nc" id="L78">				Date close = hoo.getDayClose(dateToGetHOO, tz);</span>
-				//closing hour
-<span class="nc bnc" id="L80" title="All 4 branches missed.">				if (open != null &amp;&amp; close != null) {</span>
-<span class="nc" id="L81">					return new TimeRange(open, close);</span>
-				}
+<span class="nc bnc" id="L94" title="All 2 branches missed.">			if (!valid) {</span>
+<span class="nc" id="L95">				break;</span>
 			}
-<span class="nc" id="L84">		}</span>
+<span class="nc" id="L97">		}</span>
 
-<span class="nc" id="L86">		return null;</span>
+<span class="nc" id="L99">		return valid;</span>
 	}
 
-	protected TimeZone getOrgTimeZone(TORequest tor) throws Exception {
-<span class="nc" id="L90">		return getFTValidationCache(tor).getOrg().getTimeZone();</span>
+	protected List&lt;TimeRange&gt; getMakeupDurations(TORequest toReq) throws Exception {
+<span class="nc" id="L103">		return this.getFTValidationCache(toReq).getMakeupDurations();</span>
 	}
 
-	protected ID getOrgID(TORequest tor) {
-<span class="nc" id="L94">		return getFTValidationCache(tor).getEmployeeID();</span>
+
+	protected HOOPeriod getHOOPeriod(ID orgId, Date start, Date end) throws Exception {
+		HOOPeriod result;
+<span class="nc" id="L109">		WorkResourceManager wrm = getWorkResourceManager();</span>
+
+		@SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L112">		Map&lt;ID, HOOPeriod&gt; mapOrgHOOs = wrm.getHOOPeriod(Collections.singleton(orgId), start, end);</span>
+<span class="nc bnc" id="L113" title="All 6 branches missed.">		if (mapOrgHOOs != null &amp;&amp; mapOrgHOOs.containsKey(orgId) &amp;&amp; mapOrgHOOs.get(orgId) != null) {</span>
+<span class="nc" id="L114">			result = mapOrgHOOs.get(orgId);</span>
+		} else {
+<span class="nc" id="L116">			result = null;</span>
+		}
+<span class="nc" id="L118">		return result;</span>
 	}
 
-	protected Collection&lt;OrganizationHOO&gt; getHOOAssignmentsDuringPeriod(TORequest tor, TimeRange timeORange)
-			throws Exception {
-<span class="nc" id="L99">		return getFTValidationCache(tor).getHOOAssignmentsDuringPeriod(timeORange);</span>
+
+	protected Organization getOrganization(TORequest toReq, Date start, Date end) throws Exception {
+<span class="nc" id="L123">		WorkResourceManager wrm = getWorkResourceManager();</span>
+		@SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L125">		Map&lt;ID, List&lt;WorkResourceAssignment&gt;&gt; empOrgAssignments = wrm.getValidWorkResourceAssignments(</span>
+<span class="nc" id="L126">				Collections.singleton(toReq.getEmployeeID()), new LocalDate(start, TimeZone.getTimeZone(&quot;GMT&quot;)), new LocalDate(end, TimeZone.getTimeZone(&quot;GMT&quot;)), false);</span>
+
+<span class="nc" id="L128">		ID orgId = Organization.ROOT_ORG_ID_OBJ;</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">		if (empOrgAssignments.containsKey(toReq.getEmployeeID())) {</span>
+<span class="nc" id="L130">			List&lt;WorkResourceAssignment&gt; assgns = empOrgAssignments.get(toReq.getEmployeeID());</span>
+<span class="nc bnc" id="L131" title="All 4 branches missed.">			if (assgns != null &amp;&amp; !assgns.isEmpty()) {</span>
+<span class="nc" id="L132">				orgId = assgns.get(0).getOrganizationID();</span>
+			}
+		}
+
+<span class="nc" id="L136">		return getFTValidationCache(toReq).getOrganizationByID(orgId);</span>
 	}
 
-	protected List&lt;TimeRange&gt; getMakeupDurations(TORequest tor) throws Exception {
-<span class="nc" id="L103">		return getFTValidationCache(tor).getMakeupDurations();</span>
+	protected FTValidationCache getFTValidationCache(TORequest toRequest) {
+<span class="nc" id="L140">		return (FTValidationCache) toRequest.getCache();</span>
 	}
 
-	private FTValidationCache getFTValidationCache(TORequest toRequest) {
-<span class="nc" id="L107">		return (FTValidationCache) toRequest.getCache();</span>
+	protected CustShiftValidationCache getCustShiftValidationCache(CustShiftReq custShiftReq) {
+<span class="nc" id="L144">		return new CustShiftValidationCache(custShiftReq);</span>
 	}
+
+	protected WorkResourceManager getWorkResourceManager() throws BbmEJBCreateException {
+<span class="nc" id="L148">		return BbmManagerFactory.getWorkResourceManager(false);</span>
+	}
+
+	protected ScheduleAccessManager getScheduleAccessManager() throws BbmEJBCreateException {
+<span class="nc" id="L152">		return WfmManagerFactory.getScheduleAccessManager();</span>
+	}
+
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

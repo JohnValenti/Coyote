@@ -7,11 +7,14 @@
 package com.bluepumpkin.ejb.rm.util;
 
 import java.rmi.RemoteException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -19,17 +22,13 @@ import java.util.Map;
 
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.common.util.StringUtil;
 import com.bluepumpkin.ejb.bbm.BbmEJBCreateException;
-import com.bluepumpkin.ejb.bbm.activity.model.Activity;
 import com.bluepumpkin.ejb.bbm.activity.model.Event;
-import com.bluepumpkin.ejb.bbm.activity.model.EventUtils;
-import com.bluepumpkin.ejb.bbm.activity.model.SimpleEvent;
 import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
-import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodUtil;
 import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
-import com.bluepumpkin.ejb.bbm.schedule.model.BbmSchedulePublishingException;
 import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
 import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
 import com.bluepumpkin.ejb.bbm.schedule.model.UnavailabilityEvent;
@@ -43,6 +42,7 @@ import com.bluepumpkin.ejb.rm.cache.CacheUtilRM;
 import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
 import com.bluepumpkin.ejb.rm.l10n.RmEjbLogBundleKey;
 import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.Timeline;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
@@ -55,6 +55,9 @@ import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.ejb.ShiftSwapItemDAO;
 import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
 import com.bluepumpkin.ejb.rm.setup.settings.ejb.OrganizationConfigManager;
 import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.ejb.rm.util.swap.CachedResultScheduleReaderWriterImpl;
+import com.bluepumpkin.ejb.rm.util.swap.ScheduleReaderWriter;
+import com.bluepumpkin.ejb.rm.util.swap.SwapResult;
 import com.verint.ejb.wfm.WfmManagerFactory;
 
 /**
@@ -63,16 +66,16 @@ import com.verint.ejb.wfm.WfmManagerFactory;
  * To change this generated comment go to
  * Window&gt;Preferences&gt;Java&gt;Code Generation&gt;Code and Comments
  */
-<span class="nc" id="L66">public class ShiftSwapRequestUtil {</span>
-<span class="nc" id="L67">	private static Category m_cat = Log.initCategory(ShiftSwapRequestUtil.class.getName());</span>
+<span class="nc" id="L69">public class ShiftSwapRequestUtil {</span>
+<span class="nc" id="L70">	private static Category m_cat = Log.initCategory(ShiftSwapRequestUtil.class.getName());</span>
 
-<span class="nc" id="L69">	private static String m_className = ShiftSwapRequestUtil.class.getName();</span>
+<span class="nc" id="L72">	private static String m_className = ShiftSwapRequestUtil.class.getName();</span>
 
 	public static Collection getCampWorkResAssnsForSSItem(ShiftSwapItem ssItem)
 			throws Exception
 	{
-<span class="nc" id="L74">		return RequestUtil.getCampaignAssnsForWorkResDuringPeriod(ssItem.getEmployeeID(), ssItem.getStartDate(),</span>
-<span class="nc" id="L75">				ssItem.getEndDate());</span>
+<span class="nc" id="L77">		return RequestUtil.getCampaignAssnsForWorkResDuringPeriod(ssItem.getEmployeeID(), ssItem.getStartDate(),</span>
+<span class="nc" id="L78">				ssItem.getEndDate());</span>
 	}
 
 	/**
@@ -82,40 +85,40 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 * @return A Pair. First element == employee ID set; Second Element == employee List
 	 * @throws Exception
 	 */
-	public static Pair getEmployeesOneCanSwapWith(ID empID) throws Exception
+	public static Pair getEmployeesOneCanSwapWith(ID empID, Date effectiveDate) throws Exception
 	{
-<span class="nc" id="L87">		List swappableOrgIDs = getSwappableOrgIDsForEmp(empID);</span>
-<span class="nc bnc" id="L88" title="All 2 branches missed.">		if (swappableOrgIDs.isEmpty()) {</span>
-<span class="nc" id="L89">			return new Pair(Collections.EMPTY_SET, Collections.EMPTY_LIST);</span>
+<span class="nc" id="L90">		List swappableOrgIDs = getSwappableOrgIDsForEmp(empID, effectiveDate);</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">		if (swappableOrgIDs.isEmpty()) {</span>
+<span class="nc" id="L92">			return new Pair(Collections.emptySet(), Collections.emptyList());</span>
 		}
 
 		// Obtain employees for each swappable organization.
 		// for each swappable organization in list
-<span class="nc" id="L94">		Collection employees = new ArrayList(100);</span>
-<span class="nc bnc" id="L95" title="All 2 branches missed.">		for (Iterator itr = swappableOrgIDs.iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L96">			employees.addAll(RequestUtil.getEmployeesInOrganization((ID) itr.next(), false));</span>
+<span class="nc" id="L97">		Collection employees = new ArrayList(100);</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">		for (Iterator itr = swappableOrgIDs.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L99">			employees.addAll(RequestUtil.getEmployeesInOrganization((ID) itr.next(), false, effectiveDate, effectiveDate));</span>
 		}
 
-<span class="nc" id="L99">		HashSet empIDsSet = new HashSet(100);</span>
-<span class="nc" id="L100">		ArrayList empList = new ArrayList(100);</span>
+<span class="nc" id="L102">		HashSet empIDsSet = new HashSet(100);</span>
+<span class="nc" id="L103">		ArrayList empList = new ArrayList(100);</span>
 		// for each employee in collection
-<span class="nc bnc" id="L102" title="All 2 branches missed.">		for (Iterator itr = employees.iterator(); itr.hasNext();) {</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">		for (Iterator itr = employees.iterator(); itr.hasNext();) {</span>
 			// get employee
-<span class="nc" id="L104">			Employee emp = (Employee) itr.next();</span>
+<span class="nc" id="L107">			Employee emp = (Employee) itr.next();</span>
 
 			// do not add employee we are filtering for
-<span class="nc bnc" id="L107" title="All 2 branches missed.">			if (emp.getID().equals(empID)) {</span>
-<span class="nc" id="L108">				continue;</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">			if (emp.getID().equals(empID)) {</span>
+<span class="nc" id="L111">				continue;</span>
 			}
 
 			// add if employee doesn't exist in map.
-<span class="nc bnc" id="L112" title="All 2 branches missed.">			if (!empIDsSet.contains(emp.getID())) {</span>
-<span class="nc" id="L113">				empIDsSet.add(emp.getID());</span>
-<span class="nc" id="L114">				empList.add(emp);</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">			if (!empIDsSet.contains(emp.getID())) {</span>
+<span class="nc" id="L116">				empIDsSet.add(emp.getID());</span>
+<span class="nc" id="L117">				empList.add(emp);</span>
 			}
-<span class="nc" id="L116">		}</span>
+<span class="nc" id="L119">		}</span>
 
-<span class="nc" id="L118">		return new Pair(empIDsSet, empList);</span>
+<span class="nc" id="L121">		return new Pair(empIDsSet, empList);</span>
 	}
 
 	/**
@@ -141,7 +144,7 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	public static ShiftAssignment getShiftAssignForSSItem(ShiftSwapItem ssItem, boolean published,
 			boolean aligned, ScheduleAccessManager sam, ShiftSwapValidationCache ssCache) throws Exception
 	{
-<span class="nc" id="L144">		return getShiftAssignForSSItem(ssItem, published, aligned, false, sam, ssCache);</span>
+<span class="nc" id="L147">		return getShiftAssignForSSItem(ssItem, published, aligned, false, sam, ssCache);</span>
 	}
 
 	/**
@@ -165,9 +168,8 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 */
 	public static ShiftAssignment getShiftAssignForSSItem(ShiftSwapItem ssItem, ScheduleAccessManager sam,
 			ShiftSwapValidationCache ssCache, boolean published,
-			boolean aligned) throws Exception
-	{
-<span class="nc" id="L170">		return getShiftAssignForSSItem(ssItem, sam, ssCache, published, aligned, false, false);</span>
+			boolean aligned) throws Exception {
+<span class="nc" id="L172">		return getShiftAssignForSSItem(ssItem, sam, ssCache, published, aligned, false, false);</span>
 	}
 
 	//Silk 80581
@@ -199,21 +201,42 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 			boolean aligned, boolean shiftsToStartInsideBoundary, ScheduleAccessManager sam,
 			ShiftSwapValidationCache ssCache) throws Exception {
 		//Always enforce the a check to see if the shiftswap item is of type Shift; we do not want to return wshift for Time-off item.
-<span class="nc" id="L202">		return getShiftAssignForSSItem(ssItem, published, aligned, shiftsToStartInsideBoundary, false, sam, ssCache, true);</span>
+<span class="nc" id="L204">		return getShiftAssignForSSItem(ssItem, published, aligned, shiftsToStartInsideBoundary, false, sam, ssCache, true);</span>
 	}
 
 	public static ShiftAssignment getShiftAssignForSSItem(ShiftSwapItem ssItem, boolean published,
 			boolean aligned, boolean shiftsToStartInsideBoundary, ScheduleAccessManager sam,
 			ShiftSwapValidationCache ssCache, boolean ssItemShiftChk) throws Exception {
 		//Always enforce the a check to see if the shiftswap item is of type Shift; we do not want to return wshift for Time-off item.
-<span class="nc" id="L209">		return getShiftAssignForSSItem(ssItem, published, aligned, shiftsToStartInsideBoundary, false, sam, ssCache, ssItemShiftChk);</span>
+<span class="nc" id="L211">		return getShiftAssignForSSItem(ssItem, published, aligned, shiftsToStartInsideBoundary, false, sam, ssCache, ssItemShiftChk);</span>
 	}
 
 	protected static ShiftAssignment getShiftAssignForSSItem(ShiftSwapItem ssItem, boolean published,
 			boolean aligned, boolean shiftsToStartInsideBoundary, boolean keepOverlaps, ScheduleAccessManager sam,
 			ShiftSwapValidationCache ssCache) throws Exception {
 		//Always enforce the a check to see if the shiftswap item is of type Shift; we do not want to return wshift for Time-off item.
-<span class="nc" id="L216">		return getShiftAssignForSSItem(ssItem, published, aligned, shiftsToStartInsideBoundary, keepOverlaps, sam, ssCache, false);</span>
+<span class="nc" id="L218">		return getShiftAssignForSSItem(ssItem, published, aligned, shiftsToStartInsideBoundary, keepOverlaps, sam, ssCache, false);</span>
+	}
+
+	protected static TimeRange getOrgDayBoundary(ShiftSwapItem ssItem, ShiftSwapValidationCache ssCache) throws Exception{
+<span class="nc" id="L222">		Date startDate = ssItem.getStartDate();</span>
+<span class="nc" id="L223">		Date endDate = ssItem.getEndDate();</span>
+
+		// get the organization for the employee associated with SSItem.
+<span class="nc" id="L226">		Organization org = null;</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">		if (ssCache != null) {</span>
+<span class="nc" id="L228">			org = ssCache.getOrganizationForEmployeeDuringPeriod(ssItem.getEmployeeID(),</span>
+					startDate, endDate);
+		} else {
+<span class="nc" id="L231">			org = ValidationUtil.getOrganizationForEmployeeDuringPeriod(ssItem.getEmployeeID(),</span>
+					startDate, endDate);
+		}
+
+		// set startDate and endDate to org day start and end.
+<span class="nc" id="L236">		startDate = TOCalcUtil.getDateForOrgDayStart(org, startDate);</span>
+<span class="nc" id="L237">		endDate = TOCalcUtil.getDateForOrgDayEnd(org, startDate);</span>
+
+<span class="nc" id="L239">		return new TimeRange(startDate,endDate);</span>
 	}
 
 	//QC87812 need to compare the end date of the SSItem being kept with the start date of the new shift assignment
@@ -225,47 +248,37 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 		// Check this only if ssItemShiftChk=true; if SSItem.swapItemType != ShiftSwapItem.SWAPITEMTYPE_SHIFT
 		//We want to also get a shift that aligns with Time-off for a tentatively approved request that needs to be approved.
 		//Sameet Sept 2010 ; QC 57873
-<span class="nc bnc" id="L228" title="All 4 branches missed.">		if (ssItemShiftChk &amp;&amp; !ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-<span class="nc" id="L229">			return null;</span>
+<span class="nc bnc" id="L251" title="All 4 branches missed.">		if (ssItemShiftChk &amp;&amp; !ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L252">			return null;</span>
 		}
 
-<span class="nc" id="L232">		Date startDate = ssItem.getStartDate();</span>
-<span class="nc" id="L233">		Date endDate = ssItem.getEndDate();</span>
+<span class="nc" id="L255">		Date startDate = ssItem.getStartDate();</span>
+<span class="nc" id="L256">		Date endDate = ssItem.getEndDate();</span>
 		// if searching for shifts on the same org day as ssItem and not aligned with ssItem
-<span class="nc bnc" id="L235" title="All 2 branches missed.">		if (!aligned) {</span>
-			// get the organization for the employee associated with SSItem.
-<span class="nc" id="L237">			Organization org = null;</span>
-<span class="nc bnc" id="L238" title="All 2 branches missed.">			if (ssCache != null) {</span>
-<span class="nc" id="L239">				org = ssCache.getOrganizationForEmployeeDuringPeriod(ssItem.getEmployeeID(),</span>
-						startDate, endDate);
-			} else {
-<span class="nc" id="L242">				org = ValidationUtil.getOrganizationForEmployeeDuringPeriod(ssItem.getEmployeeID(),</span>
-						startDate, endDate);
-			}
-
-			// set startDate and endDate to org day start and end.
-<span class="nc" id="L247">			startDate = TOCalcUtil.getDateForOrgDayStart(org, startDate);</span>
-<span class="nc" id="L248">			endDate = TOCalcUtil.getDateForOrgDayEnd(org, startDate);</span>
+<span class="nc bnc" id="L258" title="All 2 branches missed.">		if (!aligned) {</span>
+<span class="nc" id="L259">			TimeRange t = getOrgDayBoundary(ssItem,ssCache);</span>
+<span class="nc" id="L260">			startDate=t.getStartDate();</span>
+<span class="nc" id="L261">			endDate=t.getEndDate();</span>
 		}
 
 		// get the employee ID
-<span class="nc" id="L252">		ID empID = ssItem.getEmployeeID();</span>
-<span class="nc bnc" id="L253" title="All 2 branches missed.">		sam = (sam == null) ? WfmManagerFactory.getScheduleAccessManager() : sam;</span>
+<span class="nc" id="L265">		ID empID = ssItem.getEmployeeID();</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">		sam = (sam == null) ? WfmManagerFactory.getScheduleAccessManager() : sam;</span>
 
 		// search in the published schedule.
 		@SuppressWarnings(&quot;rawtypes&quot;)
-<span class="nc" id="L257">		Collection shiftAssignments = null;</span>
-<span class="nc bnc" id="L258" title="All 2 branches missed.">		if (published) {</span>
-<span class="nc" id="L259">			shiftAssignments = sam.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
+<span class="nc" id="L270">		Collection shiftAssignments = null;</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">		if (published) {</span>
+<span class="nc" id="L272">			shiftAssignments = sam.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
 					empID, startDate, endDate);
 		} else {
-<span class="nc" id="L262">			shiftAssignments = sam.getEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
+<span class="nc" id="L275">			shiftAssignments = sam.getEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
 					empID, startDate, endDate);
 		}
 
 		// if none found, return null
-<span class="nc bnc" id="L267" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
-<span class="nc" id="L268">			return null;</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
+<span class="nc" id="L281">			return null;</span>
 		}
 
 		//Silk 80581
@@ -278,96 +291,104 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 		//QC87812: remove shifts from prev org day, unless they overlap with ssItem if incOverlapFromPrevDay is true
 
 		//QC172250 Port forward of QC 168199
-<span class="nc bnc" id="L281" title="All 2 branches missed.">		if (shiftsToStartInsideBoundary) {</span>
-<span class="nc bnc" id="L282" title="All 2 branches missed.">			if (!aligned) {</span>
-<span class="nc bnc" id="L283" title="All 2 branches missed.">				if (keepOverlaps) {</span>
-<span class="nc" id="L284">					getIsTwoOrMoreShiftStartsBetweenRange(shiftAssignments,</span>
-<span class="nc" id="L285">							ssItem.getStartDate(), startDate, endDate, true);</span>
+<span class="nc bnc" id="L294" title="All 2 branches missed.">		if (shiftsToStartInsideBoundary) {</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">			if (!aligned) {</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">				if (keepOverlaps) {</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">					if (ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L298">						getIsTwoOrMoreShiftStartsBetweenRange(shiftAssignments, ssItem.getStartDate(),</span>
+								startDate, endDate, true);
+					} else {
+<span class="nc" id="L301">						getClosestShiftMatchForOneWayShiftSwap(ssItem, shiftAssignments, startDate, endDate);</span>
+					}
 				} else {
-<span class="nc" id="L287">					getIsTwoOrMoreShiftStartsBetweenRange(shiftAssignments,</span>
-							null, startDate, endDate, true);
+<span class="nc bnc" id="L304" title="All 2 branches missed.">					if (ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L305">						getIsTwoOrMoreShiftStartsBetweenRange(shiftAssignments,</span>
+								null, startDate, endDate, true);
+					} else {
+<span class="nc" id="L308">						getClosestShiftMatchForOneWayShiftSwap(ssItem, shiftAssignments, startDate, endDate);</span>
+					}
 				}
 			} else {
-<span class="nc" id="L291">				retainShiftsWhichOverlapsWithSSItemStartDate(ssItem,</span>
+<span class="nc" id="L312">				retainShiftsWhichOverlapsWithSSItemStartDate(ssItem,</span>
 						shiftAssignments);
 			}
 		}
-<span class="nc bnc" id="L295" title="All 2 branches missed.">		if (shiftAssignments.size() &gt; 1) {</span>
-<span class="nc" id="L296">			retainShiftsWhichOverlapsWithSSItemStartDate(ssItem, shiftAssignments);</span>
-<span class="nc bnc" id="L297" title="All 2 branches missed.">			if (shiftAssignments.size() &gt; 1) {</span>
+<span class="nc bnc" id="L316" title="All 2 branches missed.">		if (shiftAssignments.size() &gt; 1) {</span>
+<span class="nc" id="L317">			retainShiftsWhichOverlapsWithSSItemStartDate(ssItem, shiftAssignments);</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">			if (shiftAssignments.size() &gt; 1) {</span>
 
-<span class="nc" id="L299">				throw RequestUtil.createRmHardValidationException(</span>
+<span class="nc" id="L320">				throw RequestUtil.createRmHardValidationException(</span>
 						RmEjbBundleKey.SS_MULTIPLESHIFTS_FOR_SSITEM, startDate,
-<span class="nc" id="L301">						endDate, ssCache.getEmployeeNameByID(ssItem.getEmployeeID()), m_cat);</span>
+<span class="nc" id="L322">						endDate, ssCache.getEmployeeNameByID(ssItem.getEmployeeID()), m_cat);</span>
 			}
 		}
 
 		// if none found, return null
-<span class="nc bnc" id="L306" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
-<span class="nc" id="L307">			return null;</span>
+<span class="nc bnc" id="L327" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
+<span class="nc" id="L328">			return null;</span>
 		}
 
 		// retrieve first shift assignment from collection
-<span class="nc" id="L311">		ShiftAssignment shiftAssign = (ShiftAssignment) shiftAssignments.iterator().next();</span>
+<span class="nc" id="L332">		ShiftAssignment shiftAssign = (ShiftAssignment) shiftAssignments.iterator().next();</span>
 
-		
+
 		// if shift is to be alighed with ssItem, verify that shift hasn't moved.
-<span class="nc bnc" id="L315" title="All 4 branches missed.">		if (aligned &amp;&amp; (!shiftAssign.getStartTime().equals(startDate) ||</span>
-<span class="nc bnc" id="L316" title="All 2 branches missed.">				!shiftAssign.getEndTime().equals(endDate))) {</span>
-			
-			// LOCAL: Shift between {0,date} and {1,date}, for employee ID {3}, is not aligned with its associated shift swap item ID {2}.
-			// 
-			// log the misaligned shift.
-<span class="nc" id="L321">			m_cat.l7dDebug(RmEjbLogBundleKey.SS_SHIFT_NOTALIGNED_WITH_SSITEM,</span>
-					new Object[] {
-<span class="nc" id="L323">							startDate, endDate, empID, ssItem.getID() });</span>
+<span class="nc bnc" id="L336" title="All 4 branches missed.">		if (aligned &amp;&amp; (!shiftAssign.getStartTime().equals(startDate) ||</span>
+<span class="nc bnc" id="L337" title="All 2 branches missed.">				!shiftAssign.getEndTime().equals(endDate))) {</span>
 
-<span class="nc" id="L325">			return null;</span>
+			// LOCAL: Shift between {0,date} and {1,date}, for employee ID {3}, is not aligned with its associated shift swap item ID {2}.
+			//
+			// log the misaligned shift.
+<span class="nc" id="L342">			m_cat.l7dDebug(RmEjbLogBundleKey.SS_SHIFT_NOTALIGNED_WITH_SSITEM,</span>
+					new Object[] {
+<span class="nc" id="L344">							startDate, endDate, empID, ssItem.getID() });</span>
+
+<span class="nc" id="L346">			return null;</span>
 		}
 
-<span class="nc" id="L328">		return shiftAssign;</span>
+<span class="nc" id="L349">		return shiftAssign;</span>
 	}
 
 	protected static ShiftAssignment getShiftAssignForSSItem(ShiftSwapItem ssItem, ScheduleAccessManager sam,
 			ShiftSwapValidationCache ssCache,
 			boolean published, boolean aligned, boolean shiftsToStartInsideBoundary,
 			boolean keepOverlaps) throws Exception {
-<span class="nc" id="L335">		Date startDate = ssItem.getStartDate();</span>
-<span class="nc" id="L336">		Date endDate = ssItem.getEndDate();</span>
+<span class="nc" id="L356">		Date startDate = ssItem.getStartDate();</span>
+<span class="nc" id="L357">		Date endDate = ssItem.getEndDate();</span>
 		// if searching for shifts on the same org day as ssItem and not aligned with ssItem
-<span class="nc bnc" id="L338" title="All 2 branches missed.">		if (!aligned) {</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">		if (!aligned) {</span>
 			// get the organization for the employee associated with SSItem.
-<span class="nc" id="L340">			Organization org = null;</span>
-<span class="nc bnc" id="L341" title="All 2 branches missed.">			if (ssCache != null) {</span>
-<span class="nc" id="L342">				org = ssCache.getOrganizationForEmployeeDuringPeriod(ssItem.getEmployeeID(),</span>
+<span class="nc" id="L361">			Organization org = null;</span>
+<span class="nc bnc" id="L362" title="All 2 branches missed.">			if (ssCache != null) {</span>
+<span class="nc" id="L363">				org = ssCache.getOrganizationForEmployeeDuringPeriod(ssItem.getEmployeeID(),</span>
 						startDate, endDate);
 			} else {
-<span class="nc" id="L345">				org = ValidationUtil.getOrganizationForEmployeeDuringPeriod(ssItem.getEmployeeID(),</span>
+<span class="nc" id="L366">				org = ValidationUtil.getOrganizationForEmployeeDuringPeriod(ssItem.getEmployeeID(),</span>
 						startDate, endDate);
 			}
 
 			// set startDate and endDate to org day start and end.
-<span class="nc" id="L350">			startDate = TOCalcUtil.getDateForOrgDayStart(org, startDate);</span>
-<span class="nc" id="L351">			endDate = TOCalcUtil.getDateForOrgDayEnd(org, startDate);</span>
+<span class="nc" id="L371">			startDate = TOCalcUtil.getDateForOrgDayStart(org, startDate);</span>
+<span class="nc" id="L372">			endDate = TOCalcUtil.getDateForOrgDayEnd(org, startDate);</span>
 		}
 
 		// get the employee ID
-<span class="nc" id="L355">		ID empID = ssItem.getEmployeeID();</span>
-<span class="nc bnc" id="L356" title="All 2 branches missed.">		sam = (sam == null) ? WfmManagerFactory.getScheduleAccessManager() : sam;</span>
+<span class="nc" id="L376">		ID empID = ssItem.getEmployeeID();</span>
+<span class="nc bnc" id="L377" title="All 2 branches missed.">		sam = (sam == null) ? WfmManagerFactory.getScheduleAccessManager() : sam;</span>
 
 		// search in the published schedule.
-<span class="nc" id="L359">		Collection shiftAssignments = null;</span>
-<span class="nc bnc" id="L360" title="All 2 branches missed.">		if (published) {</span>
-<span class="nc" id="L361">			shiftAssignments = sam.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
+<span class="nc" id="L380">		Collection shiftAssignments = null;</span>
+<span class="nc bnc" id="L381" title="All 2 branches missed.">		if (published) {</span>
+<span class="nc" id="L382">			shiftAssignments = sam.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
 					empID, startDate, endDate);
 		} else {
-<span class="nc" id="L364">			shiftAssignments = sam.getEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
+<span class="nc" id="L385">			shiftAssignments = sam.getEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
 					empID, startDate, endDate);
 		}
 
 		// if none found, return null
-<span class="nc bnc" id="L369" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
-<span class="nc" id="L370">			return null;</span>
+<span class="nc bnc" id="L390" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
+<span class="nc" id="L391">			return null;</span>
 		}
 
 		//Silk 80581
@@ -378,33 +399,41 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 		//if shiftassignments are more than one, the existing code flow already handles
 		// the shifts that don't start between start and end time
 		//QC87812: remove shifts from prev org day, unless they overlap with ssItem if incOverlapFromPrevDay is true
-<span class="nc bnc" id="L381" title="All 4 branches missed.">		if (shiftsToStartInsideBoundary &amp;&amp; shiftAssignments.size() == 1) {</span>
-<span class="nc bnc" id="L382" title="All 2 branches missed.">			if (keepOverlaps) {</span>
-<span class="nc" id="L383">				getIsTwoOrMoreShiftStartsBetweenRange(shiftAssignments, ssItem.getStartDate(), startDate, endDate, true);</span>
+<span class="nc bnc" id="L402" title="All 4 branches missed.">		if (shiftsToStartInsideBoundary &amp;&amp; shiftAssignments.size() == 1) {</span>
+<span class="nc bnc" id="L403" title="All 2 branches missed.">			if (keepOverlaps) {</span>
+<span class="nc bnc" id="L404" title="All 2 branches missed.">				if (ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L405">					getIsTwoOrMoreShiftStartsBetweenRange(shiftAssignments, ssItem.getStartDate(), startDate, endDate, true);</span>
+				} else {
+<span class="nc" id="L407">					getClosestShiftMatchForOneWayShiftSwap(ssItem, shiftAssignments, startDate, endDate);</span>
+				}
 			} else {
-<span class="nc" id="L385">				getIsTwoOrMoreShiftStartsBetweenRange(shiftAssignments, null, startDate, endDate, true);</span>
+<span class="nc bnc" id="L410" title="All 2 branches missed.">				if (ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L411">					getIsTwoOrMoreShiftStartsBetweenRange(shiftAssignments, null, startDate, endDate, true);</span>
+				} else {
+<span class="nc" id="L413">					getClosestShiftMatchForOneWayShiftSwap(ssItem, shiftAssignments, startDate, endDate);</span>
+				}
 			}
 		}
 		else // A given org day can never have more than 1 shift starting on the org day; still checking just in case.
-<span class="nc bnc" id="L389" title="All 2 branches missed.">		if (shiftAssignments.size() &gt; 1) {</span>
-<span class="nc" id="L390">			retainShiftsWhichOverlapsWithSSItemStartDate(ssItem, shiftAssignments);</span>
+<span class="nc bnc" id="L418" title="All 2 branches missed.">		if (shiftAssignments.size() &gt; 1) {</span>
+<span class="nc" id="L419">			retainShiftsWhichOverlapsWithSSItemStartDate(ssItem, shiftAssignments);</span>
 
-<span class="nc bnc" id="L392" title="All 2 branches missed.">			if (shiftAssignments.size() &gt; 1) {</span>
+<span class="nc bnc" id="L421" title="All 2 branches missed.">			if (shiftAssignments.size() &gt; 1) {</span>
 				// LOCAL: More than one shift found between {1,date} and {2,date} for employee {0} .
-<span class="nc" id="L394">				throw RequestUtil.createRmHardValidationException(</span>
+<span class="nc" id="L423">				throw RequestUtil.createRmHardValidationException(</span>
 						RmEjbBundleKey.SS_MULTIPLESHIFTS_FOR_SSITEM, startDate, endDate, empID, m_cat);
 			}
 		}
 
 		// if none found, return null
-<span class="nc bnc" id="L400" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
-<span class="nc" id="L401">			return null;</span>
+<span class="nc bnc" id="L429" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
+<span class="nc" id="L430">			return null;</span>
 		}
 
 		// retrieve first shift assignment from collection
-<span class="nc" id="L405">		ShiftAssignment shiftAssign = (ShiftAssignment) shiftAssignments.iterator().next();</span>
+<span class="nc" id="L434">		ShiftAssignment shiftAssign = (ShiftAssignment) shiftAssignments.iterator().next();</span>
 
-<span class="nc" id="L407">		return shiftAssign;</span>
+<span class="nc" id="L436">		return shiftAssign;</span>
 	}
 
 	/**
@@ -414,13 +443,18 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 */
 	private static void retainShiftsWhichOverlapsWithSSItemStartDate(ShiftSwapItem ssItem, Collection&lt;ShiftAssignment&gt; shiftAssignments) {
 
-<span class="nc bnc" id="L417" title="All 2 branches missed.">		for (Iterator&lt;ShiftAssignment&gt; iter = shiftAssignments.iterator(); iter.hasNext();) {</span>
-<span class="nc" id="L418">			ShiftAssignment sa = iter.next();</span>
-<span class="nc bnc" id="L419" title="All 2 branches missed.">			if (!TOCalcUtil.dateBetween(ssItem.getStartDate(), sa.getStartTime(), sa.getEndTime())) {</span>
-<span class="nc" id="L420">				iter.remove();</span>
+<span class="nc bnc" id="L446" title="All 2 branches missed.">		for (Iterator&lt;ShiftAssignment&gt; iter = shiftAssignments.iterator(); iter.hasNext();) {</span>
+<span class="nc" id="L447">			ShiftAssignment sa = iter.next();</span>
+			
+			// This sa should be removed
+			// sa 10pm - 7am
+			// ssitem start 7 am
+			// Previous code failed to do this. End date was inclusive. It should be exclusive.
+<span class="nc bnc" id="L453" title="All 2 branches missed.">			if (!DateUtil.isInRange(sa.getStartTime(), sa.getEndTime(), ssItem.getStartDate())){</span>
+<span class="nc" id="L454">				iter.remove();</span>
 			}
-<span class="nc" id="L422">		}</span>
-<span class="nc" id="L423">	}</span>
+<span class="nc" id="L456">		}</span>
+<span class="nc" id="L457">	}</span>
 
 	/**
 	 * Checks if all shiftAssigns start within the given date range (inclusive of boundaries).
@@ -437,29 +471,78 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	private static boolean getIsTwoOrMoreShiftStartsBetweenRange(Collection shiftAssns, Date ssItemStartDate,
 			Date startDate, Date endDate, boolean removeNonStarts) {
 
-<span class="nc" id="L440">		int origSize = shiftAssns.size();</span>
+<span class="nc" id="L474">		int origSize = shiftAssns.size();</span>
 		// Number of shifts that start between the given time range.
-<span class="nc" id="L442">		int numOfShiftStarts = 0;</span>
+<span class="nc" id="L476">		int numOfShiftStarts = 0;</span>
 		// iterate thru the given list of shift assignments
-<span class="nc bnc" id="L444" title="All 2 branches missed.">		for (Iterator iter = shiftAssns.iterator(); iter.hasNext();) {</span>
-<span class="nc" id="L445">			ShiftAssignment sa = (ShiftAssignment) iter.next();</span>
+<span class="nc bnc" id="L478" title="All 2 branches missed.">		for (Iterator iter = shiftAssns.iterator(); iter.hasNext();) {</span>
+<span class="nc" id="L479">			ShiftAssignment sa = (ShiftAssignment) iter.next();</span>
 
 			// if shift does not start between the given range, remove from list.
 			// QC87812 don't remove from list if it will be combined with overlap
-<span class="nc bnc" id="L449" title="All 4 branches missed.">			boolean removeShift = ssItemStartDate == null ? true : !ssItemStartDate.before(sa.getEndTime());</span>
-<span class="nc bnc" id="L450" title="All 4 branches missed.">			if (!TOCalcUtil.dateBetween(sa.getStartTime(), startDate, endDate) &amp;&amp; removeShift) {</span>
+<span class="nc bnc" id="L483" title="All 4 branches missed.">			boolean removeShift = ssItemStartDate == null ? true : !ssItemStartDate.before(sa.getEndTime());</span>
+<span class="nc bnc" id="L484" title="All 4 branches missed.">			if (!TOCalcUtil.dateBetween(sa.getStartTime(), startDate, endDate) &amp;&amp; removeShift) {</span>
 				// if 'removeNonStarts' flag is set, then remove 'non starting' ones.
-<span class="nc bnc" id="L452" title="All 2 branches missed.">				if (removeNonStarts) {</span>
-<span class="nc" id="L453">					iter.remove();</span>
+<span class="nc bnc" id="L486" title="All 2 branches missed.">				if (removeNonStarts) {</span>
+<span class="nc" id="L487">					iter.remove();</span>
 				}
 			} else {
-<span class="nc" id="L456">				numOfShiftStarts++;</span>
+<span class="nc" id="L490">				numOfShiftStarts++;</span>
 			}
-<span class="nc" id="L458">		}</span>
+<span class="nc" id="L492">		}</span>
 
 		// true, if no elements were removed; false if any were removed.
-<span class="nc bnc" id="L461" title="All 2 branches missed.">		return (numOfShiftStarts &gt;= 2) ? true : false;</span>
+<span class="nc bnc" id="L495" title="All 2 branches missed.">		return (numOfShiftStarts &gt;= 2) ? true : false;</span>
 	}
+	
+	/**
+	 * Selects the shift that closest aligns with the One Way Shift Swap 
+	 * 
+	 * @param ssItem Requested One Way Shif Swap Item
+	 * @param shiftAssns Collection of Shift Assignments
+	 * @param startDate Date shifts should start after
+	 * @param endDate Date shifts should end before
+	 */
+	private static void getClosestShiftMatchForOneWayShiftSwap(ShiftSwapItem ssItem, Collection shiftAssns, 
+			Date startDate, Date endDate) {
+		
+<span class="nc" id="L509">		long difference = Long.MAX_VALUE;</span>
+<span class="nc" id="L510">		ShiftAssignment chosenShift = null;</span>
+<span class="nc" id="L511">		boolean foundAShiftWithinOrgDay = false;</span>
+		
+		// Cycle through the Shifts and slect the Shift that aligns closest
+		// to the Shift Swap Item
+<span class="nc bnc" id="L515" title="All 2 branches missed.">		for (ShiftAssignment sa: (Collection&lt;ShiftAssignment&gt;)shiftAssns) {</span>
+<span class="nc bnc" id="L516" title="All 2 branches missed.">			if (TOCalcUtil.dateBetween(sa.getStartTime(), startDate, endDate)) {</span>
+<span class="nc" id="L517">				foundAShiftWithinOrgDay = true;</span>
+			}
+			
+<span class="nc bnc" id="L520" title="All 2 branches missed.">			if (sa.getStartTime().getTime() &gt;= ssItem.getEndDate().getTime()) {</span>
+<span class="nc" id="L521">				long diff = sa.getStartTime().getTime() - ssItem.getEndDate().getTime();</span>
+<span class="nc bnc" id="L522" title="All 2 branches missed.">				if (diff &lt; difference) {</span>
+<span class="nc" id="L523">					difference = diff;</span>
+<span class="nc" id="L524">					chosenShift = sa;</span>
+				}
+			}
+			
+<span class="nc bnc" id="L528" title="All 2 branches missed.">			if (sa.getEndTime().getTime() &lt;= ssItem.getStartDate().getTime()) {</span>
+<span class="nc" id="L529">				long diff = ssItem.getStartDate().getTime() - sa.getEndTime().getTime();</span>
+<span class="nc bnc" id="L530" title="All 2 branches missed.">				if (diff &lt; difference) {</span>
+<span class="nc" id="L531">					difference = diff;</span>
+<span class="nc" id="L532">					chosenShift = sa;</span>
+				}
+			}
+<span class="nc" id="L535">		}</span>
+		
+		// Clear collection and add Selected Shift Assignment 
+<span class="nc bnc" id="L538" title="All 2 branches missed.">		if (chosenShift != null) {</span>
+<span class="nc" id="L539">			shiftAssns.clear();</span>
+<span class="nc bnc" id="L540" title="All 2 branches missed.">			if (foundAShiftWithinOrgDay) {</span>
+<span class="nc" id="L541">				shiftAssns.add(chosenShift);</span>
+			}
+		}
+<span class="nc" id="L544">	}</span>
+	
 
 	/**
 	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache)
@@ -467,7 +550,7 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	public static ShiftAssignment getShiftAssignForSSItemAligned(ShiftSwapItem ssItem,
 			boolean published, ScheduleAccessManager sam, ShiftSwapValidationCache ssCache) throws Exception
 	{
-<span class="nc" id="L470">		return getShiftAssignForSSItem(ssItem, published, true, sam, ssCache);</span>
+<span class="nc" id="L553">		return getShiftAssignForSSItem(ssItem, published, true, sam, ssCache);</span>
 	}
 
 	/**
@@ -477,53 +560,53 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 			boolean published, boolean shiftsToStartInsideBoundary, ScheduleAccessManager sam, ShiftSwapValidationCache ssCache)
 			throws Exception {
 		//This ends up calling getShiftAssignForSSItem with both  aligned and keepOverlaps set to false.
-<span class="nc" id="L480">		boolean keepOverlaps = false;</span>
-<span class="nc" id="L481">		return getShiftAssignForSSItemSameOrgDay(ssItem, published, shiftsToStartInsideBoundary, keepOverlaps, sam, ssCache);</span>
+<span class="nc" id="L563">		boolean keepOverlaps = false;</span>
+<span class="nc" id="L564">		return getShiftAssignForSSItemSameOrgDay(ssItem, published, shiftsToStartInsideBoundary, keepOverlaps, sam, ssCache);</span>
 	}
 
 	private static ShiftAssignment getShiftAssignNonAligned(ShiftSwapItem ssItem,
 			boolean published, boolean shiftsToStartInsideBoundary, ScheduleAccessManager sam, ShiftSwapValidationCache ssCache)
 			throws Exception {
 		//This ends up calling getShiftAssignForSSItem with  aligned set to false and keepOverlaps  set to true.
-<span class="nc" id="L488">		boolean keepOverlaps = true;</span>
-<span class="nc" id="L489">		return getShiftAssignForSSItemSameOrgDay(ssItem, published, shiftsToStartInsideBoundary, keepOverlaps, sam, ssCache);</span>
+<span class="nc" id="L571">		boolean keepOverlaps = true;</span>
+<span class="nc" id="L572">		return getShiftAssignForSSItemSameOrgDay(ssItem, published, shiftsToStartInsideBoundary, keepOverlaps, sam, ssCache);</span>
 	}
 
 	public static ShiftAssignment getShiftAssignForSSItemSameOrgDay(ShiftSwapItem ssItem, boolean published,
 			boolean shiftsToStartInsideBoundary,
 			boolean keepOverlaps, ScheduleAccessManager sam, ShiftSwapValidationCache ssCache) throws Exception {
-<span class="nc" id="L495">		return getShiftAssignForSSItem(ssItem, published, false, shiftsToStartInsideBoundary, keepOverlaps, sam, ssCache);</span>
+<span class="nc" id="L578">		return getShiftAssignForSSItem(ssItem, published, false, shiftsToStartInsideBoundary, keepOverlaps, sam, ssCache);</span>
 	}
 
 	public static ShiftAssignment[] getShiftAssignsForReq(ShiftSwapRequest ssr, boolean published,
 			boolean aligned, ScheduleAccessManager sam) throws Exception {
-<span class="nc bnc" id="L500" title="All 2 branches missed.">		sam = (sam == null) ? WfmManagerFactory.getScheduleAccessManager() : sam;</span>
+<span class="nc bnc" id="L583" title="All 2 branches missed.">		sam = (sam == null) ? WfmManagerFactory.getScheduleAccessManager() : sam;</span>
 
-<span class="nc" id="L502">		List ssItems = ssr.getShiftSwapItems();</span>
+<span class="nc" id="L585">		List ssItems = ssr.getShiftSwapItems();</span>
 
-<span class="nc" id="L504">		ShiftAssignment[] shiftAssigns = new ShiftAssignment[2];</span>
+<span class="nc" id="L587">		ShiftAssignment[] shiftAssigns = new ShiftAssignment[2];</span>
 
-<span class="nc bnc" id="L506" title="All 2 branches missed.">		if (aligned) {</span>
-<span class="nc" id="L507">			shiftAssigns[0] = getShiftAssignForSSItemAligned((ShiftSwapItem) ssItems.get(0), published, sam, ssr.getCache());</span>
-<span class="nc" id="L508">			shiftAssigns[1] = getShiftAssignForSSItemAligned((ShiftSwapItem) ssItems.get(1), published, sam, ssr.getCache());</span>
+<span class="nc bnc" id="L589" title="All 2 branches missed.">		if (aligned) {</span>
+<span class="nc" id="L590">			shiftAssigns[0] = getShiftAssignForSSItemAligned((ShiftSwapItem) ssItems.get(0), published, sam, ssr.getCache());</span>
+<span class="nc" id="L591">			shiftAssigns[1] = getShiftAssignForSSItemAligned((ShiftSwapItem) ssItems.get(1), published, sam, ssr.getCache());</span>
 		} else {
-<span class="nc" id="L510">			shiftAssigns[0] = getShiftAssignNonAligned((ShiftSwapItem) ssItems.get(0), published, false, sam, ssr.getCache());</span>
-<span class="nc" id="L511">			shiftAssigns[1] = getShiftAssignNonAligned((ShiftSwapItem) ssItems.get(1), published, false, sam, ssr.getCache());</span>
+<span class="nc" id="L593">			shiftAssigns[0] = getShiftAssignNonAligned((ShiftSwapItem) ssItems.get(0), published, false, sam, ssr.getCache());</span>
+<span class="nc" id="L594">			shiftAssigns[1] = getShiftAssignNonAligned((ShiftSwapItem) ssItems.get(1), published, false, sam, ssr.getCache());</span>
 		}
 
-<span class="nc" id="L514">		return shiftAssigns;</span>
+<span class="nc" id="L597">		return shiftAssigns;</span>
 	}
 
 	public static ShiftAssignment[] getShiftAssignsForReqAligned(ShiftSwapRequest ssr, boolean published,
 			ScheduleAccessManager sam) throws Exception
 	{
-<span class="nc" id="L520">		return getShiftAssignsForReq(ssr, published, true, sam);</span>
+<span class="nc" id="L603">		return getShiftAssignsForReq(ssr, published, true, sam);</span>
 	}
 
 	public static ShiftAssignment[] getShiftAssignsForReqSameOrgDay(ShiftSwapRequest ssr, boolean published,
 			ScheduleAccessManager sam) throws Exception
 	{
-<span class="nc" id="L526">		return getShiftAssignsForReq(ssr, published, false, sam);</span>
+<span class="nc" id="L609">		return getShiftAssignsForReq(ssr, published, false, sam);</span>
 	}
 
 	/**
@@ -545,41 +628,41 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	public static ShiftAssignment[] getSwappedShiftAssignsForReq(ShiftSwapRequest ssr, boolean published,
 			boolean aligned, boolean shiftsToStartInsideBoundary, ScheduleAccessManager sam) throws Exception
 	{
-<span class="nc bnc" id="L548" title="All 2 branches missed.">		sam = (sam == null) ? WfmManagerFactory.getScheduleAccessManager() : sam;</span>
+<span class="nc bnc" id="L631" title="All 2 branches missed.">		sam = (sam == null) ? WfmManagerFactory.getScheduleAccessManager() : sam;</span>
 
-<span class="nc" id="L550">		List ssItems = ssr.getShiftSwapItems();</span>
-<span class="nc" id="L551">		ShiftSwapItem origSSItem1 = (ShiftSwapItem) ssItems.get(0);</span>
-<span class="nc" id="L552">		ShiftSwapItem origSSItem2 = (ShiftSwapItem) ssItems.get(1);</span>
+<span class="nc" id="L633">		List ssItems = ssr.getShiftSwapItems();</span>
+<span class="nc" id="L634">		ShiftSwapItem origSSItem1 = (ShiftSwapItem) ssItems.get(0);</span>
+<span class="nc" id="L635">		ShiftSwapItem origSSItem2 = (ShiftSwapItem) ssItems.get(1);</span>
 
-<span class="nc" id="L554">		ShiftSwapItem swappedSSItem1 = cloneShiftSwapItem(origSSItem1);</span>
-<span class="nc" id="L555">		swappedSSItem1.setEmployeeID(origSSItem2.getEmployeeID());</span>
+<span class="nc" id="L637">		ShiftSwapItem swappedSSItem1 = cloneShiftSwapItem(origSSItem1);</span>
+<span class="nc" id="L638">		swappedSSItem1.setEmployeeID(origSSItem2.getEmployeeID());</span>
 
-<span class="nc" id="L557">		ShiftSwapItem swappedSSItem2 = cloneShiftSwapItem(origSSItem2);</span>
-<span class="nc" id="L558">		swappedSSItem2.setEmployeeID(origSSItem1.getEmployeeID());</span>
+<span class="nc" id="L640">		ShiftSwapItem swappedSSItem2 = cloneShiftSwapItem(origSSItem2);</span>
+<span class="nc" id="L641">		swappedSSItem2.setEmployeeID(origSSItem1.getEmployeeID());</span>
 
-<span class="nc" id="L560">		ShiftAssignment[] shiftAssigns = new ShiftAssignment[2];</span>
-<span class="nc bnc" id="L561" title="All 2 branches missed.">		if (aligned) {</span>
-<span class="nc" id="L562">			shiftAssigns[0] = getShiftAssignForSSItemAligned(swappedSSItem1, published, sam, ssr.getCache());</span>
-<span class="nc" id="L563">			shiftAssigns[1] = getShiftAssignForSSItemAligned(swappedSSItem2, published, sam, ssr.getCache());</span>
+<span class="nc" id="L643">		ShiftAssignment[] shiftAssigns = new ShiftAssignment[2];</span>
+<span class="nc bnc" id="L644" title="All 2 branches missed.">		if (aligned) {</span>
+<span class="nc" id="L645">			shiftAssigns[0] = getShiftAssignForSSItemAligned(swappedSSItem1, published, sam, ssr.getCache());</span>
+<span class="nc" id="L646">			shiftAssigns[1] = getShiftAssignForSSItemAligned(swappedSSItem2, published, sam, ssr.getCache());</span>
 		} else {
-<span class="nc" id="L565">			shiftAssigns[0] = getShiftAssignNonAligned(swappedSSItem1, published, shiftsToStartInsideBoundary, sam, ssr.getCache());</span>
-<span class="nc" id="L566">			shiftAssigns[1] = getShiftAssignNonAligned(swappedSSItem2, published, shiftsToStartInsideBoundary, sam, ssr.getCache());</span>
+<span class="nc" id="L648">			shiftAssigns[0] = getShiftAssignNonAligned(swappedSSItem1, published, shiftsToStartInsideBoundary, sam, ssr.getCache());</span>
+<span class="nc" id="L649">			shiftAssigns[1] = getShiftAssignNonAligned(swappedSSItem2, published, shiftsToStartInsideBoundary, sam, ssr.getCache());</span>
 		}
 
-<span class="nc" id="L569">		return shiftAssigns;</span>
+<span class="nc" id="L652">		return shiftAssigns;</span>
 
 	}
 
 	public static ShiftAssignment[] getSwappedShiftAssignsForReqAligned(ShiftSwapRequest ssr, boolean published,
 			ScheduleAccessManager sam) throws Exception
 	{
-<span class="nc" id="L576">		return getSwappedShiftAssignsForReq(ssr, published, true, false, sam);</span>
+<span class="nc" id="L659">		return getSwappedShiftAssignsForReq(ssr, published, true, false, sam);</span>
 	}
 
 	public static ShiftAssignment[] getSwappedShiftAssignsForReqSameOrgDay(ShiftSwapRequest ssr, boolean published,
 			ScheduleAccessManager sam) throws Exception
 	{
-<span class="nc" id="L582">		return getSwappedShiftAssignsForReq(ssr, published, false, false, sam);</span>
+<span class="nc" id="L665">		return getSwappedShiftAssignsForReq(ssr, published, false, false, sam);</span>
 	}
 
 	//Silk 80581
@@ -588,74 +671,74 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	public static ShiftAssignment[] getSwappedSAForReqWithStartDateOnSameOrgDay(ShiftSwapRequest ssr, boolean published,
 			ScheduleAccessManager sam) throws Exception
 	{
-<span class="nc" id="L591">		return getSwappedShiftAssignsForReq(ssr, published, false, true, sam);</span>
+<span class="nc" id="L674">		return getSwappedShiftAssignsForReq(ssr, published, false, true, sam);</span>
 	}
 
-	public static List getSwappableOrgIDsForEmp(ID employeeID)
+	public static List getSwappableOrgIDsForEmp(ID employeeID, Date effectiveDate)
 			throws Exception
 	{
 		// Get ORG ID for this employee.
-<span class="nc" id="L598">		ID empOrgID = TOCalcUtil.getCurrentOrgIDForEmployeeID(employeeID);</span>
+<span class="nc" id="L681">		ID empOrgID = TOCalcUtil.getOrgIDForEmployeeID(employeeID, effectiveDate);</span>
 
-<span class="nc" id="L600">		return getSwappableOrgIDsForOrg(empOrgID);</span>
+<span class="nc" id="L683">		return getSwappableOrgIDsForOrg(empOrgID);</span>
 	}
 
-	public static List getSwappableOrgIDsForOrg(ID orgID)
-			throws Exception
-	{
-<span class="nc" id="L606">		OrganizationConfigManager orgCfgMgr = RequestUtil.getOrgConfigMgr(null, null);</span>
+	public static List&lt;ID&gt; getSwappableOrgIDsForOrg(ID orgID)
+			throws Exception {
+
+<span class="nc" id="L689">		OrganizationConfigManager orgCfgMgr = RequestUtil.getOrgConfigMgr(null, null);</span>
 
 		// Check if employee organization settings permit a swap.
 		// get the Manager Factory
-<span class="nc" id="L610">		OrganizationSetting orgSetting = RequestUtil.getOrgSetting(orgID, orgCfgMgr);</span>
+<span class="nc" id="L693">		OrganizationSetting orgSetting = RequestUtil.getOrgSetting(orgID, orgCfgMgr);</span>
 
 		// if shift swap not enabled for organization, we are done.
-<span class="nc bnc" id="L613" title="All 2 branches missed.">		if (!orgSetting.getEnableShiftSwap()) {</span>
-<span class="nc" id="L614">			return Collections.EMPTY_LIST;</span>
+<span class="nc bnc" id="L696" title="All 2 branches missed.">		if (!orgSetting.getEnableShiftSwap()) {</span>
+<span class="nc" id="L697">			return Collections.emptyList();</span>
 		}
 
 		// Use organization settings to obtain a list of organizations
 		// this employee's organization can swap with.
-<span class="nc" id="L619">		String swappableOrgSetting = orgSetting.getShiftSwapOrgListOverride();</span>
-<span class="nc" id="L620">		m_cat.debug(&quot;swappableOrgSetting = &quot; + swappableOrgSetting);</span>
+<span class="nc" id="L702">		String swappableOrgSetting = orgSetting.getShiftSwapOrgListOverride();</span>
+<span class="nc" id="L703">		m_cat.debug(&quot;swappableOrgSetting = &quot; + swappableOrgSetting);</span>
 
-<span class="nc" id="L622">		ID[] swappableOrgIDs = StringUtil.parseIDString(swappableOrgSetting);</span>
-<span class="nc bnc" id="L623" title="All 2 branches missed.">		if (swappableOrgIDs.length == 0) {</span>
-<span class="nc" id="L624">			return Collections.EMPTY_LIST;</span>
+<span class="nc" id="L705">		ID[] swappableOrgIDs = StringUtil.parseIDString(swappableOrgSetting);</span>
+<span class="nc bnc" id="L706" title="All 2 branches missed.">		if (swappableOrgIDs.length == 0) {</span>
+<span class="nc" id="L707">			return Collections.emptyList();</span>
 		}
 
-<span class="nc" id="L627">		ArrayList filteredSwappableOrgIDs = new ArrayList(10);</span>
-<span class="nc bnc" id="L628" title="All 2 branches missed.">		for (int i = 0; i &lt; swappableOrgIDs.length; i++) {</span>
-<span class="nc" id="L629">			ID swappableOrgID = swappableOrgIDs[i];</span>
+<span class="nc" id="L710">		List&lt;ID&gt; filteredSwappableOrgIDs = new ArrayList&lt;&gt;(10);</span>
+<span class="nc bnc" id="L711" title="All 2 branches missed.">		for (int i = 0; i &lt; swappableOrgIDs.length; i++) {</span>
+<span class="nc" id="L712">			ID swappableOrgID = swappableOrgIDs[i];</span>
 
 			//check if this organization in the swappable orgList can swap
 			//with the given organization.  Only if the swappableOrg can swap
 			//with the given org, the swappableOrg is added to the collection of
 			//eligible swappable orgs.
-<span class="nc bnc" id="L635" title="All 2 branches missed.">			if (canOrg1SwapWithOrg2(swappableOrgID, orgID, orgCfgMgr)) {</span>
-<span class="nc" id="L636">				filteredSwappableOrgIDs.add(swappableOrgID);</span>
+<span class="nc bnc" id="L718" title="All 2 branches missed.">			if (canOrg1SwapWithOrg2(swappableOrgID, orgID, orgCfgMgr)) {</span>
+<span class="nc" id="L719">				filteredSwappableOrgIDs.add(swappableOrgID);</span>
 			}
 		}
-<span class="nc bnc" id="L639" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L640">			m_cat.debug(&quot;Swappable Org IDs: &quot; + RmUtil.dumpCollection(filteredSwappableOrgIDs));</span>
+<span class="nc bnc" id="L722" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L723">			m_cat.debug(&quot;Swappable Org IDs: &quot; + RmUtil.dumpCollection(filteredSwappableOrgIDs));</span>
 		}
-<span class="nc" id="L642">		return filteredSwappableOrgIDs;</span>
+<span class="nc" id="L725">		return filteredSwappableOrgIDs;</span>
 	}
 
 	// The clone() method for ShiftSwapItem is not implemented, instead of this method,
 	// as this only does partial cloning.
-	protected static ShiftSwapItem cloneShiftSwapItem(ShiftSwapItem swapItem)
+	public static ShiftSwapItem cloneShiftSwapItem(ShiftSwapItem swapItem)
 	{
-<span class="nc" id="L649">		ShiftSwapItem newSwapItem = new ShiftSwapItem();</span>
+<span class="nc" id="L732">		ShiftSwapItem newSwapItem = new ShiftSwapItem();</span>
 
-<span class="nc" id="L651">		newSwapItem.setStartDate(swapItem.getStartDate());</span>
-<span class="nc" id="L652">		newSwapItem.setEndDate(swapItem.getEndDate());</span>
-<span class="nc" id="L653">		newSwapItem.setEmployeeID(swapItem.getEmployeeID());</span>
-<span class="nc" id="L654">		newSwapItem.setShiftType(swapItem.getShiftType());</span>
-<span class="nc" id="L655">		newSwapItem.setNegotiation(swapItem.getNegotiation());</span>
-<span class="nc" id="L656">		newSwapItem.setExpirationDate(swapItem.getExpirationDate());</span>
+<span class="nc" id="L734">		newSwapItem.setStartDate(swapItem.getStartDate());</span>
+<span class="nc" id="L735">		newSwapItem.setEndDate(swapItem.getEndDate());</span>
+<span class="nc" id="L736">		newSwapItem.setEmployeeID(swapItem.getEmployeeID());</span>
+<span class="nc" id="L737">		newSwapItem.setShiftType(swapItem.getShiftType());</span>
+<span class="nc" id="L738">		newSwapItem.setNegotiation(swapItem.getNegotiation());</span>
+<span class="nc" id="L739">		newSwapItem.setExpirationDate(swapItem.getExpirationDate());</span>
 
-<span class="nc" id="L658">		return newSwapItem;</span>
+<span class="nc" id="L741">		return newSwapItem;</span>
 	}
 
 	/**
@@ -664,47 +747,47 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 * @param ssReq
 	 * @return
 	 */
-	protected static ShiftSwapRequest cloneShiftSwapRequest(ShiftSwapRequest ssReq)
+	public static ShiftSwapRequest cloneShiftSwapRequest(ShiftSwapRequest ssReq)
 	{
-<span class="nc" id="L669">		ShiftSwapRequest newSSReq = new ShiftSwapRequest(RequestAggregate.DL_BASIC);</span>
+<span class="nc" id="L752">		ShiftSwapRequest newSSReq = new ShiftSwapRequest(RequestAggregate.DL_BASIC);</span>
 
-<span class="nc" id="L671">		newSSReq.setEmployeeID(ssReq.getEmployeeID());</span>
-<span class="nc" id="L672">		newSSReq.setExpirationDate(ssReq.getExpirationDate());</span>
-<span class="nc" id="L673">		newSSReq.setNegotiationComment(ssReq.getNegotiationComment());</span>
-<span class="nc" id="L674">		newSSReq.setRequestStatus(ssReq.getRequestStatus());</span>
-<span class="nc" id="L675">		newSSReq.setSwapType(ssReq.getSwapType());</span>
+<span class="nc" id="L754">		newSSReq.setEmployeeID(ssReq.getEmployeeID());</span>
+<span class="nc" id="L755">		newSSReq.setExpirationDate(ssReq.getExpirationDate());</span>
+<span class="nc" id="L756">		newSSReq.setNegotiationComment(ssReq.getNegotiationComment());</span>
+<span class="nc" id="L757">		newSSReq.setRequestStatus(ssReq.getRequestStatus());</span>
+<span class="nc" id="L758">		newSSReq.setSwapType(ssReq.getSwapType());</span>
 
-<span class="nc" id="L677">		ArrayList newSSItems = new ArrayList(2);</span>
-<span class="nc" id="L678">		newSSItems.add(cloneShiftSwapItem((ShiftSwapItem) ssReq.getShiftSwapItems().get(0)));</span>
-<span class="nc" id="L679">		newSSItems.add(cloneShiftSwapItem((ShiftSwapItem) ssReq.getShiftSwapItems().get(1)));</span>
-<span class="nc" id="L680">		newSSReq.setShiftSwapItems(newSSItems);</span>
+<span class="nc" id="L760">		ArrayList newSSItems = new ArrayList(2);</span>
+<span class="nc" id="L761">		newSSItems.add(cloneShiftSwapItem(ssReq.getShiftSwapItems().get(0)));</span>
+<span class="nc" id="L762">		newSSItems.add(cloneShiftSwapItem(ssReq.getShiftSwapItems().get(1)));</span>
+<span class="nc" id="L763">		newSSReq.setShiftSwapItems(newSSItems);</span>
 
-<span class="nc" id="L682">		return newSSReq;</span>
+<span class="nc" id="L765">		return newSSReq;</span>
 	}
 
 	public static boolean canOrg1SwapWithOrg2(ID org1, ID org2, OrganizationConfigManager orgCfgMgr)
 			throws Exception
 	{
-<span class="nc" id="L688">		OrganizationSetting orgSetting = CacheUtilRM.getOrgSetting(org1);</span>
+<span class="nc" id="L771">		OrganizationSetting orgSetting = CacheUtilRM.getOrgSetting(org1);</span>
 		// if shift swap not enabled for organization, we are done.
-<span class="nc bnc" id="L690" title="All 2 branches missed.">		if (!orgSetting.getEnableShiftSwap()) {</span>
-<span class="nc" id="L691">			return false;</span>
+<span class="nc bnc" id="L773" title="All 2 branches missed.">		if (!orgSetting.getEnableShiftSwap()) {</span>
+<span class="nc" id="L774">			return false;</span>
 		}
 
 		// Iterate t_hrow the list of organizations this can swap with.
-<span class="nc" id="L695">		ID[] swappableOrgIDs = StringUtil.parseIDString(</span>
-<span class="nc" id="L696">				orgSetting.getShiftSwapOrgListOverride(), &quot;, \t\n\r\f&quot;);</span>
-<span class="nc bnc" id="L697" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L698">			m_cat.debug(RmUtil.dumpCollection(Arrays.asList(swappableOrgIDs)));</span>
+<span class="nc" id="L778">		ID[] swappableOrgIDs = StringUtil.parseIDString(</span>
+<span class="nc" id="L779">				orgSetting.getShiftSwapOrgListOverride(), &quot;, \t\n\r\f&quot;);</span>
+<span class="nc bnc" id="L780" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L781">			m_cat.debug(RmUtil.dumpCollection(Arrays.asList(swappableOrgIDs)));</span>
 		}
-<span class="nc bnc" id="L700" title="All 2 branches missed.">		for (int i = 0; i &lt; swappableOrgIDs.length; i++) {</span>
-<span class="nc bnc" id="L701" title="All 2 branches missed.">			if (swappableOrgIDs[i].equals(org2)) {</span>
-<span class="nc" id="L702">				m_cat.debug(&quot;Orgs match: &quot; + swappableOrgIDs[i] + &quot;==&quot; + org2);</span>
-<span class="nc" id="L703">				return true;</span>
+<span class="nc bnc" id="L783" title="All 2 branches missed.">		for (int i = 0; i &lt; swappableOrgIDs.length; i++) {</span>
+<span class="nc bnc" id="L784" title="All 2 branches missed.">			if (swappableOrgIDs[i].equals(org2)) {</span>
+<span class="nc" id="L785">				m_cat.debug(&quot;Orgs match: &quot; + swappableOrgIDs[i] + &quot;==&quot; + org2);</span>
+<span class="nc" id="L786">				return true;</span>
 			}
 		}
 
-<span class="nc" id="L707">		return false;</span>
+<span class="nc" id="L790">		return false;</span>
 	}
 
 	/**
@@ -716,10 +799,10 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 * @param ssReq
 	 */
 	//TESTME undoSwap
-	public static void undoSwap(ShiftSwapRequest givenSSReq, ScheduleAccessManager sam)
+	public static ShiftSwapRequest undoSwap(ShiftSwapRequest givenSSReq, boolean save)
 			throws Exception
 	{
-<span class="nc" id="L722">		m_cat.debug(&quot;Undo-ing swap done for SSReq: &quot; + givenSSReq);</span>
+<span class="nc" id="L805">		m_cat.debug(&quot;Undo-ing swap done for SSReq: &quot; + givenSSReq);</span>
 		// create a shiftswap request with employee IDs in the items swapped.  After this ID swap,
 		// the new request represents an undo of the original approved request.
 
@@ -728,89 +811,89 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 		// create a request to use for the 'undo' operation.  The idea is to setup a new request, with its
 		// associated swap items pointing to the 'swapped' shifts.  This request is then passed thru' the
 		// 'swapping logic' to undo the swap.
-<span class="nc" id="L731">		ShiftSwapRequest undoSSReq = ShiftSwapRequestUtil.cloneShiftSwapRequest(givenSSReq);</span>
+<span class="nc" id="L814">		ShiftSwapRequest undoSSReq = ShiftSwapRequestUtil.cloneShiftSwapRequest(givenSSReq);</span>
+<span class="nc" id="L815">		undoSSReq.setWithdrawInfo(givenSSReq.getWithdrawInfo());</span>
 
-<span class="nc" id="L733">		List ssItems = givenSSReq.getShiftSwapItems();</span>
+<span class="nc" id="L817">		List ssItems = givenSSReq.getShiftSwapItems();</span>
 
 		//TODO; although getShiftSwapItems() returns a list, it does not preserve ordering
 		// found when the items were set with setShiftSwapItems().
 
-<span class="nc" id="L738">		ShiftSwapItem givenSSItem0 = (ShiftSwapItem) ssItems.get(0);</span>
-<span class="nc" id="L739">		ShiftSwapItem givenSSItem1 = (ShiftSwapItem) ssItems.get(1);</span>
+<span class="nc" id="L822">		ShiftSwapItem givenSSItem0 = (ShiftSwapItem) ssItems.get(0);</span>
+<span class="nc" id="L823">		ShiftSwapItem givenSSItem1 = (ShiftSwapItem) ssItems.get(1);</span>
 
 		// move employee ID from 'given item1' to 'undo item0'
-<span class="nc" id="L742">		ShiftSwapItem undoSSItem0 = undoSSReq.getShiftSwapItem(givenSSItem0);</span>
-<span class="nc" id="L743">		undoSSItem0.setEmployeeID(givenSSItem1.getEmployeeID());</span>
+<span class="nc" id="L826">		ShiftSwapItem undoSSItem0 = undoSSReq.getShiftSwapItem(givenSSItem0);</span>
+<span class="nc" id="L827">		undoSSItem0.setEmployeeID(givenSSItem1.getEmployeeID());</span>
+<span class="nc" id="L828">		undoSSItem0.setIsPartial(givenSSItem0.getIsPartial()); //Not copied by clone.</span>
+<span class="nc" id="L829">		undoSSItem0.setID(givenSSItem0.getID());</span>
 
 		// move employee ID from 'given item0' to 'undo item1'
-<span class="nc" id="L746">		ShiftSwapItem undoSSItem1 = undoSSReq.getShiftSwapItem(givenSSItem1);</span>
-<span class="nc" id="L747">		undoSSItem1.setEmployeeID(givenSSItem0.getEmployeeID());</span>
+<span class="nc" id="L832">		ShiftSwapItem undoSSItem1 = undoSSReq.getShiftSwapItem(givenSSItem1);</span>
+<span class="nc" id="L833">		undoSSItem1.setEmployeeID(givenSSItem0.getEmployeeID());</span>
+<span class="nc" id="L834">		undoSSItem1.setIsPartial(givenSSItem1.getIsPartial()); //Not copied by clone.</span>
+<span class="nc" id="L835">		undoSSItem1.setID(givenSSItem1.getID());</span>
 
 		// now perform the swap that undoes the earlier swap.
-<span class="nc bnc" id="L750" title="All 2 branches missed.">		sam = (sam == null) ? WfmManagerFactory.getScheduleAccessManager() : sam;</span>
-		// setting 'fixNewShiftAssnSPID' to 'false'.  See javadoc for further details.
-<span class="nc bnc" id="L752" title="All 4 branches missed.">		if (givenSSItem0.getIsPartial() || givenSSItem1.getIsPartial()) {</span>
-<span class="nc bnc" id="L753" title="All 2 branches missed.">			if (givenSSReq.isOneWay()) {</span>
-<span class="nc" id="L754">				ShiftSwapRequestUtil.performPartialSwap(undoSSReq, true, sam, false, true);</span>
-			} else {
-<span class="nc" id="L756">				ShiftSwapRequestUtil.performPartialSwap(givenSSReq, true, sam, true, true);</span>
-			}
-		} else {
-<span class="nc" id="L759">			ShiftSwapRequestUtil.performSwap(undoSSReq, true, false, sam);</span>
+
+<span class="nc bnc" id="L839" title="All 2 branches missed.">		if (save){</span>
+<span class="nc" id="L840">			ShiftSwapRequestUtil.performSwapAndSave(undoSSReq, true);</span>
 		}
-<span class="nc" id="L761">	}</span>
+		
+<span class="nc" id="L843">		return undoSSReq;</span>
+	}
 
 	public static void verifySSRequest(ID reqID) throws Exception
 	{
-<span class="nc" id="L765">		ShiftSwapRequestDAO ssDAO = null;</span>
+<span class="nc" id="L848">		ShiftSwapRequestDAO ssDAO = null;</span>
 		try {
 			//verify request exists
-<span class="nc" id="L768">			ssDAO = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
-<span class="nc" id="L769">			ShiftSwapRequest dbSSReq = (ShiftSwapRequest) ssDAO.getRequestByID(reqID, ShiftSwapRequest.getDetailLevelForValidation());</span>
+<span class="nc" id="L851">			ssDAO = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
+<span class="nc" id="L852">			ShiftSwapRequest dbSSReq = (ShiftSwapRequest) ssDAO.getRequestByID(reqID, ShiftSwapRequest.getDetailLevelForValidation());</span>
 
-<span class="nc" id="L771">			RequestUtil.verifyAuditTrailOrdering(dbSSReq);</span>
+<span class="nc" id="L854">			RequestUtil.verifyAuditTrailOrdering(dbSSReq);</span>
 
 			// verify expiration date
-<span class="nc" id="L774">			List ssItems = dbSSReq.getShiftSwapItems();</span>
-<span class="nc" id="L775">			ShiftSwapItem ssItem1 = (ShiftSwapItem) ssItems.get(0);</span>
-<span class="nc" id="L776">			Date earliest = RequestUtil.getEarlierDate(ssItem1.getExpirationDate(), ssItem1.getStartDate());</span>
+<span class="nc" id="L857">			List ssItems = dbSSReq.getShiftSwapItems();</span>
+<span class="nc" id="L858">			ShiftSwapItem ssItem1 = (ShiftSwapItem) ssItems.get(0);</span>
+<span class="nc" id="L859">			Date earliest = RequestUtil.getEarlierDate(ssItem1.getExpirationDate(), ssItem1.getStartDate());</span>
 
-<span class="nc" id="L778">			ShiftSwapItem ssItem2 = (ShiftSwapItem) ssItems.get(1);</span>
-<span class="nc" id="L779">			earliest = RequestUtil.getEarlierDate(earliest, ssItem2.getExpirationDate());</span>
-<span class="nc" id="L780">			earliest = RequestUtil.getEarlierDate(earliest, ssItem2.getStartDate());</span>
-<span class="nc bnc" id="L781" title="All 2 branches missed.">			if (!earliest.equals(dbSSReq.getExpirationDate())) {</span>
-<span class="nc" id="L782">				throw RequestUtil.createRmException(RmEjbLogBundleKey.INVALID_VALUE3,</span>
-<span class="nc" id="L783">						new Long(dbSSReq.getExpirationDate().getTime()), new Long(ssItem1.getExpirationDate().getTime()),</span>
-<span class="nc" id="L784">						new Long(ssItem2.getExpirationDate().getTime()), m_cat);</span>
+<span class="nc" id="L861">			ShiftSwapItem ssItem2 = (ShiftSwapItem) ssItems.get(1);</span>
+<span class="nc" id="L862">			earliest = RequestUtil.getEarlierDate(earliest, ssItem2.getExpirationDate());</span>
+<span class="nc" id="L863">			earliest = RequestUtil.getEarlierDate(earliest, ssItem2.getStartDate());</span>
+<span class="nc bnc" id="L864" title="All 2 branches missed.">			if (!earliest.equals(dbSSReq.getExpirationDate())) {</span>
+<span class="nc" id="L865">				throw RequestUtil.createRmException(RmEjbLogBundleKey.INVALID_VALUE3,</span>
+<span class="nc" id="L866">						new Long(dbSSReq.getExpirationDate().getTime()), new Long(ssItem1.getExpirationDate().getTime()),</span>
+<span class="nc" id="L867">						new Long(ssItem2.getExpirationDate().getTime()), m_cat);</span>
 			}
 
 			//verify shifts were swapped (approved or tentatively approved).
-<span class="nc" id="L788">			String reqStatus = dbSSReq.getRequestStatus();</span>
-<span class="nc bnc" id="L789" title="All 2 branches missed.">			if (reqStatus.equals(RequestAuditTrail.STATUS_APPROVED) ||</span>
-<span class="nc bnc" id="L790" title="All 2 branches missed.">					reqStatus.equals(RequestAuditTrail.STATUS_TENTATIVE))</span>
+<span class="nc" id="L871">			String reqStatus = dbSSReq.getRequestStatus();</span>
+<span class="nc bnc" id="L872" title="All 2 branches missed.">			if (reqStatus.equals(RequestAuditTrail.STATUS_APPROVED) ||</span>
+<span class="nc bnc" id="L873" title="All 2 branches missed.">					reqStatus.equals(RequestAuditTrail.STATUS_TENTATIVE))</span>
 			{
-<span class="nc bnc" id="L792" title="All 2 branches missed.">				boolean published = reqStatus.equals(RequestAuditTrail.STATUS_APPROVED) ? true : false;</span>
+<span class="nc bnc" id="L875" title="All 2 branches missed.">				boolean published = reqStatus.equals(RequestAuditTrail.STATUS_APPROVED) ? true : false;</span>
 
-<span class="nc" id="L794">				ShiftAssignment[] swappedShifts = ShiftSwapRequestUtil.getSwappedShiftAssignsForReqAligned(dbSSReq, published, null);</span>
-<span class="nc" id="L795">				ShiftAssignment[] origShifts = ShiftSwapRequestUtil.getShiftAssignsForReqSameOrgDay(dbSSReq, published, null);</span>
+<span class="nc" id="L877">				ShiftAssignment[] swappedShifts = ShiftSwapRequestUtil.getSwappedShiftAssignsForReqAligned(dbSSReq, published, null);</span>
+<span class="nc" id="L878">				ShiftAssignment[] origShifts = ShiftSwapRequestUtil.getShiftAssignsForReqSameOrgDay(dbSSReq, published, null);</span>
 
-<span class="nc bnc" id="L797" title="All 2 branches missed.">				if (dbSSReq.getSwapType().equals(ShiftSwapRequest.SHIFTSWAP_TYPE_TWOWAY)) {</span>
-<span class="nc bnc" id="L798" title="All 2 branches missed.">					for (int i = 0; i &lt; ssItems.size(); i++) {</span>
-<span class="nc" id="L799">						ShiftSwapItem ssItem = (ShiftSwapItem) ssItems.get(i);</span>
+<span class="nc bnc" id="L880" title="All 2 branches missed.">				if (dbSSReq.getSwapType().equals(ShiftSwapRequest.SHIFTSWAP_TYPE_TWOWAY)) {</span>
+<span class="nc bnc" id="L881" title="All 2 branches missed.">					for (int i = 0; i &lt; ssItems.size(); i++) {</span>
+<span class="nc" id="L882">						ShiftSwapItem ssItem = (ShiftSwapItem) ssItems.get(i);</span>
 
-<span class="nc bnc" id="L801" title="All 2 branches missed.">						if (ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc bnc" id="L884" title="All 2 branches missed.">						if (ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
 							// verify swapped shift exists
-<span class="nc bnc" id="L803" title="All 2 branches missed.">							if (swappedShifts[i] == null) {</span>
-<span class="nc" id="L804">								throw RequestUtil.createRmException(RmEjbLogBundleKey.SS_SWAPPED_SHIFT_NOT_FOUND,</span>
-<span class="nc" id="L805">										dbSSReq.getID(), ssItem.getID(), m_cat);</span>
+<span class="nc bnc" id="L886" title="All 2 branches missed.">							if (swappedShifts[i] == null) {</span>
+<span class="nc" id="L887">								throw RequestUtil.createRmException(RmEjbLogBundleKey.SS_SWAPPED_SHIFT_NOT_FOUND,</span>
+<span class="nc" id="L888">										dbSSReq.getID(), ssItem.getID(), m_cat);</span>
 							}
 
 							// verify orig shift does not exist
-<span class="nc bnc" id="L809" title="All 2 branches missed.">							if (origShifts[i] != null &amp;&amp;</span>
-<span class="nc bnc" id="L810" title="All 2 branches missed.">									origShifts[i].getStartTime().equals(ssItem.getStartDate()) &amp;&amp;</span>
-<span class="nc bnc" id="L811" title="All 2 branches missed.">									origShifts[i].getEndTime().equals(ssItem.getEndDate())) {</span>
-<span class="nc" id="L812">								throw RequestUtil.createRmException(RmEjbLogBundleKey.SS_ORIG_SHIFT_EXISTS,</span>
-<span class="nc" id="L813">										new Integer(i + 1), dbSSReq.getID(), ssItem.getID(), swappedShifts[i].getID(), m_cat);</span>
+<span class="nc bnc" id="L892" title="All 2 branches missed.">							if (origShifts[i] != null &amp;&amp;</span>
+<span class="nc bnc" id="L893" title="All 2 branches missed.">									origShifts[i].getStartTime().equals(ssItem.getStartDate()) &amp;&amp;</span>
+<span class="nc bnc" id="L894" title="All 2 branches missed.">									origShifts[i].getEndTime().equals(ssItem.getEndDate())) {</span>
+<span class="nc" id="L895">								throw RequestUtil.createRmException(RmEjbLogBundleKey.SS_ORIG_SHIFT_EXISTS,</span>
+<span class="nc" id="L896">										new Integer(i + 1), dbSSReq.getID(), ssItem.getID(), swappedShifts[i].getID(), m_cat);</span>
 							}
 						}
 					}
@@ -818,176 +901,56 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 			}
 
 		} finally {
-<span class="nc bnc" id="L821" title="All 4 branches missed.">			if (ssDAO != null) {</span>
-<span class="nc" id="L822">				ssDAO.cleanUp();</span>
+<span class="nc bnc" id="L904" title="All 4 branches missed.">			if (ssDAO != null) {</span>
+<span class="nc" id="L905">				ssDAO.cleanUp();</span>
 			}
 		}
-<span class="nc" id="L825">	}</span>
+<span class="nc" id="L908">	}</span>
 
-	public static void publishSwap(ShiftSwapRequest ssReq, ScheduleAccessManager sam)
-			throws BbmSchedulePublishingException, BbmEJBCreateException, RemoteException
-	{
-<span class="nc" id="L830">		m_cat.debug(&quot;Publishing schedule for ssReq: &quot; + ssReq);</span>
+	public static void publishSwap(ShiftSwapRequest ssReq, ScheduleAccessManager sam) throws Exception {
+<span class="nc" id="L911">		m_cat.debug(&quot;Publishing schedule for ssReq: &quot; + ssReq);</span>
 
-<span class="nc bnc" id="L832" title="All 2 branches missed.">		if (sam == null) {</span>
-<span class="nc" id="L833">			sam = WfmManagerFactory.getScheduleAccessManager();</span>
-		}
-
-		// get the SS items associated with this SS request.
-<span class="nc" id="L837">		ShiftSwapItem ssItem1 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(0);</span>
-<span class="nc" id="L838">		ID empID1 = ssItem1.getEmployeeID();</span>
-<span class="nc" id="L839">		ShiftSwapItem ssItem2 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(1);</span>
-<span class="nc" id="L840">		ID empID2 = ssItem2.getEmployeeID();</span>
-
-<span class="nc" id="L842">		String ssItem1SwapType = ssItem1.getShiftType();</span>
-<span class="nc bnc" id="L843" title="All 2 branches missed.">		if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-			// publish for emp1 during shift swapped out.
-<span class="nc" id="L845">			sam.publishSchedule(Collections.singleton(empID1), ssItem1.getStartDate(), ssItem1.getEndDate());</span>
-
-			// publish for emp2 during shift swapped in.
-<span class="nc" id="L848">			sam.publishSchedule(Collections.singleton(empID2), ssItem1.getStartDate(), ssItem1.getEndDate());</span>
-		}
-
-<span class="nc" id="L851">		String ssItem2SwapType = ssItem2.getShiftType();</span>
-<span class="nc bnc" id="L852" title="All 2 branches missed.">		if (ssItem2SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-			// publish for emp2 during shift swapped out.
-<span class="nc" id="L854">			sam.publishSchedule(Collections.singleton(empID2), ssItem2.getStartDate(), ssItem2.getEndDate());</span>
-			
-			// publish for emp1 during shift swapped in
-<span class="nc" id="L857">			sam.publishSchedule(Collections.singleton(empID1), ssItem2.getStartDate(), ssItem2.getEndDate());</span>
-		}
-<span class="nc" id="L859">	}</span>
-
-	public static void publishPartialSwap(ShiftAssignment[] saArr, ScheduleAccessManager sam)
-			throws BbmSchedulePublishingException, BbmEJBCreateException, RemoteException
-	{
-<span class="nc" id="L864">		m_cat.debug(&quot;Publishing schedule for sas: &quot; + saArr);</span>
-
-<span class="nc bnc" id="L866" title="All 2 branches missed.">		if (sam == null) {</span>
-<span class="nc" id="L867">			sam = WfmManagerFactory.getScheduleAccessManager();</span>
-		}
-
-<span class="nc bnc" id="L870" title="All 4 branches missed.">		if (saArr != null &amp;&amp; saArr.length &gt; 0) {</span>
-<span class="nc bnc" id="L871" title="All 2 branches missed.">			for (int i = 0; i &lt; saArr.length; i++) {</span>
-<span class="nc" id="L872">				ShiftAssignment sa = saArr[i];</span>
-<span class="nc bnc" id="L873" title="All 2 branches missed.">				if (sa != null) {</span>
-<span class="nc" id="L874">					sam.publishSchedule(Collections.singleton(sa.getWorkResourceIDs().iterator().next()),</span>
-<span class="nc" id="L875">							sa.getStartTime(), sa.getEndTime());</span>
-				}
+		// find time ranges to publish
+<span class="nc" id="L914">		Timeline publishTime = new Timeline();</span>
+<span class="nc bnc" id="L915" title="All 2 branches missed.">		for (ShiftSwapItem ssItem : ssReq.getShiftSwapItems()) {</span>
+<span class="nc bnc" id="L916" title="All 2 branches missed.">			if (ssItem.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L917">				publishTime = publishTime.join(Timeline.newInstance(Arrays.asList(getOrgDayBoundary(ssItem, ssReq.getCache()))));</span>
 			}
+<span class="nc" id="L919">		}</span>
+
+		// publish for both employees
+<span class="nc bnc" id="L922" title="All 2 branches missed.">		if (publishTime.isNotEmpty()) {</span>
+<span class="nc bnc" id="L923" title="All 2 branches missed.">			if (sam == null) {</span>
+<span class="nc" id="L924">				sam = WfmManagerFactory.getScheduleAccessManager();</span>
+			}
+<span class="nc" id="L926">			ID empID1 = ssReq.getShiftSwapItems().get(0).getEmployeeID();</span>
+<span class="nc" id="L927">			ID empID2 = ssReq.getShiftSwapItems().get(1).getEmployeeID();</span>
+<span class="nc bnc" id="L928" title="All 2 branches missed.">			for (TimeRange range : publishTime.getTimeRanges()) {</span>
+<span class="nc" id="L929">				sam.publishSchedule(Collections.singleton(empID1), range.getStartDate(), range.getEndDate());</span>
+<span class="nc" id="L930">				sam.publishSchedule(Collections.singleton(empID2), range.getStartDate(), range.getEndDate());</span>
+<span class="nc" id="L931">			}</span>
 		}
-<span class="nc" id="L879">	}</span>
+<span class="nc" id="L933">	}</span>
 
 	/**
-	 * Processes the Shift Swap request and does the actual shift swap.  Does not publish the
-	 * schedule after swap.  Any underlying unavailabilies are deleted.
+	 * The returned shifts might contain gap-only shifts (shifts with one gap shift event for the whole time)
+	 * for the shifts which will be deleted.
 	 *
-	 * Note:
-	 * &lt;pre&gt;
-	 *    get the IDs for both employees participating in swap.
-	 *    if swap type is one way
-	 *       obtain shiftassignment for employee with shift
-	 *       update employee ID in shiftassignment to employee receiving shift.
-	 *       post shiftassignment to database
-	 *    end if
-	 *    if swap type is 2 way
-	 *       get the ShiftAssignment for each employee
-	 *       swap the employeeIDs in the ShiftAssignment object
-	 *       post the ShiftAssigment object back to the databaase.
-	 *    if
-	 * &lt;/pre&gt;
-	 *
-	 * @param fixNewShiftAssnSPID See {@link RequestUtil#createShiftAssignment(ID, ShiftAssignment, boolean, ScheduleAccessManager) createShiftAssignment} method.
-	 *
+	 * @param ssReq
+	 * @return
+	 * @throws Exception
 	 */
-	public static void performSwap(ShiftSwapRequest ssReq, boolean deleteUnderlyingUnavails, boolean fixNewShiftAssnSPID,
-			ScheduleAccessManager sam) throws Exception
-	{
-
-<span class="nc" id="L907">		ShiftSwapItem ssItem1 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(0);</span>
-<span class="nc" id="L908">		ShiftSwapItem ssItem2 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(1);</span>
-
-		// obtain employee IDs participating in the SS
-<span class="nc" id="L911">		ID empID1 = ssItem1.getEmployeeID();</span>
-<span class="nc" id="L912">		ID empID2 = ssItem2.getEmployeeID();</span>
-
-<span class="nc bnc" id="L914" title="All 2 branches missed.">		if (sam == null) {</span>
-<span class="nc" id="L915">			sam = WfmManagerFactory.getScheduleAccessManager();</span>
-		}
-
-		// updating shiftAssign1 with the new employeeID to reassign the shift, using
-		// ScheduleAccessManager.updateShiftAssignment(), won't work as it could lead to 2 shift assignments
-		// on the same day (if swapping shifts within the same day).
-		// To avoid this, first delete both the shifts and then create 2 new shifts
-		// TODO: for one way swaps, updateShiftAssignment() might work.
-
-<span class="nc" id="L924">		String ssItem1SwapType = ssItem1.getShiftType();</span>
-<span class="nc" id="L925">		ShiftAssignment shiftAssnUnpub1 = null;</span>
-<span class="nc" id="L926">		ShiftSwapValidationCache ssReqValCache = ssReq.getCache();</span>
-		// delete shift assignment in unpublisehd schedule for ssItem1.
-<span class="nc bnc" id="L928" title="All 2 branches missed.">		if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-			// verify if shift assignments exists in the unpublished schedule.  When a SS Request
-			// is created, only the published schedule is used. The same applies for all SS validations.
-			// Until approval, it seems the the unpublished is not checked.
-<span class="nc" id="L932">			shiftAssnUnpub1 = ShiftSwapRequestUtil.getShiftAssignForSSItemAligned(ssItem1, false, sam, ssReqValCache);</span>
-<span class="nc bnc" id="L933" title="All 2 branches missed.">			if (shiftAssnUnpub1 == null) {</span>
-<span class="nc" id="L934">				throw RequestUtil.createRmHardValidationException(</span>
-						RmEjbBundleKey.SS_CANNOT_FIND_UNPUBSHIFT_FOR_SSITEM,
-<span class="nc" id="L936">						ssItem1.getStartDate(), ssItem1.getEndDate(),</span>
-<span class="nc" id="L937">						ssReqValCache.getEmployeeNameByID(ssItem1.getEmployeeID()), m_cat);</span>
-			}
-
-			// delete shift assignment in unpublisehd schedule for ssItem1.
-<span class="nc" id="L941">			shiftAssnUnpub1 = RequestUtil.deleteShiftAssignment(ssItem1, sam, ssReqValCache);</span>
-		}
-
-<span class="nc" id="L944">		String ssItem2SwapType = ssItem2.getShiftType();</span>
-<span class="nc" id="L945">		ShiftAssignment shiftAssnUnpub2 = null;</span>
-		// delete shift assignment in unpublisehd schedule for ssItem2.
-<span class="nc bnc" id="L947" title="All 2 branches missed.">		if (ssItem2SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-			// verify if shift assignments exists in the unpublished schedule.  When a SS Request
-			// is created, only the published schedule is used. The same applies for all SS validations.
-			// Until approval, it seems the the unpublished is not checked.
-<span class="nc" id="L951">			shiftAssnUnpub2 = ShiftSwapRequestUtil.getShiftAssignForSSItemAligned(ssItem2, false, sam, ssReqValCache);</span>
-<span class="nc bnc" id="L952" title="All 2 branches missed.">			if (shiftAssnUnpub2 == null) {</span>
-<span class="nc" id="L953">				throw RequestUtil.createRmHardValidationException(</span>
-						RmEjbBundleKey.SS_CANNOT_FIND_UNPUBSHIFT_FOR_SSITEM,
-<span class="nc" id="L955">						ssItem2.getStartDate(), ssItem2.getEndDate(),</span>
-<span class="nc" id="L956">						ssReqValCache.getEmployeeNameByID(ssItem2.getEmployeeID()), m_cat);</span>
-			}
-
-			// delete shift assignment in unpublisehd schedule for ssItem2.
-<span class="nc" id="L960">			shiftAssnUnpub2 = RequestUtil.deleteShiftAssignment(ssItem2, sam, ssReqValCache);</span>
-		}
-
-<span class="nc bnc" id="L963" title="All 2 branches missed.">		if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-			// delete underlying unavailabilies if necessary before shift assignment is created.
-<span class="nc bnc" id="L965" title="All 2 branches missed.">			if (deleteUnderlyingUnavails) {</span>
-<span class="nc" id="L966">				deleteUnderlyingUnavailabilities(empID2, shiftAssnUnpub1.getStartTime(),</span>
-<span class="nc" id="L967">						shiftAssnUnpub1.getEndTime(), sam);</span>
-			}
-
-			// create shift assignment for emp2 using shiftAssignment associated with ssItem1.
-<span class="nc" id="L971">			RequestUtil.createShiftAssignment(empID2, shiftAssnUnpub1, fixNewShiftAssnSPID, sam);</span>
-		}
-
-<span class="nc bnc" id="L974" title="All 2 branches missed.">		if (ssItem2SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-			// delete underlying unavailabilies if necessary before shift assignment is created.
-<span class="nc bnc" id="L976" title="All 2 branches missed.">			if (deleteUnderlyingUnavails) {</span>
-<span class="nc" id="L977">				deleteUnderlyingUnavailabilities(empID1, shiftAssnUnpub2.getStartTime(),</span>
-<span class="nc" id="L978">						shiftAssnUnpub2.getEndTime(), sam);</span>
-			}
-
-			// create shift assignment for emp1 using shiftAssignment associated with ssItem2.
-<span class="nc" id="L982">			RequestUtil.createShiftAssignment(empID1, shiftAssnUnpub2, fixNewShiftAssnSPID, sam);</span>
-		}
-<span class="nc" id="L984">	}</span>
-
-	public static ShiftAssignment[] getShiftsAfterSwap(ShiftSwapRequest ssReq,
-			ScheduleAccessManager sam) throws Exception
-	{
-<span class="nc" id="L989">		return performPartialSwap(ssReq, false, sam, false, false);</span>
+	public static ShiftAssignment[] getShiftsAfterSwap(final ShiftSwapRequest ssReq, final boolean usePublishedSchedule) throws Exception {
+<span class="nc" id="L944">		return performSwap(ssReq, usePublishedSchedule, false, false).getResultedShifts();</span>
 	}
+	public static SwapResult getShiftSwapResult(final ShiftSwapRequest ssReq, final boolean usePublishedSchedule) throws Exception {
+<span class="nc" id="L947">		return performSwap(ssReq, usePublishedSchedule, false, false);</span>
+	}
+
+	public static SwapResult performSwapAndSave(ShiftSwapRequest ssReq, boolean deleteUnderlyingUnavails) throws Exception {
+<span class="nc" id="L951">		return performSwap(ssReq, false, deleteUnderlyingUnavails, true);</span>
+	}
+
 
 	/**
 	 * Processes the Shift Swap request and does the actual partial shift swap.  Does not publish the
@@ -1014,909 +977,55 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 * @param fixNewShiftAssnSPID See {@link RequestUtil#createShiftAssignment(ID, ShiftAssignment, boolean, ScheduleAccessManager) createShiftAssignment} method.
 	 *
 	 */
-	public static ShiftAssignment[] performPartialSwap(ShiftSwapRequest ssReq, boolean deleteUnderlyingUnavails,
-			ScheduleAccessManager sam, boolean undo, boolean save) throws Exception
+	private static SwapResult performSwap(final ShiftSwapRequest ssReq, final boolean usePublishedSchedule, final boolean deleteUnderlyingUnavails, final boolean save) throws Exception
 	{
-<span class="nc" id="L1020">		ShiftAssignment[] shiftAssigns = new ShiftAssignment[4];</span>
-<span class="nc" id="L1021">		ShiftSwapItem ssItem1 = ssReq.getShiftSwapItems().get(0);</span>
-<span class="nc" id="L1022">		ShiftSwapItem ssItem2 = ssReq.getShiftSwapItems().get(1);</span>
+<span class="nc" id="L982">		ScheduleReaderWriter readerWriter = new CachedResultScheduleReaderWriterImpl(usePublishedSchedule, save, ssReq.getCache());</span>
+<span class="nc" id="L983">		ShiftSwapRequestApprovalManager manager = new ShiftSwapRequestApprovalManager(readerWriter);</span>
+<span class="nc" id="L984">		SwapResult swapResult = manager.performSwap(ssReq, deleteUnderlyingUnavails);</span>
+<span class="nc" id="L985">		ShiftAssignment[] newVal = swapResult.getResultedShifts();</span>
 
-<span class="nc" id="L1024">		String ssItem1SwapType = ssItem1.getShiftType();</span>
-<span class="nc" id="L1025">		String ssItem2SwapType = ssItem2.getShiftType();</span>
-
-		//find the item that has the shift; make sure that the first item is always the shift
-<span class="nc bnc" id="L1028" title="All 2 branches missed.">		if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF)) {</span>
-<span class="nc" id="L1029">			ssItem1 = ssReq.getShiftSwapItems().get(1);</span>
-<span class="nc" id="L1030">			ssItem2 = ssReq.getShiftSwapItems().get(0);</span>
-		}
-
-<span class="nc bnc" id="L1033" title="All 2 branches missed.">		if (sam == null) {</span>
-<span class="nc" id="L1034">			sam = WfmManagerFactory.getScheduleAccessManager();</span>
-		}
-
-<span class="nc" id="L1037">		ShiftSwapValidationCache ssReqValCache = ssReq.getCache();</span>
-
-		//if one way
-<span class="nc bnc" id="L1040" title="All 4 branches missed.">		if (!undo &amp;&amp; (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF) ||</span>
-<span class="nc bnc" id="L1041" title="All 2 branches missed.">				ssItem2SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF))) {</span>
-<span class="nc" id="L1042">			ShiftAssignment shiftAssnUnpub1 = ShiftSwapRequestUtil.getShiftAssignForSSItem(ssItem1, false, false, sam, ssReqValCache);</span>
-			//get shift for other agnet on this day
-			//clone shift swap item to set empid to other employee
-<span class="nc" id="L1045">			ShiftSwapItem ssItem = ShiftSwapRequestUtil.cloneShiftSwapItem(ssItem1);</span>
-<span class="nc" id="L1046">			ssItem.setEmployeeID(ssItem2.getEmployeeID());</span>
-			//QC87812 remove prev org day's shifts unless ssItem overlaps with them
-<span class="nc" id="L1048">			ShiftAssignment shiftAssnUnpub = ShiftSwapRequestUtil.getShiftAssignForSSItemSameOrgDay(ssItem, false, true, true, sam,</span>
-					ssReqValCache);
-
-<span class="nc bnc" id="L1051" title="All 2 branches missed.">			if (shiftAssnUnpub != null) {</span>
-				//its a two way swap overlapping swap, and overlaps with swapped in shift, or existing shift start is after swapped in shift
-<span class="nc" id="L1053">				shiftAssigns = doPartialTwoWaySwap(shiftAssnUnpub1, shiftAssnUnpub, ssItem1, ssItem, sam, deleteUnderlyingUnavails, undo,</span>
-						save);
-			} else {
-<span class="nc" id="L1056">				shiftAssigns = doPartialOneWaySwap(ssItem1, ssItem2, sam, ssReqValCache, deleteUnderlyingUnavails, shiftAssnUnpub1, save);</span>
-			}
-<span class="nc" id="L1058">		} else {</span>
-			//if undo, make sure both are shifts
-<span class="nc bnc" id="L1060" title="All 2 branches missed.">			if (undo) {</span>
-<span class="nc" id="L1061">				ssItem1.setShiftType(ShiftSwapItem.SWAPITEMTYPE_SHIFT);</span>
-<span class="nc" id="L1062">				ssItem2.setShiftType(ShiftSwapItem.SWAPITEMTYPE_SHIFT);</span>
-			}
-			//two way swap
-			//get sas for each emp for the swapped day as well as the original shift day
-<span class="nc" id="L1066">            ShiftAssignment shiftAssnUnpub1 = findUnPubSAForSSItemDurationIfNotFoundThrowHVException(sam, ssItem1, ssReqValCache);</span>
-<span class="nc" id="L1067">            ShiftAssignment shiftAssnUnpub2 = findUnPubSAForSSItemDurationIfNotFoundThrowHVException(sam, ssItem2, ssReqValCache);</span>
-			//if originals not found, throw hard val exception
-			//now get sas for the swapped portions
-<span class="nc" id="L1070">			ShiftAssignment[] saSwappedArr = ShiftSwapRequestUtil.getSwappedShiftAssignsForReq(ssReq, false, false, true, sam);</span>
-<span class="nc" id="L1071">			ShiftAssignment shiftAssnUnpubSwap1 = saSwappedArr[0];</span>
-<span class="nc" id="L1072">			ShiftAssignment shiftAssnUnpubSwap2 = saSwappedArr[1];</span>
-
-			//overlap only matters if items fall within
-<span class="nc bnc" id="L1075" title="All 4 branches missed.">			boolean shiftsOverlapWithItems = shiftAssnUnpub1 != null &amp;&amp; shiftAssnUnpub2 != null &amp;&amp;</span>
-<span class="nc bnc" id="L1076" title="All 2 branches missed.">                    isExistingShiftAssignmentOverlappingWithNewSwapItem(ssItem2, shiftAssnUnpub1) &amp;&amp;</span>
-<span class="nc bnc" id="L1077" title="All 2 branches missed.">                    isExistingShiftAssignmentOverlappingWithNewSwapItem(ssItem1, shiftAssnUnpub2);</span>
-
-<span class="nc bnc" id="L1079" title="All 4 branches missed.">        	boolean shiftsOverlap = shiftAssnUnpub1 != null &amp;&amp; shiftAssnUnpub2 != null &amp;&amp;(</span>
-<span class="nc bnc" id="L1080" title="All 2 branches missed.">    		        areExistingUnPubShiftAssignmentsOverlapWithEachOther(shiftAssnUnpub1, shiftAssnUnpub2) ||</span>
-                     //below check indicates that Swap is happening on the same day
-<span class="nc bnc" id="L1082" title="All 4 branches missed.">                    (shiftAssnUnpub2.equals(shiftAssnUnpubSwap1) &amp;&amp;shiftAssnUnpub1.equals(shiftAssnUnpubSwap2)));</span>
-<span class="nc" id="L1083">			ShiftAssignment[] shiftAssignFirst = new ShiftAssignment[2];</span>
-<span class="nc" id="L1084">			ShiftAssignment[] shiftAssignSecond = new ShiftAssignment[2];</span>
-
-<span class="nc bnc" id="L1086" title="All 2 branches missed.">			if (shiftAssnUnpubSwap1 == null) {</span>
-				//if not found, it is a one way partial swap
-<span class="nc" id="L1088">				shiftAssignFirst = doPartialOneWaySwap(ssItem1, ssItem2, sam, ssReqValCache, deleteUnderlyingUnavails, shiftAssnUnpub1,</span>
-						save);
-<span class="nc" id="L1090">				shiftAssigns[0] = shiftAssignFirst[0];</span>
-<span class="nc" id="L1091">				shiftAssigns[1] = shiftAssignFirst[1];</span>
-<span class="nc bnc" id="L1092" title="All 6 branches missed.">			} else if (!shiftsOverlap &amp;&amp; !shiftsOverlapWithItems &amp;&amp; !undo) {</span>
-				//treat this like a overlapping swap
-<span class="nc" id="L1094">				ShiftSwapItem ssItemOther = (ShiftSwapItem) ssItem2.clone();</span>
-<span class="nc bnc" id="L1095" title="All 2 branches missed.">				if (!TimePeriodUtil.inside(ssItemOther.getStartDate(), ssItemOther.getEndDate(),</span>
-<span class="nc" id="L1096">						shiftAssnUnpubSwap1.getStartTime(), shiftAssnUnpubSwap1.getEndTime())) {</span>
-					//trim item if not completely within shift
-<span class="nc bnc" id="L1098" title="All 2 branches missed.">					if ((ssItemOther.getStartDate().before(shiftAssnUnpubSwap1.getStartTime()) &amp;&amp; (ssItemOther.getEndDate()</span>
-<span class="nc bnc" id="L1099" title="All 2 branches missed.">							.after(shiftAssnUnpubSwap1.getStartTime())))) {</span>
-						//set start to start of shift
-<span class="nc" id="L1101">						ssItemOther.setStartDate(shiftAssnUnpubSwap1.getStartTime());</span>
-<span class="nc bnc" id="L1102" title="All 2 branches missed.">					} else if ((ssItemOther.getStartDate().before(shiftAssnUnpubSwap1.getEndTime())) &amp;&amp;</span>
-<span class="nc bnc" id="L1103" title="All 2 branches missed.">							(ssItemOther.getEndDate().after(shiftAssnUnpubSwap1.getEndTime()))) {</span>
-						//set end to end of shift
-<span class="nc" id="L1105">						ssItemOther.setEndDate(shiftAssnUnpubSwap1.getEndTime());</span>
-					}
-				}
-
-<span class="nc" id="L1109">        		shiftAssignFirst = doPartialTwoWaySwap(shiftAssnUnpub1, shiftAssnUnpubSwap1, ssItem1, ssItemOther, sam, deleteUnderlyingUnavails,undo, save);</span>
-
-<span class="nc" id="L1111">				shiftAssigns[0] = shiftAssignFirst[0];</span>
-<span class="nc" id="L1112">				shiftAssigns[1] = shiftAssignFirst[1];</span>
-			}
-
-<span class="nc bnc" id="L1115" title="All 2 branches missed.">			if (shiftAssnUnpubSwap2 == null) {</span>
-				//if not found, it is a one way partial swap
-<span class="nc" id="L1117">				shiftAssignSecond = doPartialOneWaySwap(ssItem2, ssItem1, sam, ssReqValCache, deleteUnderlyingUnavails, shiftAssnUnpub2,</span>
-						save);
-<span class="nc" id="L1119">				shiftAssigns[2] = shiftAssignSecond[0];</span>
-<span class="nc" id="L1120">				shiftAssigns[3] = shiftAssignSecond[1];</span>
-<span class="nc bnc" id="L1121" title="All 6 branches missed.">			} else if (!shiftsOverlap &amp;&amp; !shiftsOverlapWithItems &amp;&amp; !undo) {</span>
-				//ESR 4071054:  Cannot swap shifts between 2 agents when the end time of one shift is the same as the start time of another and a partial shift swap is performed.
-				//A two-way partial swap with no overlaps is like a two-way full swap, and the shifts would have already been swapped above. So this code would pretty much do the same
-				//thing, but in reverse. Worse, it wouldn't work because it would attempt to delete the same two original shifts instead of deleting the two shifts created above.
-
-<span class="nc" id="L1126">        		ShiftSwapItem ssItemOther = (ShiftSwapItem)ssItem1.clone();</span>
-<span class="nc bnc" id="L1127" title="All 2 branches missed.">        		if (!TimePeriodUtil.inside(ssItemOther.getStartDate(), ssItemOther.getEndDate(),</span>
-<span class="nc" id="L1128">        				shiftAssnUnpubSwap2.getStartTime(), shiftAssnUnpubSwap2.getEndTime())){</span>
-        			//trim item if not completely within shift
-<span class="nc bnc" id="L1130" title="All 2 branches missed.">        			if ((ssItemOther.getStartDate().before(shiftAssnUnpubSwap2.getStartTime()) &amp;&amp;</span>
-<span class="nc bnc" id="L1131" title="All 2 branches missed.">        					(ssItemOther.getEndDate().after(shiftAssnUnpubSwap2.getStartTime())))){</span>
-        				//set start to start of shift
-<span class="nc" id="L1133">        				ssItemOther.setStartDate(shiftAssnUnpubSwap2.getStartTime());</span>
-<span class="nc bnc" id="L1134" title="All 2 branches missed.">        			} else if ((ssItemOther.getStartDate().before(shiftAssnUnpubSwap2.getEndTime())) &amp;&amp;</span>
-<span class="nc bnc" id="L1135" title="All 2 branches missed.">        					(ssItemOther.getEndDate().after(shiftAssnUnpubSwap2.getEndTime()))){</span>
-        				//set end to end of shift
-<span class="nc" id="L1137">        				ssItemOther.setEndDate(shiftAssnUnpubSwap2.getEndTime());</span>
-        			}
-        		}
-
-<span class="nc" id="L1141">        		shiftAssignSecond = doPartialTwoWaySwap(shiftAssnUnpub2, shiftAssnUnpubSwap2, ssItem2, ssItemOther, sam,deleteUnderlyingUnavails, undo, save);</span>
-<span class="nc" id="L1142">        		shiftAssigns[2] = shiftAssignSecond[0];</span>
-<span class="nc" id="L1143">        		shiftAssigns[3] = shiftAssignSecond[1];</span>
-				//the shiftAssigns array will be used for determining the employeeID and time range that needs to be published.
-				//So, we clone the above time ranges, and interchange the employeeID's so that the full range is published for both employees.
-				/*shiftAssigns[2] = (ShiftAssignment)(shiftAssigns[1].clone());
-				shiftAssigns[2].addWorkResourceID(shiftAssigns[0].getWorkResourceID());
-				shiftAssigns[3] = (ShiftAssignment)(shiftAssigns[0].clone());
-				shiftAssigns[3].addWorkResourceID(shiftAssigns[1].getWorkResourceID());*/
-			}
-
-<span class="nc bnc" id="L1152" title="All 4 branches missed.">			if (shiftsOverlap &amp;&amp; !undo) {//undo will be handled here as well</span>
-<span class="nc" id="L1153">        		shiftAssigns = handleOverlappingShiftsSwap(shiftAssnUnpub1, shiftAssnUnpub2, ssItem1, ssItem2, sam, undo, save, shiftsOverlap);</span>
-			}
-
-<span class="nc bnc" id="L1156" title="All 4 branches missed.">			if (undo &amp;&amp; !shiftsOverlap) {</span>
-<span class="nc" id="L1157">				shiftAssigns = doPartialTwoWaySwap(shiftAssnUnpub1, shiftAssnUnpubSwap1, ssItem1, ssItem2, sam, false, undo, save);</span>
-
-<span class="nc" id="L1159">				shiftAssigns = doPartialTwoWaySwap(shiftAssnUnpub2, shiftAssnUnpubSwap2, ssItem2, ssItem1, sam, false, undo, save);</span>
-			}
-		}
-
-<span class="nc bnc" id="L1163" title="All 2 branches missed.">		for (int i = 0; i &lt; shiftAssigns.length; i++) {</span>
-<span class="nc" id="L1164">			ShiftAssignment sa = shiftAssigns[i];</span>
-<span class="nc bnc" id="L1165" title="All 2 branches missed.">			if (sa.getDuration() &gt; 24 * 60) {</span>
-<span class="nc" id="L1166">				Integer iDay = new Integer(24 * 60);</span>
-<span class="nc" id="L1167">				ID wrID = (ID) sa.getWorkResourceIDs().toArray()[0];</span>
-<span class="nc" id="L1168">				throw RequestUtil.createRmHardValidationException(</span>
+<span class="nc bnc" id="L987" title="All 2 branches missed.">		for (int i = 0; i &lt; newVal.length; i++) {</span>
+<span class="nc" id="L988">			ShiftAssignment sa = newVal[i];</span>
+<span class="nc bnc" id="L989" title="All 2 branches missed.">			if (sa.getDuration() &gt; 24 * 60) {</span>
+<span class="nc" id="L990">				Integer iDay = new Integer(24 * 60);</span>
+<span class="nc" id="L991">				ID wrID = (ID) sa.getWorkResourceIDs().toArray()[0];</span>
+<span class="nc" id="L992">				throw RequestUtil.createRmHardValidationException(</span>
 						RmEjbBundleKey.PSS_SHIFT_MAX_DURATION,
 						iDay,
-<span class="nc" id="L1171">						ssReqValCache.getEmployeeNameByID(wrID),</span>
+<span class="nc" id="L995">						ssReq.getValidationCache().getEmployeeNameByID(wrID),</span>
 						m_cat);
 			}
 		}
-<span class="nc" id="L1175">		return shiftAssigns;</span>
+<span class="nc" id="L999">		return swapResult;</span>
 	}
 
-    private static boolean areExistingUnPubShiftAssignmentsOverlapWithEachOther(ShiftAssignment shiftAssnUnpub1, ShiftAssignment shiftAssnUnpub2) {
-<span class="nc" id="L1179">        return TimePeriodUtil.overlap(shiftAssnUnpub1.getStartTime(), shiftAssnUnpub1.getEndTime(),</span>
-<span class="nc" id="L1180">                shiftAssnUnpub2.getStartTime(), shiftAssnUnpub2.getEndTime());</span>
-    }
-    private static boolean isExistingShiftAssignmentOverlappingWithNewSwapItem(ShiftSwapItem ssItem2, ShiftAssignment shiftAssnUnpub1) {
-<span class="nc" id="L1183">        return TimePeriodUtil.overlap(shiftAssnUnpub1.getStartTime(), shiftAssnUnpub1.getEndTime(),</span>
-<span class="nc" id="L1184">                ssItem2.getStartDate(), ssItem2.getEndDate());</span>
-    }
-    static ShiftAssignment findUnPubSAForSSItemDurationIfNotFoundThrowHVException(ScheduleAccessManager sam, ShiftSwapItem ssItem1, ShiftSwapValidationCache ssReqValCache) throws Exception {
-<span class="nc" id="L1187">        ShiftAssignment shiftAssnUnpub1 = ShiftSwapRequestUtil.getShiftAssignForSSItem(ssItem1, false, false, sam, ssReqValCache);</span>
-<span class="nc bnc" id="L1188" title="All 2 branches missed.">        if (shiftAssnUnpub1 == null){</span>
-<span class="nc" id="L1189">            throw RequestUtil.createRmHardValidationException(</span>
-                    RmEjbBundleKey.SS_CANNOT_FIND_UNPUBSHIFT_FOR_SSITEM,
-<span class="nc" id="L1191">                    ssItem1.getStartDate(), ssItem1.getEndDate(),</span>
-<span class="nc" id="L1192">                    ssReqValCache.getEmployeeNameByID(ssItem1.getEmployeeID()), m_cat);</span>
-        }
-<span class="nc" id="L1194">        return shiftAssnUnpub1;</span>
-    }
 	public static boolean canApproveTentatively(ShiftSwapRequest ssReq,
 			ScheduleAccessManager sam) throws Exception
 	{
-<span class="nc" id="L1199">		boolean canApproveTentatively = true;</span>
-<span class="nc" id="L1200">		ShiftSwapItem ssItem1 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(0);</span>
-<span class="nc" id="L1201">		ShiftSwapItem ssItem2 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(1);</span>
+<span class="nc" id="L1005">		boolean canApproveTentatively = true;</span>
+<span class="nc" id="L1006">		ShiftSwapItem ssItem1 = ssReq.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L1007">		ShiftSwapItem ssItem2 = ssReq.getShiftSwapItems().get(1);</span>
 
-<span class="nc bnc" id="L1203" title="All 2 branches missed.">		if (sam == null) {</span>
-<span class="nc" id="L1204">			sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc bnc" id="L1009" title="All 2 branches missed.">		if (sam == null) {</span>
+<span class="nc" id="L1010">			sam = WfmManagerFactory.getScheduleAccessManager();</span>
 		}
 
 		//now get sas for the swapped portions to make sure they do not ioverlap with the items
-<span class="nc" id="L1208">		ShiftAssignment[] saSwappedArr = ShiftSwapRequestUtil.getSwappedShiftAssignsForReq(ssReq, false, false, true, sam);</span>
-<span class="nc" id="L1209">		ShiftAssignment shiftAssnUnpubSwap1 = saSwappedArr[0];</span>
-<span class="nc" id="L1210">		ShiftAssignment shiftAssnUnpubSwap2 = saSwappedArr[1];</span>
+<span class="nc" id="L1014">		ShiftAssignment[] saSwappedArr = ShiftSwapRequestUtil.getSwappedShiftAssignsForReq(ssReq, false, false, true, sam);</span>
+<span class="nc" id="L1015">		ShiftAssignment shiftAssnUnpubSwap1 = saSwappedArr[0];</span>
+<span class="nc" id="L1016">		ShiftAssignment shiftAssnUnpubSwap2 = saSwappedArr[1];</span>
 
-<span class="nc bnc" id="L1212" title="All 2 branches missed.">		if (ssItem1.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF)) {</span>
-<span class="nc" id="L1213">			shiftAssnUnpubSwap1 = null;</span>
+<span class="nc bnc" id="L1018" title="All 2 branches missed.">		if (ssItem1.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF)) {</span>
+<span class="nc" id="L1019">			shiftAssnUnpubSwap1 = null;</span>
 		}
-<span class="nc bnc" id="L1215" title="All 2 branches missed.">		if (ssItem2.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF)) {</span>
-<span class="nc" id="L1216">			shiftAssnUnpubSwap2 = null;</span>
+<span class="nc bnc" id="L1021" title="All 2 branches missed.">		if (ssItem2.getShiftType().equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF)) {</span>
+<span class="nc" id="L1022">			shiftAssnUnpubSwap2 = null;</span>
 		}
 
-<span class="nc bnc" id="L1219" title="All 4 branches missed.">		canApproveTentatively = shiftAssnUnpubSwap1 == null &amp;&amp;</span>
+<span class="nc bnc" id="L1025" title="All 4 branches missed.">		canApproveTentatively = shiftAssnUnpubSwap1 == null &amp;&amp;</span>
 				shiftAssnUnpubSwap2 == null;
-<span class="nc" id="L1221">		return canApproveTentatively;</span>
+<span class="nc" id="L1027">		return canApproveTentatively;</span>
 	}
-
-	private static ShiftAssignment createSAFromParams(Date start, ID activityID, ID campaignID, int duration,
-			ID workResourceID, ID shiftID) {
-<span class="nc" id="L1226">		ShiftAssignment sa = new ShiftAssignment();</span>
-<span class="nc" id="L1227">		sa.setStartTime(start);</span>
-<span class="nc" id="L1228">		sa.setActivityID(activityID);</span>
-<span class="nc" id="L1229">		sa.setCampaignID(campaignID);</span>
-<span class="nc" id="L1230">		sa.setDuration(duration);</span>
-<span class="nc" id="L1231">		sa.addWorkResourceID(workResourceID);</span>
-<span class="nc" id="L1232">		sa.setShiftID(shiftID);</span>
-<span class="nc" id="L1233">		return sa;</span>
-	}
-
-    static ShiftEventAssignment createSEAFromParams(Date start, ID activityID,
-    		int duration, ID workResourceID, boolean isPaid, ID spId) {
-    	
-<span class="nc bnc" id="L1239" title="All 2 branches missed.">    	if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L1240">    		m_cat.debug(&quot;Inside createSEAFromParams Duration :\t&quot; + duration +&quot;\t Start Time :\t&quot; + start + &quot;\t Activity :\t&quot; + activityID + &quot;\t Paid Status :\t&quot; + isPaid);</span>
-    	}
-    	
-<span class="nc" id="L1243">		ShiftEventAssignment sea = new ShiftEventAssignment();</span>
-<span class="nc" id="L1244">		sea.setActivityID(activityID);</span>
-<span class="nc" id="L1245">		sea.setStartTime(start);</span>
-<span class="nc" id="L1246">		sea.setDuration(duration);</span>
-<span class="nc" id="L1247">		sea.addWorkResourceID(workResourceID);</span>
-<span class="nc" id="L1248">    	sea.setPaid(isPaid);</span>
-<span class="nc" id="L1249">    	sea.setSPID(spId);</span>
-<span class="nc" id="L1250">		return sea;</span>
-	}
-
-    static ShiftAssignment[] handleOverlappingShiftsSwap(ShiftAssignment shiftAssnUnpub1,
-			ShiftAssignment shiftAssnUnpub2, ShiftSwapItem ssItem1, ShiftSwapItem ssItem2,
-			ScheduleAccessManager sam, boolean undo, boolean save, boolean hasOverlap) throws Exception {
-		//  need to deal with one set of shifts together to prevent constraint violation
-		//remove overlapping seas
-<span class="nc" id="L1258">		ID empID1 = shiftAssnUnpub1.getWorkResourceIDs().iterator().next();</span>
-<span class="nc" id="L1259">		ID empID2 = shiftAssnUnpub2.getWorkResourceIDs().iterator().next();</span>
-<span class="nc" id="L1260">		ShiftAssignment sa1 = createSAFromParams(shiftAssnUnpub1.getStartTime(),</span>
-<span class="nc" id="L1261">				shiftAssnUnpub1.getActivityID(), shiftAssnUnpub1.getCampaignID(),</span>
-<span class="nc" id="L1262">				shiftAssnUnpub1.getDuration(), empID1, shiftAssnUnpub1.getShiftID());</span>
-
-<span class="nc" id="L1264">		ShiftAssignment sa2 = createSAFromParams(shiftAssnUnpub2.getStartTime(),</span>
-<span class="nc" id="L1265">				shiftAssnUnpub2.getActivityID(), shiftAssnUnpub2.getCampaignID(),</span>
-<span class="nc" id="L1266">				shiftAssnUnpub2.getDuration(), empID2, shiftAssnUnpub2.getShiftID());</span>
-
-		//alter start if item starts before shift
-<span class="nc bnc" id="L1269" title="All 2 branches missed.">		if (!undo) {</span>
-<span class="nc" id="L1270">            alterSABoundariesBasedOnNewSwapItems(ssItem2, sa1);</span>
-<span class="nc" id="L1271">            alterSABoundariesBasedOnNewSwapItems(ssItem1, sa2);</span>
-		}
-
-		//		add swapped seas for each shift
-<span class="nc" id="L1275">		addOverlappingSEAs(shiftAssnUnpub2, sa1, ssItem2);</span>
-<span class="nc" id="L1276">		addOverlappingSEAs(shiftAssnUnpub1, sa2, ssItem1);</span>
-
-		//if shifts are overlapping, handle as 2 way swaps
-<span class="nc bnc" id="L1279" title="All 4 branches missed.">		if (hasOverlap &amp;&amp; !TimePeriodUtil.equal(ssItem2.getStartDate(), ssItem2.getEndDate(),</span>
-<span class="nc" id="L1280">				ssItem1.getStartDate(), ssItem1.getEndDate())) {</span>
-			//in case of overlapping items, only non- overlapping parts should be swapped here
-<span class="nc" id="L1282">            ShiftSwapItem nonOverlappingSSitemInComparisionWithItem2 =  determineNonOverlappingPartsInCaseOfOverlappingSwapItems(ssItem1, ssItem2);</span>
-<span class="nc bnc" id="L1283" title="All 2 branches missed.">            if(nonOverlappingSSitemInComparisionWithItem2 != null) {</span>
-<span class="nc" id="L1284">                addOverlappingSEAs(shiftAssnUnpub1, sa2, nonOverlappingSSitemInComparisionWithItem2);</span>
-			}
-<span class="nc" id="L1286">            ShiftSwapItem nonOverlappingSSitemInComparisionWithItem1 = determineNonOverlappingPartsInCaseOfOverlappingSwapItems(ssItem2, ssItem1);</span>
-<span class="nc bnc" id="L1287" title="All 2 branches missed.">            if(nonOverlappingSSitemInComparisionWithItem1 != null) {</span>
-<span class="nc" id="L1288">                addOverlappingSEAs(shiftAssnUnpub2, sa1,nonOverlappingSSitemInComparisionWithItem1);</span>
-            }
-		}
-
-		//trim events using items: only called if item overlaps with
-<span class="nc" id="L1293">		trimEventsForShift(shiftAssnUnpub1, ssItem1, ssItem2, sa1);</span>
-<span class="nc" id="L1294">		trimEventsForShift(shiftAssnUnpub2, ssItem2, ssItem1, sa2);</span>
-
-<span class="nc bnc" id="L1296" title="All 2 branches missed.">		if (!undo) {</span>
-<span class="nc" id="L1297">			ShiftEventAssignment sea = null;</span>
-			//add gap activity for current shift
-<span class="nc" id="L1299">            ShiftEventAssignment gapSEA = createGapSEWhenSSItemIsNotInsideSA(shiftAssnUnpub2, ssItem1, ssItem2);</span>
-<span class="nc bnc" id="L1300" title="All 2 branches missed.">            if(gapSEA != null) {</span>
-<span class="nc" id="L1301">                sa1.addShiftEventAssignment(gapSEA);</span>
-            }
-<span class="nc" id="L1303">            gapSEA = createGapSEWhenSSItemIsNotInsideSA(shiftAssnUnpub1, ssItem2, ssItem1);</span>
-<span class="nc bnc" id="L1304" title="All 2 branches missed.">            if(gapSEA != null) {</span>
-<span class="nc" id="L1305">                sa2.addShiftEventAssignment(gapSEA);</span>
-            }
-
-<span class="nc" id="L1308">            createGapSEAWhenSwapItemsAreNotInsideNorOverlap(shiftAssnUnpub2, ssItem1, ssItem2, sa2);</span>
-<span class="nc" id="L1309">            createGapSEAWhenSwapItemsAreNotInsideNorOverlap(shiftAssnUnpub1, ssItem2, ssItem1, sa1);</span>
-
-		}
-
-<span class="nc bnc" id="L1313" title="All 2 branches missed.">		if (undo) {</span>
-<span class="nc" id="L1314">			addNonOverlappingSEAs(shiftAssnUnpub1, sa1, ssItem1);</span>
-<span class="nc" id="L1315">			addNonOverlappingSEAs(shiftAssnUnpub2, sa2, ssItem2);</span>
-		}
-<span class="nc" id="L1317">		sa1 = trimLeadingTrailingGapsFromShift(sa1);</span>
-<span class="nc" id="L1318">		sa2 = trimLeadingTrailingGapsFromShift(sa2);</span>
-<span class="nc bnc" id="L1319" title="All 2 branches missed.">		if (save) {</span>
-			//delete original shifts
-<span class="nc" id="L1321">			ArrayList aList = new ArrayList();</span>
-<span class="nc" id="L1322">			aList.add(shiftAssnUnpub1.getID());</span>
-<span class="nc" id="L1323">			aList.add(shiftAssnUnpub2.getID());</span>
-<span class="nc" id="L1324">			sam.deleteShiftAssignments(aList);</span>
-
-			//check if shift is same length as ssitem, no need to create in that case
-<span class="nc" id="L1327">			boolean createSA1 = true;</span>
-<span class="nc bnc" id="L1328" title="All 4 branches missed.">			if (undo &amp;&amp; TimePeriodUtil.equal(sa1.getStartTime(), sa1.getEndTime(),</span>
-<span class="nc" id="L1329">					ssItem1.getStartDate(), ssItem1.getEndDate())) {</span>
-<span class="nc" id="L1330">				createSA1 = false;</span>
-			}
-<span class="nc bnc" id="L1332" title="All 2 branches missed.">			if (createSA1) {</span>
-<span class="nc" id="L1333">				sam.createShiftAssignment(sa1);</span>
-			}
-
-<span class="nc" id="L1336">			boolean createSA2 = true;</span>
-<span class="nc bnc" id="L1337" title="All 4 branches missed.">			if (undo &amp;&amp; TimePeriodUtil.equal(sa2.getStartTime(), sa2.getEndTime(),</span>
-<span class="nc" id="L1338">					ssItem1.getStartDate(), ssItem1.getEndDate())) {</span>
-<span class="nc" id="L1339">				createSA2 = false;</span>
-			}
-<span class="nc bnc" id="L1341" title="All 2 branches missed.">			if (createSA2) {</span>
-<span class="nc" id="L1342">				sam.createShiftAssignment(sa2);</span>
-			}
-		}
-<span class="nc" id="L1345">		ShiftAssignment[] shiftAssigns = new ShiftAssignment[4];</span>
-<span class="nc" id="L1346">    	shiftAssigns[0] = sa1;</span>
-<span class="nc" id="L1347">    	shiftAssigns[1] = sa2;</span>
-<span class="nc" id="L1348">        shiftAssigns[2] = (ShiftAssignment)(sa2.clone());</span>
-<span class="nc" id="L1349">        shiftAssigns[2].addWorkResourceID(sa1.getWorkResourceID());</span>
-<span class="nc" id="L1350">        shiftAssigns[3] = (ShiftAssignment)(sa1.clone());</span>
-<span class="nc" id="L1351">        shiftAssigns[3].addWorkResourceID(sa2.getWorkResourceID());</span>
-<span class="nc" id="L1352">		return shiftAssigns;</span>
-	}
-
-    private static void createGapSEAWhenSwapItemsAreNotInsideNorOverlap(ShiftAssignment unPubShiftAssignment, ShiftSwapItem ssItem1, ShiftSwapItem ssItem2, ShiftAssignment shiftAssignment) {
-        ShiftEventAssignment sea;
-<span class="nc" id="L1357">        int duration = 0;</span>
-<span class="nc bnc" id="L1358" title="All 2 branches missed.">        if (!TimePeriodUtil.overlap(ssItem1.getStartDate(), ssItem1.getEndDate(),</span>
-<span class="nc" id="L1359">                unPubShiftAssignment.getStartTime(), unPubShiftAssignment.getEndTime())){</span>
-<span class="nc bnc" id="L1360" title="All 2 branches missed.">            if (ssItem1.getStartDate().before(unPubShiftAssignment.getStartTime())){</span>
-<span class="nc" id="L1361">                duration = (int)(unPubShiftAssignment.getStartTime().getTime() - ssItem1.getEndDate().getTime())/(1000*60);</span>
-<span class="nc bnc" id="L1362" title="All 2 branches missed.">                if (duration &gt; 0 ){</span>
-                    //add gap
-<span class="nc" id="L1364">                    sea = createSEAFromParams(ssItem1.getEndDate(),</span>
-<span class="nc" id="L1365">                            Activity.ACTIVITY_SHIFT_OVERTIME_GAP, duration, ssItem2.getEmployeeID(), false, null);</span>
-<span class="nc" id="L1366">                    shiftAssignment.addShiftEventAssignment(sea);</span>
-                }
-            } else {//after
-<span class="nc" id="L1369">                duration = (int)(ssItem1.getStartDate().getTime() - unPubShiftAssignment.getEndTime().getTime())/(1000*60);</span>
-<span class="nc bnc" id="L1370" title="All 2 branches missed.">                if (duration &gt; 0 ){</span>
-                    //add gap
-<span class="nc" id="L1372">                    sea = createSEAFromParams(unPubShiftAssignment.getEndTime(),</span>
-<span class="nc" id="L1373">                            Activity.ACTIVITY_SHIFT_OVERTIME_GAP, duration, ssItem2.getEmployeeID(), false, null);</span>
-<span class="nc" id="L1374">                    shiftAssignment.addShiftEventAssignment(sea);</span>
-                }
-            }
-        }
-<span class="nc" id="L1378">    }</span>
-
-    static ShiftEventAssignment createGapSEWhenSSItemIsNotInsideSA(ShiftAssignment shiftAssignment, ShiftSwapItem ssItemBeingReceived, ShiftSwapItem ssItemBeingGiven) {
-<span class="nc" id="L1381">        ShiftEventAssignment sea = null;</span>
-<span class="nc bnc" id="L1382" title="All 2 branches missed.">        if (!TimePeriodUtil.inside(ssItemBeingReceived.getStartDate(), ssItemBeingReceived.getEndDate(),</span>
-<span class="nc" id="L1383">                        shiftAssignment.getStartTime(), shiftAssignment.getEndTime())){</span>
-<span class="nc" id="L1384">            Date sea1Start = ssItemBeingReceived.getStartDate();</span>
-            int sea1Duration;
-
-            //get correct start and durations
-<span class="nc bnc" id="L1388" title="All 2 branches missed.">            if (ssItemBeingReceived.getStartDate().before(shiftAssignment.getStartTime())){</span>
-<span class="nc bnc" id="L1389" title="All 2 branches missed.">                if (ssItemBeingReceived.getEndDate().before(shiftAssignment.getStartTime())){</span>
-<span class="nc" id="L1390">                    sea1Duration = (int)(ssItemBeingReceived.getEndDate().getTime() - ssItemBeingReceived.getStartDate().getTime())/(1000*60);</span>
-                } else {
-<span class="nc" id="L1392">                    sea1Duration = (int)(shiftAssignment.getStartTime().getTime() - ssItemBeingReceived.getStartDate().getTime())/(1000*60);</span>
-                }
-            }//todo the case where the Swap Item completely lies within the Shift Assignment is not considered
-            else {
-<span class="nc bnc" id="L1396" title="All 2 branches missed.">                if (ssItemBeingReceived.getStartDate().after(shiftAssignment.getEndTime())){</span>
-<span class="nc" id="L1397">                    sea1Duration = (int)(ssItemBeingReceived.getEndDate().getTime() - ssItemBeingReceived.getStartDate().getTime())/(1000*60);</span>
-                } else {
-<span class="nc" id="L1399">                    sea1Duration = (int)(ssItemBeingReceived.getEndDate().getTime() - shiftAssignment.getEndTime().getTime())/(1000*60);</span>
-<span class="nc" id="L1400">                    sea1Start = shiftAssignment.getEndTime();</span>
-                }
-            }
-<span class="nc" id="L1403">            sea = createSEAFromParams(sea1Start,</span>
-<span class="nc" id="L1404">                    Activity.ACTIVITY_SHIFT_OVERTIME_GAP, sea1Duration, ssItemBeingGiven.getEmployeeID(), false, null);</span>
-
-        }
-<span class="nc" id="L1407">        return sea;</span>
-    }
-
-     static void alterSABoundariesBasedOnNewSwapItems(ShiftSwapItem ssItem, ShiftAssignment sa) {
-
-<span class="nc bnc" id="L1412" title="All 2 branches missed.">        if (ssItem.getStartDate().before(sa.getStartTime())){</span>
-<span class="nc" id="L1413">            sa.setDuration((int)(sa.getEndTime().getTime() - ssItem.getStartDate().getTime())/(1000*60));</span>
-<span class="nc" id="L1414">            sa.setStartTime(ssItem.getStartDate());</span>
-        }
-
-<span class="nc bnc" id="L1417" title="All 2 branches missed.">        if (ssItem.getEndDate().after(sa.getEndTime())){</span>
-<span class="nc" id="L1418">            sa.setDuration((int)(ssItem.getEndDate().getTime() - sa.getStartTime().getTime())/(1000*60));</span>
-        }
-<span class="nc" id="L1420">    }</span>
-
-     static ShiftSwapItem determineNonOverlappingPartsInCaseOfOverlappingSwapItems(ShiftSwapItem ssItem1, ShiftSwapItem ssItem2) throws CloneNotSupportedException {
-<span class="nc" id="L1423">        ShiftSwapItem ssItemCloned = null;</span>
-<span class="nc bnc" id="L1424" title="All 2 branches missed.">        if (TimePeriodUtil.overlap(ssItem2.getStartDate(), ssItem2.getEndDate(),</span>
-<span class="nc" id="L1425">                        ssItem1.getStartDate(), ssItem1.getEndDate())){</span>
-<span class="nc bnc" id="L1426" title="All 2 branches missed.">            if (!TimePeriodUtil.inside(ssItem2.getStartDate(), ssItem2.getEndDate(),</span>
-<span class="nc" id="L1427">                    ssItem1.getStartDate(), ssItem1.getEndDate())){</span>
-                //trim item to do correct swap
-<span class="nc" id="L1429">                ssItemCloned = (ShiftSwapItem)ssItem2.clone();</span>
-<span class="nc bnc" id="L1430" title="All 2 branches missed.">                if (ssItem2.getStartDate().before(ssItem1.getStartDate())){</span>
-<span class="nc" id="L1431">                    ssItemCloned.setEndDate(ssItem1.getStartDate());</span>
-                } else {
-<span class="nc" id="L1433">                    ssItemCloned.setStartDate(ssItem1.getEndDate());</span>
-                }
-            }
-        } else {
-<span class="nc" id="L1437">            ssItemCloned = ssItem2;</span>
-        }
-<span class="nc" id="L1439">        return ssItemCloned;</span>
-    }
-	private static void trimEventsForShift(ShiftAssignment shiftAssnUnpub, ShiftSwapItem ssItem1,
-			ShiftSwapItem ssItem2, ShiftAssignment saNew) {
-<span class="nc" id="L1443">		ShiftEventAssignment sea = null;</span>
-<span class="nc" id="L1444">		ID empID = saNew.getWorkResourceIDs().iterator().next();</span>
-<span class="nc bnc" id="L1445" title="All 2 branches missed.">		for (Iterator itr = shiftAssnUnpub.getChildObjects(0).iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L1446">			ShiftEventAssignment shiftEventAssn = (ShiftEventAssignment) itr.next();</span>
-
-<span class="nc bnc" id="L1448" title="All 2 branches missed.">			if (ssItem1.getStartDate().after(shiftEventAssn.getStartTime()) &amp;&amp;</span>
-<span class="nc bnc" id="L1449" title="All 2 branches missed.">					ssItem1.getStartDate().before(shiftEventAssn.getEndTime())) {//start of item falls within sa</span>
-				//trim event, set end == ssItem1.getStartDate()
-<span class="nc" id="L1451">				int duration = (int) (ssItem1.getStartDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1452" title="All 2 branches missed.">				if (duration &gt; 0) {</span>
-<span class="nc" id="L1453">					shiftEventAssn.setDuration(duration);</span>
-<span class="nc" id="L1454">					saNew.addShiftEventAssignment(shiftEventAssn);</span>
-				}
-<span class="nc bnc" id="L1456" title="All 2 branches missed.">			} else if (ssItem1.getEndDate().after(shiftEventAssn.getStartTime()) &amp;&amp;</span>
-<span class="nc bnc" id="L1457" title="All 2 branches missed.">					!shiftEventAssn.getEndTime().before(ssItem1.getEndDate())) {//end of item falls within sa</span>
-				//trim event, set start == ssItem1.getEndDate()
-<span class="nc" id="L1459">				int duration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem1.getEndDate().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1460" title="All 2 branches missed.">				if (duration &gt; 0) {</span>
-<span class="nc" id="L1461">					shiftEventAssn.setStartTime(ssItem1.getEndDate());</span>
-<span class="nc" id="L1462">					shiftEventAssn.setDuration(duration);</span>
-<span class="nc" id="L1463">					saNew.addShiftEventAssignment(shiftEventAssn);</span>
-				}
-<span class="nc bnc" id="L1465" title="All 2 branches missed.">			} else if (!shiftEventAssn.getStartTime().after(ssItem1.getStartDate()) &amp;&amp;</span>
-<span class="nc bnc" id="L1466" title="All 2 branches missed.">					ssItem1.getStartDate().before(ssItem1.getEndDate()) &amp;&amp;</span>
-<span class="nc bnc" id="L1467" title="All 2 branches missed.">					!ssItem1.getEndDate().after(shiftEventAssn.getEndTime())) {</span>
-				//create 2 events on either side of item
-<span class="nc" id="L1469">				int seaDuration = (int) (ssItem1.getStartDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1470" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1471">					sea = createSEAFromParams(shiftEventAssn.getStartTime(),</span>
-<span class="nc" id="L1472">		            			shiftEventAssn.getActivityID(), seaDuration, empID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1473">					saNew.addShiftEventAssignment(sea);</span>
-				}
-
-<span class="nc" id="L1476">				seaDuration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem1.getEndDate().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1477" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1478">					sea = createSEAFromParams(ssItem1.getEndDate(),</span>
-<span class="nc" id="L1479">		            			shiftEventAssn.getActivityID(), seaDuration, empID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1480">					saNew.addShiftEventAssignment(sea);</span>
-				}
-<span class="nc bnc" id="L1482" title="All 2 branches missed.">			} else if (ssItem2.getStartDate().after(shiftEventAssn.getStartTime()) &amp;&amp;</span>
-<span class="nc bnc" id="L1483" title="All 2 branches missed.">					ssItem2.getStartDate().before(shiftEventAssn.getEndTime())) {</span>
-				//trim event, set end == ssItem1.getStartDate()
-<span class="nc" id="L1485">				int duration = (int) (ssItem2.getStartDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1486" title="All 2 branches missed.">				if (duration &gt; 0) {</span>
-<span class="nc" id="L1487">					shiftEventAssn.setDuration(duration);</span>
-<span class="nc" id="L1488">					saNew.addShiftEventAssignment(shiftEventAssn);</span>
-				}
-<span class="nc bnc" id="L1490" title="All 2 branches missed.">			} else if (ssItem2.getEndDate().after(shiftEventAssn.getStartTime()) &amp;&amp;</span>
-<span class="nc bnc" id="L1491" title="All 2 branches missed.">					!shiftEventAssn.getEndTime().before(ssItem2.getEndDate())) {</span>
-				//trim event, set start == ssItem1.getEndDate()
-<span class="nc" id="L1493">				int duration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem2.getEndDate().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1494" title="All 2 branches missed.">				if (duration &gt; 0) {</span>
-<span class="nc" id="L1495">					shiftEventAssn.setStartTime(ssItem2.getEndDate());</span>
-<span class="nc" id="L1496">					shiftEventAssn.setDuration(duration);</span>
-<span class="nc" id="L1497">					saNew.addShiftEventAssignment(shiftEventAssn);</span>
-				}
-<span class="nc bnc" id="L1499" title="All 2 branches missed.">			} else if (!shiftEventAssn.getStartTime().after(ssItem2.getStartDate()) &amp;&amp;</span>
-<span class="nc bnc" id="L1500" title="All 2 branches missed.">					ssItem2.getStartDate().before(ssItem2.getEndDate()) &amp;&amp;</span>
-<span class="nc bnc" id="L1501" title="All 2 branches missed.">					!ssItem2.getEndDate().after(shiftEventAssn.getEndTime())) {</span>
-				//create 2 events on either side of item
-<span class="nc" id="L1503">				int seaDuration = (int) (ssItem2.getStartDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1504" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1505">					sea = createSEAFromParams(shiftEventAssn.getStartTime(),</span>
-<span class="nc" id="L1506">		            			shiftEventAssn.getActivityID(), seaDuration, empID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1507">					saNew.addShiftEventAssignment(sea);</span>
-				}
-
-<span class="nc" id="L1510">				seaDuration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem2.getEndDate().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1511" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1512">					sea = createSEAFromParams(ssItem2.getEndDate(),</span>
-<span class="nc" id="L1513">		            			shiftEventAssn.getActivityID(), seaDuration, empID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1514">					saNew.addShiftEventAssignment(sea);</span>
-				}
-<span class="nc bnc" id="L1516" title="All 2 branches missed.">			} else if (!TimePeriodUtil.overlap(shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime(),</span>
-<span class="nc" id="L1517">					ssItem1.getStartDate(), ssItem1.getEndDate()) &amp;&amp;</span>
-<span class="nc bnc" id="L1518" title="All 2 branches missed.">					!TimePeriodUtil.overlap(shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime(),</span>
-<span class="nc" id="L1519">							ssItem2.getStartDate(), ssItem2.getEndDate())) {</span>
-				//add event anyway: no intersection with items
-<span class="nc" id="L1521">				saNew.addShiftEventAssignment(shiftEventAssn);</span>
-			}
-<span class="nc" id="L1523">		}</span>
-<span class="nc" id="L1524">	}</span>
-
-	private static ShiftAssignment[] doPartialOneWaySwap(ShiftSwapItem ssItem1, ShiftSwapItem ssItem2,
-			ScheduleAccessManager sam, ShiftSwapValidationCache ssReqValCache,
-			boolean deleteUnderlyingUnavails, ShiftAssignment shiftAssnUnpub1, boolean save) throws Exception {
-		//      obtain employee IDs participating in the SS
-<span class="nc" id="L1530">		ID empID1 = ssItem1.getEmployeeID();</span>
-<span class="nc" id="L1531">		ID empID2 = ssItem2.getEmployeeID();</span>
-
-		//    	get shift assignment for the item that has the shift
-<span class="nc bnc" id="L1534" title="All 2 branches missed.">		if (shiftAssnUnpub1 == null) {</span>
-<span class="nc" id="L1535">			throw RequestUtil.createRmHardValidationException(</span>
-					RmEjbBundleKey.SS_CANNOT_FIND_UNPUBSHIFT_FOR_SSITEM,
-<span class="nc" id="L1537">					ssItem1.getStartDate(), ssItem1.getEndDate(),</span>
-<span class="nc" id="L1538">					ssReqValCache.getEmployeeNameByID(ssItem1.getEmployeeID()), m_cat);</span>
-		}
-
-		//create a new shift assignment
-<span class="nc" id="L1542">		ShiftAssignment sa1 = createSAFromParams(shiftAssnUnpub1.getStartTime(),</span>
-<span class="nc" id="L1543">				shiftAssnUnpub1.getActivityID(), shiftAssnUnpub1.getCampaignID(),</span>
-<span class="nc" id="L1544">				shiftAssnUnpub1.getDuration(), empID1, shiftAssnUnpub1.getShiftID());</span>
-
-<span class="nc" id="L1546">		int duration = (int) (ssItem1.getEndDate().getTime() - ssItem1.getStartDate().getTime()) / (1000 * 60);</span>
-		//	    	add gap activity
-<span class="nc" id="L1548">		ShiftEventAssignment gapSEA = createSEAFromParams(ssItem1.getStartDate(),</span>
-				Activity.ACTIVITY_SHIFT_OVERTIME_GAP,
-    			duration, empID1, false, null);
-<span class="nc" id="L1551">		sa1.addShiftEventAssignment(gapSEA);</span>
-
-<span class="nc" id="L1553">		ShiftAssignment sa2 = createSAFromParams(ssItem1.getStartDate(), shiftAssnUnpub1.getActivityID(),</span>
-<span class="nc" id="L1554">				null, duration, empID2, shiftAssnUnpub1.getShiftID());</span>
-
-<span class="nc" id="L1556">		ShiftEventAssignment sea = null;</span>
-		//iterate through the existing asignments and find ones that overlap witht he original one
-<span class="nc bnc" id="L1558" title="All 2 branches missed.">		for (Iterator itr = shiftAssnUnpub1.getChildObjects(0).iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L1559">			ShiftEventAssignment shiftEventAssn = (ShiftEventAssignment) itr.next();</span>
-			//if complete overlap, add to new sa, remove from current sa
-<span class="nc bnc" id="L1561" title="All 2 branches missed.">			if (shiftEventAssn.getStartTime().after(ssItem1.getStartDate())</span>
-<span class="nc bnc" id="L1562" title="All 2 branches missed.">					&amp;&amp; shiftEventAssn.getEndTime().before(ssItem1.getEndDate())) {</span>
-				//sea falls completely within swapped interval: add to new sa
-<span class="nc" id="L1564">				shiftEventAssn.removeWorkResourceID(empID1);</span>
-<span class="nc" id="L1565">				shiftEventAssn.addWorkResourceID(empID2);</span>
-<span class="nc" id="L1566">				sa2.addShiftEventAssignment(shiftEventAssn);</span>
-<span class="nc bnc" id="L1567" title="All 2 branches missed.">			} else if (shiftEventAssn.getStartTime().before(ssItem1.getStartDate())</span>
-<span class="nc bnc" id="L1568" title="All 2 branches missed.">					&amp;&amp; shiftEventAssn.getEndTime().after(ssItem1.getEndDate())) {</span>
-				//sea completely encompasses swapped interval
-				//need to trim the sea for the original sa
-<span class="nc" id="L1571">				int seaDuration = (int) (ssItem1.getStartDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc" id="L1572">				sea = createSEAFromParams(ssItem1.getStartDate(),</span>
-<span class="nc" id="L1573">            			shiftEventAssn.getActivityID(), seaDuration, empID1, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-
-<span class="nc" id="L1575">				sa1.addShiftEventAssignment(sea);</span>
-
-				//add another one after the gap
-<span class="nc" id="L1578">				seaDuration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem1.getEndDate().getTime()) / (1000 * 60);</span>
-<span class="nc" id="L1579">				sea = createSEAFromParams(ssItem1.getEndDate(),</span>
-<span class="nc" id="L1580">            			shiftEventAssn.getActivityID(), seaDuration, empID1, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1581">				sa1.addShiftEventAssignment(sea);</span>
-
-				//create new one for the new shift
-<span class="nc" id="L1584">				seaDuration = (int) (ssItem1.getEndDate().getTime() - ssItem1.getStartDate().getTime()) / (1000 * 60);</span>
-<span class="nc" id="L1585">				sea = createSEAFromParams(ssItem1.getStartDate(),</span>
-<span class="nc" id="L1586">            			shiftEventAssn.getActivityID(), seaDuration, empID2,shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1587">				sa2.addShiftEventAssignment(sea);</span>
-<span class="nc bnc" id="L1588" title="All 2 branches missed.">			} else if (!ssItem1.getStartDate().before(shiftEventAssn.getStartTime())</span>
-<span class="nc bnc" id="L1589" title="All 2 branches missed.">					&amp;&amp; !ssItem1.getStartDate().after(shiftEventAssn.getEndTime())) {</span>
-				//sea starts before interval start and ends before interval end
-<span class="nc" id="L1591">				int seaDuration = (int) (ssItem1.getStartDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1592" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1593">					sea = createSEAFromParams(shiftEventAssn.getStartTime(),</span>
-<span class="nc" id="L1594">	            			shiftEventAssn.getActivityID(), seaDuration, empID1,shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1595">					sa1.addShiftEventAssignment(sea);</span>
-				}
-
-				//crete new one for the new shift
-<span class="nc" id="L1599">				seaDuration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem1.getStartDate().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1600" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1601">					sea = createSEAFromParams(ssItem1.getStartDate(),</span>
-<span class="nc" id="L1602">	            			shiftEventAssn.getActivityID(), seaDuration, empID2, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1603">					sa2.addShiftEventAssignment(sea);</span>
-				}
-<span class="nc bnc" id="L1605" title="All 2 branches missed.">			} else if (!ssItem1.getEndDate().before(shiftEventAssn.getStartTime())</span>
-<span class="nc bnc" id="L1606" title="All 2 branches missed.">					&amp;&amp; !ssItem1.getEndDate().after(shiftEventAssn.getEndTime())) {</span>
-				//sea start after swap interval start, event ends after swap interval end
-				//change the start time only
-<span class="nc" id="L1609">				int seaDuration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem1.getEndDate().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1610" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1611">					sea = createSEAFromParams(ssItem1.getEndDate(),</span>
-<span class="nc" id="L1612">	            			shiftEventAssn.getActivityID(), seaDuration, empID1, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1613">					sa1.addShiftEventAssignment(sea);</span>
-				}
-
-				//create new one for the new shift
-<span class="nc" id="L1617">				seaDuration = (int) (ssItem1.getEndDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1618" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1619">					sea = createSEAFromParams(shiftEventAssn.getStartTime(),</span>
-<span class="nc" id="L1620">	            			shiftEventAssn.getActivityID(), seaDuration, empID2, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1621">					sa2.addShiftEventAssignment(sea);</span>
-				}
-<span class="nc" id="L1623">			} else {</span>
-				//add to initial since no overlap
-<span class="nc" id="L1625">				sa1.addShiftEventAssignment(shiftEventAssn);</span>
-			}
-<span class="nc" id="L1627">		}</span>
-
-<span class="nc bnc" id="L1629" title="All 2 branches missed.">		if (save) {</span>
-			//delete underlying unavailabilities overlapping with the swapped portions
-<span class="nc bnc" id="L1631" title="All 2 branches missed.">			if (deleteUnderlyingUnavails) {</span>
-<span class="nc" id="L1632">				deleteUnderlyingUnavailabilities(empID2,</span>
-<span class="nc" id="L1633">						ssItem1.getStartDate(), ssItem1.getEndDate(), sam);</span>
-			}
-
-			//delete the existing sa first
-<span class="nc" id="L1637">			ArrayList aList = new ArrayList();</span>
-<span class="nc" id="L1638">			aList.add(shiftAssnUnpub1.getID());</span>
-
-<span class="nc" id="L1640">			sam.createShiftAssignment(trimLeadingTrailingGapsFromShift(sa2));</span>
-<span class="nc" id="L1641">			sam.deleteShiftAssignments(aList);</span>
-
-			//now create the sa only if greater than item[case when a complete shift is swapped]
-<span class="nc bnc" id="L1644" title="All 2 branches missed.">			if (shiftAssnUnpub1.getDuration() &gt; ssItem1.getDuration()) {</span>
-<span class="nc" id="L1645">				sam.createShiftAssignment(trimLeadingTrailingGapsFromShift(sa1));</span>
-			}
-		}
-<span class="nc" id="L1648">		ShiftAssignment[] shiftAssigns = new ShiftAssignment[2];</span>
-<span class="nc" id="L1649">		shiftAssigns[0] = trimLeadingTrailingGapsFromShift(sa1);</span>
-<span class="nc" id="L1650">		shiftAssigns[1] = trimLeadingTrailingGapsFromShift(sa2);</span>
-<span class="nc" id="L1651">		return shiftAssigns;</span>
-	}
-
-	private static ShiftAssignment[] doPartialTwoWaySwap(ShiftAssignment shiftAssnUnpub1, ShiftAssignment shiftAssnUnpubSwap1,
-			ShiftSwapItem ssItem1, ShiftSwapItem ssItem2, ScheduleAccessManager sam,
-			boolean deleteUnderlyingUnavails, boolean undo, boolean save) throws Exception {
-		//		create a new shift assignment
-<span class="nc" id="L1658">		ShiftAssignment sa1 = createSAFromParams(shiftAssnUnpub1.getStartTime(),</span>
-<span class="nc" id="L1659">				shiftAssnUnpub1.getActivityID(), shiftAssnUnpub1.getCampaignID(),</span>
-<span class="nc" id="L1660">				shiftAssnUnpub1.getDuration(), ssItem1.getEmployeeID(), shiftAssnUnpub1.getShiftID());</span>
-<span class="nc" id="L1661">		addNonOverlappingSEAs(shiftAssnUnpub1, sa1, ssItem1);</span>
-
-		//create shiftassignments for swap duration from original shift
-<span class="nc" id="L1664">		ShiftAssignment sa2 = createSAFromParams(shiftAssnUnpubSwap1.getStartTime(),</span>
-<span class="nc" id="L1665">				shiftAssnUnpubSwap1.getActivityID(), shiftAssnUnpubSwap1.getCampaignID(),</span>
-<span class="nc" id="L1666">				shiftAssnUnpubSwap1.getDuration(), ssItem2.getEmployeeID(), shiftAssnUnpubSwap1.getShiftID());</span>
-<span class="nc" id="L1667">		addNonOverlappingSEAs(shiftAssnUnpubSwap1, sa2, ssItem1);</span>
-
-		//		add gap activity to first shift
-<span class="nc bnc" id="L1670" title="All 2 branches missed.">		if (!undo) {</span>
-<span class="nc" id="L1671">			int duration = (int) (ssItem1.getEndDate().getTime() - ssItem1.getStartDate().getTime()) / (1000 * 60);</span>
-<span class="nc" id="L1672">			ShiftEventAssignment gapSEA = createSEAFromParams(ssItem1.getStartDate(),</span>
-					Activity.ACTIVITY_SHIFT_OVERTIME_GAP,
-<span class="nc" id="L1674">	    			duration, ssItem1.getEmployeeID(), false, null);</span>
-<span class="nc" id="L1675">			sa1.addShiftEventAssignment(gapSEA);</span>
-
-<span class="nc" id="L1677">			boolean hasOverlap = TimePeriodUtil.overlap(shiftAssnUnpubSwap1.getStartTime(), shiftAssnUnpubSwap1.getEndTime(),</span>
-<span class="nc" id="L1678">					ssItem1.getStartDate(), ssItem1.getEndDate());</span>
-			//add/superimpose seas on the shift of the other agent on the same day
-<span class="nc bnc" id="L1680" title="All 2 branches missed.">			if (ssItem1.getStartDate().before(shiftAssnUnpubSwap1.getStartTime())) {//extend before</span>
-<span class="nc bnc" id="L1681" title="All 2 branches missed.">				if (!hasOverlap) {</span>
-					//create gap for missing interval
-<span class="nc" id="L1683">					duration = (int) (shiftAssnUnpubSwap1.getStartTime().getTime() - ssItem1.getEndDate().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1684" title="All 2 branches missed.">					if (duration &gt; 0) {</span>
-<span class="nc" id="L1685">						gapSEA = createSEAFromParams(ssItem1.getEndDate(),</span>
-								Activity.ACTIVITY_SHIFT_OVERTIME_GAP,
-<span class="nc" id="L1687">		    	    			duration, ssItem2.getEmployeeID(), false, null);</span>
-<span class="nc" id="L1688">						sa2.addShiftEventAssignment(gapSEA);</span>
-					}
-				}
-				//extend shift before
-<span class="nc" id="L1692">				duration = ((int) (shiftAssnUnpubSwap1.getStartTime().getTime() - ssItem1.getStartDate().getTime()) / (1000 * 60)) +</span>
-<span class="nc" id="L1693">						shiftAssnUnpubSwap1.getDuration();</span>
-<span class="nc" id="L1694">				sa2.setStartTime(ssItem1.getStartDate());</span>
-<span class="nc" id="L1695">				sa2.setDuration(duration);</span>
-			}
-<span class="nc bnc" id="L1697" title="All 2 branches missed.">			if (ssItem1.getEndDate().after(shiftAssnUnpubSwap1.getEndTime())) {//extend after</span>
-<span class="nc bnc" id="L1698" title="All 2 branches missed.">				if (!hasOverlap) {</span>
-					//    			create gap for missing interval
-<span class="nc" id="L1700">					duration = (int) (ssItem1.getStartDate().getTime() - shiftAssnUnpubSwap1.getEndTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1701" title="All 2 branches missed.">					if (duration &gt; 0) {</span>
-<span class="nc" id="L1702">						gapSEA = createSEAFromParams(shiftAssnUnpubSwap1.getEndTime(),</span>
-								Activity.ACTIVITY_SHIFT_OVERTIME_GAP,
-<span class="nc" id="L1704">		    	    			duration, ssItem2.getEmployeeID(), false, null);</span>
-<span class="nc" id="L1705">						sa2.addShiftEventAssignment(gapSEA);</span>
-					}
-				}
-				//    		set duration
-<span class="nc" id="L1709">				duration = ((int) (ssItem1.getEndDate().getTime() - shiftAssnUnpubSwap1.getEndTime().getTime()) / (1000 * 60)) +</span>
-<span class="nc" id="L1710">						sa2.getDuration();</span>
-<span class="nc" id="L1711">				sa2.setDuration(duration);</span>
-			}
-			//    		add shift activities
-<span class="nc" id="L1714">			addOverlappingSEAs(shiftAssnUnpub1, sa2, ssItem1);</span>
-		}
-
-<span class="nc bnc" id="L1717" title="All 2 branches missed.">		if (undo) {</span>
-<span class="nc" id="L1718">			addOverlappingSEAs(shiftAssnUnpubSwap1, sa1, ssItem1);</span>
-		}
-
-<span class="nc bnc" id="L1721" title="All 2 branches missed.">		if (save) {</span>
-			//delete underlying unavailabilities overlapping with the swapped portions
-<span class="nc bnc" id="L1723" title="All 2 branches missed.">			if (deleteUnderlyingUnavails) {</span>
-<span class="nc" id="L1724">				deleteUnderlyingUnavailabilities(ssItem2.getEmployeeID(),</span>
-<span class="nc" id="L1725">						ssItem1.getStartDate(), ssItem1.getEndDate(), sam);</span>
-			}
-			//    	delete the existing sa first
-<span class="nc" id="L1728">			ArrayList aList = new ArrayList();</span>
-<span class="nc" id="L1729">			aList.add(shiftAssnUnpubSwap1.getID());</span>
-<span class="nc" id="L1730">			aList.add(shiftAssnUnpub1.getID());</span>
-<span class="nc" id="L1731">			sam.deleteShiftAssignments(aList);</span>
-
-<span class="nc bnc" id="L1733" title="All 4 branches missed.">			if (!undo &amp;&amp; sa2.getDuration() &gt;= ssItem2.getDuration()) {</span>
-<span class="nc" id="L1734">				sam.createShiftAssignment(trimLeadingTrailingGapsFromShift(sa2));</span>
-			}
-
-			//now create the sa
-<span class="nc bnc" id="L1738" title="All 2 branches missed.">			if (sa1.getDuration() &gt; ssItem1.getDuration()) {</span>
-<span class="nc" id="L1739">				sam.createShiftAssignment(trimLeadingTrailingGapsFromShift(sa1));</span>
-			}
-		}
-<span class="nc" id="L1742">		ShiftAssignment[] shiftAssigns = new ShiftAssignment[2];</span>
-<span class="nc" id="L1743">		shiftAssigns[0] = trimLeadingTrailingGapsFromShift(sa1);</span>
-<span class="nc" id="L1744">		shiftAssigns[1] = trimLeadingTrailingGapsFromShift(sa2);</span>
-<span class="nc" id="L1745">		return shiftAssigns;</span>
-	}
-
-	private static void addNonOverlappingSEAs(ShiftAssignment saOrig, ShiftAssignment saNew,
-			ShiftSwapItem ssItem) {
-		//		iterate through the existing asignments and find ones that overlap witht he original one
-<span class="nc" id="L1751">		ShiftEventAssignment sea = null;</span>
-<span class="nc" id="L1752">		ID workResourceID = saNew.getWorkResourceIDs().iterator().next();</span>
-<span class="nc bnc" id="L1753" title="All 2 branches missed.">		for (Iterator itr = saOrig.getChildren().iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L1754">			ShiftEventAssignment shiftEventAssn = (ShiftEventAssignment) itr.next();</span>
-<span class="nc bnc" id="L1755" title="All 2 branches missed.">			if (shiftEventAssn.getStartTime().before(ssItem.getStartDate())</span>
-<span class="nc bnc" id="L1756" title="All 2 branches missed.">					&amp;&amp; shiftEventAssn.getEndTime().after(ssItem.getEndDate())) {</span>
-				//add portion before
-<span class="nc" id="L1758">				int seaDuration = (int) (ssItem.getStartDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc" id="L1759">				sea = createSEAFromParams(shiftEventAssn.getStartTime(),</span>
-<span class="nc" id="L1760">            			shiftEventAssn.getActivityID(), seaDuration, workResourceID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1761">				saNew.addShiftEventAssignment(sea);</span>
-				//add portion after
-<span class="nc" id="L1763">				seaDuration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem.getEndDate().getTime()) / (1000 * 60);</span>
-<span class="nc" id="L1764">				sea = createSEAFromParams(ssItem.getEndDate(),</span>
-<span class="nc" id="L1765">            			shiftEventAssn.getActivityID(), seaDuration, workResourceID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1766">				saNew.addShiftEventAssignment(sea);</span>
-<span class="nc bnc" id="L1767" title="All 2 branches missed.">			} else if (ssItem.getEndDate().after(shiftEventAssn.getStartTime())</span>
-<span class="nc bnc" id="L1768" title="All 2 branches missed.">					&amp;&amp; ssItem.getEndDate().before(shiftEventAssn.getEndTime())) {</span>
-				//trim portion after
-<span class="nc" id="L1770">				int seaDuration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem.getEndDate().getTime()) / (1000 * 60);</span>
-<span class="nc" id="L1771">				sea = createSEAFromParams(ssItem.getEndDate(),</span>
-<span class="nc" id="L1772">            			shiftEventAssn.getActivityID(), seaDuration, workResourceID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1773">				saNew.addShiftEventAssignment(sea);</span>
-<span class="nc bnc" id="L1774" title="All 2 branches missed.">			} else if (ssItem.getStartDate().after(shiftEventAssn.getStartTime())</span>
-<span class="nc bnc" id="L1775" title="All 2 branches missed.">					&amp;&amp; ssItem.getStartDate().before(shiftEventAssn.getEndTime())) {</span>
-				//trim portion before
-<span class="nc" id="L1777">				int seaDuration = (int) (ssItem.getStartDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc" id="L1778">				sea = createSEAFromParams(shiftEventAssn.getStartTime(),</span>
-<span class="nc" id="L1779">            			shiftEventAssn.getActivityID(), seaDuration, workResourceID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1780">				saNew.addShiftEventAssignment(sea);</span>
-<span class="nc bnc" id="L1781" title="All 2 branches missed.">			} else if (!TimePeriodUtil.overlap(shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime(),</span>
-<span class="nc" id="L1782">					ssItem.getStartDate(), ssItem.getEndDate())) {//no intersection</span>
-				//add the sea
-<span class="nc" id="L1784">				saNew.addShiftEventAssignment(shiftEventAssn);</span>
-			}
-<span class="nc" id="L1786">		}</span>
-<span class="nc" id="L1787">	}</span>
-
-	private static void addOverlappingSEAs(ShiftAssignment saOrig, ShiftAssignment saNew,
-			ShiftSwapItem ssItem) {
-		//		iterate through the existing asignments and find ones that overlap witht he original one
-<span class="nc" id="L1792">		ShiftEventAssignment sea = null;</span>
-<span class="nc" id="L1793">		ID workResourceID = saNew.getWorkResourceIDs().iterator().next();</span>
-<span class="nc bnc" id="L1794" title="All 2 branches missed.">		for (Iterator itr = saOrig.getChildren().iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L1795">			ShiftEventAssignment shiftEventAssn = (ShiftEventAssignment) itr.next();</span>
-			//    		if complete overlap, add to new sa, remove from current sa
-<span class="nc bnc" id="L1797" title="All 2 branches missed.">			if (TimePeriodUtil.inside(shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime(),</span>
-<span class="nc" id="L1798">					ssItem.getStartDate(), ssItem.getEndDate())) {</span>
-				//add complete event assignment
-<span class="nc" id="L1800">				saNew.addShiftEventAssignment(shiftEventAssn);</span>
-<span class="nc bnc" id="L1801" title="All 2 branches missed.">			} else if (shiftEventAssn.getStartTime().before(ssItem.getStartDate())</span>
-<span class="nc bnc" id="L1802" title="All 2 branches missed.">					&amp;&amp; shiftEventAssn.getEndTime().after(ssItem.getEndDate())) {</span>
-				//sea completely encompasses swapped interval
-				//create one equal to item duration
-<span class="nc" id="L1805">				int seaDuration = (int) (ssItem.getEndDate().getTime() - ssItem.getStartDate().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1806" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1807">					sea = createSEAFromParams(ssItem.getStartDate(),</span>
-<span class="nc" id="L1808">	            			shiftEventAssn.getActivityID(), seaDuration, workResourceID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-
-<span class="nc" id="L1810">					saNew.addShiftEventAssignment(sea);</span>
-				}
-<span class="nc bnc" id="L1812" title="All 2 branches missed.">			} else if (ssItem.getStartDate().after(shiftEventAssn.getStartTime())</span>
-<span class="nc bnc" id="L1813" title="All 2 branches missed.">					&amp;&amp; ssItem.getStartDate().before(shiftEventAssn.getEndTime())) {</span>
-				//crete new one for the new shift
-<span class="nc" id="L1815">				int seaDuration = (int) (shiftEventAssn.getEndTime().getTime() - ssItem.getStartDate().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1816" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1817">					sea = createSEAFromParams(ssItem.getStartDate(),</span>
-<span class="nc" id="L1818">	            			shiftEventAssn.getActivityID(), seaDuration, workResourceID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1819">					saNew.addShiftEventAssignment(sea);</span>
-				}
-<span class="nc bnc" id="L1821" title="All 2 branches missed.">			} else if (ssItem.getEndDate().after(shiftEventAssn.getStartTime())</span>
-<span class="nc bnc" id="L1822" title="All 2 branches missed.">					&amp;&amp; ssItem.getEndDate().before(shiftEventAssn.getEndTime())) {</span>
-				//create new one for the new shift
-<span class="nc" id="L1824">				int seaDuration = (int) (ssItem.getEndDate().getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1825" title="All 2 branches missed.">				if (seaDuration &gt; 0) {</span>
-<span class="nc" id="L1826">					sea = createSEAFromParams(shiftEventAssn.getStartTime(),</span>
-<span class="nc" id="L1827">	            			shiftEventAssn.getActivityID(), seaDuration, workResourceID, shiftEventAssn.getPaid(), shiftEventAssn.getSPID());</span>
-<span class="nc" id="L1828">					saNew.addShiftEventAssignment(sea);</span>
-				}
-			}
-<span class="nc" id="L1831">		}</span>
-<span class="nc" id="L1832">	}</span>
-
-	protected static ShiftAssignment trimLeadingTrailingGapsFromShift(ShiftAssignment sa) {
-<span class="nc" id="L1835">		ShiftAssignment saTrimmed = createSAFromParams(sa.getStartTime(),</span>
-<span class="nc" id="L1836">				sa.getActivityID(), sa.getCampaignID(),</span>
-<span class="nc" id="L1837">				sa.getDuration(), sa.getWorkResourceIDs().iterator().next(),</span>
-<span class="nc" id="L1838">				sa.getShiftID());</span>
-<span class="nc" id="L1839">		Collection&lt;SimpleEvent&gt; listSE = EventUtils.convertEventsToTimelineForSingleEmployee(sa.getChildren());</span>
-
-<span class="nc" id="L1841">		Date adjustedStartTime = saTrimmed.getStartTime();</span>
-<span class="nc" id="L1842">		int adjustedDuration = saTrimmed.getDuration();</span>
-<span class="nc" id="L1843">		int tempDurationTotalOfGap = 0;</span>
-<span class="nc" id="L1844">		ID previousActivityID = null;</span>
-<span class="nc" id="L1845">		ShiftEventAssignment sea = null;</span>
-<span class="nc" id="L1846">		ShiftEventAssignment prevSea = null;</span>
-
-		//iterate through the list of flattened events in the progression of time.
-<span class="nc bnc" id="L1849" title="All 2 branches missed.">		for (SimpleEvent se : listSE) {</span>
-
-<span class="nc bnc" id="L1851" title="All 2 branches missed.">			if (se.getActivityID().equals(Activity.ACTIVITY_SHIFT_OVERTIME_GAP)) {</span>
-
-				//Whenever a Shift/OT Gap is encountered with a start time before the Shift Startime , keep gathering the new Start Time
-<span class="nc bnc" id="L1854" title="All 2 branches missed.">				if (se.getStartTime().equals(adjustedStartTime) &amp;&amp;</span>
-<span class="nc bnc" id="L1855" title="All 2 branches missed.">						se.getEndTime().before(saTrimmed.getEndTime())) {</span>
-<span class="nc" id="L1856">					adjustedStartTime = se.getEndTime();</span>
-<span class="nc" id="L1857">					adjustedDuration -= se.getDuration();</span>
-<span class="nc" id="L1858">					continue;</span>
-<span class="nc bnc" id="L1859" title="All 2 branches missed.">				} else if ((se.getStartTime().after(adjustedStartTime)) &amp;&amp;</span>
-<span class="nc bnc" id="L1860" title="All 4 branches missed.">						(se.getEndTime().before(saTrimmed.getEndTime()) || se.getEndTime().equals(saTrimmed.getEndTime()))) {</span>
-
-					//Checking to see if the Previous Shift event is OVERTIME_GAP as well, the AdjustedEndTime still holds good at the previous
-<span class="nc bnc" id="L1863" title="All 2 branches missed.">					if (previousActivityID != null) {</span>
-<span class="nc bnc" id="L1864" title="All 2 branches missed.">						if (se.getActivityID().equals(previousActivityID)) {</span>
-<span class="nc bnc" id="L1865" title="All 2 branches missed.">							if (prevSea.getEndTime().equals(se.getStartTime())) {</span>
-<span class="nc" id="L1866">								tempDurationTotalOfGap += se.getDuration();</span>
-<span class="nc" id="L1867">								se.setStartTime(prevSea.getStartTime());</span>
-<span class="nc" id="L1868">								se.setDuration(tempDurationTotalOfGap);</span>
-							} else {
-<span class="nc" id="L1870">								tempDurationTotalOfGap = se.getDuration();</span>
-<span class="nc" id="L1871">								saTrimmed.addShiftEventAssignment(prevSea);</span>
-							}
-<span class="nc bnc" id="L1873" title="All 2 branches missed.">						} else if (se.getEndTime().equals(saTrimmed.getEndTime())) {</span>
-							//reset the TempDurationTotalOfGap
-<span class="nc" id="L1875">							tempDurationTotalOfGap = 0;</span>
-<span class="nc" id="L1876">							adjustedDuration -= se.getDuration();</span>
-						} else {
-<span class="nc" id="L1878">							tempDurationTotalOfGap = se.getDuration();</span>
-						}
-					} else {
-						//If there was a OT Gap laid between 2 shift events and the OT Gap is not the last event in the Shift
-<span class="nc" id="L1882">						tempDurationTotalOfGap = se.getDuration();</span>
-					}
-				} else {
-					//if the OT Gap doesn't need to be trimmed just add it to the Shift as a normal ShiftEventAssignment
-<span class="nc" id="L1886">					createAndAddSEAToSA(saTrimmed, se);</span>
-				}
-			} else {
-<span class="nc bnc" id="L1889" title="All 4 branches missed.">				if (prevSea != null &amp;&amp; !prevSea.getStartTime().before(adjustedStartTime)</span>
-<span class="nc bnc" id="L1890" title="All 2 branches missed.">						&amp;&amp; prevSea.getActivityID().equals(Activity.ACTIVITY_SHIFT_OVERTIME_GAP)) {</span>
-<span class="nc" id="L1891">					saTrimmed.addShiftEventAssignment(prevSea);</span>
-				}
-<span class="nc" id="L1893">				createAndAddSEAToSA(saTrimmed, se);</span>
-				//Whenever there is any Shift Event other than OT Gap reset the duration to be subtracted
-<span class="nc" id="L1895">				tempDurationTotalOfGap = 0;</span>
-			}
-<span class="nc" id="L1897">			prevSea = createSEAFromParams(se.getStartTime(), se.getActivityID(), se.getDuration(), saTrimmed.getWorkResourceID(), se.getPaid(), se.getSPID());</span>
-<span class="nc" id="L1898">			previousActivityID = se.getActivityID();</span>
-<span class="nc" id="L1899">		}</span>
-		//if the last processed SEA is a gap and its End Time is not equal to Shift End Time, that means it's not eligible for Trimming
-<span class="nc bnc" id="L1901" title="All 2 branches missed.">		if (prevSea != null &amp;&amp;</span>
-<span class="nc bnc" id="L1902" title="All 2 branches missed.">				prevSea.getActivityID().equals(Activity.ACTIVITY_SHIFT_OVERTIME_GAP) &amp;&amp;</span>
-<span class="nc bnc" id="L1903" title="All 2 branches missed.">				!prevSea.getEndTime().equals(saTrimmed.getEndTime()) &amp;&amp;</span>
-<span class="nc bnc" id="L1904" title="All 2 branches missed.">				!prevSea.getStartTime().before(adjustedStartTime)) {</span>
-<span class="nc" id="L1905">			tempDurationTotalOfGap = 0;</span>
-<span class="nc" id="L1906">			saTrimmed.addShiftEventAssignment(prevSea);</span>
-		}
-<span class="nc" id="L1908">		adjustedDuration -= tempDurationTotalOfGap;</span>
-<span class="nc" id="L1909">		saTrimmed.setStartTime(adjustedStartTime);</span>
-<span class="nc" id="L1910">		saTrimmed.setDuration(adjustedDuration);</span>
-
-<span class="nc" id="L1912">		return saTrimmed;</span>
-	}
-
-	private static void createAndAddSEAToSA(ShiftAssignment saTrimmed, SimpleEvent se) {
-		ShiftEventAssignment sea;
-<span class="nc" id="L1917">		sea = createSEAFromParams(se.getStartTime(), se.getActivityID(), se.getDuration(), saTrimmed.getWorkResourceID(), se.getPaid(), se.getSPID());</span>
-<span class="nc" id="L1918">		saTrimmed.addShiftEventAssignment(sea);</span>
-<span class="nc" id="L1919">	}</span>
 
 	/**
 	 * Delete all unavailability events underlying the given interval for the given employee.
@@ -1929,114 +1038,117 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	public static UnavailabilityEvent deleteUnderlyingUnavailabilities(ID empID, Date startDate,
 			Date endDate, ScheduleAccessManager sam) throws Exception {
 		// get all unavailabilites overlapping the given interval
-<span class="nc" id="L1932">		Collection unavailsUnpub = sam.getEventsForWorkResourceByType(Event.EVENT_TYPE_UNAVAILABILITY,</span>
+<span class="nc" id="L1041">		Collection unavailsUnpub = sam.getEventsForWorkResourceByType(Event.EVENT_TYPE_UNAVAILABILITY,</span>
 				empID, startDate, endDate);
 
-<span class="nc" id="L1935">		UnavailabilityEvent unavailEvt = null;</span>
-<span class="nc bnc" id="L1936" title="All 2 branches missed.">		for (Iterator unavailsIter = unavailsUnpub.iterator(); unavailsIter.hasNext();) {</span>
-<span class="nc" id="L1937">			unavailEvt = (UnavailabilityEvent) unavailsIter.next();</span>
+<span class="nc" id="L1044">		UnavailabilityEvent unavailEvt = null;</span>
+<span class="nc bnc" id="L1045" title="All 2 branches missed.">		for (Iterator unavailsIter = unavailsUnpub.iterator(); unavailsIter.hasNext();) {</span>
+<span class="nc" id="L1046">			unavailEvt = (UnavailabilityEvent) unavailsIter.next();</span>
 
 			//if this is a 'fixed' event
-<span class="nc bnc" id="L1940" title="All 2 branches missed.">			if (unavailEvt.getID() != null) {</span>
+<span class="nc bnc" id="L1049" title="All 2 branches missed.">			if (unavailEvt.getID() != null) {</span>
 				// delete the unavailability event.
-<span class="nc" id="L1942">				sam.deleteCalendarEventAssignments(Collections.singleton(unavailEvt.getID()));</span>
+<span class="nc" id="L1051">				sam.deleteCalendarEventAssignments(Collections.singleton(unavailEvt.getID()));</span>
 			} else { // if event's ID == null, must be a recurring event
 				// get event's template ID
-<span class="nc" id="L1945">				ID evtTmplID = unavailEvt.getEventTemplateID();</span>
+<span class="nc" id="L1054">				ID evtTmplID = unavailEvt.getEventTemplateID();</span>
 
 				// create an exception for the recurring event creation.
 				//sam.createRecurringEventException(evtTmplID, Collections.singleton(empID), unavailEvt.getStartTime());
-<span class="nc" id="L1949">				sam.deleteRecurringEventInstance(evtTmplID, Collections.singleton(empID), unavailEvt.getStartTime());</span>
-<span class="nc" id="L1950">			}</span>
+<span class="nc" id="L1058">				sam.deleteRecurringEventInstance(evtTmplID, Collections.singleton(empID), unavailEvt.getStartTime());</span>
+<span class="nc" id="L1059">			}</span>
 		}
 
-<span class="nc" id="L1953">		return unavailEvt;</span>
+<span class="nc" id="L1062">		return unavailEvt;</span>
 	}
 
 	public static ValidationResult validateApprovedRequestForWithdraw(Validatable validatable) throws Exception {
-<span class="nc" id="L1957">		ValidationResult result = null;</span>
-<span class="nc" id="L1958">		ShiftSwapRequest ssReq = (ShiftSwapRequest) validatable;</span>
-<span class="nc bnc" id="L1959" title="All 2 branches missed.">		if (ssReq.isApproved()) {</span>
+<span class="nc" id="L1066">		ValidationResult result = null;</span>
+<span class="nc" id="L1067">		ShiftSwapRequest ssReq = (ShiftSwapRequest) validatable;</span>
+<span class="nc bnc" id="L1068" title="All 2 branches missed.">		if (ssReq.isApproved()) {</span>
 			try {
-<span class="nc" id="L1961">				ShiftSwapItem ssItem1 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(0);</span>
-<span class="nc" id="L1962">				ShiftSwapItem ssItem2 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(1);</span>
+<span class="nc" id="L1070">				ShiftSwapItem ssItem1 = ssReq.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L1071">				ShiftSwapItem ssItem2 = ssReq.getShiftSwapItems().get(1);</span>
 
-<span class="nc" id="L1964">				ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc" id="L1073">				ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
 
-<span class="nc" id="L1966">				ShiftSwapValidationCache ssReqValCache = ssReq.getCache();</span>
+<span class="nc" id="L1075">				ShiftSwapValidationCache ssReqValCache = ssReq.getCache();</span>
 				//Disregard shift type. Need to verify that no shift exists for time-off as well
-<span class="nc" id="L1968">				int hashCode = getShiftSwapItemHashCode(ssItem1, ssItem2.getEmployeeID(), sam, ssReqValCache);</span>
-				
+<span class="nc" id="L1077">				int hashCode = getShiftSwapItemHashCode(ssItem1, ssItem2.getEmployeeID(), sam, ssReqValCache);</span>
+
 				// Partials in previous code always returned zero as hash.
 				// This has been fixed, but for older db items, we have to handle zero hashcodes
-<span class="nc" id="L1972">				int ssHashCode = ssItem1.getHashCode();</span>
-<span class="nc bnc" id="L1973" title="All 4 branches missed.">				boolean partialZeroHash = ssItem1.getIsPartial() &amp;&amp; ssHashCode==0;</span>
-				
-<span class="nc bnc" id="L1975" title="All 4 branches missed.">				if (hashCode != ssHashCode &amp;&amp; partialZeroHash==false) {</span>
-<span class="nc" id="L1976">					return ValidationUtil.setHardValidationResult(ssReq, RmEjbBundleKey.SHIFTSWAP_WITHDRAW_UNDERLYING_EVENT_MISMATCH,</span>
+<span class="nc" id="L1081">				int ssHashCode = ssItem1.getHashCode();</span>
+<span class="nc bnc" id="L1082" title="All 4 branches missed.">				boolean partialZeroHash = ssItem1.getIsPartial() &amp;&amp; ssHashCode==0;</span>
+
+<span class="nc bnc" id="L1084" title="All 4 branches missed.">				if (hashCode != ssHashCode &amp;&amp; !partialZeroHash) {</span>
+<span class="nc" id="L1085">					return ValidationUtil.setHardValidationResult(ssReq, RmEjbBundleKey.SHIFTSWAP_WITHDRAW_UNDERLYING_EVENT_MISMATCH,</span>
 							m_className);
 				}
 
-<span class="nc" id="L1980">				hashCode = getShiftSwapItemHashCode(ssItem2, ssItem1.getEmployeeID(), sam, ssReqValCache);</span>
-<span class="nc" id="L1981">				ssHashCode = ssItem2.getHashCode();</span>
-<span class="nc bnc" id="L1982" title="All 4 branches missed.">				partialZeroHash = ssItem2.getIsPartial() &amp;&amp; ssHashCode==0;</span>
-				
-<span class="nc bnc" id="L1984" title="All 4 branches missed.">				if (hashCode != ssHashCode &amp;&amp; partialZeroHash==false) {</span>
-<span class="nc" id="L1985">					return ValidationUtil.setHardValidationResult(ssReq, RmEjbBundleKey.SHIFTSWAP_WITHDRAW_UNDERLYING_EVENT_MISMATCH,</span>
+<span class="nc" id="L1089">				hashCode = getShiftSwapItemHashCode(ssItem2, ssItem1.getEmployeeID(), sam, ssReqValCache);</span>
+<span class="nc" id="L1090">				ssHashCode = ssItem2.getHashCode();</span>
+<span class="nc bnc" id="L1091" title="All 4 branches missed.">				partialZeroHash = ssItem2.getIsPartial() &amp;&amp; ssHashCode==0;</span>
+
+<span class="nc bnc" id="L1093" title="All 4 branches missed.">				if (hashCode != ssHashCode &amp;&amp; !partialZeroHash) {</span>
+<span class="nc" id="L1094">					return ValidationUtil.setHardValidationResult(ssReq, RmEjbBundleKey.SHIFTSWAP_WITHDRAW_UNDERLYING_EVENT_MISMATCH,</span>
 							m_className);
 				}
 
-<span class="nc" id="L1989">			} catch (Exception e) {</span>
-<span class="nc" id="L1990">				result = ValidationUtil.setHardValidationResult(ssReq, RmEjbBundleKey.SHIFTSWAP_WITHDRAW_UNDERLYING_EVENT_MISMATCH,</span>
+<span class="nc" id="L1098">			} catch (Exception e) {</span>
+<span class="nc" id="L1099">				result = ValidationUtil.setHardValidationResult(ssReq, RmEjbBundleKey.SHIFTSWAP_WITHDRAW_UNDERLYING_EVENT_MISMATCH,</span>
 						m_className);
-<span class="nc" id="L1992">			}</span>
+<span class="nc" id="L1101">			}</span>
 		}
-<span class="nc" id="L1994">		return result;</span>
+<span class="nc" id="L1103">		return result;</span>
 	}
 
 	/**
 	 * Create a shift stamp for each swap to identify swaps that change in the future. Required for withdrawal validation.
 	 * @param ssReq - Shift swap request
+	 * @param overlap
 	 * @param sam
 	 * @throws Exception
 	 */
-	public static void signShiftSwapItems(ShiftSwapRequest ssReq, ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L2004">		ShiftSwapItem ssItem1 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(0);</span>
-<span class="nc" id="L2005">		ShiftSwapItem ssItem2 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(1);</span>
+	public static void signShiftSwapItems(ShiftSwapRequest ssReq, boolean overlap, ScheduleAccessManager sam) throws Exception {
+<span class="nc" id="L1114">		ShiftSwapItem ssItem1 = ssReq.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L1115">		ShiftSwapItem ssItem2 = ssReq.getShiftSwapItems().get(1);</span>
 
-<span class="nc bnc" id="L2007" title="All 2 branches missed.">		if (sam == null) {</span>
-<span class="nc" id="L2008">			sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc bnc" id="L1117" title="All 2 branches missed.">		if (sam == null) {</span>
+<span class="nc" id="L1118">			sam = WfmManagerFactory.getScheduleAccessManager();</span>
 		}
 
-<span class="nc" id="L2011">		ShiftSwapItemDAO dao = new ShiftSwapItemDAO();</span>
+<span class="nc" id="L1121">		ShiftSwapItemDAO dao = new ShiftSwapItemDAO();</span>
 
 		try {
-<span class="nc" id="L2014">			String ssItem1SwapType = ssItem1.getShiftType();</span>
-<span class="nc" id="L2015">			ShiftSwapValidationCache ssReqValCache = ssReq.getCache();</span>
-<span class="nc bnc" id="L2016" title="All 2 branches missed.">			if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L1124">			String ssItem1SwapType = ssItem1.getShiftType();</span>
+<span class="nc" id="L1125">			ShiftSwapValidationCache ssReqValCache = ssReq.getCache();</span>
+<span class="nc bnc" id="L1126" title="All 2 branches missed.">			if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
 				//The shift is swapped, so the other employee has the shift
-<span class="nc" id="L2018">				int hashCode = getShiftSwapItemHashCode(ssItem1, ssItem2.getEmployeeID(), sam, ssReqValCache);</span>
-<span class="nc" id="L2019">				ssItem1.setHashCode(hashCode);</span>
-<span class="nc" id="L2020">				dao.updateObject(ssItem1);</span>
+<span class="nc bnc" id="L1128" title="All 2 branches missed.">				int hashCode = overlap?ShiftSwapRequest.OVERLAP_HASH:getShiftSwapItemHashCode(ssItem1, ssItem2.getEmployeeID(), sam, ssReqValCache);</span>
+				
+			
+<span class="nc" id="L1131">				ssItem1.setHashCode(hashCode);</span>
+<span class="nc" id="L1132">				dao.updateObject(ssItem1);</span>
 			}
 
-<span class="nc" id="L2023">			String ssItem2SwapType = ssItem2.getShiftType();</span>
-<span class="nc bnc" id="L2024" title="All 2 branches missed.">			if (ssItem2SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L1135">			String ssItem2SwapType = ssItem2.getShiftType();</span>
+<span class="nc bnc" id="L1136" title="All 2 branches missed.">			if (ssItem2SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
 				//The shift is swapped, so the other employee has the shift
-<span class="nc" id="L2026">				int hashCode = getShiftSwapItemHashCode(ssItem2, ssItem1.getEmployeeID(), sam, ssReqValCache);</span>
-<span class="nc" id="L2027">				ssItem2.setHashCode(hashCode);</span>
-<span class="nc" id="L2028">				dao.updateObject(ssItem2);</span>
+<span class="nc bnc" id="L1138" title="All 2 branches missed.">				int hashCode = overlap?ShiftSwapRequest.OVERLAP_HASH:getShiftSwapItemHashCode(ssItem2, ssItem1.getEmployeeID(), sam, ssReqValCache);</span>
+<span class="nc" id="L1139">				ssItem2.setHashCode(hashCode);</span>
+<span class="nc" id="L1140">				dao.updateObject(ssItem2);</span>
 			}
 		} finally {
-<span class="nc" id="L2031">			dao.cleanUp();</span>
-<span class="nc" id="L2032">		}</span>
-<span class="nc" id="L2033">	}</span>
+<span class="nc" id="L1143">			dao.cleanUp();</span>
+<span class="nc" id="L1144">		}</span>
+<span class="nc" id="L1145">	}</span>
 
 	/**
 	 * Get the hashcode to sign the shift swap item. Because the shift is swapped, the employeeID parameter is used
 	 * to replace the Shift Swap requested item and get the schedule shift. The hascode is calculated on the shift and
 	 * its shift events.
-	 * 
+	 *
 	 * @param ssi - Shift Swap Item
 	 * @param employeeID - Employee ID of other shift item
 	 * @param sam - Schedule Access Manager
@@ -2046,30 +1158,37 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 */
 	public static int getShiftSwapItemHashCode(ShiftSwapItem ssi, ID employeeID, ScheduleAccessManager sam,
 			ShiftSwapValidationCache ssReqValCache) throws Exception {
-<span class="nc" id="L2049">		ShiftSwapItem clone = (ShiftSwapItem) ssi.clone();</span>
-<span class="nc" id="L2050">		clone.setEmployeeID(employeeID);</span>
-<span class="nc bnc" id="L2051" title="All 2 branches missed.">		ShiftAssignment sa = getShiftAssignForSSItem(clone, true, !clone.getIsPartial(), false, false, sam, ssReqValCache, false);</span>
+<span class="nc" id="L1161">		ShiftSwapItem clone = (ShiftSwapItem) ssi.clone();</span>
+<span class="nc" id="L1162">		clone.setEmployeeID(employeeID);</span>
 		
-<span class="nc bnc" id="L2053" title="All 2 branches missed.">		if (sa == null) {</span>
-<span class="nc" id="L2054">			return 0;</span>
+<span class="nc bnc" id="L1164" title="All 2 branches missed.">		ShiftAssignment sa = getShiftAssignForSSItem(clone, true, !clone.getIsPartial(), false, false, sam, ssReqValCache, false);</span>
+		
+<span class="nc bnc" id="L1166" title="All 2 branches missed.">		if (sa == null) {</span>
+<span class="nc" id="L1167">			return 0;</span>
 		} else {
-<span class="nc" id="L2056">			return getHashCode(sa, clone);</span>
+<span class="nc" id="L1169">			return getHashCode(sa, clone);</span>
 		}
 	}
 
 	public static int getHashCode(ShiftAssignment sa, ShiftSwapItem ssi) {
-<span class="nc" id="L2061">		return ShiftsUtil.getShiftAssignmentHashCodeExtendedInRange(sa, ssi.getStartDate(), ssi.getEndDate());</span>
+<span class="nc" id="L1174">		int hashCode = ShiftsUtil.getShiftAssignmentHashCodeExtendedInRange(sa, ssi.getStartDate(), ssi.getEndDate());</span>
+		//OVERLAP_HASH is a special hash that we use for overlap. So replace it.
+		//Overlap means that a requested shift swap overlaps an existing shift or the receiver
+<span class="nc bnc" id="L1177" title="All 2 branches missed.">		if (hashCode==ShiftSwapRequest.OVERLAP_HASH){</span>
+<span class="nc" id="L1178">			hashCode^=ssi.getStartDate().hashCode();</span>
+		}
+<span class="nc" id="L1180">		return hashCode;</span>
 	}
-	
+
 	public static int getHashCode(ShiftAssignment sa) {
-<span class="nc" id="L2065">		return ShiftsUtil.getShiftAssignmentHashCodeExtended(sa);</span>
+<span class="nc" id="L1184">		return ShiftsUtil.getShiftAssignmentHashCodeExtended(sa);</span>
 	}
-	
+
 	/**
-	 * Get number of one way swaps approved for employee. The date range will take into account any 
+	 * Get number of one way swaps approved for employee. The date range will take into account any
 	 * shift that starts in the date range start-end.
 	 * The parameters must not be null. For any null value in the params, the count will return 0.
-	 * 
+	 *
 	 * @param employeeID - Employee ID
 	 * @param start - start date range
 	 * @param end - end date range
@@ -2077,24 +1196,24 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 * @throws Exception
 	 */
 	public static int getNumberOfOneWaySwapsForEmployee(ID employeeID, Date start, Date end) throws Exception {
-<span class="nc" id="L2080">		int result = 0;</span>
-<span class="nc bnc" id="L2081" title="All 6 branches missed.">		if (employeeID != null &amp;&amp; start != null &amp;&amp; end != null) {</span>
-<span class="nc" id="L2082">			Map&lt;ID, Integer&gt; returnMap =</span>
-<span class="nc" id="L2083">					getNumberOfOneWaySwapsForEmployees(Collections.singletonList(employeeID), start, end);</span>
+<span class="nc" id="L1199">		int result = 0;</span>
+<span class="nc bnc" id="L1200" title="All 6 branches missed.">		if (employeeID != null &amp;&amp; start != null &amp;&amp; end != null) {</span>
+<span class="nc" id="L1201">			Map&lt;ID, Integer&gt; returnMap =</span>
+<span class="nc" id="L1202">					getNumberOfOneWaySwapsForEmployees(Collections.singletonList(employeeID), start, end);</span>
 
-<span class="nc bnc" id="L2085" title="All 4 branches missed.">			if (returnMap != null &amp;&amp; returnMap.containsKey(employeeID)) {</span>
-<span class="nc" id="L2086">				result = returnMap.get(employeeID);</span>
+<span class="nc bnc" id="L1204" title="All 4 branches missed.">			if (returnMap != null &amp;&amp; returnMap.containsKey(employeeID)) {</span>
+<span class="nc" id="L1205">				result = returnMap.get(employeeID);</span>
 			}
 		}
 
-<span class="nc" id="L2090">		return result;</span>
+<span class="nc" id="L1209">		return result;</span>
 	}
 
 	/**
-	 * Get number of one way swaps approved for employees. The date range will take into account any 
+	 * Get number of one way swaps approved for employees. The date range will take into account any
 	 * shift that starts in the date range start-end.
 	 * The parameters must not be null. For any null value in the params, the count will return 0.
-	 * 
+	 *
 	 * @param employeeIDs - Employee IDs
 	 * @param start - start date range
 	 * @param end - end date range
@@ -2103,57 +1222,201 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	 */
 	public static Map&lt;ID, Integer&gt; getNumberOfOneWaySwapsForEmployees(Collection&lt;ID&gt; employeeIDs, Date start, Date end)
 			throws Exception {
-<span class="nc" id="L2106">		Map&lt;ID, Integer&gt; returnMap = null;</span>
-<span class="nc" id="L2107">		ShiftSwapRequestDAO dao = null;</span>
+<span class="nc" id="L1225">		Map&lt;ID, Integer&gt; returnMap = null;</span>
+<span class="nc" id="L1226">		ShiftSwapRequestDAO dao = null;</span>
 		try {
-<span class="nc" id="L2109">			dao = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
-<span class="nc" id="L2110">			returnMap = dao.getNumberOfOneWaySwapsForEmployees(employeeIDs, start, end);</span>
+<span class="nc" id="L1228">			dao = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
+<span class="nc" id="L1229">			returnMap = dao.getNumberOfOneWaySwapsForEmployees(employeeIDs, start, end);</span>
 		} finally {
-<span class="nc bnc" id="L2112" title="All 4 branches missed.">			if (dao != null) {</span>
-<span class="nc" id="L2113">				dao.cleanUp();</span>
+<span class="nc bnc" id="L1231" title="All 4 branches missed.">			if (dao != null) {</span>
+<span class="nc" id="L1232">				dao.cleanUp();</span>
 			}
 		}
 
-<span class="nc" id="L2117">		return returnMap;</span>
+<span class="nc" id="L1236">		return returnMap;</span>
+	}
+
+	/**
+	 * Get number of one way swaps approved for employees. The date range will take into account any
+	 * shift that starts in the date range start-end.
+	 * The parameters must not be null. For any null value in the params, the count will return 0.
+	 *
+	 * @param employeeID - Employee ID
+	 * @param org - Organization of the Employees to get Swap Count
+	 * @param start - start date range
+	 * @param end - end date range
+	 * @return Map of empID -&gt; count of number of 1-way approved swaps, where the employee gives away his shift
+	 * @throws Exception
+	 */
+	public static int getNormalizedNumberOfOneWaySwapsForEmployees(ID employeeID, Organization org, Date start, Date end)
+			throws Exception {
+<span class="nc" id="L1253">		int result = 0;</span>
+<span class="nc" id="L1254">		Collection&lt;Map&lt;ID, Collection&lt;Timestamp&gt;&gt;&gt; swapDataMap = null;</span>
+<span class="nc" id="L1255">		Map&lt;ID, Integer&gt; employeeSwapCountMap = null; </span>
+		
+<span class="nc" id="L1257">		employeeSwapCountMap = getNormalizedNumberOfOneWaySwapsForEmployees(Collections.singletonList(employeeID), org, start, end);</span>
+
+<span class="nc bnc" id="L1259" title="All 4 branches missed.">		if (employeeSwapCountMap != null &amp;&amp; employeeSwapCountMap.containsKey(employeeID)) {</span>
+<span class="nc" id="L1260">			result = employeeSwapCountMap.get(employeeID);</span>
+		}
+<span class="nc" id="L1262">		return result;</span>
+	}
+
+	/**
+	 * Get number of one way swaps approved for employees. The date range will take into account any
+	 * shift that starts in the date range start-end.
+	 * The parameters must not be null. For any null value in the params, the count will return 0.
+	 *
+	 * @param employeeIDs - Employee IDs
+	 * @param org - Organization of the Employees to get Swap Count
+	 * @param start - start date range
+	 * @param end - end date range
+	 * @return Map of empID -&gt; count of number of 1-way approved swaps, where the employee gives away his shift
+	 * @throws Exception Throw if an exception is encountered
+	 */
+	public static Map&lt;ID, Integer&gt; getNormalizedNumberOfOneWaySwapsForEmployees(Collection&lt;ID&gt; employeeIDs, Organization org, Date start, Date end)
+			throws Exception {
+<span class="nc" id="L1279">		Collection&lt;Map&lt;ID, Collection&lt;Timestamp&gt;&gt;&gt; swapDataMap = null;</span>
+<span class="nc" id="L1280">		Map&lt;ID, Integer&gt; employeeSwapCountMap = null; </span>
+<span class="nc" id="L1281">		ShiftSwapRequestDAO dao = null;</span>
+		
+		try {
+<span class="nc" id="L1284">			dao = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
+<span class="nc" id="L1285">			swapDataMap = dao.getNormalizedNumberOfOneWaySwapsForEmployees(employeeIDs, start, end);</span>
+<span class="nc" id="L1286">			employeeSwapCountMap = createSwapCountMap(swapDataMap, org);</span>
+		} finally {
+<span class="nc bnc" id="L1288" title="All 4 branches missed.">			if (dao != null) {</span>
+<span class="nc" id="L1289">				dao.cleanUp();</span>
+			}
+		}
+
+<span class="nc" id="L1293">		return employeeSwapCountMap;</span>
+	}
+	/**
+	 * Counts the number one-way shift swaps for a user.  The methods accepts a collection of maps that have an ID as the key
+	 * and a collections of TimeStamps.  It subtracts the dates from the first map that are contain in the second map.  Then
+	 * builds a map of ID to swap counts.
+	 * 
+	 * @param swapDataMap Data return from db call
+	 * @param org Organization for employees
+	 * @return Map containing ID to swap count Key\Data Pairs 
+	 * @throws Exception Throw if an exception is encountered
+	 */
+	private static Map&lt;ID, Integer&gt; createSwapCountMap(Collection&lt;Map&lt;ID, Collection&lt;Timestamp&gt;&gt;&gt; swapDataMap, Organization org) throws Exception {
+<span class="nc" id="L1306">		int count = 0;</span>
+<span class="nc" id="L1307">		Map&lt;ID, Collection&lt;Timestamp&gt;&gt; mapSwapOff = null;</span>
+<span class="nc" id="L1308">		Map&lt;ID, Collection&lt;Timestamp&gt;&gt; mapSwapOn = null;</span>
+<span class="nc" id="L1309">		Map&lt;ID, Integer&gt; maps = new HashMap&lt;ID, Integer&gt;();</span>
+
+<span class="nc" id="L1311">		mapSwapOn = (Map&lt;ID, Collection&lt;Timestamp&gt;&gt;) ((ArrayList) swapDataMap).get(0);</span>
+<span class="nc" id="L1312">		mapSwapOff = (Map&lt;ID, Collection&lt;Timestamp&gt;&gt;) ((ArrayList) swapDataMap).get(1);</span>
+
+<span class="nc bnc" id="L1314" title="All 2 branches missed.">		for (ID swapOffID : mapSwapOff.keySet()) {</span>
+<span class="nc" id="L1315">			Collection&lt;Timestamp&gt; swapOffDates = mapSwapOff.get(swapOffID);</span>
+<span class="nc" id="L1316">			Collection&lt;Timestamp&gt; swapOnDates = mapSwapOn.get(swapOffID);</span>
+<span class="nc bnc" id="L1317" title="All 2 branches missed.">			if (swapOnDates != null) {</span>
+<span class="nc bnc" id="L1318" title="All 2 branches missed.">				for (Timestamp swapOffDate : swapOffDates) {</span>
+<span class="nc bnc" id="L1319" title="All 2 branches missed.">					for (Iterator it = swapOnDates.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L1320">						Timestamp swapOnDate = (Timestamp) it.next();</span>
+<span class="nc bnc" id="L1321" title="All 2 branches missed.">						if (isSwapOnDateOnSwapOffDate(swapOnDate, swapOffDate, org)) {</span>
+<span class="nc" id="L1322">							it.remove();</span>
+<span class="nc" id="L1323">							break;</span>
+						}
+<span class="nc" id="L1325">					}</span>
+<span class="nc" id="L1326">				}</span>
+			}
+<span class="nc" id="L1328">		}</span>
+
+		// Count the Swaps for an Employee
+<span class="nc bnc" id="L1331" title="All 2 branches missed.">		for (ID swapOnID : mapSwapOn.keySet()) {</span>
+<span class="nc" id="L1332">			Collection&lt;Timestamp&gt; swapOnDates = mapSwapOn.get(swapOnID);</span>
+<span class="nc" id="L1333">			maps.put(swapOnID, new Integer(swapOnDates.size()));</span>
+<span class="nc" id="L1334">		}</span>
+
+<span class="nc" id="L1336">		return maps;</span>
+	}
+
+	/**
+	 * Compares the Swap On date overlaps a previous Swap Off date
+	 * 
+	 * @param swapOn Date of new Shift Swap On (Gaining a shift)
+	 * @param swapOff Date of new Shift Swap Off (Losing a shift)
+	 * @param org Organization of individual swapping the shift
+	 * @return True is the Swap On date overlaps the Swap Off date
+	 * @throws Exception
+	 */
+	private static boolean isSwapOnDateOnSwapOffDate(Timestamp swapOn, Timestamp swapOff, Organization org) 
+			throws Exception {
+<span class="nc" id="L1350">		final int TWENTY_FOUR_HOURS_IN_MINUTES = 1440;</span>
+<span class="nc" id="L1351">		boolean between = false;</span>
+<span class="nc" id="L1352">		int orgOffSet = org.getDayBoundaryOffset();</span>
+<span class="nc" id="L1353">		Calendar swapOffCalStartDate = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L1354">		Calendar swapOffCalEndDate = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L1355">		Calendar swapOnCalDate = Calendar.getInstance(org.getTimeZone());</span>
+		
+		// Set the start of the day to the Organization Day Offset
+<span class="nc" id="L1358">		swapOffCalStartDate.setTime((Date)swapOff);</span>
+<span class="nc" id="L1359">		swapOffCalStartDate.set(Calendar.HOUR_OF_DAY, 0);</span>
+<span class="nc" id="L1360">		swapOffCalStartDate.set(Calendar.MINUTE, 0);</span>
+<span class="nc" id="L1361">		swapOffCalStartDate.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L1362">		swapOffCalStartDate.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L1363">		swapOffCalStartDate.add(Calendar.MINUTE, orgOffSet);</span>
+		
+		// Increment the Organization Day End by 24 Hrs.
+<span class="nc" id="L1366">		swapOffCalEndDate.setTime(swapOffCalStartDate.getTime());</span>
+<span class="nc" id="L1367">		swapOffCalEndDate.add(Calendar.MINUTE, TWENTY_FOUR_HOURS_IN_MINUTES);</span>
+		
+		// Take a second from start date in case shift starts at the beginning of the
+		// Organization date
+<span class="nc" id="L1371">		swapOffCalStartDate.add(Calendar.SECOND, -1);</span>
+		
+		// Sets the Swap On Time
+<span class="nc" id="L1374">		swapOnCalDate.setTime((Date)swapOn);</span>
+		
+<span class="nc bnc" id="L1376" title="All 4 branches missed.">		if (swapOnCalDate.after(swapOffCalStartDate) &amp;&amp; swapOnCalDate.before(swapOffCalEndDate)) {</span>
+<span class="nc" id="L1377">			between = true;</span>
+		}
+<span class="nc" id="L1379">		return between;</span>
 	}
 
 	/**
 	 * Check if the number of swaps performed on a shift is below the limit
-	 * 
+	 *
 	 * @param numberOfSwaps - limit of swaps
 	 * @param ssReq - Shift Swap Request
 	 * @return boolean true - below limit, false - above limit
 	 * @throws Exception
 	 */
 	public static boolean isBelowNumberOfSwapsForShift(int numberOfSwaps, ShiftSwapRequest ssReq) throws Exception {
-<span class="nc" id="L2129">		boolean result = true;</span>
-<span class="nc" id="L2130">		ShiftSwapRequestDAO dao = null;</span>
+<span class="nc" id="L1391">		boolean result = true;</span>
+<span class="nc" id="L1392">		ShiftSwapRequestDAO dao = null;</span>
 
-<span class="nc" id="L2132">		ShiftSwapItem ssItem1 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(0);</span>
-<span class="nc" id="L2133">		ShiftSwapItem ssItem2 = (ShiftSwapItem) ssReq.getShiftSwapItems().get(1);</span>
+<span class="nc" id="L1394">		ShiftSwapItem ssItem1 = ssReq.getShiftSwapItems().get(0);</span>
+<span class="nc" id="L1395">		ShiftSwapItem ssItem2 = ssReq.getShiftSwapItems().get(1);</span>
 
 		try {
-<span class="nc" id="L2136">			dao = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
-<span class="nc" id="L2137">			String ssItem1SwapType = ssItem1.getShiftType();</span>
-<span class="nc bnc" id="L2138" title="All 2 branches missed.">			if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-<span class="nc" id="L2139">				result = dao.isBelowNumberOfSwapsForShift(numberOfSwaps, ssItem1.getEmployeeID(), ssItem1.getStartDate(),</span>
-<span class="nc" id="L2140">						ssItem1.getEndDate());</span>
+<span class="nc" id="L1398">			dao = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
+<span class="nc" id="L1399">			String ssItem1SwapType = ssItem1.getShiftType();</span>
+<span class="nc bnc" id="L1400" title="All 2 branches missed.">			if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L1401">				result = dao.isBelowNumberOfSwapsForShift(numberOfSwaps, ssItem1.getEmployeeID(), ssItem1.getStartDate(),</span>
+<span class="nc" id="L1402">						ssItem1.getEndDate());</span>
 			}
 
-<span class="nc" id="L2143">			String ssItem2SwapType = ssItem2.getShiftType();</span>
-<span class="nc bnc" id="L2144" title="All 4 branches missed.">			if (result &amp;&amp; ssItem2SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-<span class="nc" id="L2145">				result = dao.isBelowNumberOfSwapsForShift(numberOfSwaps, ssItem2.getEmployeeID(), ssItem2.getStartDate(),</span>
-<span class="nc" id="L2146">						ssItem2.getEndDate());</span>
+<span class="nc" id="L1405">			String ssItem2SwapType = ssItem2.getShiftType();</span>
+<span class="nc bnc" id="L1406" title="All 4 branches missed.">			if (result &amp;&amp; ssItem2SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L1407">				result = dao.isBelowNumberOfSwapsForShift(numberOfSwaps, ssItem2.getEmployeeID(), ssItem2.getStartDate(),</span>
+<span class="nc" id="L1408">						ssItem2.getEndDate());</span>
 			}
 		} finally {
-<span class="nc" id="L2149">			dao.cleanUp();</span>
-<span class="nc" id="L2150">		}</span>
+<span class="nc" id="L1411">			dao.cleanUp();</span>
+<span class="nc" id="L1412">		}</span>
 
-<span class="nc" id="L2152">		return result;</span>
+<span class="nc" id="L1414">		return result;</span>
 	}
 
 	/**
-	* Check if there is any approved shiftSwap for the employee received the shift swap in 1 day.
+	* Check if there is any approved shiftSwap for the employee received the shift swap in 1 day
+	* This is for MaxHoursAndMaxAlternateHoursPerDayValidationRule
 	* For debug: If 1-way swap, his shift type returned is TimeOff, If 2-way swap, his shift return is Shift
 	* @param employeeId
 	* @param startDate
@@ -2161,15 +1424,15 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	* @return boolean
 	* */
 	public static boolean employeeReceivedShiftSwapApproved(ID employeeId, Date startDate, Date endDate) throws Exception {
-<span class="nc" id="L2164">		boolean result = true;</span>
-<span class="nc" id="L2165">		ShiftSwapRequestDAO dao = null;</span>
+<span class="nc" id="L1427">		boolean result = true;</span>
+<span class="nc" id="L1428">		ShiftSwapRequestDAO dao = null;</span>
 		try {
-<span class="nc" id="L2167">			dao = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
-<span class="nc" id="L2168">			result = dao.employeeReceivedShiftSwapApproved(employeeId, startDate, endDate);</span>
+<span class="nc" id="L1430">			dao = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
+<span class="nc" id="L1431">			result = dao.employeeReceivedShiftSwapApproved(employeeId, startDate, endDate);</span>
 		} finally {
-<span class="nc" id="L2170">			dao.cleanUp();</span>
-<span class="nc" id="L2171">		}</span>
-<span class="nc" id="L2172">		return result;</span>
+<span class="nc" id="L1433">			dao.cleanUp();</span>
+<span class="nc" id="L1434">		}</span>
+<span class="nc" id="L1435">		return result;</span>
 	}
 
 	/**
@@ -2178,52 +1441,52 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 	public static long getPaidTimeInShiftAssignment(ShiftAssignment shiftAssignment) throws Exception
 	{
 		// in milliseconds.
-<span class="nc" id="L2181">		long paidTimeInMs = shiftAssignment.getEndTime().getTime() - shiftAssignment.getStartTime().getTime();</span>
-<span class="nc" id="L2182">		Collection&lt;ShiftEventAssignment&gt; shiftEventAssignments = shiftAssignment.getChildren();</span>
-<span class="nc bnc" id="L2183" title="All 2 branches missed.">		for (Iterator&lt;ShiftEventAssignment&gt; itrShiftEvents = shiftEventAssignments.iterator(); itrShiftEvents.hasNext();) {</span>
+<span class="nc" id="L1444">		long paidTimeInMs = shiftAssignment.getEndTime().getTime() - shiftAssignment.getStartTime().getTime();</span>
+<span class="nc" id="L1445">		Collection&lt;ShiftEventAssignment&gt; shiftEventAssignments = shiftAssignment.getChildren();</span>
+<span class="nc bnc" id="L1446" title="All 2 branches missed.">		for (Iterator&lt;ShiftEventAssignment&gt; itrShiftEvents = shiftEventAssignments.iterator(); itrShiftEvents.hasNext();) {</span>
 			//if this event is not paid, then deduct from the shift paid hours
-<span class="nc" id="L2185">			ShiftEventAssignment assignment = itrShiftEvents.next();</span>
-<span class="nc bnc" id="L2186" title="All 4 branches missed.">			if (assignment != null &amp;&amp; !assignment.getPaid())</span>
+<span class="nc" id="L1448">			ShiftEventAssignment assignment = itrShiftEvents.next();</span>
+<span class="nc bnc" id="L1449" title="All 4 branches missed.">			if (assignment != null &amp;&amp; !assignment.getPaid())</span>
 			{
-<span class="nc" id="L2188">				paidTimeInMs -= ((long) assignment.getDuration()) * 60 * 1000; //duration is in minutes; convert to long</span>
+<span class="nc" id="L1451">				paidTimeInMs -= ((long) assignment.getDuration()) * 60 * 1000; //duration is in minutes; convert to long</span>
 			}
-<span class="nc" id="L2190">		}</span>
-<span class="nc" id="L2191">		return paidTimeInMs;</span>
+<span class="nc" id="L1453">		}</span>
+<span class="nc" id="L1454">		return paidTimeInMs;</span>
 	}
 
 	/**
 	 * Returns the number of partial shift swaps for a given day and shift
-	 * 
+	 *
 	 * @param ssItem Contains the data for the shift swap
-	 * @param shiftID ID of the shift to be swapped
+	 * @param swapperEmployeeID ID of the employee to search for Shifts
+	 * @param swappeeEmployeeID ID of the employee to check in list of employees
 	 * @param shiftStartTime Start Time of the shift
 	 * @param shiftEndTime End Time for the shift
 	 * @return The number of partial shift swaps for a shift.
 	 * @throws Exception Throws an exception if any occur.
 	 */
-	public static int getNumberOfPartialSwapsForShift(ShiftSwapItem ssItem, ID shiftID, ID employeeID, Date shiftStartTime,
-			Date shiftEndTime) throws Exception { // NOSONAR
-<span class="nc" id="L2206">		int result = 0;</span>
-<span class="nc" id="L2207">		ShiftSwapRequestDAO dao = null;</span>
+	public static int getNumberOfPartialSwapsForShift(ShiftSwapItem ssItem, ID swapperEmployeeID, ID swappeeEmployeeID,
+													  Date shiftStartTime, Date shiftEndTime) throws Exception { // NOSONAR
+<span class="nc" id="L1470">		int result = 0;</span>
 		Collection&lt;ID&gt; employeeIDs;
 
+<span class="nc" id="L1473">		ShiftSwapRequestDAO dao = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
 		try {
-<span class="nc" id="L2211">			dao = new ShiftSwapRequestDAO(ShiftSwapRequest.getDetailLevelForValidation());</span>
-<span class="nc" id="L2212">			String ssItem1SwapType = ssItem.getShiftType();</span>
-<span class="nc bnc" id="L2213" title="All 2 branches missed.">			if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
-<span class="nc" id="L2214">				employeeIDs = dao.getEployeeIDsOfPartialSwapsPerShift(shiftID, shiftStartTime, shiftEndTime);</span>
-
-<span class="nc bnc" id="L2216" title="All 4 branches missed.">				if (employeeIDs != null &amp;&amp; employeeIDs.contains(employeeID)) {</span>
-<span class="nc" id="L2217">					result = 0;</span>
-				} else {
-<span class="nc" id="L2219">					result = employeeIDs.size();</span>
+<span class="nc" id="L1475">			String ssItem1SwapType = ssItem.getShiftType();</span>
+<span class="nc bnc" id="L1476" title="All 2 branches missed.">			if (ssItem1SwapType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc" id="L1477">				employeeIDs = dao.getEmployeeIDsOfPartialSwapsPerShift(swapperEmployeeID, shiftStartTime, shiftEndTime);</span>
+<span class="nc bnc" id="L1478" title="All 2 branches missed.">				if (employeeIDs != null) {</span>
+<span class="nc bnc" id="L1479" title="All 2 branches missed.">					if (employeeIDs.contains(swappeeEmployeeID)) {</span>
+<span class="nc" id="L1480">						result = 0;</span>
+					} else {
+<span class="nc" id="L1482">						result = employeeIDs.size();</span>
+					}
 				}
 			}
 		} finally {
-<span class="nc" id="L2223">			dao.cleanUp();</span>
-<span class="nc" id="L2224">		}</span>
-
-<span class="nc" id="L2226">		return result;</span>
+<span class="nc" id="L1487">			dao.cleanUp();</span>
+<span class="nc" id="L1488">		}</span>
+<span class="nc" id="L1489">		return result;</span>
 	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

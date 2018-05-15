@@ -21,6 +21,7 @@ import com.bluepumpkin.ejb.rm.requests.swap.posting.model.ShiftSwapPosting;
 import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
 import com.bluepumpkin.ejb.rm.util.DateUtil;
 import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
 import com.bluepumpkin.web.rm.requests.shiftswap.EditShiftSwapRequestParameters;
 import com.bluepumpkin.web.rm.requests.shiftswap.ShiftSwapRequestParameters;
 import com.verint.web.rest.entity.AbstractWFOEntity;
@@ -47,11 +48,13 @@ import com.witness.web.uif.system.RequestContext;
 @Path(&quot;/shiftswap/&quot;)
 @Produces(&quot;application/json&quot;)
 @WFOSecurity(licenses = { LicenseKeys.APP_RM_SS })
-public class ShiftSwapRestService extends AbstractWFOService {
-<span class="nc" id="L51">	private static final Category LOG = Log.initCategory(ShiftSwapRestService.class.getName());</span>
+<span class="nc" id="L51">public class ShiftSwapRestService extends AbstractWFOService {</span>
+<span class="nc" id="L52">	private static final Category LOG = Log.initCategory(ShiftSwapRestService.class.getName());</span>
+	private static final String EFFECTIVE_DATE_FN = &quot;effectiveDate&quot;;
 	private static final String INCLUDE_PARTIAL = &quot;includePartial&quot;;
 	static final String SHIFT_TYPE_FN = &quot;shiftType&quot;;
 	static final String SWAP_TYPE_FN = &quot;swapType&quot;;
+	static final String ALLOW_PARTIAL_PICKUP_FN = &quot;allowPartialPickup&quot;;
 
 	@Context
 	private HttpServletRequest request;
@@ -61,9 +64,6 @@ public class ShiftSwapRestService extends AbstractWFOService {
 	private ServletContext sc;
 
 	private IShiftSwapFacade shiftSwapFacade;
-
-<span class="nc" id="L65">	public ShiftSwapRestService() {</span>
-<span class="nc" id="L66">	}</span>
 
 	public RequestContext getRequestContext() {
 <span class="nc" id="L69">		return new RequestContext(request, response, sc);</span>
@@ -147,7 +147,7 @@ public class ShiftSwapRestService extends AbstractWFOService {
 	 * Gets the employees that the current employee can swap with.
 	 *
 	 * Example:
-	 * http://localhost:7001/wfo/rest/rm-api/timeoffcalendar/getDaily?startDate=2016-01-01T05:00:00Z&amp;endDate=2017-01-01T05:00:00Z
+	 * http://localhost:7001/wfo/rest/rm-api/shiftswap/getEmployees?effectiveDate=2017-01-01T05:00:00Z
 	 */
 	@GET
 	@Path(&quot;/getEmployees&quot;)
@@ -156,8 +156,8 @@ public class ShiftSwapRestService extends AbstractWFOService {
 <span class="nc" id="L156">			RequestContext context = getRequestContext();</span>
 <span class="nc" id="L157">			User user = context.getUser();</span>
 <span class="nc" id="L158">			assertIsAuthorizedForRequest(context);</span>
-
-<span class="nc" id="L160">			return shiftSwapFacade.getEmpNamesOneCanSwapShiftWith(context, user.getEmployeeID());</span>
+<span class="nc" id="L159">			Date effectiveDate = RmUtils.getDate(context.getParameter(EFFECTIVE_DATE_FN));</span>
+<span class="nc" id="L160">			return shiftSwapFacade.getEmpNamesOneCanSwapShiftWith(context, user.getEmployeeID(), effectiveDate);</span>
 <span class="nc" id="L161">		} catch (Exception ex) {</span>
 <span class="nc" id="L162">			throw RmUtils.handleServiceException(ex, LOG);</span>
 		}
@@ -244,16 +244,15 @@ public class ShiftSwapRestService extends AbstractWFOService {
 		try {
 <span class="nc" id="L245">			RequestContext context = getRequestContext();</span>
 <span class="nc" id="L246">			Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L247">			assertIsAuthorizedForRequest(context);</span>
 
-<span class="nc bnc" id="L249" title="All 2 branches missed.">			if (entity == null) {</span>
-<span class="nc" id="L250">				throw RmUtils.createInvalidParameterException(localizer, &quot;request parameters&quot;);</span>
+<span class="nc bnc" id="L248" title="All 2 branches missed.">			if (entity == null) {</span>
+<span class="nc" id="L249">				throw RmUtils.createInvalidParameterException(localizer, &quot;request parameters&quot;);</span>
 			}
-<span class="nc" id="L252">			ShiftSwapRequestParameters requestParams = createParameters(localizer, entity);</span>
+<span class="nc" id="L251">			ShiftSwapRequestParameters requestParams = createParameters(localizer, entity);</span>
 
-<span class="nc" id="L254">			return shiftSwapFacade.createRequest(context, requestParams);</span>
-<span class="nc" id="L255">		} catch (Exception ex) {</span>
-<span class="nc" id="L256">			throw RmUtils.handleServiceException(ex, LOG);</span>
+<span class="nc" id="L253">			return shiftSwapFacade.createRequest(context, requestParams);</span>
+<span class="nc" id="L254">		} catch (Exception ex) {</span>
+<span class="nc" id="L255">			throw RmUtils.handleServiceException(ex, LOG);</span>
 		}
 	}
 
@@ -280,25 +279,44 @@ public class ShiftSwapRestService extends AbstractWFOService {
 	@Consumes(&quot;application/json&quot;)
 	public ShiftSwapRequestEntity editRequest(EditShiftSwapRequestEntity entity) throws WFOException {
 		try {
-<span class="nc" id="L283">			RequestContext context = getRequestContext();</span>
-<span class="nc" id="L284">			Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L285">			assertIsAuthorizedForRequest(context);</span>
+<span class="nc" id="L282">			RequestContext context = getRequestContext();</span>
+<span class="nc" id="L283">			Localizer localizer = context.getLocalizer();</span>
 
-<span class="nc bnc" id="L287" title="All 2 branches missed.">			if (entity == null) {</span>
-<span class="nc" id="L288">				throw RmUtils.createInvalidParameterException(localizer, &quot;request parameters&quot;);</span>
+<span class="nc bnc" id="L285" title="All 2 branches missed.">			if (entity == null) {</span>
+<span class="nc" id="L286">				throw RmUtils.createInvalidParameterException(localizer, &quot;request parameters&quot;);</span>
 			}
-<span class="nc" id="L290">			EditShiftSwapRequestParameters requestParams = new EditShiftSwapRequestParameters();</span>
-<span class="nc" id="L291">			requestParams.setComment(entity.getComment());</span>
-<span class="nc" id="L292">			requestParams.setExpirationDate(RmUtils.getDate(entity.getExpirationDate()));</span>
+<span class="nc" id="L288">			EditShiftSwapRequestParameters requestParams = new EditShiftSwapRequestParameters();</span>
+<span class="nc" id="L289">			requestParams.setComment(entity.getComment());</span>
+<span class="nc" id="L290">			requestParams.setExpirationDate(RmUtils.getDate(entity.getExpirationDate()));</span>
 
-<span class="nc" id="L294">			requestParams.setNegotiable(entity.isNegotiation());</span>
-<span class="nc" id="L295">			requestParams.setNegotiationComment(entity.getNegotiationComment());</span>
-<span class="nc" id="L296">			requestParams.setRequestID(RmUtils.getID(localizer, entity.getId(), RmUtils.ID_FN));</span>
-<span class="nc" id="L297">			requestParams.setSubmitToMgr(entity.isSubmitToManager());</span>
+<span class="nc" id="L292">			requestParams.setNegotiable(entity.isNegotiation());</span>
+<span class="nc" id="L293">			requestParams.setNegotiationComment(entity.getNegotiationComment());</span>
+<span class="nc" id="L294">			requestParams.setRequestID(RmUtils.getID(localizer, entity.getId(), RmUtils.ID_FN));</span>
+<span class="nc" id="L295">			requestParams.setSubmitToMgr(entity.isSubmitToManager());</span>
 
-<span class="nc" id="L299">			return shiftSwapFacade.editRequest(context, requestParams);</span>
-<span class="nc" id="L300">		} catch (Exception ex) {</span>
-<span class="nc" id="L301">			throw RmUtils.handleServiceException(ex, LOG);</span>
+<span class="nc" id="L297">			return shiftSwapFacade.editRequest(context, requestParams);</span>
+<span class="nc" id="L298">		} catch (Exception ex) {</span>
+<span class="nc" id="L299">			throw RmUtils.handleServiceException(ex, LOG);</span>
+		}
+	}
+
+	/**
+	 * Get the request by the specified requestID.
+	 */
+	@GET
+	@Path(&quot;/getRequest&quot;)
+	@Consumes(&quot;application/json&quot;)
+	public ShiftSwapRequestEntity getRequest() throws WFOException {
+		try {
+<span class="nc" id="L311">			RequestContext context = getRequestContext();</span>
+<span class="nc" id="L312">			Localizer localizer = context.getLocalizer();</span>
+
+<span class="nc" id="L314">			ID requestID = RmUtils.getID(context, RmUtils.REQUEST_ID_FN);</span>
+<span class="nc" id="L315">			RmUtils.assertNonZeroParameter(localizer, requestID.toInt(), RmUtils.REQUEST_ID_FN);</span>
+
+<span class="nc" id="L317">			return shiftSwapFacade.getRequest(context, requestID);</span>
+<span class="nc" id="L318">		} catch (Exception ex) {</span>
+<span class="nc" id="L319">			throw RmUtils.handleServiceException(ex, LOG);</span>
 		}
 	}
 
@@ -314,25 +332,24 @@ public class ShiftSwapRestService extends AbstractWFOService {
 	@Consumes(&quot;application/json&quot;)
 	public ShiftSwapRequestEntity processRequest(RequestProcessEntity entity) throws WFOException {
 		try {
-<span class="nc" id="L317">			RequestContext context = getRequestContext();</span>
-<span class="nc" id="L318">			Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L319">			assertIsAuthorizedForRequest(context);</span>
+<span class="nc" id="L335">			RequestContext context = getRequestContext();</span>
+<span class="nc" id="L336">			Localizer localizer = context.getLocalizer();</span>
 
-<span class="nc bnc" id="L321" title="All 2 branches missed.">			if (entity == null) {</span>
-<span class="nc" id="L322">				throw RmUtils.createInvalidParameterException(localizer, &quot;process parameters&quot;);</span>
+<span class="nc bnc" id="L338" title="All 2 branches missed.">			if (entity == null) {</span>
+<span class="nc" id="L339">				throw RmUtils.createInvalidParameterException(localizer, &quot;process parameters&quot;);</span>
 			}
-<span class="nc" id="L324">			ID requestID = new ID(entity.getId());</span>
-<span class="nc" id="L325">			RmUtils.assertNonZeroParameter(localizer, requestID.toInt(), RmUtils.REQUEST_ID_FN);</span>
+<span class="nc" id="L341">			ID requestID = new ID(entity.getId());</span>
+<span class="nc" id="L342">			RmUtils.assertNonZeroParameter(localizer, requestID.toInt(), RmUtils.REQUEST_ID_FN);</span>
 
-<span class="nc" id="L327">			int actionCode = entity.getActionCode();</span>
-<span class="nc" id="L328">			String comment = entity.getComment();</span>
-<span class="nc bnc" id="L329" title="All 2 branches missed.">			if (comment != null) {</span>
-<span class="nc" id="L330">				comment = comment.trim();</span>
+<span class="nc" id="L344">			int actionCode = entity.getActionCode();</span>
+<span class="nc" id="L345">			String comment = entity.getComment();</span>
+<span class="nc bnc" id="L346" title="All 2 branches missed.">			if (comment != null) {</span>
+<span class="nc" id="L347">				comment = comment.trim();</span>
 			}
 
-<span class="nc" id="L333">			return shiftSwapFacade.processRequest(context, requestID, actionCode, comment);</span>
-<span class="nc" id="L334">		} catch (Exception ex) {</span>
-<span class="nc" id="L335">			throw RmUtils.handleServiceException(ex, LOG);</span>
+<span class="nc" id="L350">			return shiftSwapFacade.processRequest(context, requestID, actionCode, comment);</span>
+<span class="nc" id="L351">		} catch (Exception ex) {</span>
+<span class="nc" id="L352">			throw RmUtils.handleServiceException(ex, LOG);</span>
 		}
 	}
 
@@ -342,125 +359,137 @@ public class ShiftSwapRestService extends AbstractWFOService {
 
 	private void assertIsAuthorizedForSwapBoard(RequestContext context)
 			throws BusinessWFOException {
-<span class="nc" id="L345">		User user = context.getUser();</span>
-<span class="nc bnc" id="L346" title="All 4 branches missed.">		if (user == null || user.getEmployeeID() == null) {</span>
-<span class="nc" id="L347">			RmUtils.throwUnauthorizedRequest(context);</span>
+<span class="nc" id="L362">		User user = context.getUser();</span>
+<span class="nc bnc" id="L363" title="All 4 branches missed.">		if (user == null || user.getEmployeeID() == null) {</span>
+<span class="nc" id="L364">			RmUtils.throwUnauthorizedRequest(context);</span>
 		}
-<span class="nc" id="L349">		RmUtils.assertIsAuthorized(context, PrivilegeKeys.SS_READWRITETOSWAPBOARD_ID);</span>
-<span class="nc" id="L350">	}</span>
+<span class="nc" id="L366">		RmUtils.assertIsAuthorized(context, PrivilegeKeys.SS_READWRITETOSWAPBOARD_ID);</span>
+<span class="nc" id="L367">	}</span>
 
 	private void assertIsAuthorizedForRequest(RequestContext context)
 			throws BusinessWFOException {
-<span class="nc" id="L354">		User user = context.getUser();</span>
-<span class="nc bnc" id="L355" title="All 4 branches missed.">		if (user == null || user.getEmployeeID() == null) {</span>
-<span class="nc" id="L356">			RmUtils.throwUnauthorizedRequest(context);</span>
+<span class="nc" id="L371">		User user = context.getUser();</span>
+<span class="nc bnc" id="L372" title="All 4 branches missed.">		if (user == null || user.getEmployeeID() == null) {</span>
+<span class="nc" id="L373">			RmUtils.throwUnauthorizedRequest(context);</span>
 		}
-<span class="nc" id="L358">		RmUtils.assertIsAuthorized(context, PrivilegeKeys.SS_MODIFYPERSONALREQUESTS_ID);</span>
-<span class="nc" id="L359">	}</span>
+<span class="nc" id="L375">		RmUtils.assertIsAuthorized(context, PrivilegeKeys.SS_MODIFYPERSONALREQUESTS_ID);</span>
+<span class="nc" id="L376">	}</span>
 
 	private ShiftSwapRequestParameters createParameters(Localizer localizer, ShiftSwapRequestParametersEntity entity)
 			throws BusinessWFOException {
-<span class="nc" id="L363">		ShiftSwapRequestParameters requestParams = new ShiftSwapRequestParameters();</span>
-<span class="nc bnc" id="L364" title="All 2 branches missed.">		if (entity.getEmployeeID() &gt; 0) {</span>
-<span class="nc" id="L365">			requestParams.setAgentID(new ID(entity.getEmployeeID()));</span>
+<span class="nc" id="L380">		ShiftSwapRequestParameters requestParams = new ShiftSwapRequestParameters();</span>
+<span class="nc bnc" id="L381" title="All 2 branches missed.">		if (entity.getEmployeeID() &gt; 0) {</span>
+<span class="nc" id="L382">			requestParams.setAgentID(new ID(entity.getEmployeeID()));</span>
 		}
-<span class="nc" id="L367">		requestParams.setExpirationDate(RmUtils.getDate(entity.getExpirationDate()));</span>
-<span class="nc" id="L368">		requestParams.setIsPickupPartial(entity.isPartialPickup());</span>
-<span class="nc" id="L369">		requestParams.setIsSwapPartial(entity.isPartialSwap());</span>
-<span class="nc" id="L370">		requestParams.setNegotiable(entity.isNegotiation());</span>
-<span class="nc" id="L371">		requestParams.setNegotiationComment(entity.getComment());</span>
-<span class="nc" id="L372">		requestParams.setPickupEndDate(RmUtils.getDate(entity.getPickupEndDate()));</span>
-<span class="nc bnc" id="L373" title="All 2 branches missed.">		if (entity.getPostingID() &gt; 0) {</span>
-<span class="nc" id="L374">			requestParams.setPostingID(new ID(entity.getPostingID()));</span>
+<span class="nc" id="L384">		requestParams.setExpirationDate(RmUtils.getDate(entity.getExpirationDate()));</span>
+<span class="nc" id="L385">		requestParams.setIsPickupPartial(entity.isPartialPickup());</span>
+<span class="nc" id="L386">		requestParams.setIsSwapPartial(entity.isPartialSwap());</span>
+<span class="nc" id="L387">		requestParams.setNegotiable(entity.isNegotiation());</span>
+<span class="nc" id="L388">		requestParams.setNegotiationComment(entity.getComment());</span>
+<span class="nc" id="L389">		requestParams.setPickupEndDate(RmUtils.getDate(entity.getPickupEndDate()));</span>
+<span class="nc bnc" id="L390" title="All 2 branches missed.">		if (entity.getPostingID() &gt; 0) {</span>
+<span class="nc" id="L391">			requestParams.setPostingID(new ID(entity.getPostingID()));</span>
 		}
-<span class="nc" id="L376">		requestParams.setPickupStartDate(RmUtils.getDate(entity.getPickupStartDate()));</span>
+<span class="nc" id="L393">		requestParams.setPickupStartDate(RmUtils.getDate(entity.getPickupStartDate()));</span>
 
-<span class="nc bnc" id="L378" title="All 2 branches missed.">		if (entity.getShiftType() != null) {</span>
-<span class="nc" id="L379">			requestParams.setShiftType(validateShiftType(localizer, entity.getShiftType()));</span>
+<span class="nc bnc" id="L395" title="All 2 branches missed.">		if (entity.getShiftType() != null) {</span>
+<span class="nc" id="L396">			requestParams.setShiftType(validateShiftType(localizer, entity.getShiftType()));</span>
 		}
-<span class="nc" id="L381">		requestParams.setSubmitToMgr(entity.isSubmitToManager());</span>
-<span class="nc" id="L382">		requestParams.setSwapEndDate(RmUtils.getDate(entity.getSwapEndDate()));</span>
-<span class="nc" id="L383">		requestParams.setSwapStartDate(RmUtils.getDate(entity.getSwapStartDate()));</span>
-<span class="nc bnc" id="L384" title="All 2 branches missed.">		if (entity.getSwapType() != null) {</span>
-<span class="nc" id="L385">			requestParams.setSwapType(validateSwapType(localizer, entity.getSwapType()));</span>
+<span class="nc" id="L398">		requestParams.setSubmitToMgr(entity.isSubmitToManager());</span>
+<span class="nc" id="L399">		requestParams.setSwapEndDate(RmUtils.getDate(entity.getSwapEndDate()));</span>
+<span class="nc" id="L400">		requestParams.setSwapStartDate(RmUtils.getDate(entity.getSwapStartDate()));</span>
+<span class="nc bnc" id="L401" title="All 2 branches missed.">		if (entity.getSwapType() != null) {</span>
+<span class="nc" id="L402">			requestParams.setSwapType(validateSwapType(localizer, entity.getSwapType()));</span>
 		}
 
-<span class="nc" id="L388">		roundDates(requestParams);</span>
-<span class="nc" id="L389">		return requestParams;</span>
+<span class="nc" id="L405">		roundDates(requestParams);</span>
+<span class="nc" id="L406">		return requestParams;</span>
 	}
 
 	ShiftSwapPosting getPostingForCreation(RequestContext context, ShiftSwapPostingEntity postingParams)
 			throws BusinessWFOException, RemoteException, BbmException {
-<span class="nc" id="L394">		Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L395">		ShiftSwapPosting posting = new ShiftSwapPosting(ShiftSwapPosting.DL_BASIC);</span>
-<span class="nc" id="L396">		ShiftSwapItem item = new ShiftSwapItem();</span>
-<span class="nc" id="L397">		posting.setShiftSwapItem(item);</span>
-<span class="nc" id="L398">		posting.setSwapType(validateSwapType(localizer, postingParams.getSwapType()));</span>
-<span class="nc" id="L399">		item.setShiftType(validateShiftType(localizer, postingParams.getShiftType()));</span>
+<span class="nc" id="L411">		Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L412">		ShiftSwapPosting posting = new ShiftSwapPosting(ShiftSwapPosting.DL_BASIC);</span>
+<span class="nc" id="L413">		ShiftSwapItem item = new ShiftSwapItem();</span>
+<span class="nc" id="L414">		posting.setShiftSwapItem(item);</span>
+<span class="nc" id="L415">		posting.setSwapType(validateSwapType(localizer, postingParams.getSwapType()));</span>
+<span class="nc" id="L416">		item.setShiftType(validateShiftType(localizer, postingParams.getShiftType()));</span>
 
-<span class="nc" id="L401">		item.setAllowPartial(postingParams.isAllowPartialPickup());</span>
-<span class="nc" id="L402">		item.setEmployeeID(context.getUser().getEmployeeID());</span>
+<span class="nc" id="L418">		item.setAllowPartial(postingParams.isAllowPartialPickup());</span>
+<span class="nc" id="L419">		item.setEmployeeID(context.getUser().getEmployeeID());</span>
 
 		// end date isn't needed for time off since it is for the whole day automatically
-<span class="nc bnc" id="L405" title="All 2 branches missed.">		if (ShiftSwapItem.SWAPITEMTYPE_TIMEOFF.equalsIgnoreCase(item.getShiftType())) {</span>
-<span class="nc" id="L406">			item.setEndDate(RmUtils.getDate(postingParams.getEndDate()));</span>
+<span class="nc bnc" id="L422" title="All 2 branches missed.">		if (ShiftSwapItem.SWAPITEMTYPE_TIMEOFF.equalsIgnoreCase(item.getShiftType())) {</span>
+<span class="nc" id="L423">			item.setEndDate(RmUtils.getDate(postingParams.getEndDate()));</span>
 		} else {
-<span class="nc" id="L408">			item.setEndDate(RmUtils.getDate(context, postingParams.getEndDate(), RmUtils.END_DATE_FN));</span>
+<span class="nc" id="L425">			item.setEndDate(RmUtils.getDate(context, postingParams.getEndDate(), RmUtils.END_DATE_FN));</span>
 		}
 
-<span class="nc" id="L411">		item.setExpirationDate(RmUtils.getDate(context, postingParams.getExpirationDate(), RmUtils.EXPIRATION_DATE_FN));</span>
-<span class="nc" id="L412">		item.setIsPartial(postingParams.isPartialShift());</span>
-<span class="nc" id="L413">		item.setNegotiation(postingParams.isNegotiation());</span>
-<span class="nc" id="L414">		item.setStartDate(RmUtils.getDate(context, postingParams.getStartDate(), RmUtils.START_DATE_FN));</span>
-<span class="nc" id="L415">		String comment = postingParams.getComment();</span>
-<span class="nc bnc" id="L416" title="All 2 branches missed.">		if (comment != null) {</span>
-<span class="nc" id="L417">			comment = comment.trim();</span>
+<span class="nc" id="L428">		item.setExpirationDate(RmUtils.getDate(context, postingParams.getExpirationDate(), RmUtils.EXPIRATION_DATE_FN));</span>
+<span class="nc" id="L429">		item.setIsPartial(postingParams.isPartialShift());</span>
+<span class="nc" id="L430">		item.setNegotiation(postingParams.isNegotiation());</span>
+<span class="nc" id="L431">		item.setStartDate(RmUtils.getDate(context, postingParams.getStartDate(), RmUtils.START_DATE_FN));</span>
+<span class="nc" id="L432">		String comment = postingParams.getComment();</span>
+<span class="nc bnc" id="L433" title="All 2 branches missed.">		if (comment != null) {</span>
+<span class="nc" id="L434">			comment = comment.trim();</span>
 		}
-<span class="nc" id="L419">		posting.setComment(comment);</span>
+<span class="nc" id="L436">		posting.setComment(comment);</span>
 
-<span class="nc" id="L421">		posting.setPostingDate(new Date());</span>
+<span class="nc" id="L438">		posting.setPostingDate(new Date());</span>
 
-<span class="nc" id="L423">		roundDates(posting);</span>
-<span class="nc" id="L424">		return posting;</span>
+<span class="nc" id="L440">		roundDates(posting);</span>
+<span class="nc" id="L441">		validatePosting(context, posting);</span>
+<span class="nc" id="L442">		return posting;</span>
 	}
 
 	private void roundDates(ShiftSwapPosting posting) {
-<span class="nc" id="L428">		Date endDate = posting.getEndDate();</span>
-<span class="nc" id="L429">		posting.setEndDate(DateUtil.roundUpToInterval(endDate));</span>
-<span class="nc" id="L430">		Date startDate = posting.getStartDate();</span>
-<span class="nc" id="L431">		posting.setStartDate(DateUtil.roundDownToInterval(startDate));</span>
-<span class="nc" id="L432">	}</span>
+<span class="nc" id="L446">		Date endDate = posting.getEndDate();</span>
+<span class="nc" id="L447">		posting.setEndDate(DateUtil.roundUpToInterval(endDate));</span>
+<span class="nc" id="L448">		Date startDate = posting.getStartDate();</span>
+<span class="nc" id="L449">		posting.setStartDate(DateUtil.roundDownToInterval(startDate));</span>
+<span class="nc" id="L450">	}</span>
 
 	private void roundDates(ShiftSwapRequestParameters requestParams) {
-<span class="nc" id="L435">		Date pickupEndDate = requestParams.getPickupEndDate();</span>
-<span class="nc" id="L436">		requestParams.setPickupEndDate(DateUtil.roundUpToInterval(pickupEndDate));</span>
-<span class="nc" id="L437">		Date pickupStartDate = requestParams.getPickupStartDate();</span>
-<span class="nc" id="L438">		requestParams.setPickupStartDate(DateUtil.roundDownToInterval(pickupStartDate));</span>
+<span class="nc" id="L453">		Date pickupEndDate = requestParams.getPickupEndDate();</span>
+<span class="nc" id="L454">		requestParams.setPickupEndDate(DateUtil.roundUpToInterval(pickupEndDate));</span>
+<span class="nc" id="L455">		Date pickupStartDate = requestParams.getPickupStartDate();</span>
+<span class="nc" id="L456">		requestParams.setPickupStartDate(DateUtil.roundDownToInterval(pickupStartDate));</span>
 
-<span class="nc" id="L440">		Date swapEndDate = requestParams.getSwapEndDate();</span>
-<span class="nc" id="L441">		requestParams.setSwapEndDate(DateUtil.roundUpToInterval(swapEndDate));</span>
-<span class="nc" id="L442">		Date swapStartDate = requestParams.getSwapStartDate();</span>
-<span class="nc" id="L443">		requestParams.setSwapStartDate(DateUtil.roundDownToInterval(swapStartDate));</span>
-<span class="nc" id="L444">	}</span>
+<span class="nc" id="L458">		Date swapEndDate = requestParams.getSwapEndDate();</span>
+<span class="nc" id="L459">		requestParams.setSwapEndDate(DateUtil.roundUpToInterval(swapEndDate));</span>
+<span class="nc" id="L460">		Date swapStartDate = requestParams.getSwapStartDate();</span>
+<span class="nc" id="L461">		requestParams.setSwapStartDate(DateUtil.roundDownToInterval(swapStartDate));</span>
+<span class="nc" id="L462">	}</span>
+
+	private void validatePosting(RequestContext context, ShiftSwapPosting posting)
+			throws BusinessWFOException {
+<span class="nc" id="L466">		boolean isTimeOff = ShiftSwapItem.SWAPITEMTYPE_TIMEOFF.equals(posting.getShiftSwapItem().getShiftType());</span>
+
+		// allow partial can't be enabled for time off posts
+<span class="nc bnc" id="L469" title="All 4 branches missed.">		if (isTimeOff &amp;&amp; posting.getAllowPartial()) {</span>
+<span class="nc" id="L470">			RmUtils.throwExceptionBadRequest(context.getLocalizer(), RmWebBundleKey.BUNDLE_NAME,</span>
+					RmWebBundleKey.PARTIAL_PICKUPS_NOT_ALLOWED_FOR_NON_WORK_TIME_POSTINGS);
+		}
+<span class="nc" id="L473">	}</span>
 
 	private String validateShiftType(Localizer localizer, String shiftType) throws BusinessWFOException {
-<span class="nc bnc" id="L447" title="All 2 branches missed.">		if (ShiftSwapItem.SWAPITEMTYPE_SHIFT.equalsIgnoreCase(shiftType)) {</span>
-<span class="nc" id="L448">			return ShiftSwapItem.SWAPITEMTYPE_SHIFT;</span>
+<span class="nc bnc" id="L476" title="All 2 branches missed.">		if (ShiftSwapItem.SWAPITEMTYPE_SHIFT.equalsIgnoreCase(shiftType)) {</span>
+<span class="nc" id="L477">			return ShiftSwapItem.SWAPITEMTYPE_SHIFT;</span>
 		}
-<span class="nc bnc" id="L450" title="All 2 branches missed.">		if (ShiftSwapItem.SWAPITEMTYPE_TIMEOFF.equalsIgnoreCase(shiftType)) {</span>
-<span class="nc" id="L451">			return ShiftSwapItem.SWAPITEMTYPE_TIMEOFF;</span>
+<span class="nc bnc" id="L479" title="All 2 branches missed.">		if (ShiftSwapItem.SWAPITEMTYPE_TIMEOFF.equalsIgnoreCase(shiftType)) {</span>
+<span class="nc" id="L480">			return ShiftSwapItem.SWAPITEMTYPE_TIMEOFF;</span>
 		}
-<span class="nc" id="L453">		throw RmUtils.createInvalidParameterException(localizer, SHIFT_TYPE_FN);</span>
+<span class="nc" id="L482">		throw RmUtils.createInvalidParameterException(localizer, SHIFT_TYPE_FN);</span>
 	}
 
 	private String validateSwapType(Localizer localizer, String swapType) throws BusinessWFOException {
-<span class="nc bnc" id="L457" title="All 2 branches missed.">		if (ShiftSwapPosting.SWAPTYPE_ONEWAY.equalsIgnoreCase(swapType)) {</span>
-<span class="nc" id="L458">			return ShiftSwapPosting.SWAPTYPE_ONEWAY;</span>
+<span class="nc bnc" id="L486" title="All 2 branches missed.">		if (ShiftSwapPosting.SWAPTYPE_ONEWAY.equalsIgnoreCase(swapType)) {</span>
+<span class="nc" id="L487">			return ShiftSwapPosting.SWAPTYPE_ONEWAY;</span>
 		}
-<span class="nc bnc" id="L460" title="All 2 branches missed.">		if (ShiftSwapPosting.SWAPTYPE_TWOWAY.equalsIgnoreCase(swapType)) {</span>
-<span class="nc" id="L461">			return ShiftSwapPosting.SWAPTYPE_TWOWAY;</span>
+<span class="nc bnc" id="L489" title="All 2 branches missed.">		if (ShiftSwapPosting.SWAPTYPE_TWOWAY.equalsIgnoreCase(swapType)) {</span>
+<span class="nc" id="L490">			return ShiftSwapPosting.SWAPTYPE_TWOWAY;</span>
 		}
-<span class="nc" id="L463">		throw RmUtils.createInvalidParameterException(localizer, SWAP_TYPE_FN);</span>
+<span class="nc" id="L492">		throw RmUtils.createInvalidParameterException(localizer, SWAP_TYPE_FN);</span>
 	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -22,38 +22,19 @@ import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.ejb.bbm.campaign.model.CampaignWorkResource;
 import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
 import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TOCalcUtil;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
 import com.bluepumpkin.ejb.rm.Log;
 import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
 import com.bluepumpkin.ejb.rm.requests.common.model.Request;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
-import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
 import com.bluepumpkin.ejb.rm.requests.common.validation.FilingRuleChecker;
 import com.bluepumpkin.ejb.rm.requests.common.validation.FilingRuleCheckerHelper;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
 import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
 import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
-import com.bluepumpkin.ejb.rm.requests.swap.withdraw.model.ShiftSwapWithdraw;
 import com.bluepumpkin.ejb.rm.requests.swap.withdraw.validation.FilingRuleComplianceValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameCallCenterValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameCampaignValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameSkillsValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.AtLeastSameSkillsValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameProficienciesValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.MinMaxHoursValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SameCallCenterPeriodValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.SamePaidHoursValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.CalendarEventsValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.CalendarEventsMustOverlapValidationRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSMinShiftSwapDuration;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSMinRemainingShiftDuration;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSMaxSwapDurationPerDay;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSNonSwappableActivites;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSShiftGapConditions;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.PSSMaxAllowableOverlap;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.MaxConsecutiveWorkingDaysRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.MinTimeBetweenShiftAssignmentsRule;
-import com.bluepumpkin.ejb.rm.requests.swap.request.validation.MaxHoursAndMaxAlternateHoursPerDayValidationRule;
 import com.bluepumpkin.ejb.rm.util.RmUtil;
 import com.bluepumpkin.ejb.rm.util.ShiftSwapRequestUtil;
 import com.verint.ejb.wfm.WfmManagerFactory;
@@ -78,54 +59,53 @@ public class ShiftSwapValidationCache extends ValidationCache
     private static final String CAMPAIGNS_FOR_SSITEM = &quot;CAMPAIGNS_FOR_SSITEM&quot;;
     private static final String SWAPPED_SHIFTS_FORSSREQ_STARTINGON_SAMEORGDAY = &quot;SWAPPED_SHIFTS_FORSSREQ_STARTINGON_SAMEORGDAY&quot;;
 
-<span class="nc" id="L81">    private static final Category m_cat = Log.initCategory(ShiftSwapValidationCache.class.getName());</span>
-
-    private ShiftSwapRequest m_ssr;
+<span class="nc" id="L62">    private static final Category m_cat = Log.initCategory(ShiftSwapValidationCache.class.getName());</span>
+    private static final int ITEM_SIZE = 2;
+    
+    ShiftSwapRequest shiftSwapRequest;
 
     /**
      * Create a new validation cache for a shift swap request.
      */
     public ShiftSwapValidationCache(ShiftSwapRequest ssr) {
-<span class="nc" id="L89">        super(ssr);</span>
-<span class="nc" id="L90">        m_ssr = ssr;</span>
-<span class="nc" id="L91">        m_cat.debug(&quot;Created ShiftSwapValidationCache: &quot; + ssr);</span>
-<span class="nc" id="L92">    }</span>
+<span class="nc" id="L71">        super(ssr);</span>
+<span class="nc" id="L72">        shiftSwapRequest = ssr;</span>
+<span class="nc" id="L73">        m_cat.debug(&quot;Created ShiftSwapValidationCache: &quot; + ssr);</span>
+<span class="nc" id="L74">    }</span>
 
-    /**
-     * return a collection of orgIDs for agents assocaited with this request.
-     *
-     * @throws Exception
-     */
-    @Override
-	public Map getEmpIDToOrgIDMap() throws Exception {
-<span class="nc" id="L101">        Map empIDToOrgIDMap = (Map) get(EMPID_TO_ORGID_MAP_FOR_PERIOD);</span>
-<span class="nc bnc" id="L102" title="All 2 branches missed.">        if (empIDToOrgIDMap != null) {</span>
-<span class="nc" id="L103">			return empIDToOrgIDMap;</span>
+	/**
+	 * return a collection of orgIDs for agents associated with this request.
+	 *
+	 * @throws Exception
+	 */
+	@Override
+	public Map&lt;ID, ID&gt; getEmpIDToOrgIDMap() throws Exception {
+<span class="nc" id="L83">		Map&lt;ID, ID&gt; empIDToOrgIDMap = (Map&lt;ID, ID&gt;) get(EMPID_TO_ORGID_MAP_FOR_PERIOD);</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">		if (empIDToOrgIDMap != null) {</span>
+<span class="nc" id="L85">			return empIDToOrgIDMap;</span>
 		}
 
-<span class="nc" id="L106">        List items = m_ssr.getShiftSwapItems();</span>
+<span class="nc" id="L88">		List&lt;ShiftSwapItem&gt; items = shiftSwapRequest.getShiftSwapItems();</span>
 
-<span class="nc" id="L108">        empIDToOrgIDMap = new HashMap(2);</span>
+<span class="nc" id="L90">		empIDToOrgIDMap = new HashMap&lt;&gt;(2);</span>
 
-<span class="nc bnc" id="L110" title="All 2 branches missed.">        for (Iterator itr = items.iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L111">            ShiftSwapItem item = (ShiftSwapItem) itr.next();</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">		for (ShiftSwapItem item : items) {</span>
+<span class="nc" id="L93">			ID empID = item.getEmployeeID();</span>
+<span class="nc" id="L94">			ID orgID = ValidationUtil.getOrgIDForEmployeeDuringPeriod(empID,</span>
+<span class="nc" id="L95">					item.getStartDate(), item.getEndDate());</span>
 
-<span class="nc" id="L113">            ID empID = item.getEmployeeID();</span>
-<span class="nc" id="L114">            ID orgID = ValidationUtil.getOrgIDForEmployeeDuringPeriod(empID,</span>
-<span class="nc" id="L115">                    item.getStartDate(), item.getEndDate());</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">			if (!empIDToOrgIDMap.containsKey(empID)) {</span>
+<span class="nc" id="L98">				empIDToOrgIDMap.put(empID, orgID);</span>
+			}
+<span class="nc" id="L100">		}</span>
 
-<span class="nc bnc" id="L117" title="All 2 branches missed.">            if (!empIDToOrgIDMap.containsKey(empID)) {</span>
-<span class="nc" id="L118">                empIDToOrgIDMap.put(empID, orgID);</span>
-            }
-<span class="nc" id="L120">        }</span>
+<span class="nc" id="L102">		put(EMPID_TO_ORGID_MAP_FOR_PERIOD, empIDToOrgIDMap);</span>
 
-<span class="nc" id="L122">        put(EMPID_TO_ORGID_MAP_FOR_PERIOD, empIDToOrgIDMap);</span>
-
-<span class="nc bnc" id="L124" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L125">			m_cat.debug(&quot;getEmpIDToOrgIDMap: &quot; + RmUtil.dumpMap(empIDToOrgIDMap));</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L105">			m_cat.debug(&quot;getEmpIDToOrgIDMap: &quot; + RmUtil.dumpMap(empIDToOrgIDMap));</span>
 		}
-<span class="nc" id="L127">        return empIDToOrgIDMap;</span>
-    }
+<span class="nc" id="L107">		return empIDToOrgIDMap;</span>
+	}
 
     /**
      * Get the skills for an employee during a period.
@@ -137,66 +117,66 @@ public class ShiftSwapValidationCache extends ValidationCache
      */
     public Collection getSkillsForEmployeeDuringPeriod(ID empID, Date start, Date end)
         throws Exception {
-<span class="nc" id="L140">        String key = RequestUtil.makeCacheKey(EMP_TO_SKILLS, empID, start, end);</span>
+<span class="nc" id="L120">        String key = RequestUtil.makeCacheKey(EMP_TO_SKILLS, empID, start, end);</span>
 
-<span class="nc" id="L142">        Collection cSkills = (Collection) get(key);</span>
+<span class="nc" id="L122">        Collection cSkills = (Collection) get(key);</span>
 
-<span class="nc bnc" id="L144" title="All 2 branches missed.">        if (cSkills == null) {</span>
-<span class="nc" id="L145">            cSkills = ValidationUtil.getSkillsForEmployeeDuringPeriod(empID, start, end);</span>
-<span class="nc" id="L146">            put(key, cSkills);</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">        if (cSkills == null) {</span>
+<span class="nc" id="L125">            cSkills = ValidationUtil.getSkillsForEmployeeDuringPeriod(empID, start, end);</span>
+<span class="nc" id="L126">            put(key, cSkills);</span>
         }
 
-<span class="nc bnc" id="L149" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L150">			m_cat.debug(&quot;getSkillsForEmployeeDuringPeriod(&quot; + empID + ',' + start + ',' + end + &quot;): &quot; + RmUtil.dumpCollection(cSkills));</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L130">			m_cat.debug(&quot;getSkillsForEmployeeDuringPeriod(&quot; + empID + ',' + start + ',' + end + &quot;): &quot; + RmUtil.dumpCollection(cSkills));</span>
 		}
-<span class="nc" id="L152">        return cSkills;</span>
+<span class="nc" id="L132">        return cSkills;</span>
     }
-    
+
     public Collection&lt;ID&gt; getRelevantSkillsForSchedulingPeriod(Collection&lt;ShiftSwapItem&gt; items) throws Exception {
-<span class="nc" id="L156">		Collection&lt;ID&gt; spIDs = new ArrayList&lt;ID&gt;();</span>
-<span class="nc" id="L157">		ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
-<span class="nc bnc" id="L158" title="All 2 branches missed.">		for (ShiftSwapItem item: items) {</span>
-<span class="nc" id="L159">			ShiftAssignment sa = getShiftAssignForSSItem(item, true, true, sam);</span>
-<span class="nc bnc" id="L160" title="All 4 branches missed.">			if (sa!= null &amp;&amp; sa.getCampaignID() != null){</span>
-<span class="nc" id="L161">				spIDs.add(sa.getCampaignID());</span>
+<span class="nc" id="L136">		Collection&lt;ID&gt; spIDs = new ArrayList&lt;ID&gt;();</span>
+<span class="nc" id="L137">		ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">		for (ShiftSwapItem item: items) {</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">			ShiftAssignment sa = getShiftAssignForSSItem(item, true, !item.getIsPartial(), sam);</span>
+<span class="nc bnc" id="L140" title="All 4 branches missed.">			if (sa!= null &amp;&amp; sa.getCampaignID() != null){</span>
+<span class="nc" id="L141">				spIDs.add(sa.getCampaignID());</span>
 			}else{
-<span class="nc" id="L163">				Collection&lt;CampaignWorkResource&gt; cwColl = getCampWorkResAssnsForSSItem(item);</span>
-<span class="nc bnc" id="L164" title="All 2 branches missed.">				if(cwColl != null ){</span>
-<span class="nc bnc" id="L165" title="All 2 branches missed.">					for(CampaignWorkResource cw : cwColl){</span>
-<span class="nc" id="L166">						spIDs.add(cw.getCampaignID());</span>
-<span class="nc" id="L167">					}</span>
+<span class="nc" id="L143">				Collection&lt;CampaignWorkResource&gt; cwColl = getCampWorkResAssnsForSSItem(item);</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">				if(cwColl != null ){</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">					for(CampaignWorkResource cw : cwColl){</span>
+<span class="nc" id="L146">						spIDs.add(cw.getCampaignID());</span>
+<span class="nc" id="L147">					}</span>
 				}
 			}
-				
-<span class="nc" id="L171">		}</span>
-<span class="nc" id="L172">		return ValidationUtil.getSkillsForSchedulingPeriod(spIDs);</span>
+
+<span class="nc" id="L151">		}</span>
+<span class="nc" id="L152">		return ValidationUtil.getSkillsForSchedulingPeriod(spIDs);</span>
 	}
 
     /**
      * Retrieve the IDs of Employees who have items in this Request
      */
     public List&lt;ID&gt; getEmployeeIDsForRequest() {
-<span class="nc" id="L179">        String key = EMPIDS;</span>
+<span class="nc" id="L159">        String key = EMPIDS;</span>
 
-<span class="nc" id="L181">        List&lt;ID&gt; empIDs = (List&lt;ID&gt;) get(key);</span>
+<span class="nc" id="L161">        List&lt;ID&gt; empIDs = (List&lt;ID&gt;) get(key);</span>
 
-<span class="nc bnc" id="L183" title="All 2 branches missed.">        if (empIDs == null) {</span>
-<span class="nc" id="L184">            List items = m_ssr.getShiftSwapItems();</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">        if (empIDs == null) {</span>
+<span class="nc" id="L164">            List items = shiftSwapRequest.getShiftSwapItems();</span>
 
-<span class="nc" id="L186">            empIDs = new ArrayList&lt;ID&gt;(items.size());</span>
+<span class="nc" id="L166">            empIDs = new ArrayList&lt;ID&gt;(items.size());</span>
 
-<span class="nc bnc" id="L188" title="All 2 branches missed.">            for (Iterator itr = items.iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L189">                ShiftSwapItem item = (ShiftSwapItem) itr.next();</span>
-<span class="nc" id="L190">                empIDs.add(item.getEmployeeID());</span>
-<span class="nc" id="L191">            }</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">            for (Iterator itr = items.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L169">                ShiftSwapItem item = (ShiftSwapItem) itr.next();</span>
+<span class="nc" id="L170">                empIDs.add(item.getEmployeeID());</span>
+<span class="nc" id="L171">            }</span>
 
-<span class="nc" id="L193">            put(key, empIDs);</span>
+<span class="nc" id="L173">            put(key, empIDs);</span>
         }
 
-<span class="nc bnc" id="L196" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L197">			m_cat.debug(&quot;getSSEmployeeIDs: &quot; + RmUtil.dumpCollection(empIDs));</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L177">			m_cat.debug(&quot;getSSEmployeeIDs: &quot; + RmUtil.dumpCollection(empIDs));</span>
 		}
-<span class="nc" id="L199">        return empIDs;</span>
+<span class="nc" id="L179">        return empIDs;</span>
     }
 
     /* Get the collection of soft validations for this request
@@ -204,54 +184,54 @@ public class ShiftSwapValidationCache extends ValidationCache
     @Override
 	public Collection&lt;String&gt; getValidators() throws Exception {
         // get the organization ids for this request
-<span class="nc" id="L207">        Collection orgIDs = getOrgIDs();</span>
+<span class="nc" id="L187">		Collection&lt;ID&gt; orgIDs = getOrgIDs();</span>
 
         // because there may be more than one organization, we don't want duplicates
-<span class="nc" id="L210">        Set&lt;String&gt; uniqueValidators = new HashSet&lt;String&gt;(11);</span>
+<span class="nc" id="L190">        Set&lt;String&gt; uniqueValidators = new HashSet&lt;String&gt;(11);</span>
 
-<span class="nc bnc" id="L212" title="All 2 branches missed.">        for (Iterator itr = orgIDs.iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L213">            ID orgID = (ID) itr.next();</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">		for (Iterator&lt;ID&gt; itr = orgIDs.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L193">            ID orgID = itr.next();</span>
 
-<span class="nc" id="L215">            Collection&lt;String&gt; orgValidators = getValidators(orgID, getRequestType(m_ssr), null);</span>
+<span class="nc" id="L195">            Collection&lt;String&gt; orgValidators = getValidators(orgID, getRequestType(shiftSwapRequest), null);</span>
 
             // add all new validators for this organization to the Set
-<span class="nc" id="L218">            uniqueValidators.addAll(orgValidators);</span>
-<span class="nc" id="L219">        }</span>
+<span class="nc" id="L198">            uniqueValidators.addAll(orgValidators);</span>
+<span class="nc" id="L199">        }</span>
 
-<span class="nc bnc" id="L221" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L222">			m_cat.debug(&quot;getValidators: &quot; + RmUtil.dumpCollection(uniqueValidators));</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L202">			m_cat.debug(&quot;getValidators: &quot; + RmUtil.dumpCollection(uniqueValidators));</span>
 		}
-<span class="nc" id="L224">        return uniqueValidators;</span>
+<span class="nc" id="L204">        return uniqueValidators;</span>
     }
-    
+
 	/**
 	 * Determine if a request is a shift swap withdrawl request.
 	 */
 	public String getRequestType(RequestAggregate reqAgg) {
-<span class="nc" id="L231">		ShiftSwapRequest ssr = (ShiftSwapRequest) reqAgg;</span>
-<span class="nc bnc" id="L232" title="All 2 branches missed.">		if (ssr.isApprovedWithdrawStatusInProgress()) {</span>
-<span class="nc" id="L233">			return Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW;</span>
+<span class="nc" id="L211">		ShiftSwapRequest ssr = (ShiftSwapRequest) reqAgg;</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">		if (ssr.isApprovedWithdrawStatusInProgress()) {</span>
+<span class="nc" id="L213">			return Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW;</span>
 		}
-<span class="nc" id="L235">		return Request.REQUESTTYPE_SHIFTSWAP;</span>
+<span class="nc" id="L215">		return Request.REQUESTTYPE_SHIFTSWAP;</span>
 	}
 
 	@Override
 	public Collection&lt;String&gt; getValidators(ID orgID, String reqType, ID activityID) throws Exception {
 
-<span class="nc bnc" id="L241" title="All 2 branches missed.">		if (!reqType.equals(Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW)) {</span>
-<span class="nc" id="L242">			return super.getValidators(orgID, reqType, activityID);</span>
+<span class="nc bnc" id="L221" title="All 2 branches missed.">		if (!reqType.equals(Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW)) {</span>
+<span class="nc" id="L222">			return super.getValidators(orgID, reqType, activityID);</span>
 		}
 
-<span class="nc" id="L245">		Collection&lt;String&gt; allConfiguredValidators = new ArrayList&lt;String&gt;();</span>
+<span class="nc" id="L225">		Collection&lt;String&gt; allConfiguredValidators = new ArrayList&lt;String&gt;();</span>
 
 		// Add all enabled and applicable Shift Swap validators
-<span class="nc" id="L248">		allConfiguredValidators.addAll(filterUnapplicableShiftSwapWithdrawValidators(super.getValidators(orgID,</span>
+<span class="nc" id="L228">		allConfiguredValidators.addAll(filterUnapplicableShiftSwapWithdrawValidators(super.getValidators(orgID,</span>
 				Request.REQUESTTYPE_SHIFTSWAP, null)));
 
 		// Add all enabled Shift Swap Withdraw validators
-<span class="nc" id="L252">		allConfiguredValidators.addAll(super.getValidators(orgID, Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW, null));</span>
+<span class="nc" id="L232">		allConfiguredValidators.addAll(super.getValidators(orgID, Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW, null));</span>
 
-<span class="nc" id="L254">		return allConfiguredValidators;</span>
+<span class="nc" id="L234">		return allConfiguredValidators;</span>
 	}
 
 	/**
@@ -259,36 +239,36 @@ public class ShiftSwapValidationCache extends ValidationCache
 	 */
 	protected Collection&lt;String&gt; filterUnapplicableShiftSwapWithdrawValidators(Collection&lt;String&gt; shiftSwapValsEnabled) {
 
-<span class="nc" id="L262">		Collection&lt;String&gt; applicableShiftSwapValidatorsOnWithdrawRequest =	getApplicableShiftSwapValidatorsOnWithdrawRequest();</span>
-<span class="nc" id="L263">		Collection&lt;String&gt; filteredValidators = new ArrayList&lt;String&gt;(shiftSwapValsEnabled);</span>
-<span class="nc" id="L264">		filteredValidators.retainAll(applicableShiftSwapValidatorsOnWithdrawRequest);</span>
-<span class="nc" id="L265">		return filteredValidators;</span>
+<span class="nc" id="L242">		Collection&lt;String&gt; applicableShiftSwapValidatorsOnWithdrawRequest =	getApplicableShiftSwapValidatorsOnWithdrawRequest();</span>
+<span class="nc" id="L243">		Collection&lt;String&gt; filteredValidators = new ArrayList&lt;String&gt;(shiftSwapValsEnabled);</span>
+<span class="nc" id="L244">		filteredValidators.retainAll(applicableShiftSwapValidatorsOnWithdrawRequest);</span>
+<span class="nc" id="L245">		return filteredValidators;</span>
 	}
 
 	protected Collection&lt;String&gt; getApplicableShiftSwapValidatorsOnWithdrawRequest() {
-<span class="nc" id="L269">		Collection&lt;String&gt; timeOffValidatorOnFlexRequest =</span>
-<span class="nc" id="L270">				Arrays.asList(FilingRuleComplianceValidationRule.class.getName(),</span>
-<span class="nc" id="L271">						SameCallCenterValidationRule.class.getName(), </span>
-<span class="nc" id="L272">						SameCampaignValidationRule.class.getName(),</span>
-<span class="nc" id="L273">						SameSkillsValidationRule.class.getName(), </span>
-<span class="nc" id="L274">						AtLeastSameSkillsValidationRule.class.getName(),</span>
-<span class="nc" id="L275">						SameProficienciesValidationRule.class.getName(), </span>
-<span class="nc" id="L276">						MinMaxHoursValidationRule.class.getName(),</span>
-<span class="nc" id="L277">						SameCallCenterPeriodValidationRule.class.getName(), </span>
-<span class="nc" id="L278">						SamePaidHoursValidationRule.class.getName(),</span>
-<span class="nc" id="L279">						CalendarEventsValidationRule.class.getName(),</span>
-<span class="nc" id="L280">						CalendarEventsMustOverlapValidationRule.class.getName(), </span>
-<span class="nc" id="L281">						PSSMinShiftSwapDuration.class.getName(),</span>
-<span class="nc" id="L282">						PSSMinRemainingShiftDuration.class.getName(), </span>
-<span class="nc" id="L283">						PSSMaxSwapDurationPerDay.class.getName(),</span>
-<span class="nc" id="L284">						PSSNonSwappableActivites.class.getName(), </span>
-<span class="nc" id="L285">						PSSShiftGapConditions.class.getName(),</span>
-<span class="nc" id="L286">						PSSMaxAllowableOverlap.class.getName(), </span>
-<span class="nc" id="L287">						MaxConsecutiveWorkingDaysRule.class.getName(),</span>
-<span class="nc" id="L288">						MinTimeBetweenShiftAssignmentsRule.class.getName(),</span>
-<span class="nc" id="L289">						MaxHoursAndMaxAlternateHoursPerDayValidationRule.class.getName());</span>
+<span class="nc" id="L249">		Collection&lt;String&gt; timeOffValidatorOnFlexRequest =</span>
+<span class="nc" id="L250">				Arrays.asList(FilingRuleComplianceValidationRule.class.getName(),</span>
+<span class="nc" id="L251">						SameCallCenterValidationRule.class.getName(),</span>
+<span class="nc" id="L252">						SameCampaignValidationRule.class.getName(),</span>
+<span class="nc" id="L253">						SameSkillsValidationRule.class.getName(),</span>
+<span class="nc" id="L254">						AtLeastSameSkillsValidationRule.class.getName(),</span>
+<span class="nc" id="L255">						SameProficienciesValidationRule.class.getName(),</span>
+<span class="nc" id="L256">						MinMaxHoursValidationRule.class.getName(),</span>
+<span class="nc" id="L257">						SameCallCenterPeriodValidationRule.class.getName(),</span>
+<span class="nc" id="L258">						SamePaidHoursValidationRule.class.getName(),</span>
+<span class="nc" id="L259">						CalendarEventsValidationRule.class.getName(),</span>
+<span class="nc" id="L260">						CalendarEventsMustOverlapValidationRule.class.getName(),</span>
+<span class="nc" id="L261">						PSSMinShiftSwapDuration.class.getName(),</span>
+<span class="nc" id="L262">						PSSMinRemainingShiftDuration.class.getName(),</span>
+<span class="nc" id="L263">						PSSMaxSwapDurationPerDay.class.getName(),</span>
+<span class="nc" id="L264">						PSSNonSwappableActivites.class.getName(),</span>
+<span class="nc" id="L265">						PSSShiftGapConditions.class.getName(),</span>
+<span class="nc" id="L266">						PSSMaxAllowableOverlap.class.getName(),</span>
+<span class="nc" id="L267">						MaxConsecutiveWorkingDaysRule.class.getName(),</span>
+<span class="nc" id="L268">						MinTimeBetweenShiftAssignmentsRule.class.getName(),</span>
+<span class="nc" id="L269">						MaxHoursAndMaxAlternateHoursPerDayValidationRule.class.getName());</span>
 
-<span class="nc" id="L291">		return timeOffValidatorOnFlexRequest;</span>
+<span class="nc" id="L271">		return timeOffValidatorOnFlexRequest;</span>
 	}
 
     /**
@@ -298,242 +278,246 @@ public class ShiftSwapValidationCache extends ValidationCache
 	public FilingRuleChecker getFilingRuleChecker(Object obj)
         throws Exception
     {
-<span class="nc" id="L301">        ShiftSwapItem item = (ShiftSwapItem) obj;</span>
+<span class="nc" id="L281">        ShiftSwapItem item = (ShiftSwapItem) obj;</span>
 
         // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
-<span class="nc" id="L304">        String key = RequestUtil.makeCacheKey(FILING_RULE_CHECKER, item.getEmployeeID());</span>
+<span class="nc" id="L284">        String key = RequestUtil.makeCacheKey(FILING_RULE_CHECKER, item.getEmployeeID());</span>
         // Check to see if the checker is already in the cache
-<span class="nc" id="L306">        FilingRuleChecker result = (FilingRuleChecker) get(key);</span>
+<span class="nc" id="L286">        FilingRuleChecker result = (FilingRuleChecker) get(key);</span>
 
         // If map was in the cache, use it
-<span class="nc bnc" id="L309" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L310">            m_cat.debug(&quot;getFilingRuleChecker(&quot; + item + &quot;): &quot; + result);</span>
-<span class="nc" id="L311">            return result;</span>
+<span class="nc bnc" id="L289" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L290">            m_cat.debug(&quot;getFilingRuleChecker(&quot; + item + &quot;): &quot; + result);</span>
+<span class="nc" id="L291">            return result;</span>
         }
 
-<span class="nc" id="L314">        ID idOrg = getOrgIDForEmployeeDuringPeriod(item.getEmployeeID(), item.getStartDate(),</span>
-<span class="nc" id="L315">                item.getEndDate());</span>
-<span class="nc" id="L316">        TimeRange itemRange = new TimeRange(item.getStartDate(), item.getEndDate());</span>
+<span class="nc" id="L294">        ID idOrg = getOrgIDForEmployeeDuringPeriod(item.getEmployeeID(), item.getStartDate(),</span>
+<span class="nc" id="L295">                item.getEndDate());</span>
+<span class="nc" id="L296">        TimeRange itemRange = new TimeRange(item.getStartDate(), item.getEndDate());</span>
 
 //        try {
-<span class="nc" id="L319">            result = FilingRuleCheckerHelper.getChecker(idOrg, m_ssr.getRequestType(), itemRange);</span>
+<span class="nc" id="L299">            result = FilingRuleCheckerHelper.getChecker(idOrg, shiftSwapRequest.getRequestType(), itemRange);</span>
 //        } c_atch (ValidationException e) {
 //            m_cat.error(e);
 //            t_hrow e;
 //        }
 
         // Save in cache
-<span class="nc" id="L326">        put(key, result);</span>
+<span class="nc" id="L306">        put(key, result);</span>
 
-<span class="nc" id="L328">        m_cat.debug(&quot;getFilingRuleChecker(&quot; + item + &quot;): &quot; + result);</span>
-<span class="nc" id="L329">        return result;</span>
+<span class="nc" id="L308">        m_cat.debug(&quot;getFilingRuleChecker(&quot; + item + &quot;): &quot; + result);</span>
+<span class="nc" id="L309">        return result;</span>
     }
 
     public Collection getCalEventAssignsForSSItem(ShiftSwapItem ssItem, int eventType, boolean published,
         ScheduleAccessManager sam) throws Exception
     {
         // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
-<span class="nc" id="L336">        String key = RequestUtil.makeCacheKey(CALEVENT_ASSIGNS_FOR_SSITEM,</span>
-<span class="nc" id="L337">            ssItem.getEmployeeID(), new Integer(eventType), new Boolean(published));</span>
+<span class="nc" id="L316">        String key = RequestUtil.makeCacheKey(CALEVENT_ASSIGNS_FOR_SSITEM,</span>
+<span class="nc" id="L317">            ssItem.getEmployeeID(), new Integer(eventType), new Boolean(published));</span>
 
-<span class="nc" id="L339">        Collection events = null;</span>
-<span class="nc bnc" id="L340" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L341">            events = RequestUtil.getEventsDuringPeriod(ssItem.getEmployeeID(), eventType, published,</span>
-<span class="nc" id="L342">             ssItem.getStartDate(), ssItem.getEndDate(), sam);</span>
-<span class="nc" id="L343">            put(key, events);</span>
+<span class="nc" id="L319">        Collection events = null;</span>
+<span class="nc bnc" id="L320" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L321">            events = RequestUtil.getEventsDuringPeriod(ssItem.getEmployeeID(), eventType, published,</span>
+<span class="nc" id="L322">             ssItem.getStartDate(), ssItem.getEndDate(), sam);</span>
+<span class="nc" id="L323">            put(key, events);</span>
         } else {
-<span class="nc" id="L345">            events = (Collection) get(key);</span>
-<span class="nc" id="L346">            RmUtil.dumpExitMethod(&quot;getCalEventAssignsForSSItem&quot;, events);</span>
+<span class="nc" id="L325">            events = (Collection) get(key);</span>
+<span class="nc" id="L326">            RmUtil.dumpExitMethod(&quot;getCalEventAssignsForSSItem&quot;, events);</span>
         }
 
-<span class="nc" id="L349">        return events;</span>
+<span class="nc" id="L329">        return events;</span>
     }
 
     public ShiftAssignment[] getSwappedShiftAssignsForReqAligned(boolean published, ScheduleAccessManager sam)
         throws Exception
     {
-<span class="nc" id="L355">        String key = RequestUtil.makeCacheKey(SWAPPED_SHIFTS_FORSSREQ, new Boolean(published));</span>
+<span class="nc" id="L335">        String key = RequestUtil.makeCacheKey(SWAPPED_SHIFTS_FORSSREQ, new Boolean(published));</span>
 
-<span class="nc" id="L357">        ShiftAssignment[] shifts = null;</span>
-<span class="nc bnc" id="L358" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L359">            shifts = ShiftSwapRequestUtil.getSwappedShiftAssignsForReqAligned(m_ssr, published, sam);</span>
-<span class="nc" id="L360">            put(key, shifts);</span>
+<span class="nc" id="L337">        ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L338" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L339">            shifts = ShiftSwapRequestUtil.getSwappedShiftAssignsForReqAligned(shiftSwapRequest, published, sam);</span>
+<span class="nc" id="L340">            put(key, shifts);</span>
         } else {
-<span class="nc" id="L362">            shifts = (ShiftAssignment[]) get(key);</span>
-<span class="nc" id="L363">            RmUtil.dumpExitMethod(&quot;getSwappedShiftAssignsForReqAligned&quot;, shifts);</span>
+<span class="nc" id="L342">            shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L343">            RmUtil.dumpExitMethod(&quot;getSwappedShiftAssignsForReqAligned&quot;, shifts);</span>
         }
 
-<span class="nc" id="L366">        return shifts;</span>
+<span class="nc" id="L346">        return shifts;</span>
     }
 
     public ShiftAssignment[] getSwappedShiftAssignsForReqSameOrgDay(boolean published, ScheduleAccessManager sam)
         throws Exception
     {
-<span class="nc" id="L372">        String key = RequestUtil.makeCacheKey(SWAPPED_SHIFTS_FORSSREQ_SAMEORGDAY, new Boolean(published));</span>
+<span class="nc" id="L352">        String key = RequestUtil.makeCacheKey(SWAPPED_SHIFTS_FORSSREQ_SAMEORGDAY, new Boolean(published));</span>
 
-<span class="nc" id="L374">        ShiftAssignment[] shifts = null;</span>
-<span class="nc bnc" id="L375" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L376">            shifts = ShiftSwapRequestUtil.getSwappedShiftAssignsForReqSameOrgDay(m_ssr, published, sam);</span>
-<span class="nc" id="L377">            put(key, shifts);</span>
+<span class="nc" id="L354">        ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L356">            shifts = ShiftSwapRequestUtil.getSwappedShiftAssignsForReqSameOrgDay(shiftSwapRequest, published, sam);</span>
+<span class="nc" id="L357">            put(key, shifts);</span>
         } else {
-<span class="nc" id="L379">            shifts = (ShiftAssignment[]) get(key);</span>
-<span class="nc" id="L380">            RmUtil.dumpExitMethod(&quot;getSwappedShiftAssignsForReqSameOrgDay&quot;, shifts);</span>
+<span class="nc" id="L359">            shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L360">            RmUtil.dumpExitMethod(&quot;getSwappedShiftAssignsForReqSameOrgDay&quot;, shifts);</span>
         }
 
-<span class="nc" id="L383">        return shifts;</span>
+<span class="nc" id="L363">        return shifts;</span>
     }
-    
+
     //Silk 80581
     // QA46082 - To consider only the shifts that start on the org day for comparision
     // No change in this method, other than to invoke different Util method
     public ShiftAssignment[] getSwappedSAForReqWithStartDateOnSameOrgDay(boolean published, ScheduleAccessManager sam)
         throws Exception
     {
-<span class="nc" id="L392">        String key = RequestUtil.makeCacheKey(SWAPPED_SHIFTS_FORSSREQ_STARTINGON_SAMEORGDAY, new Boolean(published));</span>
+<span class="nc" id="L372">        String key = RequestUtil.makeCacheKey(SWAPPED_SHIFTS_FORSSREQ_STARTINGON_SAMEORGDAY, new Boolean(published));</span>
 
-<span class="nc" id="L394">        ShiftAssignment[] shifts = null;</span>
-<span class="nc bnc" id="L395" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L396">            shifts = ShiftSwapRequestUtil.getSwappedSAForReqWithStartDateOnSameOrgDay(m_ssr, published, sam);</span>
-<span class="nc" id="L397">            put(key, shifts);</span>
+<span class="nc" id="L374">        ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L375" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L376">            shifts = ShiftSwapRequestUtil.getSwappedSAForReqWithStartDateOnSameOrgDay(shiftSwapRequest, published, sam);</span>
+<span class="nc" id="L377">            put(key, shifts);</span>
         } else {
-<span class="nc" id="L399">            shifts = (ShiftAssignment[]) get(key);</span>
-<span class="nc" id="L400">            RmUtil.dumpExitMethod(&quot;getSwappedSAForReqWithStartDateOnSameOrgDay&quot;, shifts);</span>
+<span class="nc" id="L379">            shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L380">            RmUtil.dumpExitMethod(&quot;getSwappedSAForReqWithStartDateOnSameOrgDay&quot;, shifts);</span>
         }
 
-<span class="nc" id="L403">        return shifts;</span>
+<span class="nc" id="L383">        return shifts;</span>
     }
 
     public ShiftAssignment[] getShiftAssignsForReqSameOrgDay(boolean published, ScheduleAccessManager sam)
         throws Exception
     {
-<span class="nc" id="L409">        String key = RequestUtil.makeCacheKey(SHIFTS_ON_SAME_ORGDAY_SSREQ, new Boolean(published));</span>
+<span class="nc" id="L389">        String key = RequestUtil.makeCacheKey(SHIFTS_ON_SAME_ORGDAY_SSREQ, new Boolean(published));</span>
 
-<span class="nc" id="L411">        ShiftAssignment[] shifts = null;</span>
-<span class="nc bnc" id="L412" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L413">            shifts = ShiftSwapRequestUtil.getShiftAssignsForReqSameOrgDay(m_ssr, published, sam);</span>
-<span class="nc" id="L414">            put(key, shifts);</span>
+<span class="nc" id="L391">        ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L392" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L393">            shifts = ShiftSwapRequestUtil.getShiftAssignsForReqSameOrgDay(shiftSwapRequest, published, sam);</span>
+<span class="nc" id="L394">            put(key, shifts);</span>
         } else {
-<span class="nc" id="L416">            shifts = (ShiftAssignment[]) get(key);</span>
-<span class="nc" id="L417">            RmUtil.dumpExitMethod(&quot;getShiftAssignsForReqSameOrgDay&quot;, shifts);</span>
+<span class="nc" id="L396">            shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L397">            RmUtil.dumpExitMethod(&quot;getShiftAssignsForReqSameOrgDay&quot;, shifts);</span>
         }
 
-<span class="nc" id="L420">        return shifts;</span>
+<span class="nc" id="L400">        return shifts;</span>
     }
 
-	public ShiftAssignment[] getShiftAssignsForReqAligned(boolean published, ScheduleAccessManager sam) 
+	public ShiftAssignment[] getShiftAssignsForReqAligned(boolean published, ScheduleAccessManager sam)
 		throws Exception {
-		
-<span class="nc" id="L426">		String key = RequestUtil.makeCacheKey(SHIFTS_ALIGNED_FOR_SSREQ, new Boolean(published));</span>
 
-<span class="nc" id="L428">		ShiftAssignment[] shifts = null;</span>
-<span class="nc bnc" id="L429" title="All 2 branches missed.">		if (!containsKey(key)) {</span>
-<span class="nc" id="L430">			shifts = ShiftSwapRequestUtil.getShiftAssignsForReqAligned(m_ssr, published, sam);</span>
-<span class="nc" id="L431">			put(key, shifts);</span>
+<span class="nc" id="L406">		String key = RequestUtil.makeCacheKey(SHIFTS_ALIGNED_FOR_SSREQ, new Boolean(published));</span>
+
+<span class="nc" id="L408">		ShiftAssignment[] shifts = null;</span>
+<span class="nc bnc" id="L409" title="All 2 branches missed.">		if (!containsKey(key)) {</span>
+<span class="nc" id="L410">			shifts = ShiftSwapRequestUtil.getShiftAssignsForReqAligned(shiftSwapRequest, published, sam);</span>
+<span class="nc" id="L411">			put(key, shifts);</span>
 		} else {
-<span class="nc" id="L433">			shifts = (ShiftAssignment[]) get(key);</span>
-<span class="nc" id="L434">			RmUtil.dumpExitMethod(&quot;getShiftAssignsForReqAligned&quot;, shifts);</span>
+<span class="nc" id="L413">			shifts = (ShiftAssignment[]) get(key);</span>
+<span class="nc" id="L414">			RmUtil.dumpExitMethod(&quot;getShiftAssignsForReqAligned&quot;, shifts);</span>
 		}
 
-<span class="nc" id="L437">		return shifts;</span>
+<span class="nc" id="L417">		return shifts;</span>
 	}
-	
+
 	/**
 	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache)
 	 */
 	public ShiftAssignment getShiftAssignForShiftSwapItem(ShiftSwapItem ssItem, boolean published,
 		ScheduleAccessManager sam) throws Exception {
-
-<span class="nc bnc" id="L446" title="All 2 branches missed.">		if (ssItem.getIsPartial()){</span>
-<span class="nc" id="L447">			return 	getShiftAssignForSSItem(ssItem, published, false, sam);</span>
-		} else {
-<span class="nc" id="L449">			return 	getShiftAssignForSSItemAligned(ssItem, published, sam);</span>
-		}
+<span class="nc" id="L425">			return 	getShiftAssignForSSItem(ssItem, published, false, sam);</span>
     }
 
 	/**
-	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache) 
+	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache)
 	 */
     public ShiftAssignment getShiftAssignForSSItemAligned(ShiftSwapItem ssItem, boolean published,
         ScheduleAccessManager sam) throws Exception {
-        
+
         // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
-<span class="nc" id="L460">        String key = RequestUtil.makeCacheKey(SHIFT_FOR_SSITEM_ALIGNED, ssItem.getEmployeeID(),</span>
+<span class="nc" id="L435">        String key = RequestUtil.makeCacheKey(SHIFT_FOR_SSITEM_ALIGNED, ssItem.getEmployeeID(),</span>
             new Boolean(published));
 
-<span class="nc" id="L463">        ShiftAssignment shift = null;</span>
-<span class="nc bnc" id="L464" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L465">            shift = ShiftSwapRequestUtil.getShiftAssignForSSItemAligned(ssItem, published, sam, m_ssr.getCache());</span>
-<span class="nc" id="L466">            put(key, shift);</span>
+<span class="nc" id="L438">        ShiftAssignment shift = null;</span>
+<span class="nc bnc" id="L439" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L440">            shift = ShiftSwapRequestUtil.getShiftAssignForSSItemAligned(ssItem, published, sam, shiftSwapRequest.getCache());</span>
+<span class="nc" id="L441">            put(key, shift);</span>
         } else {
-<span class="nc" id="L468">            shift = (ShiftAssignment) get(key);</span>
-<span class="nc" id="L469">            RmUtil.dumpExitMethod(&quot;getShiftAssignForSSItemAligned&quot;, shift);</span>
+<span class="nc" id="L443">            shift = (ShiftAssignment) get(key);</span>
+<span class="nc" id="L444">            RmUtil.dumpExitMethod(&quot;getShiftAssignForSSItemAligned&quot;, shift);</span>
         }
 
-<span class="nc" id="L472">        return shift;</span>
+<span class="nc" id="L447">        return shift;</span>
     }
-    
+
     /**
-	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache) 
+	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache)
 	 */
     public ShiftAssignment getShiftAssignForSSItem(ShiftSwapItem ssItem, boolean published, boolean aligned,
         ScheduleAccessManager sam) throws Exception {
-        
-        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.	
-    	//Fix QC 179526 ( or QC163589-15.1.1)
-<span class="nc" id="L483">        String key = RequestUtil.makeCacheKey(SHIFT_FOR_SSITEM, ssItem.getEmployeeID(),</span>
-                new Boolean(published), new Boolean(aligned)); 
 
-<span class="nc" id="L486">        ShiftAssignment shift = null;</span>
-<span class="nc bnc" id="L487" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L488">            shift = ShiftSwapRequestUtil.getShiftAssignForSSItem(ssItem, published, aligned, sam, m_ssr.getCache());</span>
-<span class="nc" id="L489">            put(key, shift);</span>
+        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
+    	//Fix QC 179526 ( or QC163589-15.1.1)
+<span class="nc" id="L458">        String key = RequestUtil.makeCacheKey(SHIFT_FOR_SSITEM, ssItem.getEmployeeID(),</span>
+                new Boolean(published), new Boolean(aligned));
+
+<span class="nc" id="L461">        ShiftAssignment shift = null;</span>
+<span class="nc bnc" id="L462" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L463">            shift = ShiftSwapRequestUtil.getShiftAssignForSSItem(ssItem, published, aligned, sam, shiftSwapRequest.getCache());</span>
+<span class="nc" id="L464">            put(key, shift);</span>
         } else {
-<span class="nc" id="L491">            shift = (ShiftAssignment) get(key);</span>
-<span class="nc" id="L492">            RmUtil.dumpExitMethod(&quot;getShiftAssignForSSItemAligned&quot;, shift);</span>
+<span class="nc" id="L466">            shift = (ShiftAssignment) get(key);</span>
+<span class="nc" id="L467">            RmUtil.dumpExitMethod(&quot;getShiftAssignForSSItemAligned&quot;, shift);</span>
         }
 
-<span class="nc" id="L495">        return shift;</span>
+<span class="nc" id="L470">        return shift;</span>
     }
 
 
     /**
-	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache) 
+	 * @see ShiftSwapRequestUtil#getShiftAssignForSSItem(ShiftSwapItem, boolean, boolean, ScheduleAccessManager, ShiftSwapValidationCache)
 	 */
     public ShiftAssignment getShiftAssignForSSItem(ShiftSwapItem ssItem, ScheduleAccessManager sam, boolean published,
     		                                       boolean aligned) throws Exception {
-        
-        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.	
-    	//Fix QC 179526 ( or QC163589-15.1.1)
-<span class="nc" id="L507">        String key = RequestUtil.makeCacheKey(SHIFT_FOR_SSITEM_SHIFT_TIMEOFF, ssItem.getEmployeeID(),</span>
-                new Boolean(published), new Boolean(aligned)); 
 
-<span class="nc" id="L510">        ShiftAssignment shift = null;</span>
-<span class="nc bnc" id="L511" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L512">            shift = ShiftSwapRequestUtil.getShiftAssignForSSItem(ssItem, sam, m_ssr.getCache(), published, aligned);</span>
-<span class="nc" id="L513">            put(key, shift);</span>
+        // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
+    	//Fix QC 179526 ( or QC163589-15.1.1)
+<span class="nc" id="L482">        String key = RequestUtil.makeCacheKey(SHIFT_FOR_SSITEM_SHIFT_TIMEOFF, ssItem.getEmployeeID(),</span>
+                new Boolean(published), new Boolean(aligned));
+
+<span class="nc" id="L485">        ShiftAssignment shift = null;</span>
+<span class="nc bnc" id="L486" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L487">            shift = ShiftSwapRequestUtil.getShiftAssignForSSItem(ssItem, sam, shiftSwapRequest.getCache(), published, aligned);</span>
+<span class="nc" id="L488">            put(key, shift);</span>
         } else {
-<span class="nc" id="L515">            shift = (ShiftAssignment) get(key);</span>
-<span class="nc" id="L516">            RmUtil.dumpExitMethod(&quot;getShiftAssignForSSItemAligned&quot;, shift);</span>
+<span class="nc" id="L490">            shift = (ShiftAssignment) get(key);</span>
+<span class="nc" id="L491">            RmUtil.dumpExitMethod(&quot;getShiftAssignForSSItemAligned&quot;, shift);</span>
         }
 
-<span class="nc" id="L519">        return shift;</span>
+<span class="nc" id="L494">        return shift;</span>
     }
 
     public Collection getCampWorkResAssnsForSSItem(ShiftSwapItem ssItem) throws Exception {
         // use empID for cache key since ShiftSwapItem.ID will be null for SSReqs being created.
-<span class="nc" id="L524">        String key = RequestUtil.makeCacheKey(CAMPAIGNS_FOR_SSITEM, ssItem.getEmployeeID());</span>
+<span class="nc" id="L499">        String key = RequestUtil.makeCacheKey(CAMPAIGNS_FOR_SSITEM, ssItem.getEmployeeID());</span>
 
-<span class="nc" id="L526">        Collection campaigns = null;</span>
-<span class="nc bnc" id="L527" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L528">            campaigns = ShiftSwapRequestUtil.getCampWorkResAssnsForSSItem(ssItem);</span>
-<span class="nc" id="L529">            put(key, campaigns);</span>
+<span class="nc" id="L501">        Collection campaigns = null;</span>
+<span class="nc bnc" id="L502" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L503">            campaigns = ShiftSwapRequestUtil.getCampWorkResAssnsForSSItem(ssItem);</span>
+<span class="nc" id="L504">            put(key, campaigns);</span>
         } else {
-<span class="nc" id="L531">            campaigns = (Collection) get(key);</span>
-<span class="nc" id="L532">            RmUtil.dumpExitMethod(&quot;getCampaignsForSSItem&quot;, campaigns);</span>
+<span class="nc" id="L506">            campaigns = (Collection) get(key);</span>
+<span class="nc" id="L507">            RmUtil.dumpExitMethod(&quot;getCampaignsForSSItem&quot;, campaigns);</span>
         }
 
-<span class="nc" id="L535">        return campaigns;</span>
+<span class="nc" id="L510">        return campaigns;</span>
     }
+    public boolean containsScheduleReaderCache(String key) {
+<span class="nc" id="L513">        return containsKey(&quot;ScheduleReaderCache_&quot; + key);</span>
+    }
+    public ShiftAssignment getScheduleReaderCache(String key) {
+<span class="nc" id="L516">        return (ShiftAssignment) get(&quot;ScheduleReaderCache_&quot; + key);</span>
+    }
+    public void setScheduleReaderCache(String key, ShiftAssignment shift) {
+<span class="nc" id="L519">    	put(&quot;ScheduleReaderCache_&quot; + key, shift);</span>
+<span class="nc" id="L520">    }</span>
 
     /* (non-Javadoc)
      * @see com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache#getEmployeeID()
@@ -541,7 +525,7 @@ public class ShiftSwapValidationCache extends ValidationCache
     //TODO: validationCache must declare abstract method getEmployeeIDs() instead of getEmployeeID().
     @Override
 	public ID getEmployeeID() {
-<span class="nc" id="L544">        throw new UnsupportedOperationException(&quot;method not implemented&quot;);</span>
+<span class="nc" id="L528">        throw new UnsupportedOperationException(&quot;method not implemented&quot;);</span>
     }
 
     /* (non-Javadoc)
@@ -549,8 +533,52 @@ public class ShiftSwapValidationCache extends ValidationCache
      */
     //  TODO: validationCache must declare abstract method getDateRanges() instead of getDateRange().
     @Override
-	public TimeRange getDateRange() throws Exception {
-<span class="nc" id="L553">        throw new UnsupportedOperationException(&quot;method not implemented&quot;);</span>
+	public TimeRange getDateRange() {
+<span class="nc" id="L537">        throw new UnsupportedOperationException(&quot;method not implemented&quot;);</span>
     }
+    /*Note: This is working wrong with swaping 2 employess from orgs having different timezones.(QC 199897)
+     *  And swap shift over crossnight.
+     *  and  Why getting startdate of the employee's organization to compare the different day 
+     *  */
+	public boolean isFullSwapOnDifferentDay() throws Exception {
+
+<span class="nc" id="L545">		List&lt;ShiftSwapItem&gt; items = shiftSwapRequest.getShiftSwapItems();</span>
+
+<span class="nc bnc" id="L547" title="All 6 branches missed.">		if (!shiftSwapRequest.isOneWay() &amp;&amp; items != null &amp;&amp; items.size() == ITEM_SIZE) {</span>
+<span class="nc" id="L548">			ShiftSwapItem ssItem1 = items.get(0);</span>
+<span class="nc" id="L549">			ShiftSwapItem ssItem2 = items.get(1);</span>
+
+<span class="nc" id="L551">			Organization orgEmp1 = getOrganizationForEmployeeDuringPeriod(</span>
+<span class="nc" id="L552">					ssItem1.getEmployeeID(), ssItem1.getStartDate(),</span>
+<span class="nc" id="L553">					ssItem1.getEndDate());</span>
+
+<span class="nc" id="L555">			Organization orgEmp2 = getOrganizationForEmployeeDuringPeriod(</span>
+<span class="nc" id="L556">					ssItem2.getEmployeeID(), ssItem2.getStartDate(),</span>
+<span class="nc" id="L557">					ssItem2.getEndDate());</span>
+
+			// Original shifts
+<span class="nc" id="L560">			Date emp1OrgEmp1Shift = TOCalcUtil.getDateForOrgDayStart(orgEmp1,</span>
+<span class="nc" id="L561">					ssItem1.getStartDate());</span>
+<span class="nc" id="L562">			Date emp2OrgEmp2Shift = TOCalcUtil.getDateForOrgDayStart(orgEmp2,</span>
+<span class="nc" id="L563">					ssItem2.getStartDate());</span>
+
+			// Swapped shifts (originals swapped into receiver's org timezone)
+<span class="nc" id="L566">			Date emp1OrgEmp2Shift = TOCalcUtil.getDateForOrgDayStart(orgEmp1,</span>
+<span class="nc" id="L567">					ssItem2.getStartDate());</span>
+<span class="nc" id="L568">			Date emp2OrgEmp1Shift = TOCalcUtil.getDateForOrgDayStart(orgEmp2,</span>
+<span class="nc" id="L569">					ssItem1.getStartDate());</span>
+
+<span class="nc bnc" id="L571" title="All 2 branches missed.">			boolean different = !emp2OrgEmp2Shift.equals(emp2OrgEmp1Shift);</span>
+<span class="nc bnc" id="L572" title="All 2 branches missed.">			if (!different) {</span>
+<span class="nc bnc" id="L573" title="All 2 branches missed.">				different = !emp1OrgEmp1Shift.equals(emp1OrgEmp2Shift);</span>
+			}
+
+<span class="nc" id="L576">			return different;</span>
+		}
+
+<span class="nc" id="L579">		return false;</span>
+
+	}
+
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,21 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AgentsTimeOffRequestsPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.requests.timeoff</a> &gt; <span class="el_source">AgentsTimeOffRequestsPM.java</span></div><h1>AgentsTimeOffRequestsPM.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.requests.timeoff;
 
+import java.rmi.RemoteException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+
+
+
 
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.l10n.RegionalFormatBundleKey;
 import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.activity.model.ActivityProperties;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
+import com.bluepumpkin.ejb.rm.config.RequestManagementConfigKey;
 import com.bluepumpkin.ejb.rm.requests.common.model.Request;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
 import com.bluepumpkin.ejb.rm.requests.commonrequestmanager.model.RequestFilter;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
 import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPool;
+import com.bluepumpkin.web.bbm.activity.ActivityModelHandler;
 import com.bluepumpkin.web.rm.Log;
+import com.bluepumpkin.web.rm.keys.RmJavaScriptFileID;
 import com.bluepumpkin.web.rm.keys.RmKeys;
 import com.bluepumpkin.web.rm.keys.RmPageAction;
 import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
@@ -24,12 +35,14 @@ import com.bluepumpkin.web.rm.requests.RequestUtil;
 import com.witness.web.uif.base.Message;
 import com.witness.web.uif.data.wrapper.DateWrapper;
 import com.witness.web.uif.data.wrapper.NumberWrapper;
+import com.witness.web.uif.keys.PageKeys;
 import com.witness.web.uif.l10n.UIFWebBundleKey;
 import com.witness.web.uif.listconfig.ListConfig;
 import com.witness.web.uif.listconfig.ListConfigFP;
 import com.witness.web.uif.listconfig.ListConfigSelectorPC;
 import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
 import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
+import com.witness.web.uif.pagecomponent.toolbar.ToolbarTextButton;
 import com.witness.web.uif.pagemodel.PageModel;
 import com.witness.web.uif.system.RequestContext;
 import com.witness.web.uif.util.HtmlUtil;
@@ -43,10 +56,10 @@ import com.witness.web.uif.util.HtmlUtil;
  * @version      1.0
  */
 public class AgentsTimeOffRequestsPM extends AgentsRequestsPM {
-<span class="nc" id="L46">	private Map m_toTypeMap = Collections.emptyMap();</span>
+<span class="nc" id="L59">	private Map m_toTypeMap = Collections.emptyMap();</span>
 	public boolean m_isWaitListFilter;
-<span class="nc" id="L48">	private boolean m_showPriority = true;</span>
-<span class="nc" id="L49">	private static Category m_log = Log.initCategory(AgentsTimeOffCalendarPM.class.getName());</span>
+<span class="nc" id="L61">	private boolean m_showPriority = true;</span>
+<span class="nc" id="L62">	private static Category m_log = Log.initCategory(AgentsTimeOffCalendarPM.class.getName());</span>
 
 	//Thanh Hua QA:89307 START
 	//These variables are used to store the context parameter 
@@ -58,45 +71,57 @@ public class AgentsTimeOffRequestsPM extends AgentsRequestsPM {
 	//Thanh Hua QA:89307 END
 	//Fix for QC#102636
 	private String m_toPoolID;
-
+	private static final String APPROVE_ALL_REQUESTS_TIME_OFF_BID_MSG=&quot;APPROVE_ALL_REQUESTS_TIME_OFF_BID_MSG&quot;;
+	private static final String APPROVE_ALL_REQUESTS_ADVANCED_VTO_MSG=&quot;APPROVE_ALL_REQUESTS_ADVANCED_VTO_MSG&quot;;
 	/**
 	 * Constructor
 	 */
 	public AgentsTimeOffRequestsPM(RequestContext context) {
-<span class="nc" id="L66">		this(context, true);</span>
-<span class="nc" id="L67">	}</span>
+<span class="nc" id="L80">		this(context, true);</span>
+<span class="nc" id="L81">	}</span>
 
 	/**
 	 * Constructor
 	 */
 	public AgentsTimeOffRequestsPM(RequestContext context, boolean showFilter) {
-<span class="nc" id="L73">		super(context, Request.REQUESTTYPE_TIMEOFF, showFilter);</span>
+<span class="nc" id="L87">		super(context, Request.REQUESTTYPE_TIMEOFF, showFilter);</span>
+		// Extract Parameter
+<span class="nc" id="L89">		this.extractParameters(context.getRequest());</span>
+		
+		// If viewMode is PageKeys.DEFAULT_ALL, block waitlist filter because
+		// request may not be a waitlist request.
+<span class="nc bnc" id="L93" title="All 4 branches missed.">		if (m_viewMode != null &amp;&amp; m_viewMode.equals(PageKeys.DEFAULT_ALL)) {</span>
+<span class="nc" id="L94">			m_context.setUserProperty(RmKeys.REQUEST_FILTER_NAME, PageKeys.DEFAULT_ALL);</span>
+		}
 
 		//get request type
-<span class="nc" id="L76">		String reqType = RequestUtil.getRequestType(context);</span>
-<span class="nc bnc" id="L77" title="All 6 branches missed.">		if (reqType != null &amp;&amp; reqType.equals(RequestAuditTrail.STATUS_WAITLIST) &amp;&amp; showFilter) {</span>
-<span class="nc" id="L78">			m_isWaitListFilter = true;</span>
+<span class="nc" id="L98">		String reqType = RequestUtil.getRequestType(context);</span>
+<span class="nc bnc" id="L99" title="All 6 branches missed.">		if (reqType != null &amp;&amp; reqType.equals(RequestAuditTrail.STATUS_WAITLIST) &amp;&amp; showFilter) {</span>
+<span class="nc" id="L100">			m_isWaitListFilter = true;</span>
 		}
 
-<span class="nc bnc" id="L81" title="All 2 branches missed.">		if (m_isWaitListFilter) {//reinitialize the listconfigselector to use the correct config class</span>
-<span class="nc" id="L82">			m_lcSelectorPC = createListConfigSelectorPC();</span>
-<span class="nc" id="L83">			addChildComponent(m_lcSelectorPC);</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">		if (m_isWaitListFilter) {//reinitialize the listconfigselector to use the correct config class</span>
+<span class="nc" id="L104">			m_lcSelectorPC = createListConfigSelectorPC();</span>
+<span class="nc" id="L105">			addChildComponent(m_lcSelectorPC);</span>
 		}
-<span class="nc" id="L85">	}</span>
+<span class="nc" id="L107">		setJSMediator(RmJavaScriptFileID.AGENT_TIMEOFF_REQUESTS_JS);</span>
+<span class="nc" id="L108">		addJSVariable(APPROVE_ALL_REQUESTS_TIME_OFF_BID_MSG,m_bundle, RmWebBundleKey.APPROVE_ALL_REQUESTS_TIME_OFF_BID_MSG);</span>
+<span class="nc" id="L109">		addJSVariable(APPROVE_ALL_REQUESTS_ADVANCED_VTO_MSG,m_bundle,RmWebBundleKey.APPROVE_ALL_REQUESTS_ADVANCED_VTO_MSG);</span>
+<span class="nc" id="L110">	}</span>
 
 	/**
 	 * Add Page Not Enabled Message
 	 */
 	@Override
 	protected void addPageNotEnabledMsg() {
-<span class="nc" id="L92">		TimeOffRequestUtil.addTONotActiveMsg(this);</span>
-<span class="nc" id="L93">	}</span>
+<span class="nc" id="L117">		TimeOffRequestUtil.addTONotActiveMsg(this);</span>
+<span class="nc" id="L118">	}</span>
 
 	/**
 	 * Return an instance of AgentsRequestsPM ready to be rendered in JSP
 	 */
 	public static PageModel getInstance(RequestContext context) throws Exception {
-<span class="nc" id="L99">		return getInstance(context, AgentsTimeOffRequestsPM.class);</span>
+<span class="nc" id="L124">		return getInstance(context, AgentsTimeOffRequestsPM.class);</span>
 	}
 
 	/**
@@ -104,62 +129,62 @@ public class AgentsTimeOffRequestsPM extends AgentsRequestsPM {
 	 */
 	@Override
 	protected void loadSpecifyData() throws Exception {
-<span class="nc bnc" id="L107" title="All 2 branches missed.">		if (m_empID != null) {</span>
-<span class="nc" id="L108">			m_toTypeMap = TimeOffRequestsMH.getTimeOffTypeMap(m_context, m_empID);</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">		if (m_empID != null) {</span>
+<span class="nc" id="L133">			m_toTypeMap = TimeOffRequestsMH.getTimeOffTypeMap(m_context, m_empID);</span>
 
-<span class="nc bnc" id="L110" title="All 2 branches missed.">			if (m_orgSetting != null) {</span>
-<span class="nc" id="L111">				m_isPageEnabled = m_orgSetting.getManagerTimeOffWorkflowActive();</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">			if (m_orgSetting != null) {</span>
+<span class="nc" id="L136">				m_isPageEnabled = m_orgSetting.getManagerTimeOffWorkflowActive();</span>
 			}
 		}
-<span class="nc" id="L114">	}</span>
+<span class="nc" id="L139">	}</span>
 
 	/**
 	 * Initialize Request Collection
 	 */
 	@Override
 	protected void initRequestCollection() throws Exception {
-<span class="nc bnc" id="L121" title="All 2 branches missed.">		if (isAuthToViewTORqts()) {</span>
-<span class="nc" id="L122">			super.initRequestCollection();</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">		if (isAuthToViewTORqts()) {</span>
+<span class="nc" id="L147">			super.initRequestCollection();</span>
 
 			//check for priority of waitlisted requests: display a page message if the request filter includes
 			//orgs that do not share sort config 
-<span class="nc bnc" id="L126" title="All 6 branches missed.">			if (m_isWaitListFilter &amp;&amp; (m_reqCollection != null &amp;&amp; !m_reqCollection.isEmpty())) {</span>
-<span class="nc" id="L127">				TORequest request = (TORequest) m_reqCollection.iterator().next();</span>
+<span class="nc bnc" id="L151" title="All 6 branches missed.">			if (m_isWaitListFilter &amp;&amp; (m_reqCollection != null &amp;&amp; !m_reqCollection.isEmpty())) {</span>
+<span class="nc" id="L152">				TORequest request = (TORequest) m_reqCollection.iterator().next();</span>
 				//TODO fix this
-<span class="nc bnc" id="L129" title="All 2 branches missed.">				if (request.getTOWaitlistPriorityOrder() == -1) {</span>
-<span class="nc" id="L130">					m_showPriority = false;</span>
-<span class="nc" id="L131">					addPageMessage(Message.INFO_TYPE, RmWebBundleKey.TIMEOFF_WL_NO_PRIORITY, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">				if (request.getTOWaitlistPriorityOrder() == -1) {</span>
+<span class="nc" id="L155">					m_showPriority = false;</span>
+<span class="nc" id="L156">					addPageMessage(Message.INFO_TYPE, RmWebBundleKey.TIMEOFF_WL_NO_PRIORITY, RmWebBundleKey.BUNDLE_NAME);</span>
 				}
 			}
-<span class="nc bnc" id="L134" title="All 4 branches missed.">			if (m_reqCollection != null &amp;&amp; !m_reqCollection.isEmpty()) {</span>
+<span class="nc bnc" id="L159" title="All 4 branches missed.">			if (m_reqCollection != null &amp;&amp; !m_reqCollection.isEmpty()) {</span>
 				//code to retrieve missing Activities that TO request have been raised for
-<span class="nc" id="L136">				Collection&lt;ID&gt; missingActIds = new java.util.ArrayList&lt;ID&gt;();</span>
-<span class="nc bnc" id="L137" title="All 2 branches missed.">				for (Iterator it = m_reqCollection.iterator(); it.hasNext();) {</span>
-<span class="nc" id="L138">					TORequest loopRequest = (TORequest) it.next();</span>
-<span class="nc bnc" id="L139" title="All 4 branches missed.">					if (m_toTypeMap != null &amp;&amp; !m_toTypeMap.containsKey(loopRequest.getTimeOffType())) {</span>
-<span class="nc" id="L140">						missingActIds.add(loopRequest.getTimeOffType());</span>
+<span class="nc" id="L161">				Collection&lt;ID&gt; missingActIds = new java.util.ArrayList&lt;ID&gt;();</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">				for (Iterator it = m_reqCollection.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L163">					TORequest loopRequest = (TORequest) it.next();</span>
+<span class="nc bnc" id="L164" title="All 4 branches missed.">					if (m_toTypeMap != null &amp;&amp; !m_toTypeMap.containsKey(loopRequest.getTimeOffType())) {</span>
+<span class="nc" id="L165">						missingActIds.add(loopRequest.getTimeOffType());</span>
 					}
-<span class="nc" id="L142">				}</span>
-<span class="nc bnc" id="L143" title="All 4 branches missed.">				if (missingActIds != null &amp;&amp; !missingActIds.isEmpty()) {</span>
-<span class="nc" id="L144">					Collection&lt;com.bluepumpkin.ejb.bbm.activity.model.Activity&gt; collActivity = com.bluepumpkin.web.bbm.activity.ActivityModelHandler</span>
-<span class="nc" id="L145">							.getActivitiesByIDs(m_context, missingActIds);</span>
-<span class="nc bnc" id="L146" title="All 2 branches missed.">					for (com.bluepumpkin.ejb.bbm.activity.model.Activity loopActivity : collActivity) {</span>
-<span class="nc" id="L147">						m_toTypeMap.put(loopActivity.getID(), loopActivity.getName());</span>
-<span class="nc" id="L148">					}</span>
+<span class="nc" id="L167">				}</span>
+<span class="nc bnc" id="L168" title="All 4 branches missed.">				if (missingActIds != null &amp;&amp; !missingActIds.isEmpty()) {</span>
+<span class="nc" id="L169">					Collection&lt;com.bluepumpkin.ejb.bbm.activity.model.Activity&gt; collActivity = com.bluepumpkin.web.bbm.activity.ActivityModelHandler</span>
+<span class="nc" id="L170">							.getActivitiesByIDs(m_context, missingActIds);</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">					for (com.bluepumpkin.ejb.bbm.activity.model.Activity loopActivity : collActivity) {</span>
+<span class="nc" id="L172">						m_toTypeMap.put(loopActivity.getID(), loopActivity.getName());</span>
+<span class="nc" id="L173">					}</span>
 				}
 			}
 		}
-<span class="nc" id="L152">	}</span>
+<span class="nc" id="L177">	}</span>
 
 	/**
 	 * Create Instanse of ListConfigSelectedPC
 	 */
 	@Override
 	protected ListConfigSelectorPC createListConfigSelectorPC() {
-<span class="nc bnc" id="L159" title="All 2 branches missed.">		if (m_isWaitListFilter) {</span>
-<span class="nc" id="L160">			return new ListConfigSelectorPC(m_context, AgentsTimeOffWaitlistRequestsListConfig.class);</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">		if (m_isWaitListFilter) {</span>
+<span class="nc" id="L185">			return new ListConfigSelectorPC(m_context, AgentsTimeOffWaitlistRequestsListConfig.class);</span>
 		} else {
-<span class="nc" id="L162">			return new ListConfigSelectorPC(m_context, AgentsTimeOffRequestsListConfig.class);</span>
+<span class="nc" id="L187">			return new ListConfigSelectorPC(m_context, AgentsTimeOffRequestsListConfig.class);</span>
 		}
 	}
 
@@ -168,18 +193,18 @@ public class AgentsTimeOffRequestsPM extends AgentsRequestsPM {
 	 */
 	@Override
 	protected boolean isSoftValEanbled() {
-<span class="nc" id="L171">		ListConfig lc = m_lcSelectorPC.getListConfig();</span>
+<span class="nc" id="L196">		ListConfig lc = m_lcSelectorPC.getListConfig();</span>
 
-<span class="nc" id="L173">		ListConfigFP fp = lc.getListConfigFP(RmWebBundleKey.TIMEOFF_CHOICES);</span>
-<span class="nc" id="L174">		boolean isSelected = lc.getSelectedFPs().contains(fp);</span>
+<span class="nc" id="L198">		ListConfigFP fp = lc.getListConfigFP(RmWebBundleKey.TIMEOFF_CHOICES);</span>
+<span class="nc" id="L199">		boolean isSelected = lc.getSelectedFPs().contains(fp);</span>
 
-<span class="nc bnc" id="L176" title="All 4 branches missed.">		if (isSelected &amp;&amp; !Boolean.parseBoolean(super.getIsAlertsCheckedOnPage())) {</span>
-<span class="nc" id="L177">			lc.getSelectedFPs().remove(fp);</span>
-<span class="nc" id="L178">			isSelected = false;</span>
+<span class="nc bnc" id="L201" title="All 4 branches missed.">		if (isSelected &amp;&amp; !Boolean.parseBoolean(super.getIsAlertsCheckedOnPage())) {</span>
+<span class="nc" id="L202">			lc.getSelectedFPs().remove(fp);</span>
+<span class="nc" id="L203">			isSelected = false;</span>
 		}
 		// return true if the selected list config field property has either 
 		// a field named Alerts (from parent) or Timeoff_Choices.
-<span class="nc bnc" id="L182" title="All 4 branches missed.">		return isSelected || super.isSoftValEanbled();</span>
+<span class="nc bnc" id="L207" title="All 4 branches missed.">		return isSelected || super.isSoftValEanbled();</span>
 	}
 
 	/**
@@ -188,95 +213,100 @@ public class AgentsTimeOffRequestsPM extends AgentsRequestsPM {
 	 */
 	@Override
 	protected void addHeaderData(ListConfigFP fp, TableHeaderPC header) {
-<span class="nc bnc" id="L191" title="All 2 branches missed.">		if (fp.hasFieldName(RmWebBundleKey.TIMEOFF_CHOICES)) {</span>
-<span class="nc" id="L192">			TimeOffRequestUtil.addTOChoiceHeader(m_common_bundle, m_bundle, m_localizer, header, false);</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">		if (fp.hasFieldName(RmWebBundleKey.TIMEOFF_CHOICES)) {</span>
+<span class="nc" id="L217">			TimeOffRequestUtil.addTOChoiceHeader(m_common_bundle, m_bundle, m_localizer, header, false);</span>
 		} else {
-<span class="nc" id="L194">			header.addColumnHeaderData(fp);</span>
+<span class="nc" id="L219">			header.addColumnHeaderData(fp);</span>
 		}
-<span class="nc" id="L196">	}</span>
+<span class="nc" id="L221">	}</span>
 
 	/**
 	 * Add Cell Data for the specified List Config Field Property
 	 */
 	@Override
 	protected void addCellData(String rowID, RequestAggregate request, ListConfigFP fp, DefaultMultiColumnNodeData row_data) {
-<span class="nc" id="L203">		TORequest toRequest = (TORequest) request;</span>
-<span class="nc bnc" id="L204" title="All 2 branches missed.">		if (fp.hasFieldName(Request.SORT_TO_ACTIVITY)) {</span>
-<span class="nc" id="L205">			row_data.add(getTOType(toRequest));</span>
-<span class="nc bnc" id="L206" title="All 2 branches missed.">		} else if (fp.hasFieldName(UIFWebBundleKey.ALERTS)) {</span>
-<span class="nc" id="L207">			String alerts = RequestUtil.createUniqueAlertIcons(request, m_localizer);</span>
-<span class="nc" id="L208">			row_data.add(alerts);</span>
-<span class="nc bnc" id="L209" title="All 2 branches missed.">		} else if (fp.hasFieldName(RmWebBundleKey.TIMEOFF_CHOICES)) {</span>
-<span class="nc" id="L210">			TimeOffRequestUtil.addTOChoiceInfo(toRequest, m_context, row_data, m_bundle, true);</span>
-<span class="nc bnc" id="L211" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_SENIORITY)) {</span>
-<span class="nc" id="L212">			Date date = toRequest.getEmployeeStartDate();</span>
-<span class="nc" id="L213">			row_data.add(new DateWrapper(date, m_localizer, m_view_tz, RegionalFormatBundleKey.DATE_FORMAT));</span>
-<span class="nc bnc" id="L214" title="All 2 branches missed.">		} else if (fp.hasFieldName(RmWebBundleKey.TIMEOFF_WL_EXPIRY_DATE)) {</span>
-<span class="nc" id="L215">			Date date = toRequest.getWaitlistInfo().getTOWaitlistExpiryDate();</span>
-<span class="nc" id="L216">			row_data.add(createDataWrapper(date));</span>
-<span class="nc bnc" id="L217" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_PRIORITY_ORDER)) {</span>
-<span class="nc bnc" id="L218" title="All 2 branches missed.">			String priorityOrder = m_showPriority ? String.valueOf(toRequest.getTOWaitlistPriorityOrder()) : i18nCore(UIFWebBundleKey.NA);</span>
-<span class="nc" id="L219">			row_data.add(priorityOrder);</span>
-<span class="nc bnc" id="L220" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_ORGANIZATION_NAME)) {</span>
+<span class="nc" id="L228">		TORequest toRequest = (TORequest) request;</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">		if (fp.hasFieldName(Request.SORT_TO_ACTIVITY)) {</span>
+<span class="nc" id="L230">			row_data.add(getTOType(toRequest));</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">		} else if (fp.hasFieldName(UIFWebBundleKey.ALERTS)) {</span>
+<span class="nc" id="L232">			String alerts = &quot;&quot;;</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">			if (!isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L234">				alerts = RequestUtil.createUniqueAlertIcons(request, m_localizer);</span>
+			} else {
+<span class="nc" id="L236">				alerts = RequestUtil.createUniqueAlertIcons(request, m_localizer, true, true);</span>
+			}
+<span class="nc" id="L238">			row_data.add(alerts);</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">		} else if (fp.hasFieldName(RmWebBundleKey.TIMEOFF_CHOICES)) {</span>
+<span class="nc" id="L240">			TimeOffRequestUtil.addTOChoiceInfo(toRequest, m_context, row_data, m_bundle, true);</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_SENIORITY)) {</span>
+<span class="nc" id="L242">			Date date = toRequest.getEmployeeStartDate();</span>
+<span class="nc" id="L243">			row_data.add(new DateWrapper(date, m_localizer, m_view_tz, RegionalFormatBundleKey.DATE_FORMAT));</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">		} else if (fp.hasFieldName(RmWebBundleKey.TIMEOFF_WL_EXPIRY_DATE)) {</span>
+<span class="nc" id="L245">			Date date = toRequest.getWaitlistInfo().getTOWaitlistExpiryDate();</span>
+<span class="nc" id="L246">			row_data.add(createDataWrapper(date));</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_PRIORITY_ORDER)) {</span>
+<span class="nc bnc" id="L248" title="All 2 branches missed.">			String priorityOrder = m_showPriority ? String.valueOf(toRequest.getTOWaitlistPriorityOrder()) : i18nCore(UIFWebBundleKey.NA);</span>
+<span class="nc" id="L249">			row_data.add(priorityOrder);</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_ORGANIZATION_NAME)) {</span>
 			try {
-<span class="nc" id="L222">				row_data.add(toRequest.getValidationCache().getOrgNameForMsg());</span>
-<span class="nc" id="L223">			} catch (Exception ex) {</span>
-<span class="nc" id="L224">				m_log.l7dError(ex.getMessage());</span>
-<span class="nc" id="L225">			}</span>
-<span class="nc bnc" id="L226" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_POOL_NAME)) {</span>
+<span class="nc" id="L252">				row_data.add(toRequest.getValidationCache().getOrgNameForMsg());</span>
+<span class="nc" id="L253">			} catch (Exception ex) {</span>
+<span class="nc" id="L254">				m_log.l7dError(ex.getMessage());</span>
+<span class="nc" id="L255">			}</span>
+<span class="nc bnc" id="L256" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_POOL_NAME)) {</span>
 			try {
-<span class="nc" id="L228">				TOPool toPool = toRequest.getValidationCache().getTOPool();</span>
-<span class="nc bnc" id="L229" title="All 2 branches missed.">				row_data.add(toPool != null ? toPool.getName() : &quot;&quot;);</span>
-<span class="nc" id="L230">			} catch (Exception ex) {</span>
-<span class="nc" id="L231">				m_log.l7dError(ex.getMessage());</span>
-<span class="nc" id="L232">			}</span>
-<span class="nc bnc" id="L233" title="All 2 branches missed.">		} else if (fp.hasFieldName(RmWebBundleKey.TIMEOFF_ADDED_TO_WL)) {</span>
-<span class="nc" id="L234">			Date date = toRequest.getWaitlistInfo().getTOWaitlistCreationDate();</span>
-<span class="nc" id="L235">			row_data.add(createDataWrapper(date));</span>
-<span class="nc bnc" id="L236" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_PENDING_DATE_TIME)) {</span>
-<span class="nc" id="L237">			Date date = toRequest.getWaitlistInfo().getTOWaitlistCreationDate();</span>
-<span class="nc" id="L238">			long minuteLen = (new Date().getTime() - date.getTime()) / (1000 * 60);</span>
-<span class="nc" id="L239">			String lenStr = TimeOffRequestUtil.getLengthStrFromMinutes(minuteLen, m_localizer, m_bundle);</span>
-<span class="nc" id="L240">			row_data.add(lenStr);</span>
-<span class="nc bnc" id="L241" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_PENDING_DAYS)) {</span>
-<span class="nc" id="L242">			Date date = toRequest.getWaitlistInfo().getTOWaitlistCreationDate();</span>
-<span class="nc" id="L243">			int numDays = new Long((new Date().getTime() - date.getTime()) / (1000 * 60 * 60 * 24)).intValue();</span>
-<span class="nc" id="L244">			row_data.add(String.valueOf(numDays));</span>
+<span class="nc" id="L258">				TOPool toPool = toRequest.getTOValidationCache().getTOPool();</span>
+<span class="nc bnc" id="L259" title="All 2 branches missed.">				row_data.add(toPool != null ? toPool.getName() : &quot;&quot;);</span>
+<span class="nc" id="L260">			} catch (Exception ex) {</span>
+<span class="nc" id="L261">				m_log.l7dError(ex.getMessage());</span>
+<span class="nc" id="L262">			}</span>
+<span class="nc bnc" id="L263" title="All 2 branches missed.">		} else if (fp.hasFieldName(RmWebBundleKey.TIMEOFF_ADDED_TO_WL)) {</span>
+<span class="nc" id="L264">			Date date = toRequest.getWaitlistInfo().getTOWaitlistCreationDate();</span>
+<span class="nc" id="L265">			row_data.add(createDataWrapper(date));</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_PENDING_DATE_TIME)) {</span>
+<span class="nc" id="L267">			Date date = toRequest.getWaitlistInfo().getTOWaitlistCreationDate();</span>
+<span class="nc" id="L268">			long minuteLen = (new Date().getTime() - date.getTime()) / (1000 * 60);</span>
+<span class="nc" id="L269">			String lenStr = TimeOffRequestUtil.getLengthStrFromMinutes(minuteLen, m_localizer, m_bundle);</span>
+<span class="nc" id="L270">			row_data.add(lenStr);</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_PENDING_DAYS)) {</span>
+<span class="nc" id="L272">			Date date = toRequest.getWaitlistInfo().getTOWaitlistCreationDate();</span>
+<span class="nc" id="L273">			int numDays = new Long((new Date().getTime() - date.getTime()) / (1000 * 60 * 60 * 24)).intValue();</span>
+<span class="nc" id="L274">			row_data.add(String.valueOf(numDays));</span>
 			//start and end are used by Time Off Waitlist view
-<span class="nc bnc" id="L246" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_FIRST_START)) {</span>
-<span class="nc bnc" id="L247" title="All 2 branches missed.">			if (fp.getRbKey().equals(RmWebBundleKey.WAITLIST_REQUEST_START_DATE)) {</span>
-<span class="nc" id="L248">				Date date = toRequest.getFirstTOChoice().getStartDate();</span>
-<span class="nc" id="L249">				row_data.add(createDataWrapper(date));</span>
-<span class="nc" id="L250">			} else {</span>
-<span class="nc" id="L251">				TimeOffRequestUtil.addStartOrEndDateData(toRequest, m_context, row_data, true, true);</span>
+<span class="nc bnc" id="L276" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_FIRST_START)) {</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">			if (fp.getRbKey().equals(RmWebBundleKey.WAITLIST_REQUEST_START_DATE)) {</span>
+<span class="nc" id="L278">				Date date = toRequest.getFirstTOChoice().getStartDate();</span>
+<span class="nc" id="L279">				row_data.add(createDataWrapper(date));</span>
+<span class="nc" id="L280">			} else {</span>
+<span class="nc" id="L281">				TimeOffRequestUtil.addStartOrEndDateData(toRequest, m_context, row_data, true, true);</span>
 			}
-<span class="nc bnc" id="L253" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_FIRST_END)) {</span>
-<span class="nc bnc" id="L254" title="All 2 branches missed.">			if (fp.getRbKey().equals(RmWebBundleKey.WAITLIST_REQUEST_END_DATE)) {</span>
-<span class="nc" id="L255">				Date date = toRequest.getFirstTOChoice().getEndDate();</span>
-<span class="nc" id="L256">				row_data.add(createDataWrapper(date));</span>
-<span class="nc" id="L257">			} else {</span>
-<span class="nc" id="L258">				TimeOffRequestUtil.addStartOrEndDateData(toRequest, m_context, row_data, false, true);</span>
+<span class="nc bnc" id="L283" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_FIRST_END)) {</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">			if (fp.getRbKey().equals(RmWebBundleKey.WAITLIST_REQUEST_END_DATE)) {</span>
+<span class="nc" id="L285">				Date date = toRequest.getFirstTOChoice().getEndDate();</span>
+<span class="nc" id="L286">				row_data.add(createDataWrapper(date));</span>
+<span class="nc" id="L287">			} else {</span>
+<span class="nc" id="L288">				TimeOffRequestUtil.addStartOrEndDateData(toRequest, m_context, row_data, false, true);</span>
 			}
-<span class="nc bnc" id="L260" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_TOCHOICE_REQ_LENGTH)) {</span>
-<span class="nc" id="L261">			long minuteLen = (toRequest.getWaitlistTOChoiceActualDurationInMilliSecs()) / (1000 * 60);</span>
-<span class="nc" id="L262">			String lenStr = TimeOffRequestUtil.getLengthStrFromMinutes(minuteLen, m_localizer, m_bundle);</span>
-<span class="nc" id="L263">			row_data.add(lenStr);</span>
-<span class="nc bnc" id="L264" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_TOCHOICE_ALLOCATION_HOURS)) {</span>
-<span class="nc" id="L265">			float allocHours = toRequest.getWaitlistTOChoiceUsedAllocationHours();</span>
-<span class="nc" id="L266">			row_data.add(m_localizer.formatNumber(allocHours, 2));</span>
-<span class="nc bnc" id="L267" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_EMP_RANK)) {</span>
-<span class="nc" id="L268">			row_data.add(new NumberWrapper(toRequest.getEmployeeRank(), m_localizer));</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_TOCHOICE_REQ_LENGTH)) {</span>
+<span class="nc" id="L291">			long minuteLen = (toRequest.getWaitlistTOChoiceActualDurationInMilliSecs()) / (1000 * 60);</span>
+<span class="nc" id="L292">			String lenStr = TimeOffRequestUtil.getLengthStrFromMinutes(minuteLen, m_localizer, m_bundle);</span>
+<span class="nc" id="L293">			row_data.add(lenStr);</span>
+<span class="nc bnc" id="L294" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_TO_WAITLIST_TOCHOICE_ALLOCATION_HOURS)) {</span>
+<span class="nc" id="L295">			float allocHours = toRequest.getWaitlistTOChoiceUsedAllocationHours();</span>
+<span class="nc" id="L296">			row_data.add(m_localizer.formatNumber(allocHours, 2));</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">		} else if (fp.hasFieldName(Request.SORT_EMP_RANK)) {</span>
+<span class="nc" id="L298">			row_data.add(new NumberWrapper(toRequest.getEmployeeRank(), m_localizer));</span>
 		} else {
-<span class="nc" id="L270">			super.addCellData(rowID, request, fp, row_data);</span>
+<span class="nc" id="L300">			super.addCellData(rowID, request, fp, row_data);</span>
 		}
-<span class="nc" id="L272">	}</span>
+<span class="nc" id="L302">	}</span>
 
 	/**
 	 * Return Time Off Type Display
 	 */
 	private String getTOType(TORequest request) {
-<span class="nc" id="L278">		ID toTypeID = request.getTimeOffType();</span>
-<span class="nc" id="L279">		return (String) m_toTypeMap.get(toTypeID);</span>
+<span class="nc" id="L308">		ID toTypeID = request.getTimeOffType();</span>
+<span class="nc" id="L309">		return (String) m_toTypeMap.get(toTypeID);</span>
 	}
 
 	/**
@@ -284,7 +314,7 @@ public class AgentsTimeOffRequestsPM extends AgentsRequestsPM {
 	 */
 	@Override
 	protected String getContentTitleItemName() {
-<span class="nc" id="L287">		return i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_TIME_OFF);</span>
+<span class="nc" id="L317">		return i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_TIME_OFF);</span>
 	}
 
 	/**
@@ -292,26 +322,33 @@ public class AgentsTimeOffRequestsPM extends AgentsRequestsPM {
 	 */
 	@Override
 	protected void addCreateRequestButton() {
-<span class="nc bnc" id="L295" title="All 4 branches missed.">		boolean isBtnEnabled = m_isPageEnabled &amp;&amp; isAuthToEditTORqts();</span>
-<span class="nc" id="L296">		String newRequestLabel = i18n(m_bundle, RmWebBundleKey.CREATE_NEW_REQUEST);</span>
-<span class="nc" id="L297">		m_toolbar.addPopupWindowTextButton(RmPageAction.POPUP_TIMEOFF_REQUEST_FORM_ACTION, newRequestLabel, isBtnEnabled);</span>
-<span class="nc" id="L298">	}</span>
+<span class="nc bnc" id="L325" title="All 4 branches missed.">		boolean isBtnEnabled = m_isPageEnabled &amp;&amp; isAuthToEditTORqts();</span>
+<span class="nc" id="L326">		String newRequestLabel = i18n(RmWebBundleKey.CREATE_NEW_REQUEST);</span>
+<span class="nc" id="L327">		ToolbarTextButton addButton = m_toolbar.createPopupWindowButton(RmPageAction.POPUP_TIMEOFF_REQUEST_FORM_ACTION, newRequestLabel, isBtnEnabled);</span>
+		
+		
+<span class="nc" id="L330">		String jsPrefix = &quot; if (!pageMediator.isPageDirty()|| (pageMediator.isPageDirty()&amp;&amp;confirm(LOSE_CHANGES_WARNING)) ) if (typeof(&quot; + m_toolbar.getName() + &quot;)!='undefined') &quot; + m_toolbar.getName();</span>
+<span class="nc" id="L331">		addButton.setAttribute(&quot;onClick&quot;, jsPrefix + &quot;.onSelect('&quot; + addButton.getActionName() + &quot;', this)&quot;);</span>
+<span class="nc" id="L332">		addButton.setAttribute(&quot;onDblClick&quot;, jsPrefix + &quot;.onSelect('&quot; + addButton.getActionName() + &quot;', this)&quot;);</span>
+<span class="nc" id="L333">		m_toolbar.addToolbarElement(addButton);</span>
+		
+<span class="nc" id="L335">	}</span>
 
 	/**
 	 * Return URL for HTML Form Action
 	 */
 	@Override
 	public String getFormAction() {
-<span class="nc bnc" id="L305" title="All 2 branches missed.">		if (isAuthToViewTORqts()) {</span>
-<span class="nc" id="L306">			return RmKeys.RH_AG_REQUEST_TIMEOFF_LIST;</span>
+<span class="nc bnc" id="L342" title="All 2 branches missed.">		if (isAuthToViewTORqts()) {</span>
+<span class="nc" id="L343">			return RmKeys.RH_AG_REQUEST_TIMEOFF_LIST;</span>
 		} else {
-<span class="nc" id="L308">			return RmKeys.RH_AG_REQUEST_ALL_LIST;</span>
+<span class="nc" id="L345">			return RmKeys.RH_AG_REQUEST_ALL_LIST;</span>
 		}
 	}
 
 	public void setIsWaitListFilter(boolean isWaitListFilter) {
-<span class="nc" id="L313">		m_isWaitListFilter = isWaitListFilter;</span>
-<span class="nc" id="L314">	}</span>
+<span class="nc" id="L350">		m_isWaitListFilter = isWaitListFilter;</span>
+<span class="nc" id="L351">	}</span>
 
 	/**
 	 * 
@@ -321,57 +358,57 @@ public class AgentsTimeOffRequestsPM extends AgentsRequestsPM {
 	//override super class method, add more hidden input for saving parameters need for the context request.
 	@Override
 	protected void initSelectableItems() {
-<span class="nc" id="L324">		super.initSelectableItems();</span>
-<span class="nc" id="L325">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;date&quot;, m_date));</span>
-<span class="nc" id="L326">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;orgID&quot;, m_orgID));</span>
-<span class="nc" id="L327">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;viewMode&quot;, m_viewMode));</span>
-<span class="nc" id="L328">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;isParentView&quot;, m_isParentView));</span>
-<span class="nc bnc" id="L329" title="All 2 branches missed.">		if (isBlankFilterSelected()) {</span>
-<span class="nc" id="L330">			m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;isPendingTOView&quot;, m_isPendingTOView));</span>
-<span class="nc" id="L331">			m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;TOPOOLID&quot;, m_toPoolID));</span>
+<span class="nc" id="L361">		super.initSelectableItems();</span>
+<span class="nc" id="L362">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;date&quot;, m_date));</span>
+<span class="nc" id="L363">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;orgID&quot;, m_orgID));</span>
+<span class="nc" id="L364">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;viewMode&quot;, m_viewMode));</span>
+<span class="nc" id="L365">		m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;isParentView&quot;, m_isParentView));</span>
+<span class="nc bnc" id="L366" title="All 2 branches missed.">		if (isBlankFilterSelected()) {</span>
+<span class="nc" id="L367">			m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;isPendingTOView&quot;, m_isPendingTOView));</span>
+<span class="nc" id="L368">			m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;TOPOOLID&quot;, m_toPoolID));</span>
 		} else {
-<span class="nc" id="L333">			m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;isPendingTOView&quot;, &quot;false&quot;));</span>
+<span class="nc" id="L370">			m_context.addGenericHTML(HtmlUtil.makeHiddenInput(&quot;isPendingTOView&quot;, &quot;false&quot;));</span>
 		}
-<span class="nc" id="L335">	}</span>
+<span class="nc" id="L372">	}</span>
 
 	public String getDate() {
-<span class="nc" id="L338">		return m_date;</span>
+<span class="nc" id="L375">		return m_date;</span>
 	}
 
 	public void setDate(String sDate) {
-<span class="nc" id="L342">		m_date = sDate;</span>
-<span class="nc" id="L343">	}</span>
+<span class="nc" id="L379">		m_date = sDate;</span>
+<span class="nc" id="L380">	}</span>
 
 	public String getOrgID() {
-<span class="nc" id="L346">		return m_orgID;</span>
+<span class="nc" id="L383">		return m_orgID;</span>
 	}
 
 	public void setOrgID(String sOrgID) {
-<span class="nc" id="L350">		m_orgID = sOrgID;</span>
-<span class="nc" id="L351">	}</span>
+<span class="nc" id="L387">		m_orgID = sOrgID;</span>
+<span class="nc" id="L388">	}</span>
 
 	public String getIsParentView() {
-<span class="nc" id="L354">		return m_isParentView;</span>
+<span class="nc" id="L391">		return m_isParentView;</span>
 	}
 
 	public void setIsParentView(String sIsParentView) {
-<span class="nc" id="L358">		m_isParentView = sIsParentView;</span>
-<span class="nc" id="L359">	}</span>
+<span class="nc" id="L395">		m_isParentView = sIsParentView;</span>
+<span class="nc" id="L396">	}</span>
 
 	public String getViewMode() {
-<span class="nc" id="L362">		return m_viewMode;</span>
+<span class="nc" id="L399">		return m_viewMode;</span>
 	}
 
 	public void setViewMode(String sViewMode) {
-<span class="nc" id="L366">		m_viewMode = sViewMode;</span>
-<span class="nc" id="L367">	}</span>
+<span class="nc" id="L403">		m_viewMode = sViewMode;</span>
+<span class="nc" id="L404">	}</span>
 
 	public void setIsPendingTOView(String sIsPendingTOView) {
-<span class="nc" id="L370">		m_isPendingTOView = sIsPendingTOView;</span>
-<span class="nc" id="L371">	}</span>
+<span class="nc" id="L407">		m_isPendingTOView = sIsPendingTOView;</span>
+<span class="nc" id="L408">	}</span>
 
 	public String getIsPendingTOView() {
-<span class="nc" id="L374">		return m_isPendingTOView;</span>
+<span class="nc" id="L411">		return m_isPendingTOView;</span>
 	}
 
 	//Thanh Hua: QA 89307 END
@@ -382,23 +419,96 @@ public class AgentsTimeOffRequestsPM extends AgentsRequestsPM {
 	 */
 	@Override
 	public String getSelectedFilterName() {
-<span class="nc" id="L385">		return m_rfilterBoxPC.getSelectedFilterName();</span>
+<span class="nc" id="L422">		return m_rfilterBoxPC.getSelectedFilterName();</span>
 	}
 
 	//Fix for QC# 102636
 	public void setTOPOOLID(String stoPoolID) {
-<span class="nc" id="L390">		m_toPoolID = stoPoolID;</span>
-<span class="nc" id="L391">	}</span>
+<span class="nc" id="L427">		m_toPoolID = stoPoolID;</span>
+<span class="nc" id="L428">	}</span>
 
 	public String getTOPOOLID() {
-<span class="nc" id="L394">		return m_toPoolID;</span>
+<span class="nc" id="L431">		return m_toPoolID;</span>
 	}
 
 	@Override
 	protected boolean hasGroupActionForTimeOffChoice() {
 		//Only show new Group action for filter that has selected Time Off Bid 
-<span class="nc bnc" id="L400" title="All 4 branches missed.">		boolean hasTOBidInTOView = m_requestFilter != null &amp;&amp; m_requestFilter.getValueForKey(RequestFilter.TOBID_KEY) != null;</span>
-<span class="nc" id="L401">		return hasTOBidInTOView;</span>
+		//And Status can be Pending or Empty( which may includes Pending too)
+<span class="nc bnc" id="L438" title="All 4 branches missed.">		boolean hasTOBidInTOView = m_requestFilter != null &amp;&amp; m_requestFilter.getValueForKey(RequestFilter.TOBID_KEY) != null </span>
+<span class="nc bnc" id="L439" title="All 2 branches missed.">				&amp;&amp; (m_requestFilter.getValueForKey(RequestFilter.STATUS_KEY)== null ||</span>
+<span class="nc bnc" id="L440" title="All 2 branches missed.">					m_requestFilter.getValueForKey(RequestFilter.STATUS_KEY).equals(RequestAuditTrail.STATUS_PENDING));</span>
+<span class="nc" id="L441">		return hasTOBidInTOView;</span>
 	}
+	@SuppressWarnings(&quot;unchecked&quot;)
+	@Override
+	protected boolean hasGroupActionForAdvancedVTOOptions() {
+		//Only show new Group action for filter that has selected Time Off Bid 
+<span class="nc" id="L447">		boolean hasAdvancedVTOOptions = false;</span>
+<span class="nc" id="L448">		boolean mayHavePendingRequests =false;</span>
+<span class="nc" id="L449">		ActivityProperties activityProperty = null;</span>
+<span class="nc bnc" id="L450" title="All 2 branches missed.">		if(m_requestFilter != null){</span>
+<span class="nc bnc" id="L451" title="All 2 branches missed.">			mayHavePendingRequests = m_requestFilter.getValueForKey(RequestFilter.STATUS_KEY)== null ||</span>
+<span class="nc bnc" id="L452" title="All 2 branches missed.">					m_requestFilter.getValueForKey(RequestFilter.STATUS_KEY).equals(RequestAuditTrail.STATUS_PENDING);</span>
+<span class="nc" id="L453">			Collection&lt;ID&gt; toActivityIds = (Collection&lt;ID&gt;) m_requestFilter.getValueForKey(RequestFilter.TO_ACTIVITIES_KEY);</span>
+<span class="nc bnc" id="L454" title="All 4 branches missed.">			if(toActivityIds!=null &amp;&amp; !toActivityIds.isEmpty()){</span>
+<span class="nc bnc" id="L455" title="All 2 branches missed.">				for (ID toActivityId : toActivityIds) {</span>
+					try {
+<span class="nc" id="L457">						activityProperty = ActivityModelHandler.getActivityProperties(m_context, toActivityId);</span>
+<span class="nc" id="L458">						hasAdvancedVTOOptions = activityProperty.isUseAdvancedVTOOptions();</span>
+<span class="nc bnc" id="L459" title="All 2 branches missed.">						if(!hasAdvancedVTOOptions) {</span>
+<span class="nc" id="L460">							break;</span>
+						}
+<span class="nc" id="L462">					} catch (RemoteException e) {</span>
+<span class="nc" id="L463">						m_log.l7dDebug(&quot;Failed to fetch activity property by activityid&quot;, e);</span>
+<span class="nc" id="L464">					} catch (BbmException e) {</span>
+<span class="nc" id="L465">						m_log.l7dDebug(&quot;Failed to fetch activity property by activityid&quot;, e);</span>
+<span class="nc" id="L466">					}</span>
+<span class="nc" id="L467">				}</span>
+			}
+		}
+		
+<span class="nc bnc" id="L471" title="All 4 branches missed.">		return hasAdvancedVTOOptions&amp;&amp;mayHavePendingRequests;</span>
+	}
+	
+	@Override
+	protected void initToolbar() {
+<span class="nc" id="L476">		super.initToolbar();</span>
+		
+<span class="nc bnc" id="L478" title="All 2 branches missed.">		ID reqFilterID = m_rfilterBoxPC != null ? m_rfilterBoxPC.getSelectedFilterID() : null;</span>
+<span class="nc bnc" id="L479" title="All 2 branches missed.">		long sDate = m_dateRangePickerPC != null ? m_dateRangePickerPC.getStartDatePickerPC().getDate().getTime() : 0;</span>
+<span class="nc bnc" id="L480" title="All 2 branches missed.">		long eDate = m_dateRangePickerPC != null ? m_dateRangePickerPC.getEndDatePickerPC().getDate().getTime() : 0;</span>
+<span class="nc" id="L481">		String findName= getFindName();</span>
+<span class="nc" id="L482">		String onClickJS=&quot;&quot;;</span>
+
+<span class="nc" id="L484">		int batchSize= RequestManagementConfigKey.getGroupApprovalBatchSize();</span>
+<span class="nc bnc" id="L485" title="All 6 branches missed.">		if(hasGroupActionForTimeOffChoice()&amp;&amp; m_reqCollection!=null&amp;&amp;m_reqCollection.getIds().size()&gt;0){ </span>
+			
+
+<span class="nc" id="L488">			String label = &quot;&lt;span id=\&quot;btnProcessTOBRequests\&quot; value=\&quot;0\&quot;&gt;&quot;+i18n(RmWebBundleKey.APPROVE_ALL_TOB_CHOICES_WO_VIOLATIONS_ACTION)+ &quot;&lt;/span&gt;&quot;; </span>
+<span class="nc bnc" id="L489" title="All 2 branches missed.">			List requestIds =getAllReqCollection()!=null?getAllReqCollection().getIds():null;</span>
+<span class="nc bnc" id="L490" title="All 2 branches missed.">			if(StringUtil.isEmpty(findName)) {</span>
+<span class="nc" id="L491">				onClickJS = &quot;pageMediator.proccessTimeOffBidRequests(&quot;+batchSize+&quot;,&quot;+m_empID+&quot;,&quot;+sDate+&quot;,&quot;+eDate+&quot;,&quot;+reqFilterID+&quot;,&quot; +requestIds+&quot;);&quot;;</span>
+			}else {
+<span class="nc" id="L493">				onClickJS = &quot;pageMediator.proccessTimeOffBidRequestsWithFindName(&quot;+batchSize+&quot;,&quot;+m_empID+&quot;,&quot;+sDate+&quot;,&quot;+eDate+&quot;,&quot;+reqFilterID+&quot;,&quot;+findName+&quot;,&quot; +requestIds+&quot;);&quot;;</span>
+			}
+<span class="nc" id="L495">			m_toolbar.addJSTextButton(RmPageAction.APPROVE_ALL_TIMEOFF_BID_REQUESTS, label, true, onClickJS);</span>
+		
+		}
+<span class="nc bnc" id="L498" title="All 6 branches missed.">		if(hasGroupActionForAdvancedVTOOptions()&amp;&amp; m_reqCollection!=null&amp;&amp;m_reqCollection.getIds().size()&gt;0){ </span>
+		
+<span class="nc" id="L500">			String label = &quot;&lt;span id=\&quot;btnProcessVTORequests\&quot; value=\&quot;0\&quot;&gt;&quot;+i18n(RmWebBundleKey.PROCESS_ALL_VTO_REQUESTS_WO_VIOLATIONS_ACTION)+ &quot;&lt;/span&gt;&quot;; </span>
+<span class="nc bnc" id="L501" title="All 2 branches missed.">			List requestIds =getAllReqCollection()!=null?getAllReqCollection().getIds():null;</span>
+<span class="nc bnc" id="L502" title="All 2 branches missed.">			if(StringUtil.isEmpty(findName)) {</span>
+<span class="nc" id="L503">				onClickJS = &quot;pageMediator.proccessVTORequests(&quot;+batchSize+&quot;,&quot;+m_empID+&quot;,&quot;+sDate+&quot;,&quot;+eDate+&quot;,&quot;+reqFilterID+&quot;,&quot; +requestIds+&quot;);&quot;;</span>
+			}else{
+<span class="nc" id="L505">				onClickJS = &quot;pageMediator.proccessVTORequestsWithFindName(&quot;+batchSize+&quot;,&quot;+m_empID+&quot;,&quot;+sDate+&quot;,&quot;+eDate+&quot;,&quot;+reqFilterID+&quot;,&quot;+findName+&quot;,&quot; +requestIds+&quot;);&quot;;</span>
+			}
+<span class="nc" id="L507">			m_toolbar.addJSTextButton(RmPageAction.PROCESS_ALL_ADVANCED_VTO_REQUESTS, label, true, onClickJS);</span>
+		
+		}
+	
+<span class="nc" id="L511">	}</span>
+	
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

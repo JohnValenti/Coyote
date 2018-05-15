@@ -8,7 +8,9 @@ package com.bluepumpkin.ejb.rm.notification.rulecheckers;
 
 import java.util.Collection;
 import java.util.Date;
+import java.util.TimeZone;
 
+import com.bluepumpkin.common.localization.Localizer;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -39,11 +41,14 @@ import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
  * To change this generated comment go to 
  * Window&gt;Preferences&gt;Java&gt;Code Generation&gt;Code and Comments
  */
-<span class="nc" id="L42">public class SerializedAuctionRuleChecker extends AbstractRuleChecker { </span>
-<span class="nc" id="L43">    private static final Category m_cat = Log.initCategory(SerializedAuctionRuleChecker.class.getName());</span>
+<span class="nc" id="L44">public class SerializedAuctionRuleChecker extends AbstractRuleChecker { </span>
+<span class="nc" id="L45">    private static final Category m_cat = Log.initCategory(SerializedAuctionRuleChecker.class.getName());</span>
     
-    private static final String RULE_XMLROOT_ELEMENTNAME = &quot;serializedauctionnotification&quot;;                                                            
-
+    private static final String RULE_XMLROOT_ELEMENTNAME = &quot;serializedauctionnotification&quot;;
+	private static final String RULE_XML_EMPLOYEE_NAME = &quot;employeename&quot;;
+	private static final String RULE_XML_AUCTION_NAME = &quot;auctionname&quot;;
+	private static final String RULE_XML_DEADLINE_TIME = &quot;deadlinetime&quot;;
+	
     /*
     INSERT INTO NOTIFYRULETEMPLATE (ID, NAME, IMPLEMENTATIONCLASS, XMLTEXT, TIMERFREQUENCY)
     VALUES (-249005, 'Serialized Auction notification rule', 
@@ -82,68 +87,80 @@ import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
      */
     public ActionDetail testRule(NotifyRule rule, Object actionContext) throws Exception {
         // if notification detail object is not the type we need, return. 
-<span class="nc bnc" id="L85" title="All 2 branches missed.">        if (! (actionContext instanceof SerializedAuctionDetail) ) </span>
-<span class="nc" id="L86">            return null;</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">        if (! (actionContext instanceof SerializedAuctionDetail) ) </span>
+<span class="nc" id="L91">            return null;</span>
         
         // get rule's orgID
-<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (rule.getScopeType() != Organization.SCOPE_TYPE) {</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">        if (rule.getScopeType() != Organization.SCOPE_TYPE) {</span>
         	//should throw exception here ?????
-<span class="nc" id="L91">        	return null;</span>
+<span class="nc" id="L96">        	return null;</span>
         }
-<span class="nc" id="L93">        ID ruleOrgID = rule.getScopeID();</span>
+<span class="nc" id="L98">        ID ruleOrgID = rule.getScopeID();</span>
         
-<span class="nc" id="L95">        SerializedAuctionDetail serAucDetail = (SerializedAuctionDetail) actionContext;</span>
-<span class="nc" id="L96">        m_cat.debug(&quot;Running rule for: &quot; + serAucDetail);</span>
+<span class="nc" id="L100">        SerializedAuctionDetail serAucDetail = (SerializedAuctionDetail) actionContext;</span>
+<span class="nc" id="L101">        m_cat.debug(&quot;Running rule for: &quot; + serAucDetail);</span>
         
         // check if the rule's org matches the employee's
-<span class="nc" id="L99">        Date currDate = new Date(); //TODO: must we use auction's time range instead of the current date?</span>
-<span class="nc" id="L100">        ID nextEmpID = serAucDetail.getNextEmployeeID();</span>
+<span class="nc" id="L104">        Date currDate = new Date(); //TODO: must we use auction's time range instead of the current date?</span>
+<span class="nc" id="L105">        ID nextEmpID = serAucDetail.getNextEmployeeID();</span>
         // TODO: move to common package.
-<span class="nc" id="L102">        ID empOrgID = TOCalcUtil.getCurrentOrgIDForEmployeeID(nextEmpID);</span>
+<span class="nc" id="L107">        ID empOrgID = TOCalcUtil.getCurrentOrgIDForEmployeeID(nextEmpID);</span>
         // get emp orgID's parent org IDs.
-<span class="nc" id="L104">        Collection empOrgParentIDs = CacheUtilBBM.getParentOrgIDs(empOrgID, null);</span>
-
+<span class="nc" id="L109">        Collection empOrgParentIDs = CacheUtilBBM.getParentOrgIDs(empOrgID, null);</span>
         
         // Does employee's orgID match the rule's orgID or one of its children's orgID?  
         // If not, rule does not apply.            
-<span class="nc bnc" id="L109" title="All 4 branches missed.">        if ( !ruleOrgID.equals(empOrgID) &amp;&amp; !empOrgParentIDs.contains(ruleOrgID) ) {</span>
-<span class="nc" id="L110">            m_cat.debug(&quot;Rule failed: empOrgID != ruleOrgID and empOrgID != any ruleOrgID's children: &quot; + empOrgID + &quot; != &quot; + ruleOrgID);</span>
-<span class="nc" id="L111">            return null; </span>
+<span class="nc bnc" id="L113" title="All 4 branches missed.">        if ( !ruleOrgID.equals(empOrgID) &amp;&amp; !empOrgParentIDs.contains(ruleOrgID) ) {</span>
+<span class="nc" id="L114">            m_cat.debug(&quot;Rule failed: empOrgID != ruleOrgID and empOrgID != any ruleOrgID's children: &quot; + empOrgID + &quot; != &quot; + ruleOrgID);</span>
+<span class="nc" id="L115">            return null; </span>
         }
             
         // rule applies.  construct the auctionDetail message.
         //
         // You have been added to the auction &lt;auction name&gt;.  Your bid deadline is &lt;time&gt;.  Please
         // complete your bidding before the deadline.
-<span class="nc" id="L118">        ID nextBidderEmpID = serAucDetail.getNextEmployeeID();</span>
-<span class="nc" id="L119">        String msg = RequestUtil.getLocalizedMsgInAppDefLocale(RmEjbBundleKey.SBR_SERIALAUCTIONNOTIFICATION,</span>
-<span class="nc" id="L120">            ValidationUtil.getEmployeeByID(nextBidderEmpID, null, Employee.DETAIL_LEVEL_EMPLOYEE_BASIC),</span>
-<span class="nc" id="L121">            serAucDetail.getAuctionName(), serAucDetail.getNextEmployeeBidDeadline(), </span>
-<span class="nc" id="L122">            RequestUtil.getTimezoneCurrentForEmployeeID(nextBidderEmpID));</span>
+<span class="nc" id="L122">        ID nextBidderEmpID = serAucDetail.getNextEmployeeID();</span>
+<span class="nc" id="L123">        String msg = RequestUtil.getLocalizedMsgInAppDefLocale(RmEjbBundleKey.SBR_SERIALAUCTIONNOTIFICATION,</span>
+<span class="nc" id="L124">            ValidationUtil.getEmployeeByID(nextBidderEmpID, null, Employee.DETAIL_LEVEL_EMPLOYEE_BASIC),</span>
+<span class="nc" id="L125">            serAucDetail.getAuctionName(), serAucDetail.getNextEmployeeBidDeadline(), </span>
+<span class="nc" id="L126">            RequestUtil.getTimezoneCurrentForEmployeeID(nextBidderEmpID));</span>
                             
-<span class="nc" id="L124">        ActionDetail actionDetail = new ActionDetail();</span>
-<span class="nc" id="L125">        actionDetail.setObjectType(ActionDetail.WORKRESOUCEID);</span>
-<span class="nc" id="L126">		Document doc = m_parser.newDocument();</span>
-<span class="nc" id="L127">        Element xmlRootElem = RequestUtil.createElemAndAppendAsChild(null, doc, RULE_XMLROOT_ELEMENTNAME, msg);</span>
-<span class="nc" id="L128">        actionDetail.setDetails(nextEmpID, xmlRootElem);</span>
+<span class="nc" id="L128">        ActionDetail actionDetail = new ActionDetail();</span>
+<span class="nc" id="L129">        actionDetail.setObjectType(ActionDetail.WORKRESOUCEID);</span>
+<span class="nc" id="L130">		Document doc = m_parser.newDocument();</span>
+<span class="nc" id="L131">        Element xmlRootElem = RequestUtil.createElemAndAppendAsChild(null, doc, RULE_XMLROOT_ELEMENTNAME, msg);</span>
 
-<span class="nc" id="L130">        m_cat.debug(&quot;Rule fired successfully: &quot; + </span>
-<span class="nc" id="L131">            RequestUtil.getXMLStringForElemOrDoc(null, xmlRootElem.getOwnerDocument()));</span>
-<span class="nc" id="L132">        return actionDetail;</span>
+<span class="nc" id="L133">		Localizer localizer = RequestUtil.getLocalizerForAppDefLocale();</span>
+<span class="nc" id="L134">		TimeZone timeZone = RequestUtil.getTimezoneCurrentForEmployeeID(nextBidderEmpID);</span>
+<span class="nc" id="L135">		String empName = RequestUtil.getLocalizedEmpNameByID(nextBidderEmpID, localizer);</span>
+		
+<span class="nc" id="L137">		RequestUtil.createElemAndAppendAsChild(xmlRootElem, null, RULE_XML_EMPLOYEE_NAME, empName);</span>
+		
+<span class="nc" id="L139">		RequestUtil.createElemAndAppendAsChild(xmlRootElem, null, RULE_XML_AUCTION_NAME, serAucDetail.getAuctionName());</span>
+		
+<span class="nc" id="L141">		RequestUtil.createElemAndAppendAsChild(xmlRootElem, null, RULE_XML_DEADLINE_TIME,</span>
+<span class="nc" id="L142">			localizer.formatDateTime(serAucDetail.getNextEmployeeBidDeadline(), timeZone) + &quot; &quot;</span>
+<span class="nc" id="L143">				+ localizer.formatTimeZone(timeZone.getID()));</span>
+		
+<span class="nc" id="L145">        actionDetail.setDetails(nextEmpID, xmlRootElem);</span>
+
+<span class="nc" id="L147">        m_cat.debug(&quot;Rule fired successfully: &quot; + </span>
+<span class="nc" id="L148">            RequestUtil.getXMLStringForElemOrDoc(null, xmlRootElem.getOwnerDocument()));</span>
+<span class="nc" id="L149">        return actionDetail;</span>
     }
 
 	/* (non-Javadoc)
 	 * @see com.bluepumpkin.ejb.bbm.notifyrules.model.NotifyRuleChecker#isRuleValid(com.bluepumpkin.ejb.bbm.notifyrules.model.NotifyRule, com.bluepumpkin.ejb.bbm.notifyrules.model.NotifyRuleTemplate)
 	 */
 	public boolean isRuleValid(NotifyRule rule, NotifyRuleTemplate template) {
-<span class="nc" id="L139">		return true;</span>
+<span class="nc" id="L156">		return true;</span>
 	}
 
 	/* (non-Javadoc)
 	 * @see com.bluepumpkin.ejb.bbm.notifyrules.model.NotifyRuleChecker#getRuleViolation(com.bluepumpkin.ejb.bbm.notifyrules.model.NotifyRule, com.bluepumpkin.ejb.bbm.notifyrules.model.NotifyRuleTemplate, com.bluepumpkin.common.localization.LocaleContext)
 	 */
 	public String getRuleViolation(NotifyRule rule, NotifyRuleTemplate template, LocaleContext context) {
-<span class="nc" id="L146">		return null;</span>
+<span class="nc" id="L163">		return null;</span>
 	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

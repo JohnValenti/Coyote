@@ -10,8 +10,8 @@
  * @author       Truc Pham
  * @version      1.0
 **/
+import java.util.Collection;
 import java.util.Date;
-import java.util.Iterator;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
@@ -24,84 +24,101 @@ import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
-import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidatorForMultiChoice;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
 import com.bluepumpkin.ejb.rm.setup.timeoffbid.ejb.TimeOffBidUtil;
 import com.bluepumpkin.ejb.rm.setup.timeoffbid.model.TimeOffBid;
 
-<span class="nc" id="L33">public class TimeOffBidMaxWeeksValidationRule implements Validator {</span>
+<span class="nc" id="L33">public class TimeOffBidMaxWeeksValidationRule implements ValidatorForMultiChoice {</span>
 <span class="nc" id="L34">	private static final String clsName = TimeOffBidMaxWeeksValidationRule.class.getName();</span>
 
 	/**
-	 * Validate a time off request.
+	 * Validate a time off bid request.
 	 */
-	@SuppressWarnings(&quot;rawtypes&quot;)
 	@Override
 	public ValidationResult validate(Validatable validatable) throws Exception {
+<span class="nc" id="L41">		TORequest toReq = (TORequest) validatable;</span>
 <span class="nc" id="L42">		ValidationResult result = null;</span>
-<span class="nc" id="L43">		TORequest toReq = (TORequest) validatable;</span>
-<span class="nc" id="L44">		ID timeOffType = toReq.getTimeOffType();</span>
-<span class="nc" id="L45">		ID employeeId = toReq.getEmployeeID();</span>
-<span class="nc" id="L46">		Pair&lt;TimeOffBid, Pair&lt;Integer, Integer&gt;&gt; bidDetail = getOpenTimeOffBidForActivityIdAndEmployeId(timeOffType, employeeId,</span>
-<span class="nc" id="L47">				toReq.getSubmittedOn());</span>
-<span class="nc bnc" id="L48" title="All 2 branches missed.">		if (bidDetail != null) {</span>
-<span class="nc" id="L49">			TimeOffBid bid = bidDetail.getFirst();</span>
-<span class="nc bnc" id="L50" title="All 2 branches missed.">			if (bid != null) {</span>
-<span class="nc" id="L51">				long bidRequestStart = bid.getRequestStartTime().getTime();</span>
-<span class="nc" id="L52">				long bidRequestEnd = bid.getRequestEndTime().getTime();</span>
-<span class="nc" id="L53">				Pair&lt;Integer, Integer&gt; periodUnitValue = bidDetail.getSecond();</span>
-<span class="nc" id="L54">				int periodUnit = 0;</span>
-<span class="nc" id="L55">				int periodValue = 0;</span>
-<span class="nc bnc" id="L56" title="All 2 branches missed.">				if (periodUnitValue != null) {</span>
-<span class="nc" id="L57">					periodUnit = periodUnitValue.getFirst().intValue();</span>
-<span class="nc" id="L58">					periodValue = periodUnitValue.getSecond().intValue();</span>
+		//The rule is not applicable for Anytime VTO requests
+<span class="nc bnc" id="L44" title="All 2 branches missed.">		if (toReq.isAdvancedVTORequest()) {</span>
+<span class="nc" id="L45">			return null;</span>
+		}
+	
+<span class="nc" id="L48">		ID timeOffType = toReq.getTimeOffType();</span>
+<span class="nc" id="L49">		ID employeeId = toReq.getEmployeeID();</span>
+<span class="nc" id="L50">		Pair&lt;TimeOffBid, Pair&lt;Integer, Integer&gt;&gt; bidDetail = toReq.getTimeOffBidInfo();</span>
+<span class="nc bnc" id="L51" title="All 2 branches missed.">		if (bidDetail == null) {</span>
+<span class="nc" id="L52">			bidDetail = getOpenTimeOffBidForActivityIdAndEmployeId(timeOffType, employeeId, toReq.getSubmittedOn());</span>
+<span class="nc" id="L53">			toReq.setTimeOffBidInfo(bidDetail);</span>
+		}
+<span class="nc bnc" id="L55" title="All 2 branches missed.">		if (bidDetail != null) {</span>
+<span class="nc" id="L56">			TimeOffBid bid = bidDetail.getFirst();</span>
+<span class="nc bnc" id="L57" title="All 2 branches missed.">			if (bid != null) {</span>
+<span class="nc" id="L58">				long bidRequestStart = bid.getRequestStartTime().getTime();</span>
+<span class="nc" id="L59">				long bidRequestEnd = bid.getRequestEndTime().getTime();</span>
+<span class="nc" id="L60">				Pair&lt;Integer, Integer&gt; periodUnitValue = bidDetail.getSecond();</span>
+<span class="nc" id="L61">				int periodUnit = 0;</span>
+<span class="nc" id="L62">				int periodValue = 0;</span>
+<span class="nc bnc" id="L63" title="All 2 branches missed.">				if (periodUnitValue != null) {</span>
+<span class="nc" id="L64">					periodUnit = periodUnitValue.getFirst().intValue();</span>
+<span class="nc" id="L65">					periodValue = periodUnitValue.getSecond().intValue();</span>
 				}
-<span class="nc" id="L60">				Localizer localizer = getLocalizer();</span>
-<span class="nc" id="L61">				String periodText = TimeOffBidUtil.getPeriodText(localizer, periodValue, periodUnit);</span>
-<span class="nc" id="L62">				long daysInMinute = TimeUnit.DAYS.toMinutes(1);</span>
-<span class="nc" id="L63">				long minuteInMilisecond = TimeUnit.MINUTES.toMillis(1);</span>
-<span class="nc" id="L64">				long maxMinutesApprovalPerSetting = TimeOffBidUtil.getNumberOfUnits(periodUnit, periodValue) * daysInMinute;</span>
-<span class="nc" id="L65">				long maxMinuteApproved = getTotalMinutesBidRequestApprovedPerEmployee(bid.getId(), employeeId, timeOffType);</span>
-<span class="nc" id="L66">				TimeZone empTz = getTimeZoneOfEmployee(employeeId);</span>
-<span class="nc bnc" id="L67" title="All 2 branches missed.">				for (Iterator it = toReq.getRequestChoiceList().iterator(); it.hasNext();) {</span>
-<span class="nc" id="L68">					TOChoice choice = (TOChoice) it.next();</span>
-<span class="nc" id="L69">					long choiceStart = choice.getStartDate().getTime();</span>
-<span class="nc" id="L70">					long choiceEnd = choice.getEndDate().getTime();</span>
-<span class="nc" id="L71">					long realchoiceDuration = TimeOffBidUtil.getRealChoiceDuration(choice.getStartDate(), choice.getEndDate(), empTz);</span>
-<span class="nc" id="L72">					long minuteChoiceDuration = realchoiceDuration / minuteInMilisecond;</span>
-<span class="nc bnc" id="L73" title="All 4 branches missed.">					boolean choicePeriodInBidRequestPeriod = bidRequestStart &lt;= choiceStart &amp;&amp; choiceEnd &lt;= bidRequestEnd;</span>
-<span class="nc" id="L74">					long totalDurationIfApproved = maxMinuteApproved + minuteChoiceDuration;</span>
-<span class="nc bnc" id="L75" title="All 4 branches missed.">					if (choicePeriodInBidRequestPeriod &amp;&amp; totalDurationIfApproved &gt; maxMinutesApprovalPerSetting) {</span>
-<span class="nc" id="L76">						result = ValidationUtil.setSoftValidationResult(choice,</span>
-<span class="nc" id="L77">								RmEjbBundleKey.TIMEOFF_BID_VALIDATION_MAXIMUM_APPROVAL_PER_EMPLOYEE, getEmployeeName(toReq), periodText,</span>
-<span class="nc" id="L78">								choice.getStartDate(), choice.getEndDate(), clsName);</span>
+<span class="nc" id="L67">				Localizer localizer = getLocalizer();</span>
+<span class="nc" id="L68">				String periodText = TimeOffBidUtil.getPeriodText(localizer, periodValue, periodUnit);</span>
+<span class="nc" id="L69">				long daysInMinute = TimeUnit.DAYS.toMinutes(1);</span>
+<span class="nc" id="L70">				long minuteInMilisecond = TimeUnit.MINUTES.toMillis(1);</span>
+<span class="nc" id="L71">				TimeZone empTz = getTimeZoneOfEmployee(employeeId);</span>
+<span class="nc" id="L72">				long maxMinutesApprovalPerSetting = TimeOffBidUtil.getNumberOfUnits(periodUnit, periodValue) * daysInMinute;</span>
+<span class="nc" id="L73">				long maxMinuteApproved = getTotalMinutesBidRequestApprovedPerEmployee(bid.getId(), employeeId, timeOffType);</span>
+				//willBeApprovedChoices is for multi-choices approval-we need to consider to choices which will be approved in a same requests
+				//when approving subsequent choices. It is empty list when comparing a choice in a request to approved choices in other requests 
+<span class="nc" id="L76">				Collection&lt;TOChoice&gt; willBeApprovedChoices = toReq.getTOChoicesWillBeApproved();</span>
+<span class="nc" id="L77">				long durationAllChoicesInMinute =TimeOffBidUtil.getDurationChoices(willBeApprovedChoices, empTz)/minuteInMilisecond;</span>
+				//For multi-choices, toReq.getTOChoicesAdjustedForValidation() will return one choice due to 
+				//toReq.setTOChoiceForValidation(toChoice) in getValidChoicesForMultiChoiceProcess of TORequestManagementEJB.
+				//For normal request, toReq.getTOChoicesAdjustedForValidation() will be getRequestChoiceList()
+<span class="nc bnc" id="L81" title="All 2 branches missed.">				for (TOChoice choice : toReq.getTOChoicesAdjustedForValidation()) {</span>
+					
+<span class="nc" id="L83">					long choiceStart = choice.getStartDate().getTime();</span>
+<span class="nc" id="L84">					long choiceEnd = choice.getEndDate().getTime();</span>
+<span class="nc" id="L85">					long realchoiceDuration = TimeOffBidUtil.getRealChoiceDuration(choice.getStartDate(), choice.getEndDate(), empTz);</span>
+<span class="nc" id="L86">					long choiceDurationInMinute = realchoiceDuration / minuteInMilisecond;</span>
+<span class="nc bnc" id="L87" title="All 4 branches missed.">					boolean choicePeriodInBidRequestPeriod = bidRequestStart &lt;= choiceStart &amp;&amp; choiceEnd &lt;= bidRequestEnd;</span>
+<span class="nc" id="L88">					long totalDurationIfApproved = maxMinuteApproved + durationAllChoicesInMinute+ choiceDurationInMinute;</span>
+<span class="nc bnc" id="L89" title="All 4 branches missed.">					if (choicePeriodInBidRequestPeriod &amp;&amp; totalDurationIfApproved &gt; maxMinutesApprovalPerSetting) {</span>
+<span class="nc" id="L90">						result = ValidationUtil.setSoftValidationResult(choice, RmEjbBundleKey.TIMEOFF_BID_VALIDATION_MAXIMUM_APPROVAL_PER_EMPLOYEE, getEmployeeName(toReq), periodText, choice.getStartDate(), choice.getEndDate(), clsName);</span>
 					}
-<span class="nc" id="L80">				}</span>
+<span class="nc" id="L92">				}</span>
 			}
 		}
-<span class="nc" id="L83">		return result;</span>
+<span class="nc" id="L95">		return result;</span>
 	}
 
-	protected Pair&lt;TimeOffBid, Pair&lt;Integer, Integer&gt;&gt; getOpenTimeOffBidForActivityIdAndEmployeId(ID timeOffType, ID employeeId,
-			Date submittedDate) throws Exception {
-<span class="nc" id="L88">		return TimeOffBidUtil.getOpenTimeOffBidDetailForActivityIdAndEmployeId(timeOffType, employeeId, submittedDate);</span>
+	@Override
+	public ValidationResult validateForMultiChoice(Validatable validatable) throws Exception {
+<span class="nc" id="L100">		return validate(validatable);</span>
+	}
+
+	protected Pair&lt;TimeOffBid, Pair&lt;Integer, Integer&gt;&gt; getOpenTimeOffBidForActivityIdAndEmployeId(ID timeOffType, ID employeeId, Date submittedDate) throws Exception {
+<span class="nc" id="L104">		return TimeOffBidUtil.getOpenTimeOffBidDetailForActivityIdAndEmployeId(timeOffType, employeeId, submittedDate);</span>
 	}
 
 	protected long getTotalMinutesBidRequestApprovedPerEmployee(ID bidId, ID employeeId, ID activityId) throws Exception {
-<span class="nc" id="L92">		return TimeOffBidUtil.getTotalMinutesBidRequestApprovedPerEmployee(bidId, employeeId, activityId);</span>
+<span class="nc" id="L108">		return TimeOffBidUtil.getTotalMinutesBidRequestApprovedPerEmployee(bidId, employeeId, activityId);</span>
 	}
 
 	protected String getEmployeeName(TORequest toReq) throws Exception {
-<span class="nc" id="L96">		return toReq.getCache().getEmployeeNameByID();</span>
+<span class="nc" id="L112">		return toReq.getCache().getEmployeeNameByID();</span>
 	}
 
 	protected Localizer getLocalizer() {
-<span class="nc" id="L100">		return DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
+<span class="nc" id="L116">		return DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
 	}
 
 	protected TimeZone getTimeZoneOfEmployee(ID employeeId) throws BbmFinderException {
-<span class="nc" id="L104">		return TimeOffBidUtil.getTimeZoneOfEmployee(employeeId);</span>
+<span class="nc" id="L120">		return TimeOffBidUtil.getTimeZoneOfEmployee(employeeId);</span>
 	}
+
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

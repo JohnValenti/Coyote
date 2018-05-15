@@ -10,6 +10,7 @@ import java.util.TimeZone;
 
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
 import com.bluepumpkin.ejb.bbm.activity.model.EventUtils;
 import com.bluepumpkin.ejb.bbm.activity.model.SimpleEvent;
 import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
@@ -23,9 +24,10 @@ import com.bluepumpkin.ejb.rm.l10n.RmEjbLogBundleKey;
 import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
 import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.ejb.EmployeeDate;
 import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.ejb.PublishingPeriodStatus;
-import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.ejb.ReferenceScheduleLoader;
 import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.ejb.PublishingPeriodStatus.Status;
+import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.ejb.ReferenceScheduleLoader;
 import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.model.TimeOffIntervalPaidSegment;
+import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.model.TimeOffIntervalPaidSegmentCalendarEvent;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
 import com.bluepumpkin.ejb.rm.util.TORequestUtil;
@@ -39,18 +41,21 @@ import com.bluepumpkin.ejb.rm.util.TORequestUtil;
  * com.bluepumpkin.ejb.rm.requests.timeoff.hoursperday.ejb.TOHoursPerDayManagerEJB.updateTOHoursPerDayForTORequest
  */
 
-<span class="nc" id="L42">public class TimeOffIntervalPaidSegmentCalculator {</span>
+<span class="nc" id="L44">public class TimeOffIntervalPaidSegmentCalculator {</span>
 
-<span class="nc" id="L44">	private static final Category LOG = Log.initCategory(TimeOffIntervalAllocationUtil.class.getName());</span>
-<span class="nc" id="L45">	private TORequest toRequest = null;</span>
-<span class="nc" id="L46">	private ID empId = null;</span>
-<span class="nc" id="L47">	private Map&lt;Object, Object&gt; empOrgAssignments = Collections.emptyMap();</span>
-<span class="nc" id="L48">	private Organization employeeOrg = null;</span>
-<span class="nc" id="L49">	private List&lt;TimeOffIntervalPaidSegment&gt; listOfSegments = new ArrayList&lt;TimeOffIntervalPaidSegment&gt;();</span>
-<span class="nc" id="L50">	private PublishingPeriodStatus publishingPeriodStatus = null;</span>
-<span class="nc" id="L51">	private List&lt;ID&gt; listTimeOffChoiceIDsToUpdate = null;</span>
+<span class="nc" id="L46">	private static final Category LOG = Log.initCategory(TimeOffIntervalPaidSegmentCalculator.class.getName());</span>
+<span class="nc" id="L47">	private TORequest toRequest = null;</span>
+<span class="nc" id="L48">	private ID empId = null;</span>
+<span class="nc" id="L49">	private Map&lt;Object, Object&gt; empOrgAssignments = Collections.emptyMap();</span>
+<span class="nc" id="L50">	private Organization employeeOrg = null;</span>
+<span class="nc" id="L51">	private List&lt;TimeOffIntervalPaidSegment&gt; listOfSegments = new ArrayList&lt;TimeOffIntervalPaidSegment&gt;();</span>
+<span class="nc" id="L52">	private PublishingPeriodStatus publishingPeriodStatus = null;</span>
+<span class="nc" id="L53">	private List&lt;ID&gt; listTimeOffChoiceIDsToUpdate = null;</span>
 	// We keep a map of choices to reference schedules so we can update the toChoice reference schedule when storing to the db
-<span class="nc" id="L53">	private Map&lt;ID, ID&gt; mapTOChoiceReferenceScheduleID = new HashMap&lt;ID, ID&gt;();</span>
+<span class="nc" id="L55">	private final Map&lt;ID, ID&gt; mapTOChoiceReferenceScheduleID = new HashMap&lt;ID, ID&gt;();</span>
+	ReferenceScheduleLoader loader;
+	
+	
 	
 	
 	
@@ -61,175 +66,202 @@ import com.bluepumpkin.ejb.rm.util.TORequestUtil;
 	public List&lt;TimeOffIntervalPaidSegment&gt; updateTimeOffIntervalPaidSegmentsChoices(
 			TORequest request, List&lt;ID&gt; listOfTimeOffChoiceIDsToUpdate) throws Exception { // NOSONAR
 	
-<span class="nc" id="L64">		this.listTimeOffChoiceIDsToUpdate = listOfTimeOffChoiceIDsToUpdate;</span>
+<span class="nc" id="L69">		this.listTimeOffChoiceIDsToUpdate = listOfTimeOffChoiceIDsToUpdate;</span>
 		
-<span class="nc bnc" id="L66" title="All 4 branches missed.">		if( listTimeOffChoiceIDsToUpdate == null || listTimeOffChoiceIDsToUpdate.isEmpty()){</span>
-<span class="nc" id="L67">			return Collections.emptyList();</span>
+<span class="nc bnc" id="L71" title="All 4 branches missed.">		if( listTimeOffChoiceIDsToUpdate == null || listTimeOffChoiceIDsToUpdate.isEmpty()){</span>
+<span class="nc" id="L72">			return Collections.emptyList();</span>
 		}
 		
-<span class="nc" id="L70">		return generateTimeOffIntervalPaidSegmentsForTORequest(request);</span>
+<span class="nc" id="L75">		return generateTimeOffIntervalPaidSegmentsForTORequest(request);</span>
 	}
+	
+	
+	
 	
 	public List&lt;TimeOffIntervalPaidSegment&gt; generateTimeOffIntervalPaidSegmentsForTORequest(
 			TORequest request) throws Exception { // NOSONAR
 
-<span class="nc" id="L76">		this.toRequest  = request;</span>
-<span class="nc" id="L77">		this.empId = toRequest.getEmployeeID();</span>
-<span class="nc" id="L78">		this.listOfSegments = new ArrayList&lt;TimeOffIntervalPaidSegment&gt;();</span>
+<span class="nc" id="L84">		this.toRequest  = request;</span>
+<span class="nc" id="L85">		this.empId = toRequest.getEmployeeID();</span>
+<span class="nc" id="L86">		this.listOfSegments = new ArrayList&lt;TimeOffIntervalPaidSegment&gt;();</span>
 
 		// Evidently we don't do anything in don't debit cases.
-<span class="nc bnc" id="L81" title="All 2 branches missed.">		if (toRequest.getTimeOffDebitType().equals(TORequest.DEBITTYPE_DONT_DEBIT)) {</span>
-<span class="nc" id="L82">			LOG.info(&quot;Ignoring TO Request since it is of TYPE DONT-DEBIT:&quot; + toRequest);</span>
-<span class="nc" id="L83">			return this.listOfSegments;</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">		if (toRequest.getTimeOffDebitType().equals(TORequest.DEBITTYPE_DONT_DEBIT)) {</span>
+<span class="nc" id="L90">			LOG.info(&quot;Ignoring TO Request since it is of TYPE DONT-DEBIT:&quot; + toRequest);</span>
+<span class="nc" id="L91">			return this.listOfSegments;</span>
 		}
 		
-<span class="nc" id="L86">		validateRequest();</span>
-<span class="nc" id="L87">		setEmployeeOrg();</span>
-<span class="nc" id="L88">		publishingPeriodStatus = TimeOffIntervalAllocationUtil.initPublishedPeriodStatusForTimeoffRequest(this.toRequest);</span>
+<span class="nc" id="L94">		validateRequest();</span>
+<span class="nc" id="L95">		setEmployeeOrg();</span>
+<span class="nc" id="L96">		publishingPeriodStatus = TimeOffIntervalAllocationUtil.initPublishedPeriodStatusForTimeoffRequest(this.toRequest);</span>
 		
 		
-		@SuppressWarnings(&quot;unchecked&quot;)
-<span class="nc" id="L92">		List&lt;TOChoice&gt; choiceList = toRequest.getRequestChoiceList();</span>
+<span class="nc" id="L99">		List&lt;TOChoice&gt; choiceList = toRequest.getRequestChoiceList();</span>
 		
-<span class="nc bnc" id="L94" title="All 2 branches missed.">		for (TOChoice toChoice : choiceList) {</span>
-<span class="nc bnc" id="L95" title="All 4 branches missed.">			if (listTimeOffChoiceIDsToUpdate != null &amp;&amp; !listTimeOffChoiceIDsToUpdate.contains(toChoice.getID())) {</span>
-<span class="nc" id="L96">					continue;</span>
+<span class="nc" id="L101">		initializeReferenceScheduleLoader(choiceList);</span>
+
+<span class="nc bnc" id="L103" title="All 2 branches missed.">		for (TOChoice toChoice : choiceList) {</span>
+<span class="nc bnc" id="L104" title="All 4 branches missed.">			if (listTimeOffChoiceIDsToUpdate != null &amp;&amp; !listTimeOffChoiceIDsToUpdate.contains(toChoice.getID())) {</span>
+<span class="nc" id="L105">					continue;</span>
 			}
 
-<span class="nc" id="L99">			generateTimeOffIntervalPaidSegmentsForTOChoice(toChoice);</span>
-<span class="nc" id="L100">		}</span>
+<span class="nc" id="L108">			generateTimeOffIntervalPaidSegmentsForTOChoice(toChoice);</span>
+<span class="nc" id="L109">		}</span>
 		
-<span class="nc" id="L102">		return getListOfSegments();</span>
+<span class="nc" id="L111">		return getListOfSegments();</span>
 	
 	}
 	
+	void initializeReferenceScheduleLoader(List&lt;TOChoice&gt; choiceList) throws BbmFinderException {
+<span class="nc" id="L116">		loader = new ReferenceScheduleLoader();</span>
+
+<span class="nc" id="L118">		List&lt;EmployeeDate&gt; employeeDates = new ArrayList&lt;EmployeeDate&gt;();</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">		for (TOChoice choice : choiceList) {</span>
+
+<span class="nc bnc" id="L121" title="All 4 branches missed.">			if (listTimeOffChoiceIDsToUpdate != null &amp;&amp; !listTimeOffChoiceIDsToUpdate.contains(choice.getID())) {</span>
+<span class="nc" id="L122">				continue;</span>
+			}
+
+<span class="nc" id="L125">			Status publishedStatus = TimeOffIntervalAllocationUtil.getPublishedPeriodStatusForTimeoffChoice(this.publishingPeriodStatus,</span>
+					this.empId, choice);
+<span class="nc bnc" id="L127" title="All 2 branches missed.">			if (publishedStatus == Status.FULLY_UNPUBLISHED) {</span>
+<span class="nc" id="L128">				employeeDates.add(new EmployeeDate(this.empId, choice.getStartDate()));</span>
+			}
+<span class="nc" id="L130">		}</span>
+
+<span class="nc bnc" id="L132" title="All 2 branches missed.">		if (employeeDates.isEmpty()) {</span>
+<span class="nc" id="L133">			return;</span>
+		}
+
+<span class="nc" id="L136">		loader.initialize(employeeDates);</span>
+<span class="nc" id="L137">	}</span>
 	
 
 
 	void generateTimeOffIntervalPaidSegmentsForTOChoice(
 			TOChoice toChoice) throws Exception { // NOSONAR
 		
-<span class="nc" id="L112">		Status publishedStatus = TimeOffIntervalAllocationUtil.getPublishedPeriodStatusForTimeoffChoice(this.publishingPeriodStatus, this.empId,toChoice);</span>
+<span class="nc" id="L144">		Status publishedStatus = TimeOffIntervalAllocationUtil.getPublishedPeriodStatusForTimeoffChoice(this.publishingPeriodStatus, this.empId,toChoice);</span>
         
-<span class="nc bnc" id="L114" title="All 2 branches missed.">		if (publishedStatus == Status.FULLY_PUBLISHED) {</span>
-<span class="nc" id="L115">			generateSegmentsForTOChoiceFromPublished(toChoice);</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">		if (publishedStatus == Status.FULLY_PUBLISHED) {</span>
+<span class="nc" id="L147">			generateSegmentsForTOChoiceFromPublished(toChoice);</span>
 
-<span class="nc bnc" id="L117" title="All 2 branches missed.">		} else if (publishedStatus == Status.FULLY_UNPUBLISHED) {</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">		} else if (publishedStatus == Status.FULLY_UNPUBLISHED) {</span>
 			// Wholly unpublished. Use the reference schedules
-<span class="nc" id="L119">			generateSegmentsForTOChoiceFromReference(toChoice);</span>
-<span class="nc bnc" id="L120" title="All 4 branches missed.">		} else if (publishedStatus == Status.HAS_GAPS_IN_PUBLISHING &amp;&amp; TORequestUtil.isUseIntervalTOPool(toRequest)) {</span>
+<span class="nc" id="L151">			generateSegmentsForTOChoiceFromReference(toChoice);</span>
+<span class="nc bnc" id="L152" title="All 4 branches missed.">		} else if (publishedStatus == Status.HAS_GAPS_IN_PUBLISHING &amp;&amp; TORequestUtil.isUseIntervalTOPool(toRequest)) {</span>
 			 // If we are not using the interval pool, no need to throw an error
-<span class="nc" id="L122">				throw RequestUtil</span>
-<span class="nc" id="L123">						.createAndLogRmHardValidationException(</span>
+<span class="nc" id="L154">				throw RequestUtil</span>
+<span class="nc" id="L155">						.createAndLogRmHardValidationException(</span>
 								RmEjbBundleKey.TIMEOFFINTERVALALLOCATIONSEGMENT_SCHEDULES_PARTLY_PUBLISHED,
 								RmEjbLogBundleKey.TIMEOFFINTERVALALLOCATIONSEGMENT_SCHEDULES_PARTLY_PUBLISHED,
 								null, LOG);
 		}
-<span class="nc" id="L128">	}</span>
+<span class="nc" id="L160">	}</span>
 
 
 
 
 	private void generateSegmentsForTOChoiceFromReference(TOChoice toChoice) throws Exception { // NOSONAR
-<span class="nc" id="L134">			generateSegmentsForTOChoice(toChoice, false);</span>
-<span class="nc" id="L135">		}</span>
+<span class="nc" id="L166">			generateSegmentsForTOChoice(toChoice, false);</span>
+<span class="nc" id="L167">		}</span>
 
 
 
 	private void generateSegmentsForTOChoiceFromPublished(TOChoice toChoice) throws Exception { // NOSONAR
-<span class="nc" id="L140">		generateSegmentsForTOChoice(toChoice,true);</span>
-<span class="nc" id="L141">	}</span>
+<span class="nc" id="L172">		generateSegmentsForTOChoice(toChoice,true);</span>
+<span class="nc" id="L173">	}</span>
 
 
 
 	@SuppressWarnings(&quot;unchecked&quot;)
 	void setEmployeeOrg() throws Exception{ // NOSONAR
-<span class="nc" id="L147">		TOChoice theFirstChoice = toRequest.getFirstTOChoice();</span>
-<span class="nc" id="L148">		this.empOrgAssignments = TimeOffIntervalAllocationUtil.getEmpOrgAssignments(Collections.singletonList(empId), theFirstChoice.getStartDate(),  theFirstChoice.getEndDate());</span>
-<span class="nc" id="L149">		this.employeeOrg = TimeOffIntervalAllocationUtil.getEmpOrgForDate(empOrgAssignments, empId, theFirstChoice.getStartDate());</span>
-<span class="nc" id="L150">	}</span>
+<span class="nc" id="L179">		TOChoice theFirstChoice = toRequest.getFirstTOChoice();</span>
+<span class="nc" id="L180">		this.empOrgAssignments = TimeOffIntervalAllocationUtil.getEmpOrgAssignments(Collections.singletonList(empId), theFirstChoice.getStartDate(),  theFirstChoice.getEndDate());</span>
+<span class="nc" id="L181">		this.employeeOrg = TimeOffIntervalAllocationUtil.getEmpOrgForDate(empOrgAssignments, empId, theFirstChoice.getStartDate());</span>
+<span class="nc" id="L182">	}</span>
 
 
 	void validateRequest() throws RmException {
-<span class="nc bnc" id="L154" title="All 2 branches missed.">		if (toRequest == null) {</span>
-<span class="nc" id="L155">			throw RequestUtil</span>
-<span class="nc" id="L156">					.createRmException(</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">		if (toRequest == null) {</span>
+<span class="nc" id="L187">			throw RequestUtil</span>
+<span class="nc" id="L188">					.createRmException(</span>
 							RmEjbLogBundleKey.TIMEOFFINTERVALALLOCATIONSEGMENT_TOREQUEST_INVALID,
 							LOG);
 		}
 	
 		
-<span class="nc bnc" id="L162" title="All 2 branches missed.">		if (toRequest.getFirstTOChoice() == null) {</span>
-<span class="nc" id="L163">			throw RequestUtil</span>
-<span class="nc" id="L164">					.createRmException(</span>
+<span class="nc bnc" id="L194" title="All 2 branches missed.">		if (toRequest.getFirstTOChoice() == null) {</span>
+<span class="nc" id="L195">			throw RequestUtil</span>
+<span class="nc" id="L196">					.createRmException(</span>
 							RmEjbLogBundleKey.TIMEOFFINTERVALALLOCATIONSEGMENT_TOCHOICE_INVALID,
 							LOG);
 		}
 		
 		@SuppressWarnings(&quot;unchecked&quot;)
-<span class="nc" id="L170">		List&lt;TOChoice&gt; choiceList = toRequest.getRequestChoiceList();</span>
-<span class="nc bnc" id="L171" title="All 4 branches missed.">		if( choiceList==null || choiceList.isEmpty()){</span>
-<span class="nc" id="L172">			throw RequestUtil</span>
-<span class="nc" id="L173">			.createRmException(</span>
+<span class="nc" id="L202">		List&lt;TOChoice&gt; choiceList = toRequest.getRequestChoiceList();</span>
+<span class="nc bnc" id="L203" title="All 4 branches missed.">		if( choiceList==null || choiceList.isEmpty()){</span>
+<span class="nc" id="L204">			throw RequestUtil</span>
+<span class="nc" id="L205">			.createRmException(</span>
 					RmEjbLogBundleKey.INVALID_CHOICE_LIST,
 					LOG);
 		}
 		
-<span class="nc" id="L178">	}</span>
+<span class="nc" id="L210">	}</span>
 
 
 	private void generateSegmentsForTOChoice(TOChoice toChoice, boolean usePublishedSchedules) throws Exception{ // NOSONAR
 		
-<span class="nc bnc" id="L183" title="All 2 branches missed.">		if (toChoice == null) {</span>
-<span class="nc" id="L184">			return;</span>
+<span class="nc bnc" id="L215" title="All 2 branches missed.">		if (toChoice == null) {</span>
+<span class="nc" id="L216">			return;</span>
 		}
 
-<span class="nc bnc" id="L187" title="All 2 branches missed.">		if (usePublishedSchedules) {</span>
-<span class="nc" id="L188">			generateSegmentsForPublishedSchedules(toChoice);</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">		if (usePublishedSchedules) {</span>
+<span class="nc" id="L220">			generateSegmentsForPublishedSchedules(toChoice);</span>
 		} else {
-<span class="nc" id="L190">			generateSegmentsForReferenceSchedules(toChoice);</span>
+<span class="nc" id="L222">			generateSegmentsForReferenceSchedules(toChoice);</span>
 		}
 
-<span class="nc" id="L193">	}</span>
+<span class="nc" id="L225">	}</span>
 
 	void generateSegmentsForPublishedSchedules(TOChoice toChoice) throws Exception{ // NOSONAR
 		
 		// Get the shifts, then cap them to the
 		// toChoice range.
-<span class="nc" id="L199">		Date startDay = toChoice.getStartDate();</span>
+<span class="nc" id="L231">		Date startDay = toChoice.getStartDate();</span>
 		// Aligning the end with the next day start to make it exclusive.
-<span class="nc" id="L201">		Date endDay = toChoice.getEndDate();</span>
+<span class="nc" id="L233">		Date endDay = toChoice.getEndDate();</span>
 
 		// Set the choiceID's Reference Schedule to null, since we're using published.
-<span class="nc" id="L204">		this.mapTOChoiceReferenceScheduleID.put(toChoice.getID(), null );</span>
+<span class="nc" id="L236">		this.mapTOChoiceReferenceScheduleID.put(toChoice.getID(), null );</span>
 		
 		
-<span class="nc" id="L207">		Collection&lt;SimpleEvent&gt; publishedShiftEvents = getPublishedShiftEvents(</span>
+<span class="nc" id="L239">		Collection&lt;SimpleEvent&gt; publishedShiftEvents = getPublishedShiftEvents(</span>
 				startDay, endDay);
 		
-<span class="nc bnc" id="L210" title="All 4 branches missed.">		if (publishedShiftEvents == null || publishedShiftEvents.isEmpty()) {</span>
-<span class="nc" id="L211">			return;</span>
+<span class="nc bnc" id="L242" title="All 4 branches missed.">		if (publishedShiftEvents == null || publishedShiftEvents.isEmpty()) {</span>
+<span class="nc" id="L243">			return;</span>
 		}
 
 		// Cap each segment to the toChoice range
 		
 		// This will chop the ShiftEvents into discrete segments and also cap
 		// them to the range passed in
-<span class="nc" id="L218">		Collection&lt;SimpleEvent&gt; listSimpleEvent = EventUtils</span>
-<span class="nc" id="L219">				.convertEventsToTimelineForSingleEmployee(publishedShiftEvents,</span>
+<span class="nc" id="L250">		Collection&lt;SimpleEvent&gt; listSimpleEvent = EventUtils</span>
+<span class="nc" id="L251">				.convertEventsToTimelineForSingleEmployee(publishedShiftEvents,</span>
 						startDay, endDay, null);
 
 		
-<span class="nc bnc" id="L223" title="All 2 branches missed.">		for (SimpleEvent simpleEvent : listSimpleEvent) {</span>
-<span class="nc bnc" id="L224" title="All 2 branches missed.">			if (simpleEvent.getPaid()) {</span>
-<span class="nc" id="L225">				TimeOffIntervalPaidSegment segment = TimeOffIntervalAllocationUtil</span>
-<span class="nc" id="L226">						.createTimeOffIntervalPaidSegmentFromSimpleEvent(</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">		for (SimpleEvent simpleEvent : listSimpleEvent) {</span>
+<span class="nc bnc" id="L256" title="All 2 branches missed.">			if (simpleEvent.getPaid()) {</span>
+<span class="nc" id="L257">				TimeOffIntervalPaidSegment segment = TimeOffIntervalAllocationUtil</span>
+<span class="nc" id="L258">						.createTimeOffIntervalPaidSegmentFromSimpleEvent(</span>
 								toChoice, simpleEvent);
-<span class="nc" id="L228">				listOfSegments.add(segment);</span>
+<span class="nc" id="L260">				listOfSegments.add(segment);</span>
 			}
-<span class="nc" id="L230">		}</span>
+<span class="nc" id="L262">		}</span>
 	
-<span class="nc" id="L232">	}</span>
+<span class="nc" id="L264">	}</span>
 
 	
 
@@ -240,39 +272,39 @@ import com.bluepumpkin.ejb.rm.util.TORequestUtil;
 		// For a full day, get the shifts from the reference schedule,
 		// then cap them to the toChoice range.
 
-<span class="nc" id="L243">		Date startDay = toChoice.getStartDate();</span>
-<span class="nc" id="L244">		Date endDay = toChoice.getEndDate();</span>
+<span class="nc" id="L275">		Date startDay = toChoice.getStartDate();</span>
+<span class="nc" id="L276">		Date endDay = toChoice.getEndDate();</span>
 
 		try {
 			
-<span class="nc" id="L248">			Collection&lt;ShiftAssignment&gt; referencedShiftEvents = getReferenceShiftEvents(startDay, endDay, toChoice);</span>
+<span class="nc" id="L280">			Collection&lt;ShiftAssignment&gt; referencedShiftEvents = getReferenceShiftEvents(startDay, endDay, toChoice);</span>
 			
-<span class="nc bnc" id="L250" title="All 2 branches missed.">			if (referencedShiftEvents == null</span>
-<span class="nc bnc" id="L251" title="All 2 branches missed.">					|| referencedShiftEvents.isEmpty()) {</span>
-<span class="nc" id="L252">				return;</span>
+<span class="nc bnc" id="L282" title="All 2 branches missed.">			if (referencedShiftEvents == null</span>
+<span class="nc bnc" id="L283" title="All 2 branches missed.">					|| referencedShiftEvents.isEmpty()) {</span>
+<span class="nc" id="L284">				return;</span>
 			}
 
 			// Cap each segment to the toChoice range
 			// This will chop the ShiftEvents into discrete segments and also
 			// cap them to the range passed in
-<span class="nc" id="L258">			Collection&lt;SimpleEvent&gt; listSimpleEvent = EventUtils</span>
-<span class="nc" id="L259">					.convertEventsToTimelineForSingleEmployee(</span>
+<span class="nc" id="L290">			Collection&lt;SimpleEvent&gt; listSimpleEvent = EventUtils</span>
+<span class="nc" id="L291">					.convertEventsToTimelineForSingleEmployee(</span>
 							referencedShiftEvents, startDay, endDay,
 							null);
 
-<span class="nc bnc" id="L263" title="All 2 branches missed.">			for (SimpleEvent simpleEvent : listSimpleEvent) {</span>
-<span class="nc bnc" id="L264" title="All 2 branches missed.">				if (simpleEvent.getPaid()) {</span>
-<span class="nc" id="L265">					TimeOffIntervalPaidSegment segment = TimeOffIntervalAllocationUtil</span>
-<span class="nc" id="L266">							.createTimeOffIntervalPaidSegmentFromSimpleEvent(</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">			for (SimpleEvent simpleEvent : listSimpleEvent) {</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">				if (simpleEvent.getPaid()) {</span>
+<span class="nc" id="L297">					TimeOffIntervalPaidSegment segment = TimeOffIntervalAllocationUtil</span>
+<span class="nc" id="L298">							.createTimeOffIntervalPaidSegmentFromSimpleEvent(</span>
 									toChoice, simpleEvent);
-<span class="nc" id="L268">					listOfSegments.add(segment);</span>
+<span class="nc" id="L300">					listOfSegments.add(segment);</span>
 				}
-<span class="nc" id="L270">			}</span>
-<span class="nc" id="L271">		} catch (Exception e) {</span>
-<span class="nc" id="L272">			LOG.error(e.getMessage(), e);</span>
-<span class="nc" id="L273">		}</span>
+<span class="nc" id="L302">			}</span>
+<span class="nc" id="L303">		} catch (Exception e) {</span>
+<span class="nc" id="L304">			LOG.error(e.getMessage(), e);</span>
+<span class="nc" id="L305">		}</span>
 
-<span class="nc" id="L275">	}</span>
+<span class="nc" id="L307">	}</span>
 
 	
 
@@ -281,42 +313,36 @@ import com.bluepumpkin.ejb.rm.util.TORequestUtil;
 			Date endDay) throws Exception { // NOSONAR
 
 		ScheduleAccessManager scheduleAccessManager = RequestUtil
-<span class="nc" id="L284">				.getScheduleAccessManager();</span>
+<span class="nc" id="L316">				.getScheduleAccessManager();</span>
 
 		//Return the shifts for the full day
-<span class="nc" id="L287">		return RequestUtil.getShiftAssignsDuringPeriod(this.empId, startDay, endDay, true,</span>
+<span class="nc" id="L319">		return RequestUtil.getShiftAssignsDuringPeriod(this.empId, startDay, endDay, true,</span>
 						scheduleAccessManager);
 	}
 
 	Collection&lt;ShiftAssignment&gt; getReferenceShiftEvents(Date startDay,
-			Date endDay, TOChoice toChoice) throws BbmFinderException {
+			Date endDay, TOChoice toChoice) {
 
 		// Org is current only for the first choice start date...
-<span class="nc" id="L295">		TimeZone tz = this.employeeOrg.getTimeZone();</span>
-
-<span class="nc" id="L297">		List&lt;EmployeeDate&gt; employeeDates = Collections</span>
-<span class="nc" id="L298">				.singletonList(new EmployeeDate(this.empId, startDay));</span>
-
-<span class="nc" id="L300">		ReferenceScheduleLoader loader = new ReferenceScheduleLoader();</span>
-<span class="nc" id="L301">		loader.initialize(employeeDates);</span>
+<span class="nc" id="L327">		TimeZone tz = this.employeeOrg.getTimeZone();</span>
 
 		// Add the referenceScheduleID to the map of Choices so we can
 		// update the choice later.
-<span class="nc" id="L305">		ID referenceScheduleID = loader.getRefrenceScheduleID(this.empId,</span>
+<span class="nc" id="L331">		ID referenceScheduleID = loader.getRefrenceScheduleID(this.empId,</span>
 				startDay);
-<span class="nc" id="L307">		this.mapTOChoiceReferenceScheduleID.put(toChoice.getID(),</span>
+<span class="nc" id="L333">		this.mapTOChoiceReferenceScheduleID.put(toChoice.getID(),</span>
 				referenceScheduleID);
 
-<span class="nc" id="L310">		return loader.getReferenceSchedules(this.empId, startDay, endDay, tz);</span>
+<span class="nc" id="L336">		return loader.getReferenceSchedules(this.empId, startDay, endDay, tz);</span>
 
 	}
 
 	public List&lt;TimeOffIntervalPaidSegment&gt; getListOfSegments() {
-<span class="nc" id="L315">		return listOfSegments;</span>
+<span class="nc" id="L341">		return listOfSegments;</span>
 	}
 
 	public Map&lt;ID, ID&gt; getMapTOChoiceReferenceScheduleID() {
-<span class="nc" id="L319">		return mapTOChoiceReferenceScheduleID;</span>
+<span class="nc" id="L345">		return mapTOChoiceReferenceScheduleID;</span>
 	}
 
 	

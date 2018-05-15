@@ -18,7 +18,9 @@ import java.util.TimeZone;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.core.Response;
 
+import com.bluepumpkin.common.base.BPException;
 import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.localization.Localizer;
 import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.common.util.StringUtil;
@@ -36,6 +38,7 @@ import com.bluepumpkin.ejb.bbm.workrules.model.ShiftOTExtension;
 import com.bluepumpkin.ejb.core.CoreManagerFactory;
 import com.bluepumpkin.ejb.rm.RmManagerFactory;
 import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
 import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.model.ShiftBidAuction;
@@ -54,6 +57,7 @@ import com.verint.web.rm.rest.entity.Entity;
 import com.verint.web.rm.rest.entity.MessageEntity;
 import com.verint.web.rm.rest.entity.RequestEntity;
 import com.verint.web.rm.rest.entity.RequestStatusEntity;
+import com.verint.web.rm.rest.entity.TimeRangeEntity;
 import com.verint.web.rm.rest.entity.ValidationResultEntity;
 import com.verint.web.rm.rest.entity.custshift.ShiftOTExtensionEntity;
 import com.verint.web.rm.rest.entity.shiftbidding.ActivityEntity;
@@ -67,9 +71,9 @@ import com.witness.web.uif.l10n.UIFWebBundleKey;
 import com.witness.web.uif.pagemodel.PageModel;
 import com.witness.web.uif.system.RequestContext;
 
-<span class="nc" id="L70">public class RmUtils {</span>
+<span class="nc" id="L74">public class RmUtils {</span>
 
-<span class="nc" id="L72">	private static final Category LOG = Log.initCategory(TimeOffRequestFacadeImpl.class.getName());</span>
+<span class="nc" id="L76">	private static final Category LOG = Log.initCategory(TimeOffRequestFacadeImpl.class.getName());</span>
 
 	public static final String ACTIVITY_ID_FN = &quot;activityID&quot;;
 	public static final String AUCTION_ID_FN = &quot;auctionID&quot;;
@@ -90,115 +94,115 @@ import com.witness.web.uif.system.RequestContext;
 	public static final String TO_YEAR_FN = &quot;toYear&quot;;
 	public static final String VIEW_FN = &quot;view&quot;;
 
-<span class="nc" id="L93">	protected enum Status {</span>
-<span class="nc" id="L94">		PENDING (RequestAuditTrail.STATUS_PENDING, Integer.valueOf(1)),</span>
-<span class="nc" id="L95">		APPROVED (RequestAuditTrail.STATUS_APPROVED, Integer.valueOf(2)),</span>
-<span class="nc" id="L96">		DENIED (RequestAuditTrail.STATUS_DENIED, Integer.valueOf(4)),</span>
-<span class="nc" id="L97">		ESCALATED (RequestAuditTrail.STATUS_ESCALATED, Integer.valueOf(8)),</span>
-<span class="nc" id="L98">		NEGOTIATION (RequestAuditTrail.STATUS_NEGOTIATION, Integer.valueOf(16)),</span>
-<span class="nc" id="L99">		TENTATIVE (RequestAuditTrail.STATUS_TENTATIVE, Integer.valueOf(32)),</span>
-<span class="nc" id="L100">		INVALID (RequestAuditTrail.STATUS_INVALID, Integer.valueOf(64)),</span>
-<span class="nc" id="L101">		WITHDRAWN (RequestAuditTrail.STATUS_WITHDRAWN, Integer.valueOf(128)),</span>
-<span class="nc" id="L102">		WAITLIST (RequestAuditTrail.STATUS_WAITLIST, Integer.valueOf(256)),</span>
-<span class="nc" id="L103">		WITHDRAW_REQUEST (RequestAuditTrail.STATUS_WITHDRAW_REQUEST, Integer.valueOf(512)),</span>
-<span class="nc" id="L104">		WITHDRAW_REJECT (RequestAuditTrail.STATUS_WITHDRAW_REJECT, Integer.valueOf(1024)),</span>
-<span class="nc" id="L105">		WITHDRAW_CANCEL (RequestAuditTrail.STATUS_WITHDRAW_CANCEL, Integer.valueOf(2048)),</span>
-<span class="nc" id="L106">		WITHDRAW_ACCEPT (RequestAuditTrail.STATUS_WITHDRAW_ACCEPT, Integer.valueOf(4096)),</span>
-<span class="nc" id="L107">		WITHDRAW_NEGOTIATION (RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION, Integer.valueOf(8192));</span>
+<span class="nc" id="L97">	protected enum Status {</span>
+<span class="nc" id="L98">		PENDING (RequestAuditTrail.STATUS_PENDING, Integer.valueOf(1)),</span>
+<span class="nc" id="L99">		APPROVED (RequestAuditTrail.STATUS_APPROVED, Integer.valueOf(2)),</span>
+<span class="nc" id="L100">		DENIED (RequestAuditTrail.STATUS_DENIED, Integer.valueOf(4)),</span>
+<span class="nc" id="L101">		ESCALATED (RequestAuditTrail.STATUS_ESCALATED, Integer.valueOf(8)),</span>
+<span class="nc" id="L102">		NEGOTIATION (RequestAuditTrail.STATUS_NEGOTIATION, Integer.valueOf(16)),</span>
+<span class="nc" id="L103">		TENTATIVE (RequestAuditTrail.STATUS_TENTATIVE, Integer.valueOf(32)),</span>
+<span class="nc" id="L104">		INVALID (RequestAuditTrail.STATUS_INVALID, Integer.valueOf(64)),</span>
+<span class="nc" id="L105">		WITHDRAWN (RequestAuditTrail.STATUS_WITHDRAWN, Integer.valueOf(128)),</span>
+<span class="nc" id="L106">		WAITLIST (RequestAuditTrail.STATUS_WAITLIST, Integer.valueOf(256)),</span>
+<span class="nc" id="L107">		WITHDRAW_REQUEST (RequestAuditTrail.STATUS_WITHDRAW_REQUEST, Integer.valueOf(512)),</span>
+<span class="nc" id="L108">		WITHDRAW_REJECT (RequestAuditTrail.STATUS_WITHDRAW_REJECT, Integer.valueOf(1024)),</span>
+<span class="nc" id="L109">		WITHDRAW_CANCEL (RequestAuditTrail.STATUS_WITHDRAW_CANCEL, Integer.valueOf(2048)),</span>
+<span class="nc" id="L110">		WITHDRAW_ACCEPT (RequestAuditTrail.STATUS_WITHDRAW_ACCEPT, Integer.valueOf(4096)),</span>
+<span class="nc" id="L111">		WITHDRAW_NEGOTIATION (RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION, Integer.valueOf(8192));</span>
 
 		private final String statusCode;
 		private final Integer statusInt;
 
-<span class="nc" id="L112">		Status(String statusCode, Integer statusInt) {</span>
-<span class="nc" id="L113">			this.statusCode = statusCode;</span>
-<span class="nc" id="L114">			this.statusInt = statusInt.intValue();</span>
-<span class="nc" id="L115">		}</span>
+<span class="nc" id="L116">		Status(String statusCode, Integer statusInt) {</span>
+<span class="nc" id="L117">			this.statusCode = statusCode;</span>
+<span class="nc" id="L118">			this.statusInt = statusInt.intValue();</span>
+<span class="nc" id="L119">		}</span>
 
 		protected Integer getStatusInt() {
-<span class="nc" id="L118">			return statusInt;</span>
+<span class="nc" id="L122">			return statusInt;</span>
 		}
 
 		protected String getStatusCode() {
-<span class="nc" id="L122">			return statusCode;</span>
+<span class="nc" id="L126">			return statusCode;</span>
 		}
 	}
 
-<span class="nc" id="L126">	private static Map&lt;String, Status&gt; m_all_status = new HashMap&lt;String, Status&gt;(11);</span>
+<span class="nc" id="L130">	private static Map&lt;String, Status&gt; m_all_status = new HashMap&lt;String, Status&gt;(11);</span>
 	static {
-<span class="nc" id="L128">		m_all_status.put(RequestAuditTrail.STATUS_PENDING, Status.PENDING);</span>
-<span class="nc" id="L129">		m_all_status.put(RequestAuditTrail.STATUS_APPROVED, Status.APPROVED);</span>
-<span class="nc" id="L130">		m_all_status.put(RequestAuditTrail.STATUS_DENIED, Status.DENIED);</span>
-<span class="nc" id="L131">		m_all_status.put(RequestAuditTrail.STATUS_ESCALATED, Status.ESCALATED);</span>
-<span class="nc" id="L132">		m_all_status.put(RequestAuditTrail.STATUS_NEGOTIATION, Status.NEGOTIATION);</span>
-<span class="nc" id="L133">		m_all_status.put(RequestAuditTrail.STATUS_TENTATIVE, Status.TENTATIVE);</span>
-<span class="nc" id="L134">		m_all_status.put(RequestAuditTrail.STATUS_INVALID, Status.INVALID);</span>
-<span class="nc" id="L135">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAWN, Status.WITHDRAWN);</span>
-<span class="nc" id="L136">		m_all_status.put(RequestAuditTrail.STATUS_WAITLIST, Status.WAITLIST);</span>
-<span class="nc" id="L137">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_REQUEST, Status.WITHDRAW_REQUEST);</span>
-<span class="nc" id="L138">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_REJECT, Status.WITHDRAW_REJECT);</span>
-<span class="nc" id="L139">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_CANCEL, Status.WITHDRAW_CANCEL);</span>
-<span class="nc" id="L140">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_ACCEPT, Status.WITHDRAW_ACCEPT);</span>
-<span class="nc" id="L141">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION, Status.WITHDRAW_NEGOTIATION);</span>
-<span class="nc" id="L142">	}</span>
+<span class="nc" id="L132">		m_all_status.put(RequestAuditTrail.STATUS_PENDING, Status.PENDING);</span>
+<span class="nc" id="L133">		m_all_status.put(RequestAuditTrail.STATUS_APPROVED, Status.APPROVED);</span>
+<span class="nc" id="L134">		m_all_status.put(RequestAuditTrail.STATUS_DENIED, Status.DENIED);</span>
+<span class="nc" id="L135">		m_all_status.put(RequestAuditTrail.STATUS_ESCALATED, Status.ESCALATED);</span>
+<span class="nc" id="L136">		m_all_status.put(RequestAuditTrail.STATUS_NEGOTIATION, Status.NEGOTIATION);</span>
+<span class="nc" id="L137">		m_all_status.put(RequestAuditTrail.STATUS_TENTATIVE, Status.TENTATIVE);</span>
+<span class="nc" id="L138">		m_all_status.put(RequestAuditTrail.STATUS_INVALID, Status.INVALID);</span>
+<span class="nc" id="L139">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAWN, Status.WITHDRAWN);</span>
+<span class="nc" id="L140">		m_all_status.put(RequestAuditTrail.STATUS_WAITLIST, Status.WAITLIST);</span>
+<span class="nc" id="L141">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_REQUEST, Status.WITHDRAW_REQUEST);</span>
+<span class="nc" id="L142">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_REJECT, Status.WITHDRAW_REJECT);</span>
+<span class="nc" id="L143">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_CANCEL, Status.WITHDRAW_CANCEL);</span>
+<span class="nc" id="L144">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_ACCEPT, Status.WITHDRAW_ACCEPT);</span>
+<span class="nc" id="L145">		m_all_status.put(RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION, Status.WITHDRAW_NEGOTIATION);</span>
+<span class="nc" id="L146">	}</span>
 
 
 	public static TORequestManager  getTORequestManager() {
 		try {
-<span class="nc" id="L147">			RmManagerFactory rmMgrFactory = RmManagerFactory.getInstance(true);</span>
-<span class="nc" id="L148">			return rmMgrFactory.getTimeOffRequestManager();</span>
-<span class="nc" id="L149">		} catch (BbmCreateException e) {</span>
-<span class="nc" id="L150">			throw new RuntimeException(&quot;Cannot get WorkResourceManager.&quot;);</span>
+<span class="nc" id="L151">			RmManagerFactory rmMgrFactory = RmManagerFactory.getInstance(true);</span>
+<span class="nc" id="L152">			return rmMgrFactory.getTimeOffRequestManager();</span>
+<span class="nc" id="L153">		} catch (BbmCreateException e) {</span>
+<span class="nc" id="L154">			throw new RuntimeException(&quot;Cannot get WorkResourceManager.&quot;);</span>
 		}
 	}
 
 	public static ActivityManager getActivityManager() {
 		try {
-<span class="nc" id="L156">			return WfmManagerFactory.getActivityManager();</span>
-<span class="nc" id="L157">		} catch (BbmEJBCreateException e) {</span>
-<span class="nc" id="L158">			throw new RuntimeException(&quot;Cannot get WorkResourceManager.&quot;);</span>
+<span class="nc" id="L160">			return WfmManagerFactory.getActivityManager();</span>
+<span class="nc" id="L161">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L162">			throw new RuntimeException(&quot;Cannot get WorkResourceManager.&quot;);</span>
 		}
 	}
 
 	public static WorkResourceManager getWorkResourceManager() {
 		try {
-<span class="nc" id="L164">			return BbmManagerFactory.getWorkResourceManager();</span>
-<span class="nc" id="L165">		} catch (BbmEJBCreateException e) {</span>
-<span class="nc" id="L166">			throw new RuntimeException(&quot;Cannot get WorkResourceManager.&quot;);</span>
+<span class="nc" id="L168">			return BbmManagerFactory.getWorkResourceManager();</span>
+<span class="nc" id="L169">		} catch (BbmEJBCreateException e) {</span>
+<span class="nc" id="L170">			throw new RuntimeException(&quot;Cannot get WorkResourceManager.&quot;);</span>
 		}
 	}
 
 	public static UserManager getUserManager() {
 		try {
-<span class="nc" id="L172">			return CoreManagerFactory.getUserManager(false);</span>
-<span class="nc" id="L173">		} catch (Exception e) {</span>
-<span class="nc" id="L174">			throw new RuntimeException(&quot;Cannot get UserManager.&quot;);</span>
+<span class="nc" id="L176">			return CoreManagerFactory.getUserManager(false);</span>
+<span class="nc" id="L177">		} catch (Exception e) {</span>
+<span class="nc" id="L178">			throw new RuntimeException(&quot;Cannot get UserManager.&quot;);</span>
 		}
 	}
 
 	public static void setStatusCode(TimeOffRequestEntity reqEntity, String strStatus) {
-<span class="nc" id="L179">		Status status = m_all_status.get(strStatus);</span>
-<span class="nc" id="L180">		reqEntity.setStatusCode(status.getStatusInt().intValue());</span>
-<span class="nc" id="L181">	}</span>
+<span class="nc" id="L183">		Status status = m_all_status.get(strStatus);</span>
+<span class="nc" id="L184">		reqEntity.setStatusCode(status.getStatusInt().intValue());</span>
+<span class="nc" id="L185">	}</span>
 
 	/**
 	 * We will not specify status in the RequestFilter.
 	 * Create a list to store the requested statuses for filtering in the facade impl later.
 	 */
 	public static List&lt;String&gt; getStatusListForFilter(int status) {
-<span class="nc" id="L188">		List&lt;String&gt; statusList = new ArrayList&lt;String&gt;();</span>
-<span class="nc bnc" id="L189" title="All 2 branches missed.">		for (Status s : Status.values()) {</span>
+<span class="nc" id="L192">		List&lt;String&gt; statusList = new ArrayList&lt;String&gt;();</span>
+<span class="nc bnc" id="L193" title="All 2 branches missed.">		for (Status s : Status.values()) {</span>
 			// status==0 means all status codes
-<span class="nc bnc" id="L191" title="All 4 branches missed.">			if (status==0 || ((s.getStatusInt() &amp; status) &gt; 0)) {</span>
-<span class="nc" id="L192">				statusList.add(s.getStatusCode());</span>
+<span class="nc bnc" id="L195" title="All 4 branches missed.">			if (status==0 || ((s.getStatusInt() &amp; status) &gt; 0)) {</span>
+<span class="nc" id="L196">				statusList.add(s.getStatusCode());</span>
 			}
 		}
 
-<span class="nc" id="L196">		return statusList;</span>
+<span class="nc" id="L200">		return statusList;</span>
 	}
 
 	public static int getRequestStatusCode(String strStatus) {
-<span class="nc" id="L200">		Status status = m_all_status.get(strStatus);</span>
-<span class="nc" id="L201">		return status.getStatusInt().intValue();</span>
+<span class="nc" id="L204">		Status status = m_all_status.get(strStatus);</span>
+<span class="nc" id="L205">		return status.getStatusInt().intValue();</span>
 	}
 
 	/**
@@ -214,113 +218,125 @@ import com.witness.web.uif.system.RequestContext;
 	 *         bounds an empty list is returned
 	 */
 	public static &lt;T&gt; List&lt;T&gt; pageList(List&lt;T&gt; input, int pageSize, int pageNumber) {
-<span class="nc" id="L217">		int startIndex = pageSize * pageNumber;</span>
-<span class="nc" id="L218">		int endIndex = pageSize * (pageNumber + 1);</span>
-<span class="nc bnc" id="L219" title="All 2 branches missed.">		if (input == null) {</span>
-<span class="nc" id="L220">			return Collections.emptyList();</span>
+<span class="nc" id="L221">		int startIndex = pageSize * pageNumber;</span>
+<span class="nc" id="L222">		int endIndex = pageSize * (pageNumber + 1);</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">		if (input == null) {</span>
+<span class="nc" id="L224">			return Collections.emptyList();</span>
 		}
-<span class="nc bnc" id="L222" title="All 4 branches missed.">		if (startIndex &gt;= input.size() || startIndex &lt; 0) {</span>
-<span class="nc" id="L223">			return Collections.emptyList();</span>
+<span class="nc bnc" id="L226" title="All 4 branches missed.">		if (startIndex &gt;= input.size() || startIndex &lt; 0) {</span>
+<span class="nc" id="L227">			return Collections.emptyList();</span>
 		}
-<span class="nc bnc" id="L225" title="All 2 branches missed.">		if (endIndex &gt; input.size()) {</span>
-<span class="nc" id="L226">			endIndex = input.size();</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">		if (endIndex &gt; input.size()) {</span>
+<span class="nc" id="L230">			endIndex = input.size();</span>
 		}
 
-<span class="nc" id="L229">		return input.subList(startIndex, endIndex);</span>
+<span class="nc" id="L233">		return input.subList(startIndex, endIndex);</span>
 	}
 
 
 
 	public static &lt;T&gt; String join(Collection&lt;T&gt; input,  char separator) {
-<span class="nc" id="L235">		StringBuilder sb = new StringBuilder();</span>
-<span class="nc bnc" id="L236" title="All 2 branches missed.">		for (Iterator&lt;T&gt; it=input.iterator(); it.hasNext();) {</span>
-<span class="nc" id="L237">			T elem = it.next();</span>
-<span class="nc" id="L238">			sb.append(elem.toString());</span>
-<span class="nc bnc" id="L239" title="All 2 branches missed.">			if(it.hasNext()) {</span>
-<span class="nc" id="L240">				sb.append(separator);</span>
+<span class="nc" id="L239">		StringBuilder sb = new StringBuilder();</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">		for (Iterator&lt;T&gt; it=input.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L241">			T elem = it.next();</span>
+<span class="nc" id="L242">			sb.append(elem.toString());</span>
+<span class="nc bnc" id="L243" title="All 2 branches missed.">			if(it.hasNext()) {</span>
+<span class="nc" id="L244">				sb.append(separator);</span>
 			}
-<span class="nc" id="L242">		}</span>
-<span class="nc" id="L243">		return sb.toString();</span>
+<span class="nc" id="L246">		}</span>
+<span class="nc" id="L247">		return sb.toString();</span>
 	}
 
 	public static void addActivities(RequestContext context, List&lt;ActivityEntity&gt; entities, Set&lt;ID&gt; activityIDs) throws RemoteException,
 			BbmException {
-<span class="nc" id="L248">		Map&lt;ID, Activity&gt; activiesByID = ActivityModelHandler.getAllActivitiesMap(context);</span>
-<span class="nc bnc" id="L249" title="All 2 branches missed.">		for (ID activityID : activityIDs) {</span>
-<span class="nc bnc" id="L250" title="All 2 branches missed.">			if (activiesByID.containsKey(activityID)) {</span>
-<span class="nc" id="L251">				entities.add(new ActivityEntity(activiesByID.get(activityID)));</span>
+<span class="nc" id="L252">		Map&lt;ID, Activity&gt; activiesByID = ActivityModelHandler.getAllActivitiesMap(context);</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">		for (ID activityID : activityIDs) {</span>
+<span class="nc bnc" id="L254" title="All 2 branches missed.">			if (activiesByID.containsKey(activityID)) {</span>
+<span class="nc" id="L255">				entities.add(new ActivityEntity(activiesByID.get(activityID)));</span>
 			}
-<span class="nc" id="L253">		}</span>
-<span class="nc" id="L254">	}</span>
+<span class="nc" id="L257">		}</span>
+<span class="nc" id="L258">	}</span>
 
 	public static void addAuctions(List&lt;AuctionEntity&gt; target, Collection&lt;ShiftBidAuction&gt; auctions) {
-<span class="nc bnc" id="L257" title="All 2 branches missed.">		for (ShiftBidAuction auction : auctions) {</span>
-<span class="nc" id="L258">			target.add(new AuctionEntity(auction));</span>
-<span class="nc" id="L259">		}</span>
-<span class="nc" id="L260">	}</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">		for (ShiftBidAuction auction : auctions) {</span>
+<span class="nc" id="L262">			target.add(new AuctionEntity(auction));</span>
+<span class="nc" id="L263">		}</span>
+<span class="nc" id="L264">	}</span>
 
 	public static void addShifts(List&lt;Entity&gt; entities, Set&lt;ID&gt; shiftIDs)
 			throws BbmEJBCreateException, BbmFinderException, RemoteException {
-<span class="nc" id="L264">		WorkRuleManager wrm = WfmManagerFactory.getWorkRuleManager();</span>
-<span class="nc" id="L265">		Collection&lt;Shift&gt; shifts = wrm.getShiftsByIDs(shiftIDs);</span>
-<span class="nc bnc" id="L266" title="All 2 branches missed.">		if (shifts != null) {</span>
-<span class="nc bnc" id="L267" title="All 2 branches missed.">			for (Shift shift : shifts) {</span>
-<span class="nc" id="L268">				Entity entity = new Entity();</span>
-<span class="nc" id="L269">				entity.setId(shift.getID().toString());</span>
-<span class="nc" id="L270">				entity.setName(shift.getName());</span>
-<span class="nc" id="L271">				entities.add(entity);</span>
-<span class="nc" id="L272">			}</span>
+<span class="nc" id="L268">		WorkRuleManager wrm = WfmManagerFactory.getWorkRuleManager();</span>
+<span class="nc" id="L269">		Collection&lt;Shift&gt; shifts = wrm.getShiftsByIDs(shiftIDs);</span>
+<span class="nc bnc" id="L270" title="All 2 branches missed.">		if (shifts != null) {</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">			for (Shift shift : shifts) {</span>
+<span class="nc" id="L272">				Entity entity = new Entity();</span>
+<span class="nc" id="L273">				entity.setId(shift.getID().toString());</span>
+<span class="nc" id="L274">				entity.setName(shift.getName());</span>
+<span class="nc" id="L275">				entities.add(entity);</span>
+<span class="nc" id="L276">			}</span>
 		}
-<span class="nc" id="L274">	}</span>
+<span class="nc" id="L278">	}</span>
 
 	public static void addShiftOTExtensions(List&lt;Entity&gt; entities, Set&lt;ID&gt; shiftOTExtensionIDs)
 			throws BbmEJBCreateException, BbmFinderException, RemoteException {
-<span class="nc" id="L278">		WorkRuleManager wrm = WfmManagerFactory.getWorkRuleManager();</span>
-<span class="nc" id="L279">		Collection&lt;ShiftOTExtension&gt; shiftExtensions = wrm.getShiftOTExtensionsByIDs(shiftOTExtensionIDs);</span>
-<span class="nc bnc" id="L280" title="All 2 branches missed.">		if (shiftExtensions != null) {</span>
-<span class="nc bnc" id="L281" title="All 2 branches missed.">			for (ShiftOTExtension shiftExtension : shiftExtensions) {</span>
-<span class="nc" id="L282">				ShiftOTExtensionEntity entity = new ShiftOTExtensionEntity(shiftExtension);</span>
-<span class="nc" id="L283">				entities.add(entity);</span>
-<span class="nc" id="L284">			}</span>
+<span class="nc" id="L282">		WorkRuleManager wrm = WfmManagerFactory.getWorkRuleManager();</span>
+<span class="nc" id="L283">		Collection&lt;ShiftOTExtension&gt; shiftExtensions = wrm.getShiftOTExtensionsByIDs(shiftOTExtensionIDs);</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">		if (shiftExtensions != null) {</span>
+<span class="nc bnc" id="L285" title="All 2 branches missed.">			for (ShiftOTExtension shiftExtension : shiftExtensions) {</span>
+<span class="nc" id="L286">				ShiftOTExtensionEntity entity = new ShiftOTExtensionEntity(shiftExtension);</span>
+<span class="nc" id="L287">				entities.add(entity);</span>
+<span class="nc" id="L288">			}</span>
 		}
-<span class="nc" id="L286">	}</span>
+<span class="nc" id="L290">	}</span>
+
+	public static void addTimeRanges(List&lt;TimeRangeEntity&gt; dest, List&lt;TimeRange&gt; source) {
+<span class="nc bnc" id="L293" title="All 2 branches missed.">		if (source == null) {</span>
+<span class="nc" id="L294">			return;</span>
+		}
+<span class="nc bnc" id="L296" title="All 2 branches missed.">		for (TimeRange range : source) {</span>
+<span class="nc" id="L297">			TimeRangeEntity entity = new TimeRangeEntity();</span>
+<span class="nc" id="L298">			entity.setStartDate(FormatUtils.dateToISO8601SecPrecisionString(range.getStartDate()));</span>
+<span class="nc" id="L299">			entity.setEndDate(FormatUtils.dateToISO8601SecPrecisionString(range.getEndDate()));</span>
+<span class="nc" id="L300">			dest.add(entity);</span>
+<span class="nc" id="L301">		}</span>
+<span class="nc" id="L302">	}</span>
 
 	public static void assertNonZeroParameter(Localizer localizer, int value, String paramName)
 			throws BusinessWFOException {
-<span class="nc bnc" id="L290" title="All 2 branches missed.">		if (value == 0) {</span>
-<span class="nc" id="L291">			throw getParameterIsRequiredException(localizer, paramName);</span>
+<span class="nc bnc" id="L306" title="All 2 branches missed.">		if (value == 0) {</span>
+<span class="nc" id="L307">			throw getParameterIsRequiredException(localizer, paramName);</span>
 		}
-<span class="nc" id="L293">	}</span>
+<span class="nc" id="L309">	}</span>
 
 	public static void assertRequired(Localizer localizer, String value, String paramName)
 			throws BusinessWFOException {
-<span class="nc bnc" id="L297" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(value)) {</span>
-<span class="nc" id="L298">			throw getParameterIsRequiredException(localizer, paramName);</span>
+<span class="nc bnc" id="L313" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(value)) {</span>
+<span class="nc" id="L314">			throw getParameterIsRequiredException(localizer, paramName);</span>
 		}
-<span class="nc" id="L300">	}</span>
+<span class="nc" id="L316">	}</span>
 
 	public static boolean getBoolean(HttpServletRequest request, String paramName, boolean defaultValue) {
-<span class="nc" id="L303">		String strBoolean = request.getParameter(paramName);</span>
-<span class="nc" id="L304">		boolean value = defaultValue;</span>
-<span class="nc bnc" id="L305" title="All 2 branches missed.">		if (!StringUtil.isEmptyOrWhiteSpace(strBoolean)) {</span>
-<span class="nc" id="L306">			value = Boolean.parseBoolean(strBoolean);</span>
+<span class="nc" id="L319">		String strBoolean = request.getParameter(paramName);</span>
+<span class="nc" id="L320">		boolean value = defaultValue;</span>
+<span class="nc bnc" id="L321" title="All 2 branches missed.">		if (!StringUtil.isEmptyOrWhiteSpace(strBoolean)) {</span>
+<span class="nc" id="L322">			value = Boolean.parseBoolean(strBoolean);</span>
 		}
-<span class="nc" id="L308">		return value;</span>
+<span class="nc" id="L324">		return value;</span>
 	}
 
 	/**
 	 * Gets a Calendar for the date parameter in yyyy-MM format.
 	 */
 	public static Calendar getCalendarFromYearMonth(HttpServletRequest request, String paramName, TimeZone timeZone) {
-<span class="nc" id="L315">		String strDate = request.getParameter(paramName);</span>
-<span class="nc bnc" id="L316" title="All 2 branches missed.">		if (strDate == null) {</span>
-<span class="nc" id="L317">			return null;</span>
+<span class="nc" id="L331">		String strDate = request.getParameter(paramName);</span>
+<span class="nc bnc" id="L332" title="All 2 branches missed.">		if (strDate == null) {</span>
+<span class="nc" id="L333">			return null;</span>
 		}
-<span class="nc" id="L319">		SimpleDateFormat sdf = new SimpleDateFormat(&quot;yyyy-MM&quot;);</span>
-<span class="nc" id="L320">		sdf.setTimeZone(timeZone);</span>
-<span class="nc" id="L321">		Calendar cal = Calendar.getInstance(timeZone);</span>
-<span class="nc" id="L322">		cal.setTime(sdf.parse(strDate, new ParsePosition(0)));</span>
-<span class="nc" id="L323">		return cal;</span>
+<span class="nc" id="L335">		SimpleDateFormat sdf = new SimpleDateFormat(&quot;yyyy-MM&quot;);</span>
+<span class="nc" id="L336">		sdf.setTimeZone(timeZone);</span>
+<span class="nc" id="L337">		Calendar cal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L338">		cal.setTime(sdf.parse(strDate, new ParsePosition(0)));</span>
+<span class="nc" id="L339">		return cal;</span>
 	}
 
 	/**
@@ -328,8 +344,8 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static Date getDate(RequestContext context, HttpServletRequest request, String paramName)
 			throws BusinessWFOException {
-<span class="nc" id="L331">		String sDate = request.getParameter(paramName);</span>
-<span class="nc" id="L332">		return getDate(context, sDate, paramName);</span>
+<span class="nc" id="L347">		String sDate = request.getParameter(paramName);</span>
+<span class="nc" id="L348">		return getDate(context, sDate, paramName);</span>
 	}
 
 	/**
@@ -337,18 +353,18 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static Date getDateNullable(HttpServletRequest request, String paramName)
 			throws BusinessWFOException {
-<span class="nc" id="L340">		String sDate = request.getParameter(paramName);</span>
-<span class="nc" id="L341">		return getDate(sDate);</span>
+<span class="nc" id="L356">		String sDate = request.getParameter(paramName);</span>
+<span class="nc" id="L357">		return getDate(sDate);</span>
 	}
 
 	/**
 	 * Gets a date from the specified string. If it doesn't exist, null is returned.
 	 */
 	public static Date getDate(String sDate) {
-<span class="nc bnc" id="L348" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(sDate)) {</span>
-<span class="nc" id="L349">			return null;</span>
+<span class="nc bnc" id="L364" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(sDate)) {</span>
+<span class="nc" id="L365">			return null;</span>
 		}
-<span class="nc" id="L351">		return FormatUtils.iso8601SecPrecisionStringToDate(sDate);</span>
+<span class="nc" id="L367">		return FormatUtils.iso8601SecPrecisionStringToDate(sDate);</span>
 	}
 
 	/**
@@ -356,7 +372,7 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static Date getDate(RequestContext context, String sDate, String paramName)
 			throws BusinessWFOException {
-<span class="nc" id="L359">		return getDate(context.getLocalizer(), sDate, paramName);</span>
+<span class="nc" id="L375">		return getDate(context.getLocalizer(), sDate, paramName);</span>
 	}
 
 	/**
@@ -364,333 +380,374 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static Date getDate(Localizer localizer, String sDate, String paramName)
 			throws BusinessWFOException {
-<span class="nc bnc" id="L367" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(sDate)) {</span>
-<span class="nc" id="L368">			throw getParameterIsRequiredException(localizer, paramName);</span>
+<span class="nc bnc" id="L383" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(sDate)) {</span>
+<span class="nc" id="L384">			throw getParameterIsRequiredException(localizer, paramName);</span>
 		}
 
-<span class="nc" id="L371">		return FormatUtils.iso8601SecPrecisionStringToDate(sDate);</span>
+<span class="nc" id="L387">		return FormatUtils.iso8601SecPrecisionStringToDate(sDate);</span>
 	}
 
 	/**
 	 * Returns the int value of the id, otherwise 0 is returned.
 	 */
 	public static int getInt(ID id) {
-<span class="nc bnc" id="L378" title="All 2 branches missed.">		if (id != null) {</span>
-<span class="nc" id="L379">			return id.toInt();</span>
+<span class="nc bnc" id="L394" title="All 2 branches missed.">		if (id != null) {</span>
+<span class="nc" id="L395">			return id.toInt();</span>
 		}
-<span class="nc" id="L381">		return 0;</span>
+<span class="nc" id="L397">		return 0;</span>
 	}
 
 	public static int getInt(RequestContext context, HttpServletRequest request, String paramName, Integer defaultValue)
 			throws BusinessWFOException {
-<span class="nc" id="L386">		String strValue = request.getParameter(paramName);</span>
-<span class="nc bnc" id="L387" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(strValue)) {</span>
-<span class="nc bnc" id="L388" title="All 2 branches missed.">			if (defaultValue == null) {</span>
-<span class="nc" id="L389">				throw getParameterIsRequiredException(context.getLocalizer(), paramName);</span>
+<span class="nc" id="L402">		String strValue = request.getParameter(paramName);</span>
+<span class="nc bnc" id="L403" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(strValue)) {</span>
+<span class="nc bnc" id="L404" title="All 2 branches missed.">			if (defaultValue == null) {</span>
+<span class="nc" id="L405">				throw getParameterIsRequiredException(context.getLocalizer(), paramName);</span>
 			}
-<span class="nc" id="L391">			return defaultValue.intValue();</span>
+<span class="nc" id="L407">			return defaultValue.intValue();</span>
 		}
-<span class="nc" id="L393">		return Integer.parseInt(strValue);</span>
+<span class="nc" id="L409">		return Integer.parseInt(strValue);</span>
+	}
+
+	public static ID getID(String value) {
+<span class="nc bnc" id="L413" title="All 2 branches missed.">		if (value == null) {</span>
+<span class="nc" id="L414">			return null;</span>
+		}
+<span class="nc" id="L416">		return new ID(value);</span>
+	}
+
+	public static ID getID(Integer id) {
+<span class="nc bnc" id="L420" title="All 2 branches missed.">		if (id == null) {</span>
+<span class="nc" id="L421">			return null;</span>
+		}
+<span class="nc" id="L423">		return new ID(id);</span>
 	}
 
 	public static ID getID(Localizer localizer, String value, String paramName) throws BusinessWFOException {
-<span class="nc bnc" id="L397" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(value)) {</span>
-<span class="nc" id="L398">			throw getParameterIsRequiredException(localizer, paramName);</span>
+<span class="nc bnc" id="L427" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(value)) {</span>
+<span class="nc" id="L428">			throw getParameterIsRequiredException(localizer, paramName);</span>
 		}
-<span class="nc" id="L400">		return new ID(value);</span>
+<span class="nc" id="L430">		return new ID(value);</span>
 	}
 
 	public static ID getID(RequestContext context, String paramName) throws BusinessWFOException {
-<span class="nc" id="L404">		String sID = context.getParameter(paramName);</span>
-<span class="nc bnc" id="L405" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(sID)) {</span>
-<span class="nc" id="L406">			throw getParameterIsRequiredException(context.getLocalizer(), paramName);</span>
+<span class="nc" id="L434">		return getID(context, paramName, true);</span>
+	}
+
+	public static ID getID(RequestContext context, String paramName, boolean isRequired) throws BusinessWFOException {
+<span class="nc" id="L438">		String sID = context.getParameter(paramName);</span>
+<span class="nc bnc" id="L439" title="All 2 branches missed.">		if (StringUtil.isEmptyOrWhiteSpace(sID)) {</span>
+<span class="nc bnc" id="L440" title="All 2 branches missed.">			if (isRequired) {</span>
+<span class="nc" id="L441">				throw getParameterIsRequiredException(context.getLocalizer(), paramName);</span>
+			}
+<span class="nc" id="L443">			return null;</span>
 		}
-<span class="nc" id="L408">		return new ID(sID);</span>
+<span class="nc" id="L445">		return new ID(sID);</span>
 	}
 
 	public static List&lt;ID&gt; getIDList(List&lt;Integer&gt; values) {
-<span class="nc" id="L412">		List&lt;ID&gt; results = new ArrayList&lt;ID&gt;();</span>
-<span class="nc bnc" id="L413" title="All 2 branches missed.">		if (values != null) {</span>
-<span class="nc bnc" id="L414" title="All 2 branches missed.">			for (Integer value : values) {</span>
-<span class="nc" id="L415">				results.add(ID.fromInt(value.intValue()));</span>
-<span class="nc" id="L416">			}</span>
+<span class="nc" id="L449">		List&lt;ID&gt; results = new ArrayList&lt;ID&gt;();</span>
+<span class="nc bnc" id="L450" title="All 2 branches missed.">		if (values != null) {</span>
+<span class="nc bnc" id="L451" title="All 2 branches missed.">			for (Integer value : values) {</span>
+<span class="nc" id="L452">				results.add(ID.fromInt(value.intValue()));</span>
+<span class="nc" id="L453">			}</span>
 		}
-<span class="nc" id="L418">		return results;</span>
+<span class="nc" id="L455">		return results;</span>
 	}
 
 	public static Integer getInteger(Activity activity) {
-<span class="nc bnc" id="L422" title="All 2 branches missed.">		if (activity != null) {</span>
-<span class="nc" id="L423">			return getInt(activity.getID());</span>
+<span class="nc bnc" id="L459" title="All 2 branches missed.">		if (activity != null) {</span>
+<span class="nc" id="L460">			return getInt(activity.getID());</span>
 		}
-<span class="nc" id="L425">		return null;</span>
+<span class="nc" id="L462">		return null;</span>
 	}
 
 	/**
 	 * Returns the string value of the id, otherwise null is returned.
 	 */
 	public static Integer getInteger(ID id) {
-<span class="nc bnc" id="L432" title="All 2 branches missed.">		if (id != null) {</span>
-<span class="nc" id="L433">			return id.toInt();</span>
+<span class="nc bnc" id="L469" title="All 2 branches missed.">		if (id != null) {</span>
+<span class="nc" id="L470">			return id.toInt();</span>
 		}
-<span class="nc" id="L435">		return null;</span>
+<span class="nc" id="L472">		return null;</span>
 	}
 
 	/**
 	 * Returns the string value of the id, otherwise null is returned.
 	 */
 	public static String getString(ID id) {
-<span class="nc bnc" id="L442" title="All 2 branches missed.">		if (id != null) {</span>
-<span class="nc" id="L443">			return id.toString();</span>
+<span class="nc bnc" id="L479" title="All 2 branches missed.">		if (id != null) {</span>
+<span class="nc" id="L480">			return id.toString();</span>
 		}
-<span class="nc" id="L445">		return null;</span>
+<span class="nc" id="L482">		return null;</span>
 	}
 
 	public static String getString(Date date) {
-<span class="nc bnc" id="L449" title="All 2 branches missed.">		if (date == null) {</span>
-<span class="nc" id="L450">			return null;</span>
+<span class="nc bnc" id="L486" title="All 2 branches missed.">		if (date == null) {</span>
+<span class="nc" id="L487">			return null;</span>
 		}
-<span class="nc" id="L452">		return FormatUtils.dateToISO8601SecPrecisionString(date);</span>
+<span class="nc" id="L489">		return FormatUtils.dateToISO8601SecPrecisionString(date);</span>
 	}
 
 	public static BusinessWFOException getParameterIsRequiredException(Localizer localizer, String paramName) {
-<span class="nc" id="L456">		String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.PARAMETER_IS_REQUIRED, paramName);</span>
-<span class="nc" id="L457">		return new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
+<span class="nc" id="L493">		String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.PARAMETER_IS_REQUIRED, paramName);</span>
+<span class="nc" id="L494">		return new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
 	}
 
 	/**
 	 * Logs the exception and returns an exception to be thrown by the facade implementation.
 	 */
-	public static WFOException handleFacadeException(Exception ex, Category log) {
-<span class="nc bnc" id="L464" title="All 4 branches missed.">		if (ex instanceof RemoteException || ex instanceof BbmException) {</span>
-<span class="nc" id="L465">			log.error(ex.getLocalizedMessage(), ex);</span>
-<span class="nc" id="L466">			return new BusinessWFOException(ex.getLocalizedMessage(), Response.Status.BAD_REQUEST);</span>
+	public static WFOException handleFacadeException(RequestContext context, Exception ex, Category log) {
+<span class="nc bnc" id="L501" title="All 2 branches missed.">		if (ex instanceof RemoteException) {</span>
+<span class="nc" id="L502">			log.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L503">			return new BusinessWFOException(ex.getLocalizedMessage(), Response.Status.BAD_REQUEST);</span>
 		}
 
-<span class="nc bnc" id="L469" title="All 2 branches missed.">		if (ex instanceof WFOException) {</span>
-<span class="nc" id="L470">			log.error(ex.getLocalizedMessage(), ex);</span>
-<span class="nc" id="L471">			return (WFOException) ex;</span>
+<span class="nc bnc" id="L506" title="All 2 branches missed.">		if (ex instanceof BPException) {</span>
+<span class="nc" id="L507">			BPException bpex = (BPException) ex;</span>
+<span class="nc" id="L508">			String msg = bpex.getLocalizedMessage(context.getLocaleContext().getLanguageLocale());</span>
+<span class="nc" id="L509">			log.error(msg, ex);</span>
+<span class="nc" id="L510">			return new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
 		}
 
-<span class="nc bnc" id="L474" title="All 2 branches missed.">		if (ex instanceof RmHardValidationException) {</span>
-<span class="nc" id="L475">			log.error(ex.getLocalizedMessage(), ex);</span>
-<span class="nc" id="L476">			return new BusinessWFOException(ex.getLocalizedMessage(), Response.Status.CONFLICT);</span>
+<span class="nc bnc" id="L513" title="All 2 branches missed.">		if (ex instanceof WFOException) {</span>
+<span class="nc" id="L514">			log.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L515">			return (WFOException) ex;</span>
 		}
 
-<span class="nc" id="L479">		log.error(ex.getLocalizedMessage(), ex);</span>
-<span class="nc" id="L480">		return new SystemWFOException(ex.getLocalizedMessage());</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">		if (ex instanceof RmHardValidationException) {</span>
+<span class="nc" id="L519">			RmHardValidationException hardValEx = (RmHardValidationException) ex;</span>
+<span class="nc" id="L520">			String msg = hardValEx.getLocalizedMessage(context.getLocalizer(), context.getViewingTimeZone());</span>
+<span class="nc" id="L521">			log.error(msg, ex);</span>
+<span class="nc" id="L522">			return new BusinessWFOException(msg, Response.Status.CONFLICT);</span>
+		}
+
+<span class="nc" id="L525">		log.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L526">		return new SystemWFOException(ex.getLocalizedMessage());</span>
 	}
 
 	/**
 	 * Logs the exception and returns an exception to be thrown by the service.
 	 */
 	public static WFOException handleServiceException(Exception ex, Category log) {
-<span class="nc bnc" id="L487" title="All 2 branches missed.">		if (ex instanceof IllegalArgumentException) {</span>
-<span class="nc" id="L488">			log.error(ex.getLocalizedMessage(), ex);</span>
-<span class="nc" id="L489">			return new BusinessWFOException(ex.getLocalizedMessage(), Response.Status.BAD_REQUEST);</span>
-<span class="nc bnc" id="L490" title="All 2 branches missed.">		} else if (ex instanceof WFOException) {</span>
-<span class="nc" id="L491">			log.error(ex.getLocalizedMessage(), ex);</span>
-<span class="nc" id="L492">			return (WFOException) ex;</span>
+<span class="nc bnc" id="L533" title="All 2 branches missed.">		if (ex instanceof IllegalArgumentException) {</span>
+<span class="nc" id="L534">			log.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L535">			return new BusinessWFOException(ex.getLocalizedMessage(), Response.Status.BAD_REQUEST);</span>
+<span class="nc bnc" id="L536" title="All 2 branches missed.">		} else if (ex instanceof WFOException) {</span>
+<span class="nc" id="L537">			log.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L538">			return (WFOException) ex;</span>
 		}
-<span class="nc" id="L494">		log.error(ex.getLocalizedMessage(), ex);</span>
-<span class="nc" id="L495">		return new SystemWFOException(ex.getLocalizedMessage());</span>
+<span class="nc" id="L540">		log.error(ex.getLocalizedMessage(), ex);</span>
+<span class="nc" id="L541">		return new SystemWFOException(ex.getLocalizedMessage());</span>
 	}
 
 	/**
 	 * Throws a BusinessWFOException if the user is not authorized for at least one privilege.
 	 */
 	public static void assertIsAuthorized(RequestContext context, ID... privilegeIDs) throws BusinessWFOException {
-<span class="nc bnc" id="L502" title="All 2 branches missed.">		if (!isAuthorizedForAtLeastOne(context, privilegeIDs)) {</span>
-<span class="nc" id="L503">			throwUnauthorizedRequest(context);</span>
+<span class="nc bnc" id="L548" title="All 2 branches missed.">		if (!isAuthorizedForAtLeastOne(context, privilegeIDs)) {</span>
+<span class="nc" id="L549">			throwUnauthorizedRequest(context);</span>
 		}
-<span class="nc" id="L505">	}</span>
+<span class="nc" id="L551">	}</span>
 
 	/**
 	 * Returns true if the user has at least one privilege.
 	 */
 	public static boolean isAuthorizedForAtLeastOne(RequestContext context, ID... privilegeIDs) {
-<span class="nc" id="L511">		User user = context.getUser();</span>
-<span class="nc bnc" id="L512" title="All 2 branches missed.">		for (ID privilegeID : privilegeIDs) {</span>
-<span class="nc bnc" id="L513" title="All 2 branches missed.">			if (user.isAuthorized(privilegeID)) {</span>
-<span class="nc" id="L514">				return true;</span>
+<span class="nc" id="L557">		User user = context.getUser();</span>
+<span class="nc bnc" id="L558" title="All 2 branches missed.">		for (ID privilegeID : privilegeIDs) {</span>
+<span class="nc bnc" id="L559" title="All 2 branches missed.">			if (user.isAuthorized(privilegeID)) {</span>
+<span class="nc" id="L560">				return true;</span>
 			}
 		}
-<span class="nc" id="L517">		return false;</span>
+<span class="nc" id="L563">		return false;</span>
 	}
 
 	/**
 	 * Throws a BusinessWFOException if the system doesn't have the advanced RM license.
 	 */
 	public static void assertHasAdvancedRmLicense(RequestContext context) throws BusinessWFOException {
-<span class="nc bnc" id="L524" title="All 2 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense()) {</span>
-<span class="nc" id="L525">			throwUnauthorizedRequest(context);</span>
+<span class="nc bnc" id="L570" title="All 2 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L571">			throwUnauthorizedRequest(context);</span>
 		}
-<span class="nc" id="L527">	}</span>
+<span class="nc" id="L573">	}</span>
 
 	/**
 	 * Throws a BusinessWFOException if the system doesn't have the RM Shift Bidding license.
 	 */
 	public static void assertHasShiftBiddingLicense(RequestContext context) throws BusinessWFOException {
-<span class="nc bnc" id="L533" title="All 2 branches missed.">		if (!LicenseUtil.hasShiftBiddingLicense()) {</span>
-<span class="nc" id="L534">			throwUnauthorizedRequest(context);</span>
+<span class="nc bnc" id="L579" title="All 2 branches missed.">		if (!LicenseUtil.hasShiftBiddingLicense()) {</span>
+<span class="nc" id="L580">			throwUnauthorizedRequest(context);</span>
 		}
-<span class="nc" id="L536">	}</span>
+<span class="nc" id="L582">	}</span>
 
 	/**
 	 * Throws a BusinessWFOException if the system doesn't have the RM Time Off Manager license.
 	 */
 	public static void assertHasTimeOffManagerLicense(RequestContext context) throws BusinessWFOException {
-<span class="nc bnc" id="L542" title="All 2 branches missed.">		if (!LicenseUtil.hasTimeOffManagerLicense()) {</span>
-<span class="nc" id="L543">			throwUnauthorizedRequest(context);</span>
+<span class="nc bnc" id="L588" title="All 2 branches missed.">		if (!LicenseUtil.hasTimeOffManagerLicense()) {</span>
+<span class="nc" id="L589">			throwUnauthorizedRequest(context);</span>
 		}
-<span class="nc" id="L545">	}</span>
+<span class="nc" id="L591">	}</span>
 
 	/**
 	 * Throws a BusinessWFOException for an unauthorized request.
 	 */
 	public static void throwUnauthorizedRequest(RequestContext context) throws BusinessWFOException {
-<span class="nc" id="L551">		String msg = context.getLocalizer().i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.UNAUTHORIZED_REQUEST);</span>
-<span class="nc" id="L552">		throw new BusinessWFOException(msg, Response.Status.FORBIDDEN);</span>
+<span class="nc" id="L597">		String msg = context.getLocalizer().i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.UNAUTHORIZED_REQUEST);</span>
+<span class="nc" id="L598">		throw new BusinessWFOException(msg, Response.Status.FORBIDDEN);</span>
 	}
 
 	/**
 	 * Throws a BusinessWFOException for unauthorized to access RM request.
 	 */
 	public static void throwUnauthorizedToAccessRequest(RequestContext context) throws BusinessWFOException {
-<span class="nc" id="L559">		String msg = context.getLocalizer().i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.UNAUTHORIZED_TO_ACCESS_REQUEST);</span>
-<span class="nc" id="L560">		throw new BusinessWFOException(msg, Response.Status.CONFLICT);</span>
+<span class="nc" id="L605">		String msg = context.getLocalizer().i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.UNAUTHORIZED_TO_ACCESS_REQUEST);</span>
+<span class="nc" id="L606">		throw new BusinessWFOException(msg, Response.Status.CONFLICT);</span>
 	}
 
 	public static void setStatusHistory(RequestEntity reqEntity, Collection&lt;RequestAuditTrail&gt; auditTrails) {
-<span class="nc bnc" id="L564" title="All 2 branches missed.">		if (auditTrails == null) {</span>
-<span class="nc" id="L565">			return;</span>
+<span class="nc bnc" id="L610" title="All 2 branches missed.">		if (auditTrails == null) {</span>
+<span class="nc" id="L611">			return;</span>
 		}
-<span class="nc" id="L567">		List&lt;RequestStatusEntity&gt; reqStatusList = new ArrayList&lt;RequestStatusEntity&gt;();</span>
-<span class="nc" id="L568">		UserManager userMgr = RmUtils.getUserManager();</span>
-<span class="nc bnc" id="L569" title="All 2 branches missed.">		for (RequestAuditTrail auditTrail : auditTrails) {</span>
-<span class="nc" id="L570">			RequestStatusEntity reqStatus = new RequestStatusEntity();</span>
-<span class="nc" id="L571">			reqStatus.setChangeDate(FormatUtils.dateToISO8601SecPrecisionString(auditTrail.getModifiedAt()));</span>
-<span class="nc" id="L572">			reqStatus.setComments(auditTrail.getNote());</span>
-<span class="nc" id="L573">			reqStatus.setModifiedBy(getUserName(userMgr, auditTrail));</span>
-<span class="nc" id="L574">			reqStatus.setStatusCode(RmUtils.getRequestStatusCode(auditTrail.getStatus()));</span>
-<span class="nc" id="L575">			reqStatusList.add(reqStatus);</span>
-<span class="nc" id="L576">		}</span>
+<span class="nc" id="L613">		List&lt;RequestStatusEntity&gt; reqStatusList = new ArrayList&lt;RequestStatusEntity&gt;();</span>
+<span class="nc" id="L614">		UserManager userMgr = RmUtils.getUserManager();</span>
+<span class="nc bnc" id="L615" title="All 2 branches missed.">		for (RequestAuditTrail auditTrail : auditTrails) {</span>
+<span class="nc" id="L616">			RequestStatusEntity reqStatus = new RequestStatusEntity();</span>
+<span class="nc" id="L617">			reqStatus.setChangeDate(FormatUtils.dateToISO8601SecPrecisionString(auditTrail.getModifiedAt()));</span>
+<span class="nc" id="L618">			reqStatus.setComments(auditTrail.getNote());</span>
+<span class="nc" id="L619">			reqStatus.setModifiedBy(getUserName(userMgr, auditTrail));</span>
+<span class="nc" id="L620">			reqStatus.setStatusCode(RmUtils.getRequestStatusCode(auditTrail.getStatus()));</span>
+<span class="nc" id="L621">			reqStatusList.add(reqStatus);</span>
+<span class="nc" id="L622">		}</span>
 
-<span class="nc" id="L578">		reqEntity.setStatusHistory(reqStatusList);</span>
-<span class="nc" id="L579">	}</span>
+<span class="nc" id="L624">		reqEntity.setStatusHistory(reqStatusList);</span>
+<span class="nc" id="L625">	}</span>
 
 	public static void setValidationResults(RequestEntity reqEntity, Collection&lt;ValidationResult&gt; valResults,
 			RequestContext context) {
-<span class="nc bnc" id="L583" title="All 2 branches missed.">		if (valResults == null) {</span>
-<span class="nc" id="L584">			return;</span>
+<span class="nc bnc" id="L629" title="All 2 branches missed.">		if (valResults == null) {</span>
+<span class="nc" id="L630">			return;</span>
 		}
-<span class="nc" id="L586">		List&lt;ValidationResultEntity&gt; valResultsList = new ArrayList&lt;ValidationResultEntity&gt;();</span>
-<span class="nc bnc" id="L587" title="All 2 branches missed.">		for (ValidationResult valResult : valResults) {</span>
-<span class="nc" id="L588">			ValidationResultEntity reqValResult = new ValidationResultEntity();</span>
-<span class="nc" id="L589">			reqValResult.setRelativeUrl(getValidationUrl(valResult, context));</span>
-<span class="nc" id="L590">			reqValResult.setErrorMessage(valResult.getLocalizedMessage(context.getLocalizer(), context.getViewingTimeZone()));</span>
-<span class="nc" id="L591">			valResultsList.add(reqValResult);</span>
-<span class="nc" id="L592">		}</span>
+<span class="nc" id="L632">		List&lt;ValidationResultEntity&gt; valResultsList = new ArrayList&lt;ValidationResultEntity&gt;();</span>
+<span class="nc bnc" id="L633" title="All 2 branches missed.">		for (ValidationResult valResult : valResults) {</span>
+<span class="nc" id="L634">			ValidationResultEntity reqValResult = new ValidationResultEntity();</span>
+<span class="nc" id="L635">			reqValResult.setRelativeUrl(getValidationUrl(valResult, context));</span>
+<span class="nc" id="L636">			reqValResult.setErrorMessage(valResult.getLocalizedMessage(context.getLocalizer(), context.getViewingTimeZone()));</span>
+<span class="nc" id="L637">			valResultsList.add(reqValResult);</span>
+<span class="nc" id="L638">		}</span>
 
-<span class="nc" id="L594">		reqEntity.setValidationResults(valResultsList);</span>
-<span class="nc" id="L595">	}</span>
+<span class="nc" id="L640">		reqEntity.setValidationResults(valResultsList);</span>
+<span class="nc" id="L641">	}</span>
 
 	public static String getValidationUrl(ValidationResult vr, RequestContext context) {
-<span class="nc bnc" id="L598" title="All 2 branches missed.">		if (!vr.isSoft()) {</span>
-<span class="nc" id="L599">			return &quot;&quot;; // Hard validation does not have alerts</span>
+<span class="nc bnc" id="L644" title="All 2 branches missed.">		if (!vr.isSoft()) {</span>
+<span class="nc" id="L645">			return &quot;&quot;; // Hard validation does not have alerts</span>
 		}
 
-<span class="nc" id="L602">		String validatorName = vr.getValidatorName();</span>
-<span class="nc" id="L603">		String[] imgStrs = RequestUtil.getImgStrings(validatorName, context.getLocalizer());</span>
+<span class="nc" id="L648">		String validatorName = vr.getValidatorName();</span>
+<span class="nc" id="L649">		String[] imgStrs = RequestUtil.getImgStrings(validatorName, context.getLocalizer());</span>
 
-<span class="nc" id="L605">		return imgStrs[0];</span>
+<span class="nc" id="L651">		return imgStrs[0];</span>
 	}
 
 	private static String getUserName(UserManager userMgr, RequestAuditTrail auditTrail) {
-<span class="nc" id="L609">		String userName = &quot;&quot;;</span>
+<span class="nc" id="L655">		String userName = &quot;&quot;;</span>
 		try {
-<span class="nc" id="L611">			User atUser = userMgr.getUserByID(auditTrail.getBpUserId());</span>
-<span class="nc" id="L612">			userName = atUser.getUserName();</span>
-<span class="nc" id="L613">		} catch (Exception e) {</span>
-<span class="nc" id="L614">			LOG.debug(&quot;cannot retrieve user name for request audit trail&quot;);</span>
-<span class="nc" id="L615">		}</span>
-<span class="nc" id="L616">		return userName;</span>
+<span class="nc" id="L657">			User atUser = userMgr.getUserByID(auditTrail.getBpUserId());</span>
+<span class="nc" id="L658">			userName = atUser.getUserName();</span>
+<span class="nc" id="L659">		} catch (Exception e) {</span>
+<span class="nc" id="L660">			LOG.debug(&quot;cannot retrieve user name for request audit trail&quot;);</span>
+<span class="nc" id="L661">		}</span>
+<span class="nc" id="L662">		return userName;</span>
 	}
 
 	public static ID stringToIntegerID(String sId)
 	{
-<span class="nc bnc" id="L621" title="All 2 branches missed.">		return (sId==null? null: ID.fromInt(Integer.parseInt(sId)));</span>
+<span class="nc bnc" id="L667" title="All 2 branches missed.">		return (sId==null? null: ID.fromInt(Integer.parseInt(sId)));</span>
 	}
 
 	public static Calendar getCalendarInGMTFromDate(Date date)
 	{
-<span class="nc" id="L626">		Calendar cal = Calendar.getInstance();</span>
-<span class="nc" id="L627">		cal.setTimeZone(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
-<span class="nc bnc" id="L628" title="All 2 branches missed.">		if(date != null)</span>
+<span class="nc" id="L672">		Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L673">		cal.setTimeZone(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="nc bnc" id="L674" title="All 2 branches missed.">		if(date != null)</span>
 		{
-<span class="nc" id="L630">			cal.setTime(date);</span>
+<span class="nc" id="L676">			cal.setTime(date);</span>
 		}
-<span class="nc" id="L632">		return cal;</span>
+<span class="nc" id="L678">		return cal;</span>
 	}
 
+	public static void assertNotNull(RequestContext context, RequestAggregate request, ID requestID) throws BusinessWFOException {
+<span class="nc bnc" id="L682" title="All 2 branches missed.">		if (request == null) {</span>
+<span class="nc" id="L683">			throwExceptionForFailedToLoadRequestWithID(context, requestID);</span>
+		}
+<span class="nc" id="L685">	}</span>
+
 	public static BusinessWFOException createInvalidParameterException(Localizer localizer, String parameterName) {
-<span class="nc" id="L636">		String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.INVALID_PARAMETER, parameterName);</span>
-<span class="nc" id="L637">		return new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
+<span class="nc" id="L688">		String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.INVALID_PARAMETER, parameterName);</span>
+<span class="nc" id="L689">		return new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
 	}
 
 	public static void throwExceptionFromContextPageMessage(RequestContext context)
 			throws BusinessWFOException {
-<span class="nc" id="L642">		Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L643">		String errorMsg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.UNABLE_TO_SAVE_REQUEST);</span>
-<span class="nc" id="L644">		Collection&lt;Message&gt; messages = context.getPageMessages();</span>
-<span class="nc" id="L645">		Iterator&lt;Message&gt; it = messages.iterator();</span>
-<span class="nc bnc" id="L646" title="All 2 branches missed.">		if (it.hasNext()) {</span>
-<span class="nc" id="L647">			Message message = it.next();</span>
-<span class="nc" id="L648">			errorMsg = message.getLocalizedMessage(localizer);</span>
+<span class="nc" id="L694">		Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L695">		String errorMsg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.UNABLE_TO_SAVE_REQUEST);</span>
+<span class="nc" id="L696">		Collection&lt;Message&gt; messages = context.getPageMessages();</span>
+<span class="nc" id="L697">		Iterator&lt;Message&gt; it = messages.iterator();</span>
+<span class="nc bnc" id="L698" title="All 2 branches missed.">		if (it.hasNext()) {</span>
+<span class="nc" id="L699">			Message message = it.next();</span>
+<span class="nc" id="L700">			errorMsg = message.getLocalizedMessage(localizer);</span>
 		}
-<span class="nc" id="L650">		throw new BusinessWFOException(errorMsg, Response.Status.BAD_REQUEST);</span>
+<span class="nc" id="L702">		throw new BusinessWFOException(errorMsg, Response.Status.BAD_REQUEST);</span>
 	}
 
 	public static void throwExceptionFromPageMessage(RequestContext context, PageModel model)
 			throws BusinessWFOException {
-<span class="nc" id="L655">		Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L656">		String errorMsg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.UNABLE_TO_SAVE_REQUEST);</span>
-<span class="nc" id="L657">		Collection&lt;Message&gt; messages = model.getPageMessageList();</span>
-<span class="nc" id="L658">		Iterator&lt;Message&gt; it = messages.iterator();</span>
-<span class="nc bnc" id="L659" title="All 2 branches missed.">		if (it.hasNext()) {</span>
-<span class="nc" id="L660">			Message message = it.next();</span>
-<span class="nc" id="L661">			errorMsg = message.getLocalizedMessage(localizer);</span>
+<span class="nc" id="L707">		Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L708">		String errorMsg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.UNABLE_TO_SAVE_REQUEST);</span>
+<span class="nc" id="L709">		Collection&lt;Message&gt; messages = model.getPageMessageList();</span>
+<span class="nc" id="L710">		Iterator&lt;Message&gt; it = messages.iterator();</span>
+<span class="nc bnc" id="L711" title="All 2 branches missed.">		if (it.hasNext()) {</span>
+<span class="nc" id="L712">			Message message = it.next();</span>
+<span class="nc" id="L713">			errorMsg = message.getLocalizedMessage(localizer);</span>
 		}
-<span class="nc" id="L663">		throw new BusinessWFOException(errorMsg, Response.Status.BAD_REQUEST);</span>
+<span class="nc" id="L715">		throw new BusinessWFOException(errorMsg, Response.Status.BAD_REQUEST);</span>
 	}
 
 	public static void throwExceptionBadRequest(Localizer localizer, String bundleName, String key) throws BusinessWFOException {
-<span class="nc" id="L667">		String msg = localizer.i18n(bundleName, key);</span>
-<span class="nc" id="L668">		throwExceptionBadRequest(msg);</span>
-<span class="nc" id="L669">	}</span>
+<span class="nc" id="L719">		String msg = localizer.i18n(bundleName, key);</span>
+<span class="nc" id="L720">		throwExceptionBadRequest(msg);</span>
+<span class="nc" id="L721">	}</span>
 
 	public static void throwExceptionBadRequest(String msg) throws BusinessWFOException {
-<span class="nc" id="L672">		throw new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
+<span class="nc" id="L724">		throw new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
 	}
 
 	/**
 	 * Throws a bad request BusinessWFOException if any message is a warning or higher.
 	 */
 	public static void throwExceptionIfAtleastWarningMessage(RequestContext context, List&lt;Message&gt; messages) throws BusinessWFOException {
-<span class="nc" id="L679">		Localizer localizer = context.getLocalizer();</span>
-<span class="nc bnc" id="L680" title="All 2 branches missed.">		for (Message message : messages) {</span>
-<span class="nc bnc" id="L681" title="All 2 branches missed.">			if (message.getMessageType() &gt;= Message.WARNING_TYPE) {</span>
-<span class="nc" id="L682">				throwExceptionBadRequest(message.getLocalizedMessage(localizer));</span>
+<span class="nc" id="L731">		Localizer localizer = context.getLocalizer();</span>
+<span class="nc bnc" id="L732" title="All 2 branches missed.">		for (Message message : messages) {</span>
+<span class="nc bnc" id="L733" title="All 2 branches missed.">			if (message.getMessageType() &gt;= Message.WARNING_TYPE) {</span>
+<span class="nc" id="L734">				throwExceptionBadRequest(message.getLocalizedMessage(localizer));</span>
 			}
-<span class="nc" id="L684">		}</span>
-<span class="nc" id="L685">	}</span>
+<span class="nc" id="L736">		}</span>
+<span class="nc" id="L737">	}</span>
+
+	public static void throwExceptionForFailedToLoadRequestWithID(RequestContext context, ID requestID) throws BusinessWFOException {
+<span class="nc" id="L740">		String msg = context.getLocalizer().i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.FAILED_TO_LOAD_REQUEST_WITH_ID, requestID);</span>
+<span class="nc" id="L741">		throw new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
+	}
 
 	public static void addPageMessages(Localizer localizer, List&lt;MessageEntity&gt; dest, List&lt;Message&gt; messages) {
-<span class="nc bnc" id="L688" title="All 2 branches missed.">		for (Message message : messages) {</span>
-<span class="nc" id="L689">			dest.add(new MessageEntity(message.getMessageID(),</span>
-<span class="nc" id="L690">					message.getMessageArgs(),</span>
-<span class="nc" id="L691">					message.getLocalizedMessage(localizer),</span>
-<span class="nc" id="L692">					message.getMessageType()));</span>
-<span class="nc" id="L693">		}</span>
-<span class="nc" id="L694">	}</span>
+<span class="nc bnc" id="L745" title="All 2 branches missed.">		for (Message message : messages) {</span>
+<span class="nc" id="L746">			dest.add(new MessageEntity(message.getMessageID(),</span>
+<span class="nc" id="L747">					message.getMessageArgs(),</span>
+<span class="nc" id="L748">					message.getLocalizedMessage(localizer),</span>
+<span class="nc" id="L749">					message.getMessageType()));</span>
+<span class="nc" id="L750">		}</span>
+<span class="nc" id="L751">	}</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

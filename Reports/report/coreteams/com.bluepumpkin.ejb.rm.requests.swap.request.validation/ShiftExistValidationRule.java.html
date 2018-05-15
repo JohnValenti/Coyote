@@ -13,24 +13,31 @@
 import java.io.Serializable;
 import java.util.Calendar;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 
+import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.common.util.TimeZoneUtil;
 import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodUtil;
 import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
 import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
+import com.bluepumpkin.ejb.bbm.timeoffcalculator.TimeMap;
 import com.bluepumpkin.ejb.rm.Log;
 import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
 import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
 import com.bluepumpkin.ejb.rm.requests.swap.shiftitem.model.ShiftSwapItem;
+import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
 import com.bluepumpkin.ejb.rm.util.DateUtil;
+import com.bluepumpkin.ejb.rm.util.LicenseUtil;
 import com.bluepumpkin.ejb.rm.util.RmUtil;
 import com.bluepumpkin.ejb.rm.util.ShiftSwapRequestUtil;
 import com.verint.ejb.wfm.WfmManagerFactory;
@@ -52,16 +59,23 @@ import com.verint.ejb.wfm.WfmManagerFactory;
 public class ShiftExistValidationRule implements Validator
 {
 
-<span class="nc" id="L55">    private static Category m_cat = Log.initCategory( ShiftExistValidationRule.class.getName());</span>
+<span class="nc" id="L62">    private static Category m_cat = Log.initCategory( ShiftExistValidationRule.class.getName());</span>
 
-<span class="nc" id="L57">    private ShiftSwapValidationCache m_vc = null;</span>
+<span class="nc" id="L64">    private ShiftSwapValidationCache m_vc = null;</span>
 
-<span class="nc" id="L59">    public ShiftExistValidationRule(){};</span>
+   
+<span class="nc" id="L67">    public ShiftExistValidationRule() {</span>
+    	//empty
+<span class="nc" id="L69">    }</span>
 
 	//used for unit testing.
 	void setShiftSwapValidationCache(ShiftSwapValidationCache cache) {
-<span class="nc" id="L63">		m_vc = cache;</span>
-<span class="nc" id="L64">	}</span>
+<span class="nc" id="L73">		m_vc = cache;</span>
+<span class="nc" id="L74">	}</span>
+	
+	protected boolean isAdvancedRMLicense() {
+<span class="nc" id="L77">		return LicenseUtil.isAdvancedRMLicense();</span>
+	}
 
     /* (non-Javadoc)
 	 * @see com.bluepumpkin.ejb.rm.requests.common.validation.Validator#validate(com.bluepumpkin.ejb.rm.requests.common.validation.Validatable)
@@ -69,48 +83,55 @@ public class ShiftExistValidationRule implements Validator
 	@Override
 	public ValidationResult validate(Validatable validatable) throws Exception
     {
-//      try {
-<span class="nc" id="L73">            ShiftSwapRequest ssr = (ShiftSwapRequest)validatable;</span>
+<span class="nc" id="L86">            ShiftSwapRequest ssr = (ShiftSwapRequest)validatable;</span>
 
-<span class="nc" id="L75">            String methodName = &quot;validate&quot;;</span>
-<span class="nc bnc" id="L76" title="All 2 branches missed.">            if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpEnterMethod(methodName, ssr));</span>
-
-<span class="nc" id="L78">            m_vc = (ShiftSwapValidationCache) ssr.getValidationCache();</span>
-
-<span class="nc" id="L80">            List items = ssr.getShiftSwapItems();</span>
-
-<span class="nc" id="L82">            int itemsSize = items.size();</span>
-
-<span class="nc" id="L84">            ValidationResult result = validateNoOfItems(validatable, itemsSize);</span>
-<span class="nc bnc" id="L85" title="All 2 branches missed.">            if ( result != null ) return result;</span>
-
-<span class="nc" id="L87">            ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
-
-<span class="nc bnc" id="L89" title="All 2 branches missed.">            if (ssr.isOneWay()) {</span>
-<span class="nc" id="L90">                result = validateOneWaySwapItems(validatable, items, itemsSize);</span>
-<span class="nc bnc" id="L91" title="All 2 branches missed.">                if ( result != null ) return result;</span>
+<span class="nc" id="L88">            String methodName = &quot;validate&quot;;</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">            if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L90">            	m_cat.debug(RmUtil.dumpEnterMethod(methodName, ssr));</span>
             }
 
-<span class="nc" id="L94">            result = validateSwapAndTimeOffSSItems(validatable, items, sam);</span>
-<span class="nc bnc" id="L95" title="All 2 branches missed.">            if ( result != null ) return result;</span>
+<span class="nc" id="L93">            m_vc = (ShiftSwapValidationCache) ssr.getValidationCache();</span>
+<span class="nc" id="L94">        	ID orgID = m_vc.getOrg().getID();</span>
 
-<span class="nc bnc" id="L97" title="All 2 branches missed.">            if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
-<span class="nc" id="L98">            return null;</span>
-//      } c_atch (Exception e) {
-//          t_hrow RequestUtil.createValidationExceptionWrapper(e, m_cat);
-//      }
+<span class="nc" id="L96">            List items = ssr.getShiftSwapItems();</span>
+
+<span class="nc" id="L98">            int itemsSize = items.size();</span>
+
+<span class="nc" id="L100">            ValidationResult result = validateNoOfItems(validatable, itemsSize);</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">            if ( result != null ) {</span>
+<span class="nc" id="L102">            	return result;</span>
+            }
+
+<span class="nc" id="L105">            ScheduleAccessManager sam = WfmManagerFactory.getScheduleAccessManager();</span>
+
+<span class="nc bnc" id="L107" title="All 2 branches missed.">            if (ssr.isOneWay()) {</span>
+<span class="nc" id="L108">                result = validateOneWaySwapItems(validatable, items, itemsSize);</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">                if ( result != null ) {</span>
+<span class="nc" id="L110">                	return result;</span>
+                }
+            }
+
+<span class="nc" id="L114">            result = validateSwapAndTimeOffSSItems(validatable, items, sam);</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">            if ( result != null ) {</span>
+<span class="nc" id="L116">            	return result;</span>
+            }
+
+<span class="nc bnc" id="L119" title="All 2 branches missed.">            if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L120">            	m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+            }
+<span class="nc" id="L122">            return null;</span>
     }
 
     private ValidationResult validateNoOfItems(Validatable validatable, int itemsSize)
     {
         // there must be at least two items for a shift swap
         // todo: should this be done in other rules as well?
-<span class="nc bnc" id="L108" title="All 2 branches missed.">        if (itemsSize &lt; 2) {</span>
-<span class="nc" id="L109">            return setHardValidationResult( validatable, RmEjbBundleKey.SS_SHIFT_EXIST_TOO_FEW_ITEMS,</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">        if (itemsSize &lt; 2) {</span>
+<span class="nc" id="L130">            return setHardValidationResult( validatable, RmEjbBundleKey.SS_SHIFT_EXIST_TOO_FEW_ITEMS,</span>
                 new Serializable[] {new Integer(itemsSize)} );
         }
 
-<span class="nc" id="L113">        return null;</span>
+<span class="nc" id="L134">        return null;</span>
     }
 
 	// todo: none of the other rules took take into account shifttype (time-off or shift)
@@ -134,26 +155,26 @@ public class ShiftExistValidationRule implements Validator
 	 * @return
 	 * @throws Exception
 	 */
-	private ValidationResult validateOneWaySwapItems(Validatable validatable, List items, int itemsSize)
+    private ValidationResult validateOneWaySwapItems(Validatable validatable, List items, int itemsSize)
             throws Exception {
             	
-<span class="nc bnc" id="L140" title="All 2 branches missed.">        if (itemsSize != 2) {</span>
-<span class="nc" id="L141">            return setHardValidationResult(validatable, RmEjbBundleKey.SS_SHIFT_EXIST_ITEMSIZE_ONEWAY,</span>
+<span class="nc bnc" id="L161" title="All 2 branches missed.">        if (itemsSize != 2) {</span>
+<span class="nc" id="L162">            return setHardValidationResult(validatable, RmEjbBundleKey.SS_SHIFT_EXIST_ITEMSIZE_ONEWAY,</span>
                 new Serializable[] {new Integer(itemsSize)});
         }
 
-<span class="nc" id="L145">        ShiftSwapItem item1 = (ShiftSwapItem)items.get(0);</span>
-<span class="nc" id="L146">        ShiftSwapItem item2 = (ShiftSwapItem)items.get(1);</span>
+<span class="nc" id="L166">        ShiftSwapItem item1 = (ShiftSwapItem)items.get(0);</span>
+<span class="nc" id="L167">        ShiftSwapItem item2 = (ShiftSwapItem)items.get(1);</span>
 
         // must be different types: &quot;shift&quot; &amp;&amp; &quot;time-off&quot;
-<span class="nc bnc" id="L149" title="All 2 branches missed.">        if ( item1.getShiftType().equals(item2.getShiftType()) ) {</span>
-<span class="nc" id="L150">            return setHardValidationResult(validatable, RmEjbBundleKey.SS_SHIFT_EXIST_ONEWAY,</span>
-<span class="nc" id="L151">                new Serializable[] { m_vc.getEmployeeNameByID(item1.getEmployeeID()),</span>
-<span class="nc" id="L152">                    item1.getShiftType(), m_vc.getEmployeeNameByID(item2.getEmployeeID()),</span>
-<span class="nc" id="L153">                    item2.getShiftType()} );</span>
+<span class="nc bnc" id="L170" title="All 2 branches missed.">        if ( item1.getShiftType().equals(item2.getShiftType()) ) {</span>
+<span class="nc" id="L171">            return setHardValidationResult(validatable, RmEjbBundleKey.SS_SHIFT_EXIST_ONEWAY,</span>
+<span class="nc" id="L172">                new Serializable[] { m_vc.getEmployeeNameByID(item1.getEmployeeID()),</span>
+<span class="nc" id="L173">                    item1.getShiftType(), m_vc.getEmployeeNameByID(item2.getEmployeeID()),</span>
+<span class="nc" id="L174">                    item2.getShiftType()} );</span>
         }
 
-<span class="nc" id="L156">        return null;</span>
+<span class="nc" id="L177">        return null;</span>
     }
 
     /**
@@ -171,114 +192,89 @@ public class ShiftExistValidationRule implements Validator
 	 * @return
 	 * @throws Exception
 	 */
-	ValidationResult validateSwapAndTimeOffSSItems(Validatable validatable, Collection items,
+    ValidationResult validateSwapAndTimeOffSSItems(Validatable validatable, Collection items,
         ScheduleAccessManager sam) throws Exception {
 
-<span class="nc" id="L177">		ShiftSwapRequest ssReq = (ShiftSwapRequest) validatable;</span>
-<span class="nc" id="L178">		boolean isTentative = ssReq.isTentative();</span>
+<span class="nc" id="L198">		ShiftSwapRequest ssReq = (ShiftSwapRequest) validatable;</span>
+<span class="nc" id="L199">		boolean isTentative = ssReq.isTentative();</span>
 		        	
-<span class="nc bnc" id="L180" title="All 2 branches missed.">        for (Iterator itrItems=items.iterator(); itrItems.hasNext(); ) {</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">        for (Iterator itrItems=items.iterator(); itrItems.hasNext(); ) {</span>
             // get the shiftswap item
-<span class="nc" id="L182">            ShiftSwapItem item = (ShiftSwapItem)itrItems.next();</span>
+<span class="nc" id="L203">            ShiftSwapItem item = (ShiftSwapItem)itrItems.next();</span>
             // obtain swapitemtype (timeoff or shift) associated with the SSItem.
-<span class="nc" id="L184">            String swapItemType = item.getShiftType();</span>
+<span class="nc" id="L205">            String swapItemType = item.getShiftType();</span>
 
             // get the published shift assignment associated with SSItem.
-<span class="nc bnc" id="L187" title="All 2 branches missed.">            ShiftAssignment pubShift = m_vc.getShiftAssignForSSItem(item, sam, true, !item.getIsPartial() );</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">            ShiftAssignment pubShift = m_vc.getShiftAssignForSSItem(item, sam, true, !item.getIsPartial() );</span>
 			
 			// fetch the unpublished shift assignment only for non tentative requests.
-<span class="nc" id="L190">			ShiftAssignment unpubShift = null;</span>
-<span class="nc bnc" id="L191" title="All 2 branches missed.">			if ( !isTentative ) { </span>
-<span class="nc bnc" id="L192" title="All 2 branches missed.">				unpubShift = m_vc.getShiftAssignForSSItem(item, sam, false, !item.getIsPartial());</span>
+<span class="nc" id="L211">			ShiftAssignment unpubShift = null;</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">			if ( !isTentative ) { </span>
+<span class="nc bnc" id="L213" title="All 2 branches missed.">				unpubShift = m_vc.getShiftAssignForSSItem(item, sam, false, !item.getIsPartial());</span>
 			}
 
 			// For ssItem type == SHIFT, an aligned shift must exist for the ssItem's time range.
-<span class="nc bnc" id="L196" title="All 2 branches missed.">            if (swapItemType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">            if (swapItemType.equals(ShiftSwapItem.SWAPITEMTYPE_SHIFT)) {</span>
                 // If no published shift assignment associated with SSItem or SSItem is not aligned with the shift.
-<span class="nc bnc" id="L198" title="All 2 branches missed.">                if (item.getIsPartial()){</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">                if (item.getIsPartial()) {</span>
                 	//check only for overlap
-<span class="nc bnc" id="L200" title="All 4 branches missed.">                	if (pubShift == null || !TimePeriodUtil.inside(item.getStartDate(), item.getEndDate(),</span>
-<span class="nc" id="L201">                			pubShift.getStartTime(), snapTo15(pubShift.getEndTime()))){</span>
-<span class="nc" id="L202">                		return setHardValidationResult( validatable, RmEjbBundleKey.SS_PARTIAL_SHIFT_DOES_NOT_EXIST_IN_PUB,</span>
-<span class="nc" id="L203">                                new Serializable[] { m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
-<span class="nc" id="L204">                                        item.getStartDate(), item.getEndDate()} );	</span>
+<span class="nc bnc" id="L221" title="All 4 branches missed.">                	if (pubShift == null || !TimePeriodUtil.inside(item.getStartDate(), item.getEndDate(),</span>
+<span class="nc" id="L222">                			pubShift.getStartTime(), snapTo15(pubShift.getEndTime()))){</span>
+<span class="nc" id="L223">                		return setHardValidationResult( validatable, RmEjbBundleKey.SS_PARTIAL_SHIFT_DOES_NOT_EXIST_IN_PUB,</span>
+<span class="nc" id="L224">                                new Serializable[] { m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
+<span class="nc" id="L225">                                        item.getStartDate(), item.getEndDate()} );	</span>
                 	}
-<span class="nc bnc" id="L206" title="All 4 branches missed.">                } else if (pubShift == null || !item.equalsShift(pubShift)) {</span>
+<span class="nc bnc" id="L227" title="All 4 branches missed.">                } else if (pubShift == null || !item.equalsShift(pubShift)) {</span>
 	                //We want to also get a shift that aligns with Time-off for a tentatively approved request that needs to be approved.
 	                //Sameet Sept 2010 ; QC 57873
-<span class="nc" id="L209">	                boolean setApprove = false;</span>
-<span class="nc bnc" id="L210" title="All 2 branches missed.">	                if (isTentative) {</span>
-<span class="nc" id="L211">		                List itemList = ssReq.getShiftSwapItems();</span>
-<span class="nc bnc" id="L212" title="All 2 branches missed.">		                for (Iterator itrItems1 = itemList.iterator(); itrItems1.hasNext();) {</span>
-<span class="nc" id="L213">			                ShiftSwapItem item1 = (ShiftSwapItem) itrItems1.next();</span>
-<span class="nc bnc" id="L214" title="All 2 branches missed.">			                if (!item1.equals(item)) {</span>
-<span class="nc bnc" id="L215" title="All 2 branches missed.">				                pubShift = ShiftSwapRequestUtil.getShiftAssignForSSItem(item1, true, !item1.getIsPartial(), false, sam, ssReq.getCache(), false);</span>
-<span class="nc bnc" id="L216" title="All 2 branches missed.">				                if (pubShift != null) {</span>
-<span class="nc" id="L217">					                setApprove = true;</span>
-<span class="nc" id="L218">					                break;</span>
+<span class="nc" id="L230">	                boolean setApprove = false;</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">	                if (isTentative) {</span>
+<span class="nc" id="L232">		                List itemList = ssReq.getShiftSwapItems();</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">		                for (Iterator itrItems1 = itemList.iterator(); itrItems1.hasNext();) {</span>
+<span class="nc" id="L234">			                ShiftSwapItem item1 = (ShiftSwapItem) itrItems1.next();</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">			                if (!item1.equals(item)) {</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">				                pubShift = ShiftSwapRequestUtil.getShiftAssignForSSItem(item1, true, !item1.getIsPartial(), false, sam, ssReq.getCache(), false);</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">				                if (pubShift != null) {</span>
+<span class="nc" id="L238">					                setApprove = true;</span>
+<span class="nc" id="L239">					                break;</span>
 				                }
 			                }
-<span class="nc" id="L221">		                }</span>
+<span class="nc" id="L242">		                }</span>
 	                }
-<span class="nc" id="L223">	                ValidationResult result = setHardValidationResult(validatable, RmEjbBundleKey.SS_SHIFT_DOES_NOT_EXIST_IN_PUB,</span>
-<span class="nc" id="L224">	                        new Serializable[]{m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
-<span class="nc" id="L225">	                                           item.getStartDate(), item.getEndDate()});</span>
-<span class="nc" id="L226">	                result.setApprove(setApprove);</span>
-<span class="nc" id="L227">	                return result;</span>
+<span class="nc" id="L244">	                ValidationResult result = setHardValidationResult(validatable, RmEjbBundleKey.SS_SHIFT_DOES_NOT_EXIST_IN_PUB,</span>
+<span class="nc" id="L245">	                        new Serializable[]{m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
+<span class="nc" id="L246">	                                           item.getStartDate(), item.getEndDate()});</span>
+<span class="nc" id="L247">	                result.setApprove(setApprove);</span>
+<span class="nc" id="L248">	                return result;</span>
                 }
-
 				// if not tentatively approvead and (no unpublished shift assignment associated with 
 				// SSItem or SSItem is not aligned with the shift)
-<span class="nc bnc" id="L232" title="All 2 branches missed.">                if (!isTentative){</span>
-<span class="nc bnc" id="L233" title="All 2 branches missed.">                	if (item.getIsPartial()){</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">                if (!isTentative) {</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">                	if (item.getIsPartial()){</span>
                     	//check only for overlap
-<span class="nc bnc" id="L235" title="All 4 branches missed.">                    	if (unpubShift == null || !TimePeriodUtil.inside(item.getStartDate(), item.getEndDate(),</span>
-<span class="nc" id="L236">                    			unpubShift.getStartTime(), snapTo15(unpubShift.getEndTime()))){</span>
-<span class="nc" id="L237">                    		return setHardValidationResult( validatable, RmEjbBundleKey.SS_SHIFT_PARTIAL_DOES_NOT_EXIST_IN_UNPUB,</span>
-<span class="nc" id="L238">                                    new Serializable[] { m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
-<span class="nc" id="L239">                                            item.getStartDate(), item.getEndDate()} );			</span>
+<span class="nc bnc" id="L255" title="All 4 branches missed.">                    	if (unpubShift == null || !TimePeriodUtil.inside(item.getStartDate(), item.getEndDate(),</span>
+<span class="nc" id="L256">                    			unpubShift.getStartTime(), snapTo15(unpubShift.getEndTime()))){</span>
+<span class="nc" id="L257">                    		return setHardValidationResult( validatable, RmEjbBundleKey.SS_SHIFT_PARTIAL_DOES_NOT_EXIST_IN_UNPUB,</span>
+<span class="nc" id="L258">                                    new Serializable[] { m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
+<span class="nc" id="L259">                                            item.getStartDate(), item.getEndDate()} );			</span>
                     	} 
-<span class="nc bnc" id="L241" title="All 4 branches missed.">					} else if ((unpubShift == null || !item.equalsShift(unpubShift)) ) {</span>
-<span class="nc" id="L242">						return setHardValidationResult( validatable, RmEjbBundleKey.SS_SHIFT_DOES_NOT_EXIST_IN_UNPUB,</span>
-<span class="nc" id="L243">							new Serializable[] { m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
-<span class="nc" id="L244">									item.getStartDate(), item.getEndDate()} );</span>
+<span class="nc bnc" id="L261" title="All 4 branches missed.">					} else if ((unpubShift == null || !item.equalsShift(unpubShift)) ) {</span>
+<span class="nc" id="L262">						return setHardValidationResult( validatable, RmEjbBundleKey.SS_SHIFT_DOES_NOT_EXIST_IN_UNPUB,</span>
+<span class="nc" id="L263">							new Serializable[] { m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
+<span class="nc" id="L264">									item.getStartDate(), item.getEndDate()} );</span>
                 	}
 				}
-			// For ssItem type == TIMEOFF, a shift must not exist during the ssItem's time range.
-			// 
-			//if SSItem swaptype is timeoff 
-<span class="nc bnc" id="L250" title="All 2 branches missed.">            } else if (swapItemType.equals(ShiftSwapItem.SWAPITEMTYPE_TIMEOFF)) {</span>
-				// if a published shift exists.
-<span class="nc bnc" id="L252" title="All 2 branches missed.">				if (doesShiftIntersectWithItem(pubShift, item)) {</span>
-<span class="nc" id="L253">	                return setHardValidationResult( validatable, RmEjbBundleKey.SS_SHIFT_EXIST_IN_PUB,</span>
-<span class="nc" id="L254">	                    new Serializable[]  { m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
-<span class="nc" id="L255">	                                                    item.getStartDate(), item.getEndDate()} );</span>
-                }
-                
-                // if not tentatively approvead and an unpublished shift exists
-<span class="nc bnc" id="L259" title="All 4 branches missed.">				if (!isTentative &amp;&amp; doesShiftIntersectWithItem(unpubShift, item)) {</span>
-<span class="nc" id="L260">					return setHardValidationResult( validatable, RmEjbBundleKey.SS_SHIFT_EXIST_IN_UNPUB,</span>
-<span class="nc" id="L261">						new Serializable[]  { m_vc.getEmployeeNameByID(item.getEmployeeID()),</span>
-<span class="nc" id="L262">														item.getStartDate(), item.getEndDate()} );</span>
-				}
-            }
-<span class="nc" id="L265">        } // end for(....) loop</span>
-
-<span class="nc" id="L267">        return null;</span>
-    } // end method
-
-
-	private boolean doesShiftIntersectWithItem(ShiftAssignment shift, ShiftSwapItem item) throws Exception {
-<span class="nc bnc" id="L272" title="All 2 branches missed.">		if (shift == null) {</span>
-<span class="nc" id="L273">			return false;</span>
-		}
-
-<span class="nc" id="L276">		return DateUtil.intervalsIntersect(shift.getStartTime(), shift.getEndTime(), item.getStartDate(), item.getEndDate());</span>
-	}
+	        }//End for check ssItemType==SHIFT 
+            //Not check for ssItemType==TIMEOFF &quot;a shift must not exist during the ssItem's time range&quot; since 15.1.0 HFR
+            //because new behavior allows 1 way full swaps even if existing shift. If there is overlap, soft validation rule applies
+            //Should not able to overlap OT extension
+<span class="nc" id="L271">	    } // end for(....) loop</span>
+<span class="nc" id="L272">        return null;</span>
+    } 
 
 	private ValidationResult setHardValidationResult(Validatable validatable, String msgKey, Serializable[] parms)
     {
-<span class="nc" id="L281">        return ValidationUtil.setHardValidationResult(validatable, msgKey, parms, this.getClass().getName());</span>
+<span class="nc" id="L277">        return ValidationUtil.setHardValidationResult(validatable, msgKey, parms, this.getClass().getName());</span>
     }
     
     /**
@@ -295,32 +291,33 @@ public class ShiftExistValidationRule implements Validator
      */
     private Date snapTo15(Date date)
     {
-<span class="nc bnc" id="L298" title="All 2 branches missed.">        if (date == null)</span>
-<span class="nc" id="L299">            return null;</span>
+<span class="nc bnc" id="L294" title="All 2 branches missed.">        if (date == null) {</span>
+<span class="nc" id="L295">            return null;</span>
+        }
         
-<span class="nc" id="L301">        Calendar cal = Calendar.getInstance(TimeZoneUtil.GMT_TIMEZONE);</span>
-<span class="nc" id="L302">        cal.setTime(date);</span>
-<span class="nc" id="L303">        cal.set(Calendar.SECOND, 0);</span>
-<span class="nc" id="L304">        cal.set(Calendar.MILLISECOND, 0);</span>
-<span class="nc" id="L305">        int minute = cal.get(Calendar.MINUTE);</span>
+<span class="nc" id="L298">        Calendar cal = Calendar.getInstance(TimeZoneUtil.GMT_TIMEZONE);</span>
+<span class="nc" id="L299">        cal.setTime(date);</span>
+<span class="nc" id="L300">        cal.set(Calendar.SECOND, 0);</span>
+<span class="nc" id="L301">        cal.set(Calendar.MILLISECOND, 0);</span>
+<span class="nc" id="L302">        int minute = cal.get(Calendar.MINUTE);</span>
         
-<span class="nc bnc" id="L307" title="All 2 branches missed.">        if (minute % 15 == 0)</span>
-<span class="nc" id="L308">            return date;</span>
+<span class="nc bnc" id="L304" title="All 2 branches missed.">        if (minute % 15 == 0) {</span>
+<span class="nc" id="L305">            return date;</span>
+        }
         
-<span class="nc bnc" id="L310" title="All 2 branches missed.">        if (minute &lt;= 15)</span>
-<span class="nc" id="L311">            minute = 15;</span>
-<span class="nc bnc" id="L312" title="All 2 branches missed.">        else if (minute &lt;= 30)</span>
-<span class="nc" id="L313">            minute = 30;</span>
-<span class="nc bnc" id="L314" title="All 2 branches missed.">        else if (minute &lt;= 45)</span>
-<span class="nc" id="L315">            minute = 45;</span>
-        else
-        {
-<span class="nc" id="L318">            minute = 0;</span>
-<span class="nc" id="L319">            cal.add(Calendar.HOUR_OF_DAY, 1);</span>
+<span class="nc bnc" id="L308" title="All 2 branches missed.">        if (minute &lt;= 15) {</span>
+<span class="nc" id="L309">            minute = 15;</span>
+<span class="nc bnc" id="L310" title="All 2 branches missed.">        } else if (minute &lt;= 30) {</span>
+<span class="nc" id="L311">            minute = 30;</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">        } else if (minute &lt;= 45) {</span>
+<span class="nc" id="L313">            minute = 45;</span>
+        } else {
+<span class="nc" id="L315">            minute = 0;</span>
+<span class="nc" id="L316">            cal.add(Calendar.HOUR_OF_DAY, 1);</span>
         }        
         
-<span class="nc" id="L322">        cal.set(Calendar.MINUTE, minute);</span>
-<span class="nc" id="L323">        return cal.getTime();</span>
+<span class="nc" id="L319">        cal.set(Calendar.MINUTE, minute);</span>
+<span class="nc" id="L320">        return cal.getTime();</span>
     }
 }
 

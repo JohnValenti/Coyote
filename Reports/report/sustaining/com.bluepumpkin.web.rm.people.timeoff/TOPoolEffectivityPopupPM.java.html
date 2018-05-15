@@ -6,19 +6,29 @@ import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.List;
 import java.util.TimeZone;
 
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.datatypes.LocalDate;
 import com.bluepumpkin.common.util.StringUtil;
-import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
-import com.bluepumpkin.ejb.bbm.workresource.model.WorkResourceAssignment;
 import com.bluepumpkin.ejb.bbm.base.BbmException;
 import com.bluepumpkin.ejb.bbm.cache.CacheUtilBBM;
 import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodUtil;
+import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
+import com.bluepumpkin.ejb.bbm.workresource.model.WorkResourceAssignment;
+import com.bluepumpkin.ejb.rm.base.RmRuntimeException;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
+import com.bluepumpkin.ejb.rm.requests.timeoff.ejb.TOPoolUtil;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.EmpTOPoolAssignment;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPool;
+import com.bluepumpkin.ejb.rm.util.LicenseUtil;
 import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
+import com.bluepumpkin.web.bbm.people.PeopleMH;
 import com.bluepumpkin.web.bbm.people.profile.effectivedate.BasePageModel;
 import com.bluepumpkin.web.bbm.people.profile.effectivedate.DataContainerPC;
+import com.bluepumpkin.web.rm.keys.RmJavaScriptFileID;
+import com.witness.web.uif.keys.JavaScriptFileID;
 import com.witness.web.uif.l10n.UIFWebBundleKey;
 import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
 import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
@@ -26,11 +36,6 @@ import com.witness.web.uif.pagemodel.PageModel;
 import com.witness.web.uif.pagemodel.WorkpaneFieldNames;
 import com.witness.web.uif.system.RequestContext;
 import com.witness.web.uif.util.HtmlUtil;
-import com.bluepumpkin.web.bbm.people.PeopleMH;
-import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.EmpTOPoolAssignment;
-import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPool;
-import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
-import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
 
 /**
  * Title:        TOPoolEffectivityPopupPM
@@ -40,77 +45,101 @@ import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
  */
 public class TOPoolEffectivityPopupPM extends BasePageModel 
 {
-<span class="fc" id="L43">	public static String FORM_ACTION = &quot;pool_eff_popup&quot;;</span>
-<span class="fc" id="L44">	public static String CUSTOM_ON_SET_JS = &quot;updateOrgDataToParentWindow()&quot;; //function is defined in EffectiveDatesUtil.js</span>
+	public static final String FORM_ACTION = &quot;pool_eff_popup&quot;;
+	public static final String CUSTOM_ON_SET_JS = &quot;updateOrgDataToParentWindow()&quot;; //function is defined in EffectiveDatesUtil.js
 
-<span class="fc" id="L46">	private String m_poolID = &quot;&quot;;   //the selected employee's time off poolID on the AsOfDate (viewDate)</span>
-<span class="fc" id="L47">	private String m_poolName = &quot;&quot;; //the selected employee's time off pool on the AsOfDate (viewDate)</span>
+<span class="nc" id="L51">	private String m_poolID = &quot;&quot;;   //the selected employee's time off poolID on the AsOfDate (viewDate)</span>
+<span class="nc" id="L52">	private String m_poolName = &quot;&quot;; //the selected employee's time off pool on the AsOfDate (viewDate)</span>
     private LocalDate m_viewDate;   //the AsOfDate (viewDate)
+	//if  not null this popup is being loaded to set the time off pool for the given activity 
+	private ID activityID;
 
 	/**
 	 * Constructor
 	 */
 	public TOPoolEffectivityPopupPM(RequestContext context) {
-<span class="fc" id="L54">		super(context, CUSTOM_ON_SET_JS);</span>
-<span class="fc" id="L55">	}</span>
+<span class="nc" id="L61">		super(context, CUSTOM_ON_SET_JS);</span>
+
+<span class="nc bnc" id="L63" title="All 2 branches missed.">		if (LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L64">			addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="nc" id="L65">			addRequiredJavaScriptFile(RmJavaScriptFileID.TIME_OFF_POOL_BY_ACTIVITY_POPUP);</span>
+<span class="nc" id="L66">			this.m_onSetJS = &quot;timeOffPoolByActivity.defaultSet()&quot;;</span>
+		}
+<span class="nc" id="L68">	}</span>
 	
+	@Override
 	protected DataContainerPC createDataContainerPC() {
-<span class="fc" id="L58">		return new TOPoolSelectorContainerPC(m_context);</span>
+<span class="nc" id="L72">		return new TOPoolSelectorContainerPC(m_context);</span>
 	}
 	
 	/**
 	 * Return an instance of the model that is ready for rendering
 	 */
 	public static PageModel getInstance(RequestContext context) {
-<span class="fc" id="L65">		return getInstance(context, TOPoolEffectivityPopupPM.class);</span>
+<span class="nc" id="L79">		return getInstance(context, TOPoolEffectivityPopupPM.class);</span>
 	}
 
+	@Override
 	protected void initializeModel() 
 	{
-<span class="fc bfc" id="L70" title="All 2 branches covered.">		if (m_isInitialized)</span>
-<span class="fc" id="L71">			return;</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">		if (m_isInitialized)</span>
+<span class="nc" id="L86">			return;</span>
 		else
-<span class="fc" id="L73">			m_isInitialized = true;</span>
+<span class="nc" id="L88">			m_isInitialized = true;</span>
 		
 		try 
 		{
 			//selectedID is a comma-delimitted string of empIDs
-<span class="pc bpc" id="L78" title="2 of 4 branches missed.">			if (selectedID!=null &amp;&amp; selectedID.length()&gt;0)</span>
+<span class="nc bnc" id="L93" title="All 4 branches missed.">			if (selectedID!=null &amp;&amp; selectedID.length()&gt;0)</span>
 			{
 				//We know at least one employee is selected
-<span class="fc" id="L81">				ID[] ids = StringUtil.parseIDString(selectedID); </span>
-<span class="pc bpc" id="L82" title="1 of 2 branches missed.">				if (ids!=null) //(m_empID != null) //we cannot rely on m_empID because it has a weird format when multiple emps are selected</span>
+<span class="nc" id="L96">				ID[] ids = StringUtil.parseIDString(selectedID); </span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">				if (ids!=null) //(m_empID != null) //we cannot rely on m_empID because it has a weird format when multiple emps are selected</span>
 				{			
-<span class="pc bpc" id="L84" title="1 of 2 branches missed.">					if (ids.length==1)</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">					if (ids.length==1)</span>
 					{
 						//Only one employee is selected. Get his pool effectivity history.
-<span class="fc" id="L87">						Calendar bigBangCal = Calendar.getInstance();</span>
-<span class="fc" id="L88">						bigBangCal.set(Calendar.YEAR, 1900);</span>
-<span class="fc" id="L89">						Calendar armageddonCal = Calendar.getInstance();</span>
-<span class="fc" id="L90">						armageddonCal.set(Calendar.YEAR, 2100);</span>
-<span class="fc" id="L91">						Collection poolHistoryList = PeopleMH.getValidEmpTOPoolAssignments(m_empID, bigBangCal.getTime(), armageddonCal.getTime());</span>
-<span class="fc" id="L92">						populateHistory(poolHistoryList);</span>
+<span class="nc" id="L102">						Calendar bigBangCal = Calendar.getInstance();</span>
+<span class="nc" id="L103">						bigBangCal.set(Calendar.YEAR, 1900);</span>
+<span class="nc" id="L104">						Calendar armageddonCal = Calendar.getInstance();</span>
+<span class="nc" id="L105">						armageddonCal.set(Calendar.YEAR, 2100);</span>
+<span class="nc" id="L106">						List&lt;EmpTOPoolAssignment&gt; poolHistoryList = TOPoolUtil.getEmpTOPoolAssignmentsByActivity(m_empID,</span>
+<span class="nc" id="L107">								bigBangCal.getTime(), armageddonCal.getTime(), activityID);</span>
+<span class="nc" id="L108">						populateHistory(poolHistoryList);</span>
 					}
 					
 					//One or more employees are selected. We do not show effectivity history for multiple employees.
 					//Make the collection of pools at the employees' common orgs and parent orgs (including their AsOfDate pool assignment)
-<span class="fc" id="L97">					Date asOfDate = m_viewDate.getTime(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
-<span class="fc" id="L98">					Collection pools = getCommonPools(selectedID, asOfDate);</span>
-<span class="fc" id="L99">					populateContainer(pools);</span>
+<span class="nc" id="L113">					Date asOfDate = getAsOfDate();</span>
+<span class="nc" id="L114">					Collection pools = getCommonPools(selectedID, asOfDate);</span>
+<span class="nc" id="L115">					populateContainer(pools);</span>
 				}
 			}
 		} 
-<span class="nc" id="L103">		catch (Exception ex) </span>
+<span class="nc" id="L119">		catch (Exception ex) </span>
 		{
-<span class="nc" id="L105">			handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L121">			handleUnableToLoadDataError(log, ex);</span>
 		} 
 		finally 
 		{
-<span class="pc" id="L109">			initContentTitle();</span>
-<span class="pc" id="L110">			initToolbar();</span>
-<span class="pc" id="L111">		}</span>
-<span class="fc" id="L112">	}</span>
+<span class="nc" id="L125">			initContentTitle();</span>
+<span class="nc" id="L126">			initToolbar();</span>
+<span class="nc" id="L127">		}</span>
+<span class="nc" id="L128">	}</span>
 	
+	private Date getAsOfDate() {
+<span class="nc bnc" id="L131" title="All 2 branches missed.">		if (m_viewDate != null) {</span>
+<span class="nc" id="L132">			return m_viewDate.getTime(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+		}
+
+<span class="nc" id="L135">		TOPoolSelectorContainerPC poolDataPC = (TOPoolSelectorContainerPC) m_dataPC;</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">		if (poolDataPC == null) {</span>
+<span class="nc" id="L137">			throw new RmRuntimeException(&quot;Could not get as of date&quot;);</span>
+		}
+
+<span class="nc" id="L140">		return poolDataPC.getShowAsDate();</span>
+	}
+
 	/**
 	 * Get the ArrayList of pools at the employees' common orgs and parent orgs (including their AsOfDate pool assignment)
 	 * @param empIDs - A comma-delimitted string of employee IDs for whom we are viewing the pool assignment effectivities.
@@ -120,34 +149,34 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	 */
 	Collection getCommonPools(String empIDs, Date asOfDate) throws Exception
 	{
-<span class="fc" id="L123">		Collection commonPools = new ArrayList();</span>
-<span class="fc" id="L124">		ID[] ids = StringUtil.parseIDString(empIDs);</span>
-<span class="pc bpc" id="L125" title="2 of 4 branches missed.">		if (ids!=null &amp;&amp; ids.length&gt;0) </span>
+<span class="nc" id="L152">		Collection commonPools = new ArrayList();</span>
+<span class="nc" id="L153">		ID[] ids = StringUtil.parseIDString(empIDs);</span>
+<span class="nc bnc" id="L154" title="All 4 branches missed.">		if (ids!=null &amp;&amp; ids.length&gt;0) </span>
 		{
-<span class="fc bfc" id="L127" title="All 2 branches covered.">			for (int i=0; i&lt;ids.length; i++)</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">			for (int i=0; i&lt;ids.length; i++)</span>
 			{
-<span class="fc" id="L129">				ID asOfOrgID = getEmployeeOrgID(m_context, ids[i], asOfDate);</span>
+<span class="nc" id="L158">				ID asOfOrgID = getEmployeeOrgID(m_context, ids[i], asOfDate);</span>
 				Collection curPools;
-<span class="pc bpc" id="L131" title="1 of 2 branches missed.">				if (asOfOrgID != null)</span>
-<span class="fc" id="L132">					curPools = PeopleMH.getTOPoolsForOrg(asOfOrgID, true);</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">				if (asOfOrgID != null)</span>
+<span class="nc" id="L161">					curPools = PeopleMH.getTOPoolsForOrg(asOfOrgID, true);</span>
 				else
-<span class="nc" id="L134">					curPools = new ArrayList();</span>
+<span class="nc" id="L163">					curPools = new ArrayList();</span>
 
 				//add this employee's AsOfDate pool if not already in the list
-<span class="fc" id="L137">				curPools = addAsOfDatePool(curPools);</span>
+<span class="nc" id="L166">				curPools = addAsOfDatePool(curPools);</span>
 
-<span class="pc bpc" id="L139" title="1 of 2 branches missed.">				if (i==0)</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">				if (i==0)</span>
 				{
-<span class="fc" id="L141">					commonPools = curPools;</span>
+<span class="nc" id="L170">					commonPools = curPools;</span>
 				}
 				else
 				{
 					//only keep the curPools that are already in commonPools
-<span class="nc" id="L146">					commonPools.retainAll(curPools);</span>
+<span class="nc" id="L175">					commonPools.retainAll(curPools);</span>
 				}				
 			}
 		}			
-<span class="fc" id="L150">		return commonPools;</span>
+<span class="nc" id="L179">		return commonPools;</span>
 	}
 	
 	/**
@@ -159,20 +188,20 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	private ID getEmployeeOrgID(RequestContext context, ID empID, Date asOfDate) throws RemoteException, BbmException {
 		//fetch all assignments and then look for overlap
 		try {
-<span class="fc" id="L162">			Collection wrList = CacheUtilBBM.getWorkResourceAssnWithTZForWRID(empID);</span>
+<span class="nc" id="L191">			Collection wrList = CacheUtilBBM.getWorkResourceAssnWithTZForWRID(empID);</span>
 			//now look for overlap with current time
-<span class="pc bpc" id="L164" title="1 of 2 branches missed.">			for (Iterator it= wrList.iterator(); it.hasNext();){</span>
-<span class="fc" id="L165">				WorkResourceAssignment wra = (WorkResourceAssignment)it.next();</span>
-<span class="pc bpc" id="L166" title="1 of 2 branches missed.">				if (TimePeriodUtil.contains(wra.getStartTime(), wra.getEndTime(),</span>
+<span class="nc bnc" id="L193" title="All 2 branches missed.">			for (Iterator it= wrList.iterator(); it.hasNext();){</span>
+<span class="nc" id="L194">				WorkResourceAssignment wra = (WorkResourceAssignment)it.next();</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">				if (TimePeriodUtil.contains(wra.getStartTime(), wra.getEndTime(),</span>
 						asOfDate)){
-<span class="fc" id="L168">					return wra.getOrganizationID();</span>
+<span class="nc" id="L197">					return wra.getOrganizationID();</span>
 				}
-<span class="nc" id="L170">			}</span>
+<span class="nc" id="L199">			}</span>
 			//still not found: use first available org
-<span class="nc" id="L172">			WorkResourceAssignment wra = (WorkResourceAssignment)wrList.iterator().next();</span>
-<span class="nc" id="L173">			return wra.getOrganizationID();</span>
-<span class="nc" id="L174">		} catch (Exception ex){</span>
-<span class="nc" id="L175">			return null;</span>
+<span class="nc" id="L201">			WorkResourceAssignment wra = (WorkResourceAssignment)wrList.iterator().next();</span>
+<span class="nc" id="L202">			return wra.getOrganizationID();</span>
+<span class="nc" id="L203">		} catch (Exception ex){</span>
+<span class="nc" id="L204">			return null;</span>
 		}
 	}
 	
@@ -183,32 +212,32 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	private Collection addAsOfDatePool(Collection pools)
 	{
 		//m_poolID is the asOfDatePool ID, so it cannot be null
-<span class="pc bpc" id="L186" title="3 of 6 branches missed.">		if (m_poolID != null &amp;&amp; !m_poolID.equals(&quot;*&quot;) &amp;&amp; !m_poolID.isEmpty())</span>
+<span class="nc bnc" id="L215" title="All 6 branches missed.">		if (m_poolID != null &amp;&amp; !m_poolID.equals(&quot;*&quot;) &amp;&amp; !m_poolID.isEmpty())</span>
 		{
-<span class="nc" id="L188">			ID asOfDatePoolID = new ID(m_poolID);</span>
-<span class="nc" id="L189">			TOPool asOfDatePool = new TOPool();</span>
-<span class="nc" id="L190">			asOfDatePool.setID(asOfDatePoolID);</span>
-<span class="nc" id="L191">			asOfDatePool.setName(m_poolName);		</span>
+<span class="nc" id="L217">			ID asOfDatePoolID = new ID(m_poolID);</span>
+<span class="nc" id="L218">			TOPool asOfDatePool = new TOPool();</span>
+<span class="nc" id="L219">			asOfDatePool.setID(asOfDatePoolID);</span>
+<span class="nc" id="L220">			asOfDatePool.setName(m_poolName);		</span>
 			
-<span class="nc bnc" id="L193" title="All 2 branches missed.">			if (pools == null)</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">			if (pools == null)</span>
 			{
-<span class="nc" id="L195">				pools = new ArrayList();</span>
-<span class="nc" id="L196">				pools.add(asOfDatePool);</span>
-<span class="nc" id="L197">				return pools;</span>
+<span class="nc" id="L224">				pools = new ArrayList();</span>
+<span class="nc" id="L225">				pools.add(asOfDatePool);</span>
+<span class="nc" id="L226">				return pools;</span>
 			}
 			else
 			{
-<span class="nc bnc" id="L201" title="All 2 branches missed.">				for (Iterator it=pools.iterator(); it.hasNext();)</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">				for (Iterator it=pools.iterator(); it.hasNext();)</span>
 				{
-<span class="nc" id="L203">					TOPool pool = (TOPool)it.next();</span>
-<span class="nc bnc" id="L204" title="All 2 branches missed.">					if (pool.getId().equals(asOfDatePoolID))</span>
-<span class="nc" id="L205">						return pools;</span>
-<span class="nc" id="L206">				}</span>
+<span class="nc" id="L232">					TOPool pool = (TOPool)it.next();</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">					if (pool.getId().equals(asOfDatePoolID))</span>
+<span class="nc" id="L234">						return pools;</span>
+<span class="nc" id="L235">				}</span>
 			}
 			
-<span class="nc" id="L209">			pools.add(asOfDatePool);</span>
+<span class="nc" id="L238">			pools.add(asOfDatePool);</span>
 		}
-<span class="fc" id="L211">		return pools;</span>
+<span class="nc" id="L240">		return pools;</span>
 	}
 
 	/**
@@ -216,25 +245,25 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	 */
 	private void initContentTitle()
 	{
-<span class="fc" id="L219">		m_contentTitlePC.setPageTitle(i18n(m_bundle, BbmWebBundleKey.EFFECTIVE_DATES));</span>
-<span class="fc" id="L220">		m_contentTitlePC.setItemName(i18n(m_bundle, BbmWebBundleKey.PEOPLE_TIMEOFF_POOL_HEADER));</span>
-<span class="fc" id="L221">	}</span>
+<span class="nc" id="L248">		m_contentTitlePC.setPageTitle(i18n(m_bundle, BbmWebBundleKey.EFFECTIVE_DATES));</span>
+<span class="nc" id="L249">		m_contentTitlePC.setItemNameText(i18n(m_bundle, BbmWebBundleKey.PEOPLE_TIMEOFF_POOL_HEADER));</span>
+<span class="nc" id="L250">	}</span>
 	
 	//Getters and Setters
 	
 	public String getPoolId()
 	{
-<span class="nc" id="L227">		return m_poolID;</span>
+<span class="nc" id="L256">		return m_poolID;</span>
 	}
 	
 	public void setPoolId(String aVal)
 	{
-<span class="nc" id="L232">		m_poolID = aVal;</span>
-<span class="nc" id="L233">	}</span>
+<span class="nc" id="L261">		m_poolID = aVal;</span>
+<span class="nc" id="L262">	}</span>
 	
 	public String getPoolName()
 	{
-<span class="nc" id="L237">		return m_poolName;</span>
+<span class="nc" id="L266">		return m_poolName;</span>
 	}
 	
 	/**
@@ -242,8 +271,8 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	 */
 	public void setPoolName(String aVal)
 	{
-<span class="nc" id="L245">		m_poolName = aVal;</span>
-<span class="nc" id="L246">	}</span>
+<span class="nc" id="L274">		m_poolName = aVal;</span>
+<span class="nc" id="L275">	}</span>
 	
 	/**
 	 * Set the time off pool name.
@@ -254,8 +283,8 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	 */
 	public void setPoolId_RO(String aVal)
 	{
-<span class="nc" id="L257">		setPoolName(aVal);</span>
-<span class="nc" id="L258">	}</span>
+<span class="nc" id="L286">		setPoolName(aVal);</span>
+<span class="nc" id="L287">	}</span>
 	
 	/**
 	 * Get the view (as of) date
@@ -263,7 +292,7 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	 */
 	public LocalDate getViewDate()
 	{
-<span class="nc" id="L266">		return m_viewDate;</span>
+<span class="nc" id="L295">		return m_viewDate;</span>
 	}
 	
 	/**
@@ -272,8 +301,8 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	 */
 	public void setViewDate(String aVal)
 	{
-<span class="fc" id="L275">		m_viewDate = new LocalDate(new Date(new Long(aVal)), TimeZone.getTimeZone(&quot;GMT&quot;));</span>
-<span class="fc" id="L276">	}</span>
+<span class="nc" id="L304">		m_viewDate = new LocalDate(new Date(new Long(aVal)), TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="nc" id="L305">	}</span>
 	
 	/**
 	 * Get the ID of the selected employee from the selection pane, and set m_empID and m_employee accordingly.
@@ -282,46 +311,46 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	public void setPerformActionOnID(String aVal)
 	{
 		//let the parent class handle it
-<span class="fc" id="L285">		setSelectedID(aVal);</span>
+<span class="nc" id="L314">		setSelectedID(aVal);</span>
 		
 		
-<span class="pc bpc" id="L288" title="1 of 2 branches missed.">		if (m_empID != null)</span>
+<span class="nc bnc" id="L317" title="All 2 branches missed.">		if (m_empID != null)</span>
 		{
 			try
 			{
 				//get the employee
-<span class="fc" id="L293">				m_employee = ValidationUtil.getEmployeeByID(m_empID, null, Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY_HISTORY);</span>
+<span class="nc" id="L322">				m_employee = ValidationUtil.getEmployeeByID(m_empID, null, Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY_HISTORY);</span>
 			}
-<span class="nc" id="L295">			catch (Exception e)</span>
+<span class="nc" id="L324">			catch (Exception e)</span>
 			{			
-<span class="fc" id="L297">			}</span>
+<span class="nc" id="L326">			}</span>
 		}
 		
-<span class="fc" id="L300">	}</span>
+<span class="nc" id="L329">	}</span>
 	
-	private void populateHistory(Collection poolHistoryList) 
+	private void populateHistory(List&lt;EmpTOPoolAssignment&gt; poolHistoryList) 
 	{
-<span class="fc" id="L304">		m_historyPC.setHeightInPixels(160);</span>
-<span class="fc" id="L305">		TableHeaderPC headerPC = m_historyPC.getHeader();</span>
-<span class="fc" id="L306">		headerPC.addColumnHeaderData(&quot;&quot;, m_localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.FROM));</span>
-<span class="fc" id="L307">		headerPC.addColumnHeaderData(&quot;&quot;, m_localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.TO));</span>
-<span class="fc" id="L308">		headerPC.addColumnHeaderData(&quot;&quot;, m_localizer.i18n(BbmWebBundleKey.BUNDLE_NAME, BbmWebBundleKey.PEOPLE_TIMEOFF_POOL_HEADER));</span>
+<span class="nc" id="L333">		m_historyPC.setHeightInPixels(160);</span>
+<span class="nc" id="L334">		TableHeaderPC headerPC = m_historyPC.getHeader();</span>
+<span class="nc" id="L335">		headerPC.addColumnHeaderData(&quot;&quot;, m_localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.FROM));</span>
+<span class="nc" id="L336">		headerPC.addColumnHeaderData(&quot;&quot;, m_localizer.i18n(UIFWebBundleKey.BUNDLE_NAME, UIFWebBundleKey.TO));</span>
+<span class="nc" id="L337">		headerPC.addColumnHeaderData(&quot;&quot;, m_localizer.i18n(BbmWebBundleKey.BUNDLE_NAME, BbmWebBundleKey.PEOPLE_TIMEOFF_POOL_HEADER));</span>
 		
-<span class="fc" id="L310">		ArrayList listModel = new ArrayList(poolHistoryList.size());</span>
-<span class="pc bpc" id="L311" title="1 of 2 branches missed.">		for(Iterator it=poolHistoryList.iterator(); it.hasNext(); ) </span>
+<span class="nc" id="L339">		ArrayList listModel = new ArrayList(poolHistoryList.size());</span>
+<span class="nc bnc" id="L340" title="All 2 branches missed.">		for(EmpTOPoolAssignment assignment : poolHistoryList ) </span>
 		{
-<span class="nc" id="L313">			EmpTOPoolAssignment data = (EmpTOPoolAssignment)it.next();</span>
-<span class="nc" id="L314">			DefaultMultiColumnNodeData node = new DefaultMultiColumnNodeData();</span>
-<span class="nc" id="L315">			node.setSelectable(false);</span>
-<span class="nc" id="L316">			node.add( formatDate(data.getStartTime()) );</span>
-<span class="nc" id="L317">			node.add( formatEndDate(data.getEndTime()) );</span>
-<span class="nc" id="L318">			node.add( data.getTOPoolName());</span>
-<span class="nc" id="L319">			listModel.add(node);</span>
-<span class="nc" id="L320">		}</span>
+			
+<span class="nc" id="L343">			DefaultMultiColumnNodeData node = new DefaultMultiColumnNodeData();</span>
+<span class="nc" id="L344">			node.setSelectable(false);</span>
+<span class="nc" id="L345">			node.add( formatDate(assignment.getStartTime()) );</span>
+<span class="nc" id="L346">			node.add( formatEndDate(assignment.getEndTime()) );</span>
+<span class="nc" id="L347">			node.add( assignment.getTOPoolName());</span>
+<span class="nc" id="L348">			listModel.add(node);</span>
+<span class="nc" id="L349">		}</span>
 		
-<span class="fc" id="L322">		m_historyPC.setListModel(listModel);</span>
+<span class="nc" id="L351">		m_historyPC.setListModel(listModel);</span>
 		
-<span class="fc" id="L324">	}</span>
+<span class="nc" id="L353">	}</span>
 	
 	/**
 	 * Code to populate page model components
@@ -329,36 +358,50 @@ public class TOPoolEffectivityPopupPM extends BasePageModel
 	 */
 	private void populateContainer(Collection toPools)
 	{	
-<span class="fc" id="L332">		TOPoolSelectorContainerPC poolDataPC = (TOPoolSelectorContainerPC)m_dataPC;</span>
-<span class="fc" id="L333">		poolDataPC.setPoolId(m_poolID);</span>
-<span class="fc" id="L334">		poolDataPC.setDropdownData(toPools);</span>
-<span class="fc" id="L335">		poolDataPC.setJSrefreshString(getPageMediatorRef() + &quot;.refreshPageIgnoringConfirmation();&quot;);</span>
+<span class="nc" id="L361">		TOPoolSelectorContainerPC poolDataPC = (TOPoolSelectorContainerPC)m_dataPC;</span>
+<span class="nc" id="L362">		poolDataPC.setPoolId(m_poolID);</span>
+<span class="nc" id="L363">		poolDataPC.setDropdownData(toPools);</span>
 		
 		//If the employee is not currently assigned to any pool, then the startDate and endDate will be null.
 		//We cannot allow effective dates of null,null. We will force the user to set at least the startDate, which
 		//means that the current view period radio button option for the effective dates must be disabled.
-<span class="pc bpc" id="L340" title="2 of 4 branches missed.">		if (m_poolID == null || m_poolID.equals(&quot;&quot;))</span>
+<span class="nc bnc" id="L368" title="All 4 branches missed.">		if (m_poolID == null || m_poolID.equals(&quot;&quot;))</span>
 		{
-<span class="fc" id="L342">			poolDataPC.setOnlyViewPeriodEditable(false);</span>
-<span class="fc" id="L343">			poolDataPC.setOnlyCurPeriodEditable(false);</span>
+<span class="nc" id="L370">			poolDataPC.setOnlyViewPeriodEditable(false);</span>
+<span class="nc" id="L371">			poolDataPC.setOnlyCurPeriodEditable(false);</span>
 		}
-<span class="fc" id="L345">	}</span>
+<span class="nc" id="L373">	}</span>
 	
 	/**
 	 * Return URL for HTML Form Action
 	 */
+	@Override
 	public String getFormAction() 
 	{
-<span class="fc" id="L352">		return FORM_ACTION;</span>
+<span class="nc" id="L381">		return FORM_ACTION;</span>
 	}
 	
 	/**
 	 * Return Required HTML for this component
 	 */
+	@Override
 	public String getRequiredHTML() {
-<span class="fc" id="L359">		return super.getRequiredHTML() +</span>
-<span class="fc" id="L360">			HtmlUtil.makeHiddenInput(WorkpaneFieldNames.PERFORM_ACTION_ON_ID_FN, selectedID); //store the empIDs </span>
+
+<span class="nc" id="L390">		String html = super.getRequiredHTML() +</span>
+<span class="nc" id="L391">				HtmlUtil.makeHiddenInput(WorkpaneFieldNames.PERFORM_ACTION_ON_ID_FN, selectedID); //store the empIDs</span>
+<span class="nc bnc" id="L392" title="All 2 branches missed.">		if (activityID != null) {</span>
+<span class="nc" id="L393">			HtmlUtil.makeHiddenInput(&quot;ActivityID&quot;, activityID);</span>
+		}
+<span class="nc" id="L395">		return html;</span>
 	}
+
+	public void setActivityID(ID activityID) {
+<span class="nc" id="L399">		this.activityID = activityID;</span>
+<span class="nc bnc" id="L400" title="All 2 branches missed.">		if (activityID != null) {</span>
+<span class="nc" id="L401">			addRequiredJavaScriptFile(RmJavaScriptFileID.TIME_OFF_POOL_BY_ACTIVITY_POPUP);</span>
+<span class="nc" id="L402">			this.m_onSetJS = String.format(&quot;timeOffPoolByActivity.set(%d);&quot;, activityID.toInt());</span>
+		}
+<span class="nc" id="L404">	}</span>
 
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

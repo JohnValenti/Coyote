@@ -1,23 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AutoProcessingRequestHandler.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.setup.autoprocessing</a> &gt; <span class="el_source">AutoProcessingRequestHandler.java</span></div><h1>AutoProcessingRequestHandler.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.setup.autoprocessing;
 
-import java.util.*;
 import java.rmi.RemoteException;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 
-import com.witness.ejb.core.security.PrivilegeKeys;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
 import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
 import com.bluepumpkin.ejb.bbm.base.BbmUpdateException;
 import com.bluepumpkin.ejb.rm.requests.common.model.Request;
 import com.bluepumpkin.ejb.rm.setup.autoprocessing.model.AutoProcessingRule;
-import com.witness.web.uif.base.*;
-import com.witness.web.uif.keys.*;
-import com.witness.web.uif.system.RequestContext;
-import com.witness.web.uif.pagemodel.PageModel;
+import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
 import com.bluepumpkin.web.rm.Log;
 import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
 import com.bluepumpkin.web.rm.l10n.RmWebLogBundleKey;
-import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
+import com.witness.ejb.core.security.PrivilegeKeys;
+import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.PageAction;
+import com.witness.web.uif.pagemodel.PageModel;
+import com.witness.web.uif.system.RequestContext;
+import com.witness.web.uif.util.reflection.ParameterUtil;
 
 /**
  * Title          AutoProcessingRequestHandler
@@ -27,10 +35,10 @@ import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
  * @author        Howard Mullings
  * @version       1.0
  */
-<span class="fc" id="L30">public class AutoProcessingRequestHandler extends OrganizationRequestHandler { </span>
+<span class="nc" id="L38">public class AutoProcessingRequestHandler extends OrganizationRequestHandler {</span>
 	static final String CREATE_RULE_TYPE = &quot;createRuleType&quot;;
 
-<span class="fc" id="L33">	private static final Category log = 	Log.initCategory(AutoProcessingRequestHandler.class.getName());</span>
+<span class="fc" id="L41">	private static final Category log = 	Log.initCategory(AutoProcessingRequestHandler.class.getName());</span>
 
 	private static final String LIST_PAGE = &quot;listPage&quot;;
 	private static final String FORM_PAGE = &quot;editPage&quot;;
@@ -43,68 +51,96 @@ import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
 	private static final String NEW_CUSTOMSHIFT = &quot;NEW_CUSTOM_SHIFT&quot;;
 	private static final String NEW_FLEXTIME = &quot;NEW_FLEX_TIME&quot;;
 	private static final String NEW_SHIFTSWAP_WITHDRAW = &quot;NEW_SHIFTSWAP_WITHDRAW&quot;;
-
+<span class="fc" id="L54">	private static final String[] ACTION_NAMES = new String[] { APPLY_RULE, NEW_TIMEOFF, NEW_TIMEOFF_WITHDRAW, NEW_SHIFTSWAP_WITHDRAW,</span>
+			NEW_FLEXTIME, NEW_SHIFTSWAP, NEW_SHIFTBID, NEW_CUSTOMSHIFT };
+<span class="nc" id="L56">	private Set&lt;String&gt; blockGetActionsSet = new HashSet&lt;&gt;(Arrays.asList(ACTION_NAMES));</span>
+	private static final String GET_METHOD= &quot;GET&quot;;
+	private static final String APPSCAN_ERROR_LOG = &quot;CSRF security constraint violated. Cannot GET with a pageAction parameter&quot;;
 	/**
 	 * Process Request for the User page
 	 * @param   context   RequestContext
 	 * @throws Exception
 	 */
+	@Override
 	public void processRequest(RequestContext context) throws Exception {
+		// Handle Appscan issue &quot;Body Parameter Accepted in Query&quot;
+<span class="nc" id="L67">		HttpServletRequest httpServletRequest=context.getRequest();</span>
+<span class="nc" id="L68">		String method = httpServletRequest.getMethod();</span>
+<span class="nc" id="L69">		String pageAction = getPageAction(context);</span>
+<span class="nc bnc" id="L70" title="All 4 branches missed.">		boolean inValid = GET_METHOD.equals(method) &amp;&amp; isBlockedPageAction(pageAction);</span>
+<span class="nc" id="L71">		HttpServletResponse response = context.getResponse();</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">		if (inValid) {</span>
+<span class="nc" id="L73">			log.error(APPSCAN_ERROR_LOG);</span>
+<span class="nc" id="L74">			response.setStatus(HttpServletResponse.SC_FORBIDDEN);</span>
+<span class="nc" id="L75">			return;</span>
+		}
+<span class="nc" id="L77">		validateIDParameter(httpServletRequest);</span>
 		// Process requested action
-<span class="pc bpc" id="L54" title="1 of 2 branches missed.">		if (isAction(context, PageAction.EDIT) ||</span>
-<span class="pc bpc" id="L55" title="1 of 2 branches missed.">				isAction(context, PageAction.DIALOG_OK)) {</span>
-<span class="nc" id="L56">			goToFormPage(context);</span>
-<span class="fc bfc" id="L57" title="All 2 branches covered.">		} else if (isAction(context, NEW_TIMEOFF)) {</span>
-<span class="fc" id="L58">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
-					CREATE_RULE_TYPE,
-					Request.REQUESTTYPE_TIMEOFF);
-<span class="fc" id="L61">			goToFormPage(context);</span>
-<span class="pc bpc" id="L62" title="1 of 2 branches missed.">		} else if (isAction(context, NEW_TIMEOFF_WITHDRAW)) {</span>
-<span class="nc" id="L63">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
-					CREATE_RULE_TYPE,
-					Request.REQUESTTYPE_TIMEOFF_WITHDRAW);
-<span class="nc" id="L66">			goToFormPage(context);</span>
-<span class="pc bpc" id="L67" title="1 of 2 branches missed.">		} else if (isAction(context, NEW_FLEXTIME)) {</span>
-<span class="nc" id="L68">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
-					CREATE_RULE_TYPE,
-					Request.REQUESTTYPE_FLEXTIME);
-<span class="nc" id="L71">			goToFormPage(context);</span>
-<span class="pc bpc" id="L72" title="1 of 2 branches missed.">		} else if (isAction(context, NEW_SHIFTSWAP)) {</span>
-<span class="nc" id="L73">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
-					CREATE_RULE_TYPE,
-					Request.REQUESTTYPE_SHIFTSWAP);
-<span class="nc" id="L76">			goToFormPage(context);</span>
-<span class="pc bpc" id="L77" title="1 of 2 branches missed.">		} else if (isAction(context, NEW_SHIFTSWAP_WITHDRAW)) {</span>
-<span class="nc" id="L78">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
-					CREATE_RULE_TYPE,
-					Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW);
+<span class="nc bnc" id="L79" title="All 2 branches missed.">		if (isAction(context, PageAction.EDIT) ||</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">				isAction(context, PageAction.DIALOG_OK)) {</span>
 <span class="nc" id="L81">			goToFormPage(context);</span>
-<span class="pc bpc" id="L82" title="1 of 2 branches missed.">		} else if (isAction(context, NEW_SHIFTBID)) {</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">		} else if (isAction(context, NEW_TIMEOFF)) {</span>
 <span class="nc" id="L83">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
 					CREATE_RULE_TYPE,
-					Request.REQUESTTYPE_SHIFTBID);
+					Request.REQUESTTYPE_TIMEOFF);
 <span class="nc" id="L86">			goToFormPage(context);</span>
-<span class="pc bpc" id="L87" title="1 of 2 branches missed.">		} else if (isAction(context, NEW_CUSTOMSHIFT)) {</span>
+<span class="nc bnc" id="L87" title="All 2 branches missed.">		} else if (isAction(context, NEW_TIMEOFF_WITHDRAW)) {</span>
 <span class="nc" id="L88">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
 					CREATE_RULE_TYPE,
-					Request.REQUESTTYPE_CUSTSHIFT);
+					Request.REQUESTTYPE_TIMEOFF_WITHDRAW);
 <span class="nc" id="L91">			goToFormPage(context);</span>
-<span class="fc bfc" id="L92" title="All 2 branches covered.">		} else if (isAction(context, PageAction.DELETE)) {</span>
-<span class="fc" id="L93">			processDelete(context);</span>
-<span class="pc bpc" id="L94" title="1 of 2 branches missed.">		} else if (isAction(context, APPLY_RULE)) {</span>
-<span class="nc" id="L95">			processApplyRule(context);</span>
-<span class="nc" id="L96">			setNextPage(context, LIST_PAGE);</span>
-<span class="fc bfc" id="L97" title="All 2 branches covered.">		} else if (isAction(context, PageAction.SAVE)) {</span>
-<span class="fc" id="L98">			processSave(context);</span>
-<span class="fc" id="L99">			setNextPage(context, LIST_PAGE);</span>
-<span class="pc bpc" id="L100" title="1 of 2 branches missed.">		} else if (isAction(context, PageAction.DONE) ||</span>
-<span class="fc bfc" id="L101" title="All 2 branches covered.">				isAction(context, PageAction.NEW_ID)) {</span>
-<span class="fc" id="L102">			setNextPage(context, LIST_PAGE);</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">		} else if (isAction(context, NEW_FLEXTIME)) {</span>
+<span class="nc" id="L93">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
+					CREATE_RULE_TYPE,
+					Request.REQUESTTYPE_FLEXTIME);
+<span class="nc" id="L96">			goToFormPage(context);</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">		} else if (isAction(context, NEW_SHIFTSWAP)) {</span>
+<span class="nc" id="L98">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
+					CREATE_RULE_TYPE,
+					Request.REQUESTTYPE_SHIFTSWAP);
+<span class="nc" id="L101">			goToFormPage(context);</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">		} else if (isAction(context, NEW_SHIFTSWAP_WITHDRAW)) {</span>
+<span class="nc" id="L103">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
+					CREATE_RULE_TYPE,
+					Request.REQUESTTYPE_SHIFTSWAP_WITHDRAW);
+<span class="nc" id="L106">			goToFormPage(context);</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">		} else if (isAction(context, NEW_SHIFTBID)) {</span>
+<span class="nc" id="L108">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
+					CREATE_RULE_TYPE,
+					Request.REQUESTTYPE_SHIFTBID);
+<span class="nc" id="L111">			goToFormPage(context);</span>
+<span class="nc bnc" id="L112" title="All 2 branches missed.">		} else if (isAction(context, NEW_CUSTOMSHIFT)) {</span>
+<span class="nc" id="L113">			context.setAttribute(RequestContext.REQUEST_SCOPE,</span>
+					CREATE_RULE_TYPE,
+					Request.REQUESTTYPE_CUSTSHIFT);
+<span class="nc" id="L116">			goToFormPage(context);</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">		} else if (isAction(context, PageAction.DELETE)) {</span>
+<span class="nc" id="L118">			processDelete(context);</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">		} else if (isAction(context, APPLY_RULE)) {</span>
+<span class="nc" id="L120">			processApplyRule(context);</span>
+<span class="nc" id="L121">			setNextPage(context, LIST_PAGE);</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">		} else if (isAction(context, PageAction.SAVE)) {</span>
+<span class="nc" id="L123">			processSave(context);</span>
+<span class="nc" id="L124">			setNextPage(context, LIST_PAGE);</span>
+<span class="nc bnc" id="L125" title="All 2 branches missed.">		} else if (isAction(context, PageAction.DONE) ||</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">				isAction(context, PageAction.NEW_ID)) {</span>
+<span class="nc" id="L127">			setNextPage(context, LIST_PAGE);</span>
 		} else {
-<span class="fc" id="L104">			setNextPage(context, LIST_PAGE);</span>
+<span class="nc" id="L129">			setNextPage(context, LIST_PAGE);</span>
 		}
-<span class="fc" id="L106">	}</span>
+<span class="nc" id="L131">	}</span>
+	boolean isBlockedPageAction(String pageAction) {
+<span class="nc bnc" id="L133" title="All 2 branches missed.">		if (StringUtil.isEmpty(pageAction)) {</span>
+<span class="nc" id="L134">			return false;</span>
+		}
 
+<span class="nc" id="L137">		return blockGetActionsSet.contains(pageAction);</span>
+	}
+
+	private void validateIDParameter(HttpServletRequest httpServletRequest) {
+		// selectedID
+<span class="nc" id="L142">		ParameterUtil.assertOptionalCommaSeparatedLongValues(httpServletRequest, &quot;selectedID&quot;);</span>
+<span class="nc" id="L143">	}</span>
 	/**
 	 * Sets the page to be displayed
 	 * @param   context   RequestContext
@@ -112,7 +148,7 @@ import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
 	private void goToFormPage(RequestContext context) {
 
 		// Check if authorized then display Form page else display List Page
-<span class="pc bpc" id="L115" title="1 of 2 branches missed.">		if (!isAuthorizedForOrg(context,</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">		if (!isAuthorizedForOrg(context,</span>
 				new String[] {
 					PrivilegeKeys.TOM_SETAUTOPROCESSING,
 					PrivilegeKeys.SS_SETAUTOPROCESSING,
@@ -121,12 +157,12 @@ import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
 					PrivilegeKeys.FT_SETAUTOPROCESSING
 				},
 				true)) {
-<span class="nc" id="L124">			setNextPage(context, LIST_PAGE);</span>
-<span class="nc" id="L125">			return;</span>
+<span class="nc" id="L160">			setNextPage(context, LIST_PAGE);</span>
+<span class="nc" id="L161">			return;</span>
 		}
 
-<span class="fc" id="L128">		setNextPage(context, FORM_PAGE);</span>
-<span class="fc" id="L129">	}</span>
+<span class="nc" id="L164">		setNextPage(context, FORM_PAGE);</span>
+<span class="nc" id="L165">	}</span>
 
 	/**
 	 * Deletes a AutoProcessingRule
@@ -143,10 +179,10 @@ import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
 		appropriate parameters
 		6. cache the model */
 
-<span class="fc" id="L146">		setNextPage(context, LIST_PAGE);</span>
+<span class="nc" id="L182">		setNextPage(context, LIST_PAGE);</span>
 
 		// Security check
-<span class="pc bpc" id="L149" title="1 of 2 branches missed.">		if (!isAuthorizedForOrg(context,</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">		if (!isAuthorizedForOrg(context,</span>
 				new String[] {
 					PrivilegeKeys.TOM_SETAUTOPROCESSING,
 					PrivilegeKeys.SS_SETAUTOPROCESSING,
@@ -155,17 +191,17 @@ import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
 					PrivilegeKeys.FT_SETAUTOPROCESSING
 				},
 				true)) {
-<span class="nc" id="L158">			return;</span>
+<span class="nc" id="L194">			return;</span>
 		}
 
 		// Extract Parameter
-<span class="fc" id="L162">		AutoProcessingListPageModel model = new AutoProcessingListPageModel(context);</span>
-<span class="fc" id="L163">		model.extractParameters(context.getRequest());</span>
-<span class="fc" id="L164">		context.setPageModel(model);</span>
+<span class="nc" id="L198">		AutoProcessingListPageModel model = new AutoProcessingListPageModel(context);</span>
+<span class="nc" id="L199">		model.extractParameters(context.getRequest());</span>
+<span class="nc" id="L200">		context.setPageModel(model);</span>
 
 		// Invoke the delete method of the Model Handler here
 		try {
-<span class="fc" id="L168">			setNextPage(context, LIST_PAGE);</span>
+<span class="nc" id="L204">			setNextPage(context, LIST_PAGE);</span>
 
 			// Security check
 			//if (!isAuthorized(context, REQUIRED_PRIVILEGE))	return;
@@ -173,24 +209,24 @@ import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
 			// Extract Parameter
 
 			// Process Delete
-<span class="fc" id="L176">			ID[] ids = model.getSelectedAutoProcessingRuleIDs();</span>
+<span class="nc" id="L212">			ID[] ids = model.getSelectedAutoProcessingRuleIDs();</span>
 			// Invoke the delete method of the Model Handler here
-<span class="fc" id="L178">			AutoProcessingModelHandler.deleteAutoProcessingRule(ids[0]);</span>
+<span class="nc" id="L214">			AutoProcessingModelHandler.deleteAutoProcessingRule(ids[0]);</span>
 
-<span class="nc" id="L180">		}	catch(Exception ex) {</span>
-<span class="nc" id="L181">			handleException(model, ex, RmWebBundleKey.ORG_RM_AUTO_PROCESSING_RULE_DELETE_FAILURE,</span>
+<span class="nc" id="L216">		}	catch(Exception ex) {</span>
+<span class="nc" id="L217">			handleException(model, ex, RmWebBundleKey.ORG_RM_AUTO_PROCESSING_RULE_DELETE_FAILURE,</span>
 					RmWebLogBundleKey.ORG_RM_AUTO_PROCESSING_RULE_DELETE_FAILURE);
-<span class="fc" id="L183">		}</span>
-<span class="fc" id="L184">	}</span>
+<span class="nc" id="L219">		}</span>
+<span class="nc" id="L220">	}</span>
 
 	/**
 	 * Saves a Applied Flag for Filing Rules
 	 * @param   context RequestContext
 	 */
 	private void processApplyRule(RequestContext context) throws BbmCreateException, RemoteException {
-<span class="nc" id="L191">		AutoProcessingListPageModel model = new AutoProcessingListPageModel(context);</span>
-<span class="nc" id="L192">		model.extractParameters(context.getRequest());</span>
-<span class="nc bnc" id="L193" title="All 2 branches missed.">		if (!isAuthorizedForOrg(context,</span>
+<span class="nc" id="L227">		AutoProcessingListPageModel model = new AutoProcessingListPageModel(context);</span>
+<span class="nc" id="L228">		model.extractParameters(context.getRequest());</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">		if (!isAuthorizedForOrg(context,</span>
 				new String[] {
 					PrivilegeKeys.TOM_SETAUTOPROCESSING,
 					PrivilegeKeys.SS_SETAUTOPROCESSING,
@@ -199,43 +235,43 @@ import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
 					PrivilegeKeys.FT_SETAUTOPROCESSING
 				},
 				true)) {
-<span class="nc" id="L202">			return;</span>
+<span class="nc" id="L238">			return;</span>
 		}
-<span class="nc bnc" id="L204" title="All 2 branches missed.">		if (model.validate()) {</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">		if (model.validate()) {</span>
 			try {
-<span class="nc" id="L206">				String appliedRuleIds[] = model.getAppliedRuleIds();</span>
-<span class="nc" id="L207">				String totalRuleIds[] = model.getTotalRuleIds();</span>
-<span class="nc" id="L208">				HashMap map = new HashMap(31);</span>
-<span class="nc bnc" id="L209" title="All 4 branches missed.">				if (totalRuleIds != null &amp;&amp; totalRuleIds.length != 0) {</span>
-<span class="nc" id="L210">					int l = totalRuleIds.length;</span>
-<span class="nc bnc" id="L211" title="All 2 branches missed.">					for (int i = 0; i &lt; l; i++) {</span>
-<span class="nc" id="L212">						map.put(new ID(totalRuleIds[i]), &quot;false&quot;);</span>
+<span class="nc" id="L242">				String appliedRuleIds[] = model.getAppliedRuleIds();</span>
+<span class="nc" id="L243">				String totalRuleIds[] = model.getTotalRuleIds();</span>
+<span class="nc" id="L244">				HashMap map = new HashMap(31);</span>
+<span class="nc bnc" id="L245" title="All 4 branches missed.">				if (totalRuleIds != null &amp;&amp; totalRuleIds.length != 0) {</span>
+<span class="nc" id="L246">					int l = totalRuleIds.length;</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">					for (int i = 0; i &lt; l; i++) {</span>
+<span class="nc" id="L248">						map.put(new ID(totalRuleIds[i]), &quot;false&quot;);</span>
 					}
 				}
-<span class="nc bnc" id="L215" title="All 4 branches missed.">				if (appliedRuleIds != null &amp;&amp; appliedRuleIds.length != 0) {</span>
-<span class="nc" id="L216">					int l = appliedRuleIds.length;</span>
-<span class="nc bnc" id="L217" title="All 2 branches missed.">					for (int i = 0; i &lt; l; i++) {</span>
-<span class="nc" id="L218">						map.put(new ID(appliedRuleIds[i]), &quot;true&quot;);</span>
+<span class="nc bnc" id="L251" title="All 4 branches missed.">				if (appliedRuleIds != null &amp;&amp; appliedRuleIds.length != 0) {</span>
+<span class="nc" id="L252">					int l = appliedRuleIds.length;</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">					for (int i = 0; i &lt; l; i++) {</span>
+<span class="nc" id="L254">						map.put(new ID(appliedRuleIds[i]), &quot;true&quot;);</span>
 					}
 				}
-<span class="nc" id="L221">				AutoProcessingModelHandler.saveApplied(model.getSelectedIDObject(),</span>
+<span class="nc" id="L257">				AutoProcessingModelHandler.saveApplied(model.getSelectedIDObject(),</span>
 						map);
-<span class="nc" id="L223">			}	catch(BbmUpdateException ex) {</span>
-<span class="nc" id="L224">				handleException(model, ex, RmWebBundleKey.ORG_RM_FILING_RULE_UPDATE_FAILURE,</span>
+<span class="nc" id="L259">			}	catch(BbmUpdateException ex) {</span>
+<span class="nc" id="L260">				handleException(model, ex, RmWebBundleKey.ORG_RM_FILING_RULE_UPDATE_FAILURE,</span>
 						RmWebLogBundleKey.ORG_RM_FILING_RULE_UPDATE_FAILURE);
-<span class="nc" id="L226">			}</span>
+<span class="nc" id="L262">			}</span>
 		}
-<span class="nc" id="L228">	}</span>
+<span class="nc" id="L264">	}</span>
 
 	/**
 	 * Saves a Autoprocessing Rule
 	 * @param   context RequestContext
 	 */
 	private void processSave(RequestContext context) {
-<span class="fc" id="L235">		AutoProcessingEditPageModel model = new AutoProcessingEditPageModel(context);</span>
-<span class="fc" id="L236">		model.extractParameters(context.getRequest());</span>
+<span class="nc" id="L271">		AutoProcessingEditPageModel model = new AutoProcessingEditPageModel(context);</span>
+<span class="nc" id="L272">		model.extractParameters(context.getRequest());</span>
 
-<span class="pc bpc" id="L238" title="1 of 2 branches missed.">		if (!isAuthorizedForOrg(context,</span>
+<span class="nc bnc" id="L274" title="All 2 branches missed.">		if (!isAuthorizedForOrg(context,</span>
 				new String[] {
 					PrivilegeKeys.TOM_SETAUTOPROCESSING,
 					PrivilegeKeys.SS_SETAUTOPROCESSING,
@@ -244,35 +280,35 @@ import com.bluepumpkin.web.bbm.organization.OrganizationRequestHandler;
 					PrivilegeKeys.FT_SETAUTOPROCESSING
 				},
 				true)) {
-<span class="nc" id="L247">			return;</span>
+<span class="nc" id="L283">			return;</span>
 		}
 
-<span class="pc bpc" id="L250" title="1 of 2 branches missed.">		if (model.validate()) {</span>
-<span class="fc" id="L251">			AutoProcessingRule apr = model.getAutoProcessingRule();</span>
-<span class="fc" id="L252">			apr.setID(model.getRuleID());</span>
-<span class="fc" id="L253">			apr.setOrganizationId(model.getSelectedIDObject());</span>
+<span class="nc bnc" id="L286" title="All 2 branches missed.">		if (model.validate()) {</span>
+<span class="nc" id="L287">			AutoProcessingRule apr = model.getAutoProcessingRule();</span>
+<span class="nc" id="L288">			apr.setID(model.getRuleID());</span>
+<span class="nc" id="L289">			apr.setOrganizationId(model.getSelectedIDObject());</span>
 			try {
-<span class="pc bpc" id="L255" title="1 of 2 branches missed.">				if (apr.getID() == null) {</span>
-<span class="fc" id="L256">					apr.setApplied(true);</span>
-<span class="fc" id="L257">					ID id = AutoProcessingModelHandler.createAutoProcessingRule(apr);</span>
-<span class="fc" id="L258">					apr.setID(id);</span>
-<span class="fc" id="L259">				}</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">				if (apr.getID() == null) {</span>
+<span class="nc" id="L292">					apr.setApplied(true);</span>
+<span class="nc" id="L293">					ID id = AutoProcessingModelHandler.createAutoProcessingRule(apr);</span>
+<span class="nc" id="L294">					apr.setID(id);</span>
+<span class="nc" id="L295">				}</span>
 				else {
-<span class="nc" id="L261">					AutoProcessingModelHandler.updateAutoProcessingRule(apr);</span>
+<span class="nc" id="L297">					AutoProcessingModelHandler.updateAutoProcessingRule(apr);</span>
 				}
-<span class="nc" id="L263">			} catch(BbmCreateException ex) {</span>
-<span class="nc" id="L264">				handleException(model, ex, RmWebBundleKey.ORG_RM_AUTO_PROCESSING_RULE_CREATE_FAILURE,</span>
+<span class="nc" id="L299">			} catch(BbmCreateException ex) {</span>
+<span class="nc" id="L300">				handleException(model, ex, RmWebBundleKey.ORG_RM_AUTO_PROCESSING_RULE_CREATE_FAILURE,</span>
 						RmWebLogBundleKey.ORG_RM_AUTO_PROCESSING_RULE_CREATE_FAILURE);
-<span class="nc" id="L266">			}	catch(Exception ex) {</span>
-<span class="nc" id="L267">				handleException(model, ex, RmWebBundleKey.ORG_RM_AUTO_PROCESSING_RULE_SAVE_FAILURE,</span>
+<span class="nc" id="L302">			}	catch(Exception ex) {</span>
+<span class="nc" id="L303">				handleException(model, ex, RmWebBundleKey.ORG_RM_AUTO_PROCESSING_RULE_SAVE_FAILURE,</span>
 						RmWebLogBundleKey.ORG_RM_AUTO_PROCESSING_RULE_SAVE_FAILURE);
-<span class="pc" id="L269">			}</span>
+<span class="nc" id="L305">			}</span>
 		}
-<span class="fc" id="L271">	}</span>
+<span class="nc" id="L307">	}</span>
 
 	private void handleException(PageModel model, Exception ex, String rbKey, String logRBKey) {
-<span class="nc" id="L274">		model.addPageMessage(Message.ERROR_TYPE, rbKey, RmWebBundleKey.BUNDLE_NAME);</span>
-<span class="nc" id="L275">		log.l7dError(logRBKey, ex);</span>
-<span class="nc" id="L276">	}</span>
+<span class="nc" id="L310">		model.addPageMessage(Message.ERROR_TYPE, rbKey, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L311">		log.l7dError(logRBKey, ex);</span>
+<span class="nc" id="L312">	}</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

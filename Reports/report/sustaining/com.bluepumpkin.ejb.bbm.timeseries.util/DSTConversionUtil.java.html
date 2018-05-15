@@ -1,39 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>DSTConversionUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.bbm.timeseries.util</a> &gt; <span class="el_source">DSTConversionUtil.java</span></div><h1>DSTConversionUtil.java</h1><pre class="source lang-java linenums">/*
- * � 2010-2011 Verint Systems, Inc.
+ * (c) 2010-2011 Verint Systems, Inc.
  */
 package com.bluepumpkin.ejb.bbm.timeseries.util;
-
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TimeZone;
-import java.util.TreeMap;
 
 import com.bluepumpkin.common.datatypes.Duration;
 import com.bluepumpkin.common.datatypes.TimeContext;
 import com.bluepumpkin.common.util.TimeZoneUtil;
 
+import java.util.*;
+
 /**
- * This class contains methods to convert between Lists of data representing 
- * values at consecutive intervals of DST-aware time and Lists of data 
+ * This class contains methods to convert between Lists of data representing
+ * values at consecutive intervals of DST-aware time and Lists of data
  * representing values at consecutive intervals of ideal 24-hour time (no DST).
- * 
+ * &lt;p&gt;
  * Because DST-aware time can contain 23, 24, or 25 hour days, entries may have
  * to be removed or added when converting to or from a 24-hour ideal day.
- * 
+ * &lt;p&gt;
  * The conversion requires removing some entries when converting from a 25
- * hour day to a 24 hour ideal day or when converting from a 24 hour ideal day 
+ * hour day to a 24 hour ideal day or when converting from a 24 hour ideal day
  * to a 23 hour day.
- * 
+ * &lt;p&gt;
  * The conversion requires adding some entries when converting from a 23 hour day
- * to a 24 hour ideal day or when converting from a 24 hour ideal day to a 25 hour 
+ * to a 24 hour ideal day or when converting from a 24 hour ideal day to a 25 hour
  * day.
- * 
+ * &lt;p&gt;
  * Note that for the 25 hour day case, it is actually ambiguous which day the extra hour
  * belongs to in certain cases (cases where the day boundary lies on or in the extra hour
  * for example at 1:30 AM).  WFO resolves this ambiguity by assuming that the extra hour
@@ -41,218 +32,227 @@ import com.bluepumpkin.common.util.TimeZoneUtil;
  * is any ambiguity in the day start time, then the day start time is always assumed to be
  * within the second duplicate hour rather than the first.  This utility class should
  * take this into account when deciding where intervals are removed or added.
- *  
+ *
  * @author rfunderburg
  */
-<span class="nc" id="L47">public class DSTConversionUtil {</span>
+<span class="nc" id="L38">public class DSTConversionUtil {</span>
 
-	public static final int NUM_MINUTES_IN_WEEK = 1440;
-	public static final int NUM_MINUTES_PER_DAY = 60;
+	public static final int NUM_MINUTES_IN_DAY = 1440;
+	public static final int NUM_MINUTES_IN_HOUR = 60;
 	public static final int NUM_HOURS_IN_DAY = 24;
 
 	/**
 	 * This method identifies indices involved in a transition from an array of values representing
 	 * time with 24 hour days (no DST) to an array of values representing  wall
 	 * clock time (potentially honors DST).
-	 * 
-	 * When using an array of values that represent wall clock time, an array representing one day will 
+	 * &lt;p&gt;
+	 * When using an array of values that represent wall clock time, an array representing one day will
 	 * contain values for 23, 24, or 25 hours, depending the Daylight Saving Time rules. The ideal 24-hour
 	 * day will always contain 24 hours.
-	 * 
-	 * @param isFromDSTAwareToIdeal boolean determining the direction of conversion. true for a conversion from local time to idealized time. false for a conversion from idealized time to local time.
-	 * @param startDate The Date at which to start looking for transition indices
-	 * @param numIntervals The number of entries in the source array or list. This determines when to stop looking for DST transition points.
+	 *
+	 * @param isFromDSTAwareToIdeal   boolean determining the direction of conversion. true for a conversion from local time to idealized time. false for a conversion from idealized time to local time.
+	 * @param startDate               The Date at which to start looking for transition indices
+	 * @param numIntervals            The number of entries in the source array or list. This determines when to stop looking for DST transition points.
 	 * @param intervalLengthInMinutes The amount of time that is represented by each entry in a time-based array
-	 * @param timeContext The TimeContext that is to be used to calculate DST transitions
+	 * @param timeContext             The TimeContext that is to be used to calculate DST transitions
 	 * @returns A DSTConversionInformation object containing the information required to do the conversion
 	 */
 	public static DSTConversionInformation getConversionInformation(final boolean isFromDSTAwareToIdeal, Date startDate, int numIntervals, int intervalLengthInMinutes, TimeContext timeContext) {
-<span class="fc" id="L70">		TimeZone timeZone = timeContext.getTimeZone();</span>
-<span class="fc" id="L71">		Calendar endDateCal = Calendar.getInstance(timeZone);</span>
-<span class="fc" id="L72">		endDateCal.setTime(startDate);</span>
-		
+<span class="nc" id="L61">		TimeZone timeZone = timeContext.getTimeZone();</span>
+<span class="nc" id="L62">		Calendar endDateCal = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L63">		endDateCal.setTime(startDate);</span>
+
 //		If we are transitioning from dstAware to ideal, we need to expand the number of intervals to check for a DST transition.
 //		This is a direct result of FS picking the second occurrence of the repeated hour as the SP start time when the day boundary is on the
 //		repeated hour.  Despite this fact, we treat the second occurrence of the repeated hour as the one that is &quot;extra&quot; because that is what
 //		TimeSeriesDAO does.  Example: forecast data will only show in the UI for the first repeated hour, with the second hour being read only.
-<span class="fc" id="L78">		int extraIntervalsToCheck = 0;</span>
-<span class="fc bfc" id="L79" title="All 2 branches covered.">		if (!isFromDSTAwareToIdeal) {</span>
-<span class="fc" id="L80">			extraIntervalsToCheck = timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS / intervalLengthInMinutes;</span>
+<span class="nc" id="L69">		int extraIntervalsToCheck = 0;</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">		if (!isFromDSTAwareToIdeal) {</span>
+<span class="nc" id="L71">			extraIntervalsToCheck = timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS / intervalLengthInMinutes;</span>
 		}
-<span class="fc" id="L82">		endDateCal.add(Calendar.MINUTE, intervalLengthInMinutes * (numIntervals + extraIntervalsToCheck));</span>
-<span class="fc" id="L83">		Date endDate = endDateCal.getTime();</span>
-		
-<span class="fc" id="L85">		Map&lt;Integer, Integer&gt; insertions = new HashMap&lt;Integer, Integer&gt;();</span>
-<span class="fc" id="L86">		Collection&lt;Integer&gt; indicesToRemove = new ArrayList&lt;Integer&gt;();</span>
+<span class="nc" id="L73">		endDateCal.add(Calendar.MINUTE, intervalLengthInMinutes * (numIntervals + extraIntervalsToCheck));</span>
+<span class="nc" id="L74">		Date endDate = endDateCal.getTime();</span>
 
-<span class="fc" id="L88">		Calendar wallTimeCursor = Calendar.getInstance(timeZone);</span>
-<span class="fc" id="L89">		wallTimeCursor.setTime(startDate);</span>
-		
+<span class="nc" id="L76">		Map&lt;Integer, Integer&gt; insertions = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L77">		Collection&lt;Integer&gt; indicesToRemove = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L79">		Calendar wallTimeCursor = Calendar.getInstance(timeZone);</span>
+<span class="nc" id="L80">		wallTimeCursor.setTime(startDate);</span>
+
 		// Subtract the amount of the DST transition time to determine if we are starting at a transition 
-<span class="fc" id="L92">		wallTimeCursor.add(Calendar.MILLISECOND, -timeZone.getDSTSavings());</span>
-<span class="fc" id="L93">		int arrayIndex = -(timeZone.getDSTSavings() / (intervalLengthInMinutes * TimeZoneUtil.MINUTE_IN_MILLISECONDS));</span>
+<span class="nc" id="L83">		wallTimeCursor.add(Calendar.MILLISECOND, -timeZone.getDSTSavings());</span>
+<span class="nc" id="L84">		int arrayIndex = -(timeZone.getDSTSavings() / (intervalLengthInMinutes * TimeZoneUtil.MINUTE_IN_MILLISECONDS));</span>
 
-<span class="fc" id="L95">		boolean inDST = timeZone.inDaylightTime(wallTimeCursor.getTime());</span>
-<span class="fc" id="L96">        Calendar previousCursor = Calendar.getInstance(timeZone);</span>
-<span class="fc bfc" id="L97" title="All 2 branches covered.">		while(wallTimeCursor.getTime().before(endDate)) {</span>
-<span class="fc" id="L98">			wallTimeCursor.add(Calendar.MINUTE, intervalLengthInMinutes);</span>
-<span class="fc" id="L99">			arrayIndex++;</span>
-<span class="fc bfc" id="L100" title="All 4 branches covered.">			boolean transitioningIntoDST = !inDST &amp;&amp; timeZone.inDaylightTime(wallTimeCursor.getTime());</span>
-<span class="pc bpc" id="L101" title="1 of 4 branches missed.">			boolean transitioningOutOfDST = inDST &amp;&amp; !timeZone.inDaylightTime(wallTimeCursor.getTime());</span>
-<span class="fc bfc" id="L102" title="All 2 branches covered.">			final boolean isFromIdealToLocal = !isFromDSTAwareToIdeal;</span>
+<span class="nc" id="L86">		boolean inDST = timeZone.inDaylightTime(wallTimeCursor.getTime());</span>
+
+<span class="nc" id="L88">		Calendar previousCursor = Calendar.getInstance(timeZone);</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">		while (wallTimeCursor.getTime().before(endDate)) {</span>
+<span class="nc" id="L90">			wallTimeCursor.add(Calendar.MINUTE, intervalLengthInMinutes);</span>
+<span class="nc" id="L91">			arrayIndex++;</span>
+<span class="nc bnc" id="L92" title="All 4 branches missed.">			boolean transitioningIntoDST = !inDST &amp;&amp; timeZone.inDaylightTime(wallTimeCursor.getTime());</span>
+<span class="nc bnc" id="L93" title="All 4 branches missed.">			boolean transitioningOutOfDST = inDST &amp;&amp; !timeZone.inDaylightTime(wallTimeCursor.getTime());</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">			final boolean isFromIdealToLocal = !isFromDSTAwareToIdeal;</span>
 
 			// For a couple of edge cases, we need to compare the location of the day boundary
 			// to determine the number of intervals to insert.
-<span class="fc" id="L106">			previousCursor.setTime(wallTimeCursor.getTime());</span>
-<span class="fc" id="L107">			previousCursor.add(Calendar.MINUTE, -intervalLengthInMinutes);</span>
+<span class="nc" id="L98">			previousCursor.setTime(wallTimeCursor.getTime());</span>
+<span class="nc" id="L99">			previousCursor.add(Calendar.MINUTE, -intervalLengthInMinutes);</span>
 			// Get the previous interval's hours and minutes, then add the interval length
 			// to get the current minutes since midnight.
-<span class="fc" id="L110">			int minsSinceMidnight = (previousCursor.get(Calendar.HOUR_OF_DAY) * NUM_MINUTES_PER_DAY + previousCursor.get(Calendar.MINUTE) +</span>
-					intervalLengthInMinutes) % NUM_MINUTES_IN_WEEK;
+<span class="nc" id="L102">			int minsSinceMidnight =</span>
+<span class="nc" id="L103">				(previousCursor.get(Calendar.HOUR_OF_DAY) * NUM_MINUTES_IN_HOUR</span>
+<span class="nc" id="L104">					+ previousCursor.get(Calendar.MINUTE)</span>
+					+ intervalLengthInMinutes) % NUM_MINUTES_IN_DAY;
 
 			// Get the number of minutes since midnight until the day boundary would normally be hit (absent of DST).
-<span class="fc" id="L114">			int dayBoundaryMinsSinceMidnight = timeContext.getDayBoundary();</span>
-			
+<span class="nc" id="L108">			int dayBoundaryMinsSinceMidnight = timeContext.getDayBoundary();</span>
+
 			// Check to see if we need to modify any values. We only need to modify them if there are values for the current
 			// time cursor.
-<span class="fc bfc" id="L118" title="All 2 branches covered.">			if (arrayIndex &gt;= 0) {</span>
-<span class="fc" id="L119">				int numIntervalsInTransition = timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS / intervalLengthInMinutes;</span>
+<span class="nc bnc" id="L112" title="All 2 branches missed.">			if (arrayIndex &gt;= 0) {</span>
+<span class="nc" id="L113">				int numIntervalsInTransition = timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS / intervalLengthInMinutes;</span>
 				
 				/*
 				 * Depending on the direction of conversion, transitioning in or out of DST can cause
 				 * insertion points or delete indices.
 				 */
-<span class="pc bpc" id="L125" title="1 of 4 branches missed.">				if (isFromIdealToLocal &amp;&amp; transitioningOutOfDST) {</span>
-<span class="nc" id="L126">					int index = arrayIndex;</span>
-<span class="nc bnc" id="L127" title="All 2 branches missed.">					if (transitioningOutOfDST) {</span>
-<span class="nc" id="L128">						int dstSavingsNumIntervals = timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS / intervalLengthInMinutes;</span>
-<span class="nc bnc" id="L129" title="All 4 branches missed.">						if (index &gt;= dstSavingsNumIntervals &amp;&amp; index &lt;= numIntervals) { </span>
-<span class="nc" id="L130">							insertions.put(index, numIntervalsInTransition);</span>
-<span class="nc bnc" id="L131" title="All 2 branches missed.">						} else if (index &gt; numIntervals) {	</span>
-							//Corner case where the last interval of data, with extra hour included, coincides with the transition 
-							// out of DST.  In this case, we will be adding hour to the end of the array representing ideal time. (testFallBoundaryEndAtResult)
-<span class="nc" id="L134">							insertions.put(numIntervals, numIntervalsInTransition);</span>
-						}
+<span class="nc bnc" id="L119" title="All 4 branches missed.">				if (isFromIdealToLocal &amp;&amp; transitioningOutOfDST) {</span>
+<span class="nc" id="L120">					int dstSavingsNumIntervals = timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS / intervalLengthInMinutes;</span>
+<span class="nc bnc" id="L121" title="All 4 branches missed.">					if (arrayIndex &gt;= dstSavingsNumIntervals &amp;&amp; arrayIndex &lt;= numIntervals) {</span>
+<span class="nc" id="L122">						insertions.put(arrayIndex, numIntervalsInTransition);</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">					} else if (arrayIndex &gt; numIntervals) {</span>
+						//Corner case where the last interval of data, with extra hour included, coincides with the transition out of DST.  
+						// In this case, we will be adding hour to the end of the array representing ideal time. 
+						// (testFallBoundaryEndAtResult)
+<span class="nc" id="L127">						insertions.put(numIntervals, numIntervalsInTransition);</span>
 					}
 				}
-<span class="fc bfc" id="L138" title="All 4 branches covered.">				if (isFromDSTAwareToIdeal &amp;&amp; transitioningIntoDST) {</span>
-<span class="fc" id="L139">					int numIntervalsToInsert = numIntervalsInTransition;</span>
-					
+<span class="nc bnc" id="L130" title="All 4 branches missed.">				if (isFromDSTAwareToIdeal &amp;&amp; transitioningIntoDST) {</span>
+<span class="nc" id="L131">					int numIntervalsToInsert = numIntervalsInTransition;</span>
+
 					// Check to see if we are adding at the end of the period. If so, figure out
 					// how many points to add.
-<span class="pc bpc" id="L143" title="1 of 2 branches missed.">					if (wallTimeCursor.getTime().equals(endDate) </span>
-<span class="pc bpc" id="L144" title="1 of 2 branches missed.">						|| wallTimeCursor.getTime().after(endDate)) {</span>
-					
+<span class="nc bnc" id="L135" title="All 2 branches missed.">					if (wallTimeCursor.getTime().equals(endDate)</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">						|| wallTimeCursor.getTime().after(endDate)) {</span>
+
 						// In this case we will need to insert some number of data points.
 						// This number will either be the number of intervals in a DST transition
 						// duration, or the number of intervals that would be required to get to the
 						// day boundary, which ever is fewer.
-	
-						
-<span class="nc" id="L152">						int nextDayBoundary = timeContext.getDayBoundary();</span>
+
+
+<span class="nc" id="L144">						int nextDayBoundary = timeContext.getDayBoundary();</span>
 						// If the day boundary in minutes since midnight is less than the current
 						// cursor's minutes since midnight, add one day, so we can more easily
 						// calculate the number of intervals until the next day.
-<span class="nc bnc" id="L156" title="All 2 branches missed.">						if (nextDayBoundary &lt; minsSinceMidnight) {</span>
-<span class="nc" id="L157">							nextDayBoundary += NUM_MINUTES_IN_WEEK;</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">						if (nextDayBoundary &lt; minsSinceMidnight) {</span>
+<span class="nc" id="L149">							nextDayBoundary += NUM_MINUTES_IN_DAY;</span>
 						}
-						
-<span class="nc" id="L160">						int intervalsUntilDayBoundary = (nextDayBoundary - minsSinceMidnight) / intervalLengthInMinutes;</span>
-<span class="nc" id="L161">						numIntervalsToInsert = Math.min(numIntervalsInTransition, intervalsUntilDayBoundary);</span>
+
+<span class="nc" id="L152">						int intervalsUntilDayBoundary = (nextDayBoundary - minsSinceMidnight) / intervalLengthInMinutes;</span>
+<span class="nc" id="L153">						numIntervalsToInsert = Math.min(numIntervalsInTransition, intervalsUntilDayBoundary);</span>
 					}
-					
-<span class="pc bpc" id="L164" title="1 of 2 branches missed.">					if (wallTimeCursor.getTime().equals(startDate)) {</span>
+
+<span class="nc bnc" id="L156" title="All 2 branches missed.">					if (wallTimeCursor.getTime().equals(startDate)) {</span>
 						// Starting on a transition, we have to insert a certain number of intervals.
 						// the number of intervals to insert is either the number of intervals in the 
 						// DST transition, or the number of intervals it takes to add to the day boundary
 						// to get to the current time, whichever is fewer.
-						
-						
-<span class="nc" id="L171">						int previousDayBoundary = timeContext.getDayBoundary();</span>
 
-<span class="nc" id="L173">						numIntervalsToInsert = numIntervalsInTransition - (previousDayBoundary - minsSinceMidnight) / intervalLengthInMinutes;</span>
+<span class="nc" id="L162">						int previousDayBoundary = timeContext.getDayBoundary();</span>
+
+<span class="nc" id="L164">						numIntervalsToInsert = numIntervalsInTransition - (previousDayBoundary - minsSinceMidnight) / intervalLengthInMinutes;</span>
 					}
-<span class="fc" id="L175">					insertions.put(arrayIndex, numIntervalsToInsert);</span>
+<span class="nc" id="L166">					insertions.put(arrayIndex, numIntervalsToInsert);</span>
 				}
-				
-<span class="pc bpc" id="L178" title="1 of 8 branches missed.">				if (isFromDSTAwareToIdeal &amp;&amp; transitioningOutOfDST  ||</span>
-						isFromIdealToLocal &amp;&amp; transitioningIntoDST) {
 
-<span class="fc" id="L181">					int numIntervalsToRemove = timeZone.getDSTSavings() / (intervalLengthInMinutes * TimeZoneUtil.MINUTE_IN_MILLISECONDS);</span>
-<span class="pc bpc" id="L182" title="3 of 4 branches missed.">					if (arrayIndex == 0 &amp;&amp; transitioningIntoDST) {</span>
+<span class="nc bnc" id="L169" title="All 8 branches missed.">				if (isFromDSTAwareToIdeal &amp;&amp; transitioningOutOfDST ||</span>
+					isFromIdealToLocal &amp;&amp; transitioningIntoDST) {
+
+<span class="nc" id="L172">					int numIntervalsToRemove = timeZone.getDSTSavings() / (intervalLengthInMinutes * TimeZoneUtil.MINUTE_IN_MILLISECONDS);</span>
+<span class="nc bnc" id="L173" title="All 4 branches missed.">					if (arrayIndex == 0 &amp;&amp; transitioningIntoDST) {</span>
 						// We are starting at a transition time. If the wall clock matches the 
 						// day boundary, do nothing. The previous day should be affected
 						// does not match current hours since midnight, the transition has already occurred.
-<span class="nc" id="L186">						int wallClockMinsSinceMidnight = </span>
-<span class="nc" id="L187">							wallTimeCursor.get(Calendar.HOUR_OF_DAY) * NUM_MINUTES_PER_DAY</span>
-<span class="nc" id="L188">							+ wallTimeCursor.get(Calendar.MINUTE); </span>
-						
-<span class="nc bnc" id="L190" title="All 2 branches missed.">						if (wallClockMinsSinceMidnight - dayBoundaryMinsSinceMidnight &lt; timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS) {</span>
-<span class="nc" id="L191">							numIntervalsToRemove = (wallClockMinsSinceMidnight - dayBoundaryMinsSinceMidnight) / intervalLengthInMinutes;</span>
+<span class="nc" id="L177">						int wallClockMinsSinceMidnight =</span>
+<span class="nc" id="L178">							wallTimeCursor.get(Calendar.HOUR_OF_DAY) * NUM_MINUTES_IN_HOUR</span>
+<span class="nc" id="L179">								+ wallTimeCursor.get(Calendar.MINUTE);</span>
+
+<span class="nc bnc" id="L181" title="All 2 branches missed.">						if (wallClockMinsSinceMidnight - dayBoundaryMinsSinceMidnight &lt; timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS) {</span>
+<span class="nc" id="L182">							numIntervalsToRemove = (wallClockMinsSinceMidnight - dayBoundaryMinsSinceMidnight) / intervalLengthInMinutes;</span>
 						}
 					}
-					
-<span class="fc bfc" id="L195" title="All 2 branches covered.">					for (int interval = 0; interval &lt; numIntervalsToRemove; interval++) {</span>
-<span class="fc" id="L196">						int index = arrayIndex;</span>
-<span class="pc bpc" id="L197" title="1 of 2 branches missed.">						if (transitioningOutOfDST) {</span>
-<span class="nc" id="L198">							int dstSavingsNumIntervals = timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS / intervalLengthInMinutes;</span>
-<span class="nc bnc" id="L199" title="All 4 branches missed.">							if (index &gt;= dstSavingsNumIntervals &amp;&amp; index &lt; numIntervals) {</span>
-<span class="nc" id="L200">								indicesToRemove.add(index);</span>
-<span class="nc bnc" id="L201" title="All 2 branches missed.">							} else if (index &gt;= numIntervals) {	</span>
+
+<span class="nc bnc" id="L186" title="All 2 branches missed.">					for (int interval = 0; interval &lt; numIntervalsToRemove; interval++) {</span>
+<span class="nc" id="L187">						int index = arrayIndex;</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">						if (transitioningOutOfDST) {</span>
+<span class="nc" id="L189">							int dstSavingsNumIntervals = timeZone.getDSTSavings() / TimeZoneUtil.MINUTE_IN_MILLISECONDS / intervalLengthInMinutes;</span>
+<span class="nc bnc" id="L190" title="All 4 branches missed.">							if (index &gt;= dstSavingsNumIntervals &amp;&amp; index &lt; numIntervals) {</span>
+<span class="nc" id="L191">								indicesToRemove.add(index);</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">							} else if (index &gt;= numIntervals) {</span>
 								//Corner case where the last interval of data coincides with the transition out of DST.  
 								// In this case, we remove the last hour of data. (testFallBoundaryEndAtResult)
-<span class="nc" id="L204">								indicesToRemove.add(index - dstSavingsNumIntervals);</span>
+<span class="nc" id="L195">								indicesToRemove.add(index - dstSavingsNumIntervals);</span>
 							}
-<span class="nc" id="L206">						} else {</span>
-<span class="pc bpc" id="L207" title="2 of 4 branches missed.">							if (index &gt;= 0 &amp;&amp; index &lt; numIntervals) {</span>
-<span class="fc" id="L208">								indicesToRemove.add(index);</span>
+<span class="nc" id="L197">						} else {</span>
+<span class="nc bnc" id="L198" title="All 4 branches missed.">							if (index &gt;= 0 &amp;&amp; index &lt; numIntervals) {</span>
+<span class="nc" id="L199">								indicesToRemove.add(index);</span>
 							}
 						}
-<span class="fc" id="L211">						arrayIndex++;</span>
+<span class="nc" id="L202">						arrayIndex++;</span>
 					}
+
 				}
+
 			}
-<span class="fc" id="L215">			inDST = timeZone.inDaylightTime(wallTimeCursor.getTime());</span>
-<span class="fc" id="L216">		}</span>
-		
-<span class="pc bpc" id="L218" title="1 of 4 branches missed.">		if (isFromDSTAwareToIdeal &amp;&amp; timeZone.getDSTSavings() != 0 ) {</span>
-<span class="fc bfc" id="L219" title="All 2 branches covered.">			if (numIntervals == (TimeZoneUtil.DAY_IN_MINUTES/intervalLengthInMinutes)) {</span>
-				//the loop code is not able to handle the day starting on the first minute of DST case, add special handle here.
-<span class="fc" id="L221">				indicesToRemove.clear();</span>
-<span class="fc" id="L222">				insertions.clear();</span>
-			}
-<span class="fc bfc" id="L224" title="All 2 branches covered.">			if ((numIntervals &lt; (TimeZoneUtil.DAY_IN_MINUTES/intervalLengthInMinutes)) &amp;&amp;</span>
-<span class="pc bpc" id="L225" title="1 of 2 branches missed.">					insertions.isEmpty() &amp;&amp;</span>
-<span class="nc bnc" id="L226" title="All 2 branches missed.">					isLastMinuteIntoSpringForwardDST(endDate, timeZone)) {</span>
-					//special handling this case for ESR 4811810 - Goal Forecast Import feature appears to save successfully 
-				// but its not saving the data or changes in forecast and pulse view after refreshing the page
-					//the loop code is not able to handle the day ending on the last minute of non-DST case, add special handle here.
-<span class="nc" id="L230">					insertions.put(numIntervals, timeZone.getDSTSavings() / (intervalLengthInMinutes * TimeZoneUtil.MINUTE_IN_MILLISECONDS));</span>
-			}
-		}
-		
-<span class="fc" id="L234">		return new DSTConversionInformation(indicesToRemove, insertions, startDate, numIntervals, intervalLengthInMinutes, timeZone );</span>
+<span class="nc" id="L208">			inDST = timeZone.inDaylightTime(wallTimeCursor.getTime());</span>
+<span class="nc" id="L209">		}</span>
+
+<span class="nc" id="L211">		handleDSTSavingMinutesAtTransition(isFromDSTAwareToIdeal, numIntervals, intervalLengthInMinutes, timeZone, endDate, insertions, indicesToRemove);</span>
+
+<span class="nc" id="L213">		return new DSTConversionInformation(indicesToRemove, insertions, startDate, numIntervals, intervalLengthInMinutes, timeZone);</span>
 	}
-	
-	private static boolean isLastMinuteIntoSpringForwardDST(Date date, TimeZone tz) {
-<span class="nc bnc" id="L238" title="All 2 branches missed.">		if (!tz.inDaylightTime(date)) {</span>
-<span class="nc" id="L239">			Calendar calendar = Calendar.getInstance(tz);</span>
-<span class="nc" id="L240">			calendar.setTime(date);</span>
-<span class="nc" id="L241">			calendar.add(Calendar.MILLISECOND, tz.getDSTSavings());</span>
-<span class="nc bnc" id="L242" title="All 2 branches missed.">			if (tz.inDaylightTime(calendar.getTime())) {</span>
-<span class="nc" id="L243">				return true;</span>
+
+	private static void handleDSTSavingMinutesAtTransition(boolean isFromDSTAwareToIdeal,
+		int numIntervals,
+		int intervalLengthInMinutes,
+		TimeZone timeZone,
+		Date endDate,
+		Map&lt;Integer, Integer&gt; insertions,
+		Collection&lt;Integer&gt; indicesToRemove) {
+<span class="nc bnc" id="L223" title="All 4 branches missed.">		if (isFromDSTAwareToIdeal &amp;&amp; timeZone.getDSTSavings() != 0) {</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">			if (numIntervals == (TimeZoneUtil.DAY_IN_MINUTES / intervalLengthInMinutes)) {</span>
+<span class="nc" id="L225">				indicesToRemove.clear();</span>
+<span class="nc" id="L226">				insertions.clear();</span>
+			}
+<span class="nc bnc" id="L228" title="All 2 branches missed.">			if ((numIntervals &lt; (TimeZoneUtil.DAY_IN_MINUTES / intervalLengthInMinutes)) &amp;&amp;</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">				insertions.isEmpty() &amp;&amp;</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">				isLastMinuteIntoSpringForwardDST(endDate, timeZone)) {</span>
+<span class="nc" id="L231">				insertions.put(numIntervals, timeZone.getDSTSavings() / (intervalLengthInMinutes * TimeZoneUtil.MINUTE_IN_MILLISECONDS));</span>
 			}
 		}
-<span class="nc" id="L246">		return false;</span>
+<span class="nc" id="L234">	}</span>
+
+	private static boolean isLastMinuteIntoSpringForwardDST(Date date, TimeZone tz) {
+<span class="nc bnc" id="L237" title="All 2 branches missed.">		if (!tz.inDaylightTime(date)) {</span>
+<span class="nc" id="L238">			Calendar calendar = Calendar.getInstance(tz);</span>
+<span class="nc" id="L239">			calendar.setTime(date);</span>
+<span class="nc" id="L240">			calendar.add(Calendar.MILLISECOND, tz.getDSTSavings());</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">			if (tz.inDaylightTime(calendar.getTime())) {</span>
+<span class="nc" id="L242">				return true;</span>
+			}
+		}
+<span class="nc" id="L245">		return false;</span>
 	}
 
 	/**
 	 * Creates a new List using the DSTConversionInformation object to specify which elements
-	 * to skip and where to insert values. 
+	 * to skip and where to insert values.
+	 *
 	 * @param &lt;T&gt;
 	 * @param conversionInfo DSTConversionInformation containing the time info, insertion and deletion points required for conversion.
-	 * @param source List&lt;T&gt; containing data to convert to or from DST-aware time
-	 * @param dataToInsert T to insert in empty places
+	 * @param source         List&lt;T&gt; containing data to convert to or from DST-aware time
+	 * @param dataToInsert   T to insert in empty places
 	 * @returns a new List after conversion to/from DST-aware time
 	 */
 	private static &lt;T&gt; List&lt;T&gt; createConvertedList(DSTConversionInformation conversionInfo, List&lt;T&gt; source, T dataToInsert) {
@@ -263,15 +263,15 @@ import com.bluepumpkin.common.util.TimeZoneUtil;
 <span class="nc bnc" id="L263" title="All 2 branches missed.">		for (Integer insertPoint : insertPoints) {</span>
 <span class="nc" id="L264">			totalNumPointsToInsert += conversionInfo.getNumPointsToInsert(insertPoint);</span>
 <span class="nc" id="L265">		}</span>
-		
+
 <span class="nc bnc" id="L267" title="All 4 branches missed.">		if (insertPoints.isEmpty() &amp;&amp; deletePoints.isEmpty()) {</span>
-<span class="nc" id="L268">			return new ArrayList&lt;T&gt;(source);</span>
+<span class="nc" id="L268">			return new ArrayList&lt;&gt;(source);</span>
 		}
-<span class="nc" id="L270">		ArrayList&lt;T&gt; retVal = new ArrayList&lt;T&gt;(source.size() + (totalNumPointsToInsert) - deletePoints.size());</span>
+<span class="nc" id="L270">		ArrayList&lt;T&gt; retVal = new ArrayList&lt;&gt;(source.size() + (totalNumPointsToInsert) - deletePoints.size());</span>
 <span class="nc bnc" id="L271" title="All 2 branches missed.">		for (int sourceCounter = 0; sourceCounter &lt;= source.size(); sourceCounter++) {</span>
 <span class="nc bnc" id="L272" title="All 2 branches missed.">			if (insertPoints.contains(sourceCounter)) {</span>
 <span class="nc" id="L273">				int numPointsToInsert = conversionInfo.getNumPointsToInsert(sourceCounter);</span>
-<span class="nc bnc" id="L274" title="All 2 branches missed.">				for (int intervalCounter = 0; intervalCounter &lt; numPointsToInsert; intervalCounter++){</span>
+<span class="nc bnc" id="L274" title="All 2 branches missed.">				for (int intervalCounter = 0; intervalCounter &lt; numPointsToInsert; intervalCounter++) {</span>
 <span class="nc" id="L275">					retVal.add(dataToInsert);</span>
 				}
 <span class="nc bnc" id="L277" title="All 2 branches missed.">			} else if (deletePoints.contains(sourceCounter)) {</span>
@@ -283,175 +283,178 @@ import com.bluepumpkin.common.util.TimeZoneUtil;
 		}
 <span class="nc" id="L284">		return retVal;</span>
 	}
-	
+
 	/**
 	 * Creates a new int[] using the DSTConversionInformation object to specify which elements
-	 * to skip and where to insert values. 
+	 * to skip and where to insert values.
+	 *
 	 * @param conversionInfo DSTConversionInformation containing the time info, insertion and deletion points required for conversion.
-	 * @param source int[] containing data to convert to or from DST-aware time
-	 * @param dataToInsert int to insert in empty places
+	 * @param source         int[] containing data to convert to or from DST-aware time
+	 * @param dataToInsert   int to insert in empty places
 	 * @returns a new int[] after conversion to/from DST-aware time
 	 */
 	private static int[] createConvertedIntArray(DSTConversionInformation conversionInfo, int[] source, int dataToInsert) {
-<span class="fc" id="L296">		Collection&lt;Integer&gt; insertPoints = conversionInfo.getIndicesAtWhichToInsertData();</span>
-<span class="fc" id="L297">		Collection&lt;Integer&gt; deletePoints = conversionInfo.getIndicesToRemove();</span>
+<span class="nc" id="L297">		Collection&lt;Integer&gt; insertPoints = conversionInfo.getIndicesAtWhichToInsertData();</span>
+<span class="nc" id="L298">		Collection&lt;Integer&gt; deletePoints = conversionInfo.getIndicesToRemove();</span>
 
-<span class="fc" id="L299">		int totalNumPointsToInsert = 0;</span>
-<span class="fc bfc" id="L300" title="All 2 branches covered.">		for (Integer insertPoint : insertPoints) {</span>
-<span class="fc" id="L301">			totalNumPointsToInsert += conversionInfo.getNumPointsToInsert(insertPoint);</span>
-<span class="fc" id="L302">		}</span>
-		
-<span class="fc" id="L304">		int[] retVal = new int[source.length - deletePoints.size() + totalNumPointsToInsert];</span>
-<span class="pc bpc" id="L305" title="1 of 4 branches missed.">		if (insertPoints.isEmpty() &amp;&amp; deletePoints.isEmpty()) {</span>
-<span class="fc" id="L306">			System.arraycopy(source, 0, retVal, 0, source.length);</span>
-<span class="fc" id="L307">			return retVal;</span>
+<span class="nc" id="L300">		int totalNumPointsToInsert = 0;</span>
+<span class="nc bnc" id="L301" title="All 2 branches missed.">		for (Integer insertPoint : insertPoints) {</span>
+<span class="nc" id="L302">			totalNumPointsToInsert += conversionInfo.getNumPointsToInsert(insertPoint);</span>
+<span class="nc" id="L303">		}</span>
+
+<span class="nc" id="L305">		int[] retVal = new int[source.length - deletePoints.size() + totalNumPointsToInsert];</span>
+<span class="nc bnc" id="L306" title="All 4 branches missed.">		if (insertPoints.isEmpty() &amp;&amp; deletePoints.isEmpty()) {</span>
+<span class="nc" id="L307">			System.arraycopy(source, 0, retVal, 0, source.length);</span>
+<span class="nc" id="L308">			return retVal;</span>
 		}
-<span class="fc" id="L309">		int retValCounter = 0;</span>
-<span class="fc bfc" id="L310" title="All 2 branches covered.">		for (int sourceCounter = 0; sourceCounter &lt;= source.length; sourceCounter++) {</span>
-<span class="fc bfc" id="L311" title="All 2 branches covered.">			if (insertPoints.contains(sourceCounter)) {</span>
-<span class="fc" id="L312">				int numPointsToInsert = conversionInfo.getNumPointsToInsert(sourceCounter);</span>
-<span class="fc bfc" id="L313" title="All 2 branches covered.">				for (int intervalCounter = 0; intervalCounter &lt; numPointsToInsert; intervalCounter++){</span>
-<span class="fc" id="L314">					retVal[retValCounter++] = dataToInsert;</span>
+<span class="nc" id="L310">		int retValCounter = 0;</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">		for (int sourceCounter = 0; sourceCounter &lt;= source.length; sourceCounter++) {</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">			if (insertPoints.contains(sourceCounter)) {</span>
+<span class="nc" id="L313">				int numPointsToInsert = conversionInfo.getNumPointsToInsert(sourceCounter);</span>
+<span class="nc bnc" id="L314" title="All 2 branches missed.">				for (int intervalCounter = 0; intervalCounter &lt; numPointsToInsert; intervalCounter++) {</span>
+<span class="nc" id="L315">					retVal[retValCounter++] = dataToInsert;</span>
 				}
-<span class="pc bpc" id="L316" title="1 of 2 branches missed.">			} else if (deletePoints.contains(sourceCounter)) {</span>
-<span class="nc" id="L317">				continue;</span>
+<span class="nc bnc" id="L317" title="All 2 branches missed.">			} else if (deletePoints.contains(sourceCounter)) {</span>
+<span class="nc" id="L318">				continue;</span>
 			}
-<span class="fc bfc" id="L319" title="All 2 branches covered.">			if (sourceCounter &lt; source.length) {</span>
-<span class="fc" id="L320">				retVal[retValCounter++] = source[sourceCounter];</span>
+<span class="nc bnc" id="L320" title="All 2 branches missed.">			if (sourceCounter &lt; source.length) {</span>
+<span class="nc" id="L321">				retVal[retValCounter++] = source[sourceCounter];</span>
 			}
 		}
-<span class="fc" id="L323">		return retVal;</span>
+<span class="nc" id="L324">		return retVal;</span>
 	}
-	
+
 	/**
 	 * Creates a new float[] using the DSTConversionInformation object to specify which elements
-	 * to skip and where to insert values. 
+	 * to skip and where to insert values.
+	 *
 	 * @param conversionInfo DSTConversionInformation containing the time info, insertion and deletion points required for conversion.
-	 * @param source float[] containing data to convert to or from DST-aware time
-	 * @param dataToInsert float to insert in empty places
+	 * @param source         float[] containing data to convert to or from DST-aware time
+	 * @param dataToInsert   float to insert in empty places
 	 * @returns a new float[] after conversion to/from DST-aware time
 	 */
 	private static float[] createConvertedFloatArray(DSTConversionInformation conversionInfo, float[] source, float dataToInsert) {
-<span class="fc" id="L335">		Collection&lt;Integer&gt; insertPoints = conversionInfo.getIndicesAtWhichToInsertData();</span>
-<span class="fc" id="L336">		Collection&lt;Integer&gt; deletePoints = conversionInfo.getIndicesToRemove();</span>
-		
-<span class="fc" id="L338">		int totalNumPointsToInsert = 0;</span>
-<span class="pc bpc" id="L339" title="1 of 2 branches missed.">		for (Integer insertPoint : insertPoints) {</span>
-<span class="nc" id="L340">			totalNumPointsToInsert += conversionInfo.getNumPointsToInsert(insertPoint);</span>
-<span class="nc" id="L341">		}</span>
-		
-<span class="fc" id="L343">		float[] retVal = new float[source.length - deletePoints.size() + totalNumPointsToInsert];</span>
-<span class="pc bpc" id="L344" title="1 of 4 branches missed.">		if (insertPoints.isEmpty() &amp;&amp; deletePoints.isEmpty()) {</span>
-<span class="fc" id="L345">			System.arraycopy(source, 0, retVal, 0, source.length);</span>
-<span class="fc" id="L346">			return retVal;</span>
+<span class="nc" id="L337">		Collection&lt;Integer&gt; insertPoints = conversionInfo.getIndicesAtWhichToInsertData();</span>
+<span class="nc" id="L338">		Collection&lt;Integer&gt; deletePoints = conversionInfo.getIndicesToRemove();</span>
+
+<span class="nc" id="L340">		int totalNumPointsToInsert = 0;</span>
+<span class="nc bnc" id="L341" title="All 2 branches missed.">		for (Integer insertPoint : insertPoints) {</span>
+<span class="nc" id="L342">			totalNumPointsToInsert += conversionInfo.getNumPointsToInsert(insertPoint);</span>
+<span class="nc" id="L343">		}</span>
+
+<span class="nc" id="L345">		float[] retVal = new float[source.length - deletePoints.size() + totalNumPointsToInsert];</span>
+<span class="nc bnc" id="L346" title="All 4 branches missed.">		if (insertPoints.isEmpty() &amp;&amp; deletePoints.isEmpty()) {</span>
+<span class="nc" id="L347">			System.arraycopy(source, 0, retVal, 0, source.length);</span>
+<span class="nc" id="L348">			return retVal;</span>
 		}
-<span class="fc" id="L348">		int retValCounter = 0;</span>
-<span class="fc bfc" id="L349" title="All 2 branches covered.">		for (int sourceCounter = 0; sourceCounter &lt;= source.length; sourceCounter++) {</span>
-<span class="pc bpc" id="L350" title="1 of 2 branches missed.">			if (insertPoints.contains(sourceCounter)) {</span>
-<span class="nc" id="L351">				int numPointsToInsert = conversionInfo.getNumPointsToInsert(sourceCounter);</span>
-<span class="nc bnc" id="L352" title="All 2 branches missed.">				for (int intervalCounter = 0; intervalCounter &lt; numPointsToInsert; intervalCounter++){</span>
-<span class="nc" id="L353">					retVal[retValCounter++] = dataToInsert;</span>
+<span class="nc" id="L350">		int retValCounter = 0;</span>
+<span class="nc bnc" id="L351" title="All 2 branches missed.">		for (int sourceCounter = 0; sourceCounter &lt;= source.length; sourceCounter++) {</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">			if (insertPoints.contains(sourceCounter)) {</span>
+<span class="nc" id="L353">				int numPointsToInsert = conversionInfo.getNumPointsToInsert(sourceCounter);</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">				for (int intervalCounter = 0; intervalCounter &lt; numPointsToInsert; intervalCounter++) {</span>
+<span class="nc" id="L355">					retVal[retValCounter++] = dataToInsert;</span>
 				}
-<span class="pc bfc" id="L355" title="All 2 branches covered.">			} else if (deletePoints.contains(sourceCounter)) {</span>
-<span class="fc" id="L356">				continue;</span>
+<span class="nc bnc" id="L357" title="All 2 branches missed.">			} else if (deletePoints.contains(sourceCounter)) {</span>
+<span class="nc" id="L358">				continue;</span>
 			}
-<span class="fc bfc" id="L358" title="All 2 branches covered.">			if (sourceCounter &lt; source.length) {</span>
-<span class="fc" id="L359">				retVal[retValCounter++] = source[sourceCounter];</span>
+<span class="nc bnc" id="L360" title="All 2 branches missed.">			if (sourceCounter &lt; source.length) {</span>
+<span class="nc" id="L361">				retVal[retValCounter++] = source[sourceCounter];</span>
 			}
 		}
-<span class="fc" id="L362">		return retVal;</span>
+<span class="nc" id="L364">		return retVal;</span>
 	}
-	
+
 	/**
 	 * Creates a new double[] using the DSTConversionInformation object to specify which elements
-	 * to skip and where to insert values. 
+	 * to skip and where to insert values.
+	 *
 	 * @param conversionInfo DSTConversionInformation containing the time info, insertion and deletion points required for conversion.
-	 * @param source double[] containing data to convert to or from DST-aware time
-	 * @param dataToInsert double to insert in empty places
+	 * @param source         double[] containing data to convert to or from DST-aware time
+	 * @param dataToInsert   double to insert in empty places
 	 * @returns a new double[] after conversion to/from DST-aware time
 	 */
 	private static double[] createConvertedDoubleArray(DSTConversionInformation conversionInfo, double[] source, double dataToInsert) {
-<span class="fc" id="L374">		Collection&lt;Integer&gt; insertPoints = conversionInfo.getIndicesAtWhichToInsertData();</span>
-<span class="fc" id="L375">		Collection&lt;Integer&gt; deletePoints = conversionInfo.getIndicesToRemove();</span>
-		
-<span class="fc" id="L377">		int totalNumPointsToInsert = 0;</span>
-<span class="fc bfc" id="L378" title="All 2 branches covered.">		for (Integer insertPoint : insertPoints) {</span>
-<span class="fc" id="L379">			totalNumPointsToInsert += conversionInfo.getNumPointsToInsert(insertPoint);</span>
-<span class="fc" id="L380">		}</span>
-		
-<span class="fc" id="L382">		double[] retVal = new double[source.length - deletePoints.size() + totalNumPointsToInsert];</span>
-<span class="pc bpc" id="L383" title="1 of 4 branches missed.">		if (insertPoints.isEmpty() &amp;&amp; deletePoints.isEmpty()) {</span>
-<span class="fc" id="L384">			System.arraycopy(source, 0, retVal, 0, source.length);</span>
-<span class="fc" id="L385">			return retVal;</span>
-		}
-<span class="fc" id="L387">		int retValCounter = 0;</span>
-<span class="fc bfc" id="L388" title="All 2 branches covered.">		for (int sourceCounter = 0; sourceCounter &lt; source.length + totalNumPointsToInsert; sourceCounter++) {</span>
-<span class="fc bfc" id="L389" title="All 2 branches covered.">			if (insertPoints.contains(sourceCounter)) {</span>
-<span class="fc" id="L390">				int numPointsToInsert = conversionInfo.getNumPointsToInsert(sourceCounter);</span>
-<span class="fc bfc" id="L391" title="All 2 branches covered.">				for (int intervalCounter = 0; intervalCounter &lt; numPointsToInsert; intervalCounter++){</span>
-<span class="fc" id="L392">					retVal[retValCounter++] = dataToInsert;</span>
-				}
-<span class="pc bpc" id="L394" title="1 of 2 branches missed.">			} else if (deletePoints.contains(sourceCounter)) {</span>
-<span class="nc" id="L395">				continue;</span>
-			}
+<span class="nc" id="L377">		Collection&lt;Integer&gt; insertPoints = conversionInfo.getIndicesAtWhichToInsertData();</span>
+<span class="nc" id="L378">		Collection&lt;Integer&gt; deletePoints = conversionInfo.getIndicesToRemove();</span>
 
-<span class="fc bfc" id="L398" title="All 2 branches covered.">			if (sourceCounter &lt; source.length) {</span>
-<span class="fc" id="L399">				retVal[retValCounter++] = source[sourceCounter];</span>
+<span class="nc" id="L380">		int totalNumPointsToInsert = 0;</span>
+<span class="nc bnc" id="L381" title="All 2 branches missed.">		for (Integer insertPoint : insertPoints) {</span>
+<span class="nc" id="L382">			totalNumPointsToInsert += conversionInfo.getNumPointsToInsert(insertPoint);</span>
+<span class="nc" id="L383">		}</span>
+
+<span class="nc" id="L385">		double[] retVal = new double[source.length - deletePoints.size() + totalNumPointsToInsert];</span>
+<span class="nc bnc" id="L386" title="All 4 branches missed.">		if (insertPoints.isEmpty() &amp;&amp; deletePoints.isEmpty()) {</span>
+<span class="nc" id="L387">			System.arraycopy(source, 0, retVal, 0, source.length);</span>
+<span class="nc" id="L388">			return retVal;</span>
+		}
+<span class="nc" id="L390">		int retValCounter = 0;</span>
+<span class="nc bnc" id="L391" title="All 2 branches missed.">		for (int sourceCounter = 0; sourceCounter &lt; source.length + totalNumPointsToInsert; sourceCounter++) {</span>
+<span class="nc bnc" id="L392" title="All 2 branches missed.">			if (insertPoints.contains(sourceCounter)) {</span>
+<span class="nc" id="L393">				int numPointsToInsert = conversionInfo.getNumPointsToInsert(sourceCounter);</span>
+<span class="nc bnc" id="L394" title="All 2 branches missed.">				for (int intervalCounter = 0; intervalCounter &lt; numPointsToInsert; intervalCounter++) {</span>
+<span class="nc" id="L395">					retVal[retValCounter++] = dataToInsert;</span>
+				}
+<span class="nc bnc" id="L397" title="All 2 branches missed.">			} else if (deletePoints.contains(sourceCounter)) {</span>
+<span class="nc" id="L398">				continue;</span>
+			}
+<span class="nc bnc" id="L400" title="All 2 branches missed.">			if (sourceCounter &lt; source.length) {</span>
+<span class="nc" id="L401">				retVal[retValCounter++] = source[sourceCounter];</span>
 			}
 		}
-<span class="fc" id="L402">		return retVal;</span>
+<span class="nc" id="L404">		return retVal;</span>
 	}
-	
+
 	/**
-	 * Converts a List of values ordered by DST-aware intervals of time (wall clock time) to 
+	 * Converts a List of values ordered by DST-aware intervals of time (wall clock time) to
 	 * a List of values ordered by ideal 24-hour-day time intervals. It accomplishes this
-	 * by dropping entries of the source list if the source contains the transition part of a 
+	 * by dropping entries of the source list if the source contains the transition part of a
 	 * 25-hour day or adding entries if the source contains the transition part of a 23-hour
-	 * day. 
+	 * day.
+	 *
 	 * @param &lt;T&gt;
-	 * @param source List&lt;T&gt; of values to convert
+	 * @param source                 List&lt;T&gt; of values to convert
 	 * @param objectToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware source list
-	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeContext The Time Context that is to be used to calculate DST transitions
+	 * @param startDate              Date representing the time of the first element in the DST-Aware source list
+	 * @param intervalLength         The amount of time that is represented by each entry in a time-based List of data
+	 * @param timeContext            The Time Context that is to be used to calculate DST transitions
 	 * @returns a List of values ordered by ideal 24-hour-day time intervals
 	 */
 	public static &lt;T&gt; List&lt;T&gt; convertFromDSTAwareTimeToIdealTime(List&lt;T&gt; source, T objectToInsertIntoGaps, Date startDate, Duration intervalLength, TimeContext timeContext) {
-<span class="nc" id="L420">		return createConvertedList(getConversionInformation(true, startDate, source.size(), intervalLength.getDurationInMinutes(), timeContext), source, objectToInsertIntoGaps);</span>
+<span class="nc" id="L423">		return createConvertedList(getConversionInformation(true, startDate, source.size(), intervalLength.getDurationInMinutes(), timeContext), source, objectToInsertIntoGaps);</span>
 	}
-	
+
 	/**
-	 * Converts an int[] of values ordered by DST-aware intervals of time (wall clock time) to 
+	 * Converts an int[] of values ordered by DST-aware intervals of time (wall clock time) to
 	 * an int[] of values ordered by ideal 24-hour-day time intervals. It accomplishes this
-	 * by dropping entries of the source array if the source contains the transition part of a 
+	 * by dropping entries of the source array if the source contains the transition part of a
 	 * 25-hour day or adding entries if the source contains the transition part of a 23-hour
-	 * day. 
-	 * @param source int[] of values to convert
-	 * @param objectToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware source list
+	 * day.
+	 *
+	 * @param source         int[] of values to convert
+	 * @param startDate      Date representing the time of the first element in the DST-Aware source list
 	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeContext The Time Context that is to be used to calculate DST transitions
+	 * @param timeContext    The Time Context that is to be used to calculate DST transitions
 	 * @returns an int[] of values ordered by ideal 24-hour-day time intervals
 	 */
 	public static int[] convertFromDSTAwareTimeToIdealTime(int[] source, int valueToInsertIntoGaps, Date startDate, Duration intervalLength, TimeContext timeContext) {
-<span class="fc" id="L437">		return createConvertedIntArray(getConversionInformation(true, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
+<span class="nc" id="L440">		return createConvertedIntArray(getConversionInformation(true, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
 	}
-	
+
 	/**
-	 * Converts a float[] of values ordered by DST-aware intervals of time (wall clock time) to 
+	 * Converts a float[] of values ordered by DST-aware intervals of time (wall clock time) to
 	 * a float[] of values ordered by ideal 24-hour-day time intervals. It accomplishes this
-	 * by dropping entries of the source array if the source contains the transition part of a 
+	 * by dropping entries of the source array if the source contains the transition part of a
 	 * 25-hour day or adding entries if the source contains the transition part of a 23-hour
-	 * day. 
-	 * @param source float[] of values to convert
-	 * @param objectToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware source list
+	 * day.
+	 *
+	 * @param source         float[] of values to convert
+	 * @param startDate      Date representing the time of the first element in the DST-Aware source list
 	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeContext The Time Context that is to be used to calculate DST transitions
+	 * @param timeContext    The Time Context that is to be used to calculate DST transitions
 	 * @returns a float[] of values ordered by ideal 24-hour-day time intervals
 	 */
 	public static float[] convertFromDSTAwareTimeToIdealTime(float[] source, float valueToInsertIntoGaps, Date startDate, Duration intervalLength, TimeContext timeContext) {
-<span class="nc" id="L454">		return createConvertedFloatArray(getConversionInformation(true, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
+<span class="nc" id="L457">		return createConvertedFloatArray(getConversionInformation(true, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
 	}
 
 	/**
@@ -460,87 +463,86 @@ import com.bluepumpkin.common.util.TimeZoneUtil;
 	 * by dropping entries of the source array if the source contains the transition part of a
 	 * 25-hour day or adding entries if the source contains the transition part of a 23-hour
 	 * day.
-	 * @param source double[] of values to convert
-	 * @param objectToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware source list
+	 *
+	 * @param source         double[] of values to convert
+	 * @param startDate      Date representing the time of the first element in the DST-Aware source list
 	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeContext The Time Context that is to be used to calculate DST transitions	 * @returns a double[] of values ordered by ideal 24-hour-day time intervals
+	 * @param timeContext    The Time Context that is to be used to calculate DST transitions	 * @returns a double[] of values ordered by ideal 24-hour-day time intervals
 	 */
 	public static double[] convertFromDSTAwareTimeToIdealTime(double[] source, double valueToInsertIntoGaps, Date startDate, Duration intervalLength, TimeContext timeContext) {
-<span class="fc" id="L470">		return createConvertedDoubleArray(getConversionInformation(true, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
+<span class="nc" id="L473">		return createConvertedDoubleArray(getConversionInformation(true, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
 	}
-	
+
 	/**
-	 * Converts a double[] of values ordered by DST-aware intervals of time (wall clock time) to 
+	 * Converts a double[] of values ordered by DST-aware intervals of time (wall clock time) to
 	 * a double[] of values ordered by ideal 24-hour-day time intervals. It accomplishes this
-	 * by dropping entries of the source array if the source contains the transition part of a 
+	 * by dropping entries of the source array if the source contains the transition part of a
 	 * 25-hour day or adding entries if the source contains the transition part of a 23-hour
-	 * day. 
-	 * @param source double[] of values to convert
-	 * @param objectToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware source list
+	 * day.
+	 *
+	 * @param source         double[] of values to convert
+	 * @param startDate      Date representing the time of the first element in the DST-Aware source list
 	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeZone The Time Zone that is to be used to calculate DST transitions
+	 * @param timeZone       The Time Zone that is to be used to calculate DST transitions
 	 * @returns a double[] of values ordered by ideal 24-hour-day time intervals
 	 * @deprecated this method needs to be refactored to take in a time context parameter instead of time zone. After that refactoring, deprecation can be removed.
 	 */
 	public static double[] convertFromDSTAwareTimeToIdealTime(double[] source, double valueToInsertIntoGaps, Date startDate, Duration intervalLength, TimeZone timeZone) {
-<span class="fc" id="L488">		return createConvertedDoubleArray(getConversionInformation(true, startDate, source.length, intervalLength.getDurationInMinutes(), new TimeContext(timeZone, 0)), source, valueToInsertIntoGaps);</span>
+<span class="nc" id="L491">		return createConvertedDoubleArray(getConversionInformation(true, startDate, source.length, intervalLength.getDurationInMinutes(), new TimeContext(timeZone, 0)), source, valueToInsertIntoGaps);</span>
 	}
 
 	/**
-	 * Converts a List of values ordered by ideal 24-hour-day time intervals to a List of 
+	 * Converts a List of values ordered by ideal 24-hour-day time intervals to a List of
 	 * DST-aware intervals of time (wall clock time). It accomplishes this
-	 * by dropping entries of the source list if the destination contains the transition part of a 
+	 * by dropping entries of the source list if the destination contains the transition part of a
 	 * 23-hour day or adding entries if the destination contains the transition part of a 25-hour
 	 * day.
-	 *  
+	 *
 	 * @param &lt;T&gt;
-	 * @param source List&lt;T&gt; of values to convert
+	 * @param source                 List&lt;T&gt; of values to convert
 	 * @param objectToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware destination list
-	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeContext The Time Context that is to be used to calculate DST transitions
+	 * @param startDate              Date representing the time of the first element in the DST-Aware destination list
+	 * @param intervalLength         The amount of time that is represented by each entry in a time-based List of data
+	 * @param timeContext            The Time Context that is to be used to calculate DST transitions
 	 * @returns a List of DST-aware intervals of time (wall clock time)
 	 */
 	public static &lt;T&gt; List&lt;T&gt; convertFromIdealTimeToDSTAwareTime(List&lt;T&gt; source, T objectToInsertIntoGaps, Date startDate, Duration intervalLength, TimeContext timeContext) {
-<span class="nc" id="L507">		return createConvertedList(getConversionInformation(false, startDate, source.size(), intervalLength.getDurationInMinutes(), timeContext), source, objectToInsertIntoGaps);</span>
+<span class="nc" id="L510">		return createConvertedList(getConversionInformation(false, startDate, source.size(), intervalLength.getDurationInMinutes(), timeContext), source, objectToInsertIntoGaps);</span>
 	}
-	
+
 	/**
-	 * Converts an int[] of values ordered by ideal 24-hour-day time intervals to an int[] of 
+	 * Converts an int[] of values ordered by ideal 24-hour-day time intervals to an int[] of
 	 * DST-aware intervals of time (wall clock time). It accomplishes this
-	 * by dropping entries of the source list if the destination contains the transition part of a 
+	 * by dropping entries of the source list if the destination contains the transition part of a
 	 * 23-hour day or adding entries if the destination contains the transition part of a 25-hour
 	 * day.
-	 *  
-	 * @param source an int[] of values to convert
+	 *
+	 * @param source                an int[] of values to convert
 	 * @param valueToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware destination list
-	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeZone The Time Context that is to be used to calculate DST transitions
+	 * @param startDate             Date representing the time of the first element in the DST-Aware destination list
+	 * @param intervalLength        The amount of time that is represented by each entry in a time-based List of data
 	 * @returns an int[] of DST-aware intervals of time (wall clock time)
 	 */
 	public static int[] convertFromIdealTimeToDSTAwareTime(int[] source, int valueToInsertIntoGaps, Date startDate, Duration intervalLength, TimeContext timeContext) {
-<span class="nc" id="L525">		return createConvertedIntArray(getConversionInformation(false, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
+<span class="nc" id="L527">		return createConvertedIntArray(getConversionInformation(false, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
 	}
-	
+
 	/**
-	 * Converts a float[] of values ordered by ideal 24-hour-day time intervals to a float[] of 
+	 * Converts a float[] of values ordered by ideal 24-hour-day time intervals to a float[] of
 	 * DST-aware intervals of time (wall clock time). It accomplishes this
-	 * by dropping entries of the source list if the destination contains the transition part of a 
+	 * by dropping entries of the source list if the destination contains the transition part of a
 	 * 23-hour day or adding entries if the destination contains the transition part of a 25-hour
 	 * day.
-	 *  
-	 * @param source an float[] of values to convert
+	 *
+	 * @param source                an float[] of values to convert
 	 * @param valueToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware destination list
-	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeContext The Time Context that is to be used to calculate DST transitions
+	 * @param startDate             Date representing the time of the first element in the DST-Aware destination list
+	 * @param intervalLength        The amount of time that is represented by each entry in a time-based List of data
+	 * @param timeContext           The Time Context that is to be used to calculate DST transitions
 	 * @returns an float[] of DST-aware intervals of time (wall clock time)
 	 */
 	public static float[] convertFromIdealTimeToDSTAwareTime(float[] source, float valueToInsertIntoGaps, Date startDate, Duration intervalLength, TimeContext timeContext) {
-<span class="fc" id="L543">		return createConvertedFloatArray(getConversionInformation(false, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
+<span class="nc" id="L545">		return createConvertedFloatArray(getConversionInformation(false, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
 	}
 
 	/**
@@ -550,37 +552,41 @@ import com.bluepumpkin.common.util.TimeZoneUtil;
 	 * 23-hour day or adding entries if the destination contains the transition part of a 25-hour
 	 * day.
 	 *
-	 * @param source an double[] of values to convert
+	 * @param source                an double[] of values to convert
 	 * @param valueToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware destination list
-	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeContext The Time Context that is to be used to calculate DST transitions
+	 * @param startDate             Date representing the time of the first element in the DST-Aware destination list
+	 * @param intervalLength        The amount of time that is represented by each entry in a time-based List of data
+	 * @param timeContext           The Time Context that is to be used to calculate DST transitions
 	 * @returns an double[] of DST-aware intervals of time (wall clock time)
 	 */
-	public static double[] convertFromIdealTimeToDSTAwareTime(double[] source, double valueToInsertIntoGaps, Date startDate, Duration intervalLength, TimeContext timeContext) {
-<span class="nc" id="L561">		return createConvertedDoubleArray(getConversionInformation(false, startDate, source.length, intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
+	public static double[] convertFromIdealTimeToDSTAwareTime(double[] source, double valueToInsertIntoGaps, Date startDate, 
+		Duration intervalLength, TimeContext timeContext) {
+<span class="nc" id="L564">		return createConvertedDoubleArray(getConversionInformation(false, startDate, source.length, </span>
+<span class="nc" id="L565">			intervalLength.getDurationInMinutes(), timeContext), source, valueToInsertIntoGaps);</span>
 	}
 
 	/**
-	 * Converts a double[] of values ordered by ideal 24-hour-day time intervals to a double[] of 
+	 * Converts a double[] of values ordered by ideal 24-hour-day time intervals to a double[] of
 	 * DST-aware intervals of time (wall clock time). It accomplishes this
-	 * by dropping entries of the source list if the destination contains the transition part of a 
+	 * by dropping entries of the source list if the destination contains the transition part of a
 	 * 23-hour day or adding entries if the destination contains the transition part of a 25-hour
 	 * day.
-	 *  
-	 * @param source an double[] of values to convert
+	 *
+	 * @param source                an double[] of values to convert
 	 * @param valueToInsertIntoGaps
-	 * @param startDate Date representing the time of the first element in the DST-Aware destination list
-	 * @param intervalLength The amount of time that is represented by each entry in a time-based List of data
-	 * @param timeZone The Time Zone that is to be used to calculate DST transitions
+	 * @param startDate             Date representing the time of the first element in the DST-Aware destination list
+	 * @param intervalLength        The amount of time that is represented by each entry in a time-based List of data
+	 * @param timeZone              The Time Zone that is to be used to calculate DST transitions
 	 * @returns an double[] of DST-aware intervals of time (wall clock time)
-	 * @deprecated this method needs to be refactored to take in a time context parameter instead of time zone. After that refactoring, deprecation can be removed.
+	 * @deprecated this method needs to be refactored to take in a time context parameter instead of time zone.
+	 * After that refactoring, deprecation can be removed.
 	 */
-	public static double[] convertFromIdealTimeToDSTAwareTime(double[] source, double valueToInsertIntoGaps, Date startDate, Duration intervalLength, TimeZone timeZone) {
-<span class="fc" id="L580">		return createConvertedDoubleArray(getConversionInformation(false, startDate, source.length, intervalLength.getDurationInMinutes(), new TimeContext(timeZone, 0)), source, valueToInsertIntoGaps);</span>
+	public static double[] convertFromIdealTimeToDSTAwareTime(double[] source, double valueToInsertIntoGaps, Date startDate,
+		Duration intervalLength, TimeZone timeZone) {
+<span class="nc" id="L586">		return createConvertedDoubleArray(getConversionInformation(</span>
+<span class="nc" id="L587">			false, startDate, source.length, intervalLength.getDurationInMinutes(),</span>
+			new TimeContext(timeZone, 0)), source, valueToInsertIntoGaps);
 	}
-
-
 
 	/**
 	 * Determines whether an SP's day start or end hour is partially in standard
@@ -590,153 +596,168 @@ import com.bluepumpkin.common.util.TimeZoneUtil;
 	 * method tells us whether the given time is such an hour.
 	 */
 	public static boolean hourContainsPartialDaylightTransition(Date lineStart, TimeZone tz) {
-<span class="nc" id="L593">		Calendar lineStartCal = Calendar.getInstance(tz);</span>
-<span class="nc" id="L594">		lineStartCal.setTime(lineStart);</span>
+<span class="nc" id="L599">		Calendar lineStartCal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L600">		lineStartCal.setTime(lineStart);</span>
 
-<span class="nc" id="L596">		int firstHourOfDay = lineStartCal.get(Calendar.HOUR_OF_DAY);</span>
+<span class="nc" id="L602">		int firstHourOfDay = lineStartCal.get(Calendar.HOUR_OF_DAY);</span>
 
-<span class="nc" id="L598">		Calendar prevHourOfDayCal = Calendar.getInstance(tz);</span>
-<span class="nc" id="L599">		prevHourOfDayCal.setTime(lineStart);</span>
-<span class="nc" id="L600">		prevHourOfDayCal.add(Calendar.HOUR_OF_DAY, -1);</span>
-<span class="nc" id="L601">		int prevHourOfDay = prevHourOfDayCal.get(Calendar.HOUR_OF_DAY);</span>
+<span class="nc" id="L604">		Calendar prevHourOfDayCal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L605">		prevHourOfDayCal.setTime(lineStart);</span>
+<span class="nc" id="L606">		prevHourOfDayCal.add(Calendar.HOUR_OF_DAY, -1);</span>
+<span class="nc" id="L607">		int prevHourOfDay = prevHourOfDayCal.get(Calendar.HOUR_OF_DAY);</span>
 
-<span class="nc bnc" id="L603" title="All 2 branches missed.">		if (numHoursBetween(prevHourOfDay, firstHourOfDay) &gt; 1) {</span>
-<span class="nc" id="L604">			return true;</span>
+<span class="nc bnc" id="L609" title="All 2 branches missed.">		if (numHoursBetween(prevHourOfDay, firstHourOfDay) &gt; 1) {</span>
+<span class="nc" id="L610">			return true;</span>
 		}
-<span class="nc" id="L606">		return false;</span>
+<span class="nc" id="L612">		return false;</span>
 	}
 
 	public static int numHoursBetween(int prevHourOfDay, int firstHourOfDay) {
-<span class="nc bnc" id="L610" title="All 2 branches missed.">		if (firstHourOfDay &gt;= prevHourOfDay) {</span>
-<span class="nc" id="L611">			return firstHourOfDay - prevHourOfDay;</span>
+<span class="nc bnc" id="L616" title="All 2 branches missed.">		if (firstHourOfDay &gt;= prevHourOfDay) {</span>
+<span class="nc" id="L617">			return firstHourOfDay - prevHourOfDay;</span>
 		}
-<span class="nc" id="L613">		return NUM_HOURS_IN_DAY + firstHourOfDay - prevHourOfDay;</span>
+<span class="nc" id="L619">		return NUM_HOURS_IN_DAY + firstHourOfDay - prevHourOfDay;</span>
 	}
 
 	/**
 	 * Adds the number of days to calendar(timeCursor) and adjusts the
 	 * timeCursor for DST. timeContext is used to set day boundary during spring
 	 * transition
-	 * 
+	 *
 	 * @param timeCursor
 	 * @param timeContext
 	 * @return true if the final hour contains a partial daylight transition.
 	 */
-	public static boolean adjustCalendarForDST(Calendar timeCursor, TimeContext timeContext, int noOfDaysToBeAdded ) {
-<span class="fc" id="L626">		boolean finalHourContainsPartialDaylightTransition = false;</span>
-<span class="fc" id="L627">		boolean dayAdded = false;</span>
-<span class="fc" id="L628">		int minutes = timeContext.getDayBoundary() % NUM_MINUTES_PER_DAY;</span>
-<span class="pc bpc" id="L629" title="1 of 2 branches missed.">		if (minutes &gt; 0) {</span>
-<span class="nc" id="L630">			timeCursor.add(Calendar.DAY_OF_YEAR, noOfDaysToBeAdded);</span>
-<span class="nc" id="L631">			dayAdded = true;</span>
-<span class="nc bnc" id="L632" title="All 2 branches missed.">			if (hourContainsPartialDaylightTransition(timeCursor.getTime(), timeContext.getTimeZone())) {</span>
-<span class="nc" id="L633">				timeCursor.add(Calendar.MINUTE, -minutes);</span>
-<span class="nc" id="L634">				finalHourContainsPartialDaylightTransition = true;</span>
+	public static boolean adjustCalendarForDST(Calendar timeCursor, TimeContext timeContext, int noOfDaysToBeAdded) {
+<span class="nc" id="L632">		boolean finalHourContainsPartialDaylightTransition = false;</span>
+<span class="nc" id="L633">		boolean dayAdded = false;</span>
+<span class="nc" id="L634">		int minutes = timeContext.getDayBoundary() % NUM_MINUTES_IN_HOUR;</span>
+<span class="nc bnc" id="L635" title="All 2 branches missed.">		if (minutes &gt; 0) {</span>
+<span class="nc" id="L636">			timeCursor.add(Calendar.DAY_OF_YEAR, noOfDaysToBeAdded);</span>
+<span class="nc" id="L637">			dayAdded = true;</span>
+<span class="nc bnc" id="L638" title="All 2 branches missed.">			if (hourContainsPartialDaylightTransition(timeCursor.getTime(), timeContext.getTimeZone())) {</span>
+<span class="nc" id="L639">				timeCursor.add(Calendar.MINUTE, -minutes);</span>
+<span class="nc" id="L640">				finalHourContainsPartialDaylightTransition = true;</span>
 			}
 		}
 
-<span class="pc bpc" id="L638" title="1 of 2 branches missed.">		if (!finalHourContainsPartialDaylightTransition) {</span>
-<span class="pc bpc" id="L639" title="1 of 2 branches missed.">			if (!dayAdded) {</span>
-<span class="fc" id="L640">				timeCursor.add(Calendar.DAY_OF_YEAR, noOfDaysToBeAdded);</span>
+<span class="nc bnc" id="L644" title="All 2 branches missed.">		if (!finalHourContainsPartialDaylightTransition) {</span>
+<span class="nc bnc" id="L645" title="All 2 branches missed.">			if (!dayAdded) {</span>
+<span class="nc" id="L646">				timeCursor.add(Calendar.DAY_OF_YEAR, noOfDaysToBeAdded);</span>
 			}
 			// When adding a day, the Calendar class will choose the first wall clock time.
 			// This means that when transitioning out of DST, it will choose the first time.
 			// We want the second time, so add the DST transiton amount and check to see if it
 			// is the same wall clock time. If so, use that time.
-<span class="fc" id="L646">			Date time = timeCursor.getTime();</span>
-<span class="fc" id="L647">			int hour = timeCursor.get(Calendar.HOUR_OF_DAY);</span>
-<span class="fc" id="L648">			int minute = timeCursor.get(Calendar.MINUTE);</span>
-<span class="fc" id="L649">			timeCursor.add(Calendar.MILLISECOND, timeCursor.getTimeZone().getDSTSavings());</span>
-<span class="pc bpc" id="L650" title="3 of 4 branches missed.">			if (hour != timeCursor.get(Calendar.HOUR) || minute != timeCursor.get(Calendar.MINUTE)) {</span>
-<span class="fc" id="L651">				timeCursor.setTime(time);</span>
+<span class="nc" id="L652">			Date time = timeCursor.getTime();</span>
+<span class="nc" id="L653">			int hour = timeCursor.get(Calendar.HOUR_OF_DAY);</span>
+<span class="nc" id="L654">			int minute = timeCursor.get(Calendar.MINUTE);</span>
+<span class="nc" id="L655">			timeCursor.add(Calendar.MILLISECOND, timeCursor.getTimeZone().getDSTSavings());</span>
+<span class="nc bnc" id="L656" title="All 4 branches missed.">			if (hour != timeCursor.get(Calendar.HOUR) || minute != timeCursor.get(Calendar.MINUTE)) {</span>
+<span class="nc" id="L657">				timeCursor.setTime(time);</span>
 			}
-
+	
 			// In the event of a day boundary falling on a spring DST transition, adding one day may be past the day boundary.
 			// For example, if the day boundary is 2AM, the there is no 2AM on the transition day, so adding one day would get 3AM to 3AM.
 			// To fix, set the hour and minute back to the day boundary.
-<span class="fc" id="L657">			timeCursor.set(Calendar.HOUR_OF_DAY, timeContext.getDayBoundary() / NUM_MINUTES_PER_DAY);</span>
-<span class="fc" id="L658">			timeCursor.set(Calendar.MINUTE, timeContext.getDayBoundary() % NUM_MINUTES_PER_DAY);</span>
+<span class="nc" id="L663">			timeCursor.set(Calendar.HOUR_OF_DAY, timeContext.getDayBoundary() / NUM_MINUTES_IN_HOUR);</span>
+<span class="nc" id="L664">			timeCursor.set(Calendar.MINUTE, timeContext.getDayBoundary() % NUM_MINUTES_IN_HOUR);</span>
 		}
-<span class="fc" id="L660">		return finalHourContainsPartialDaylightTransition;</span>
+<span class="nc" id="L666">		return finalHourContainsPartialDaylightTransition;</span>
 	}
-	
+
+
 	/**
-	 * This class represents the information involved in a transition from an array of values 
+	 * Apply date adjustment to end a minute before
+	 *
+	 * @param endGMTDt
+	 * @return adjustedDate
+	 */
+	public static Date adjustWeekEndGMTDateToMinBefore(Date endGMTDt, TimeZone tz) {
+		// subtract a minute from destination/target sp's end date
+<span class="nc" id="L678">		Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L679">		cal.setTimeInMillis(endGMTDt.getTime());</span>
+<span class="nc" id="L680">		cal.add(Calendar.MINUTE, -1);</span>
+<span class="nc" id="L681">		return cal.getTime();</span>
+	}
+
+	/**
+	 * This class represents the information involved in a transition from an array of values
 	 * representing time with 24 hour days (no DST) to an array of values representing  wall
 	 * clock time (potentially honors DST), or vice versa.
-	 * 
+	 * &lt;p&gt;
 	 * This object does not currently contain any Lists or arrays of data to convert. It also
 	 * does not contain the direction of the conversion. This information must be kept track
 	 * of externally.
 	 */
-<span class="nc" id="L672">	public static class DSTConversionInformation {</span>
-		private List&lt;Integer&gt; indicesToRemove; 
-		private TreeMap&lt;Integer, Integer&gt; insertions;
-		private Date startDate;
-		private int numIntervals;
-		private int intervalLengthInMinutes;
-		private TimeZone timeZone;
-		
+<span class="nc" id="L693">	public static class DSTConversionInformation {</span>
+		private final List&lt;Integer&gt; indicesToRemove;
+		private final TreeMap&lt;Integer, Integer&gt; insertions;
+		private final Date startDate;
+		private final int numIntervals;
+		private final int intervalLengthInMinutes;
+		private final TimeZone timeZone;
+
 		public DSTConversionInformation(Collection&lt;Integer&gt; indicesToRemove,
-				Map&lt;Integer, Integer&gt; insertions, Date startDate,
-				int numIntervals, int intervalLengthInMinutes, TimeZone timeZone) {
-<span class="fc" id="L683">			super();</span>
-<span class="fc" id="L684">			this.indicesToRemove = new ArrayList&lt;Integer&gt;(indicesToRemove);</span>
-<span class="fc" id="L685">			Collections.sort(this.indicesToRemove);</span>
-<span class="fc" id="L686">			this.insertions = new TreeMap&lt;Integer, Integer&gt;(insertions);</span>
-<span class="fc" id="L687">			this.startDate = startDate;</span>
-<span class="fc" id="L688">			this.numIntervals = numIntervals;</span>
-<span class="fc" id="L689">			this.intervalLengthInMinutes = intervalLengthInMinutes;</span>
-<span class="fc" id="L690">			this.timeZone = timeZone;</span>
-<span class="fc" id="L691">		}</span>
-		
+			Map&lt;Integer, Integer&gt; insertions, Date startDate,
+			int numIntervals, int intervalLengthInMinutes, TimeZone timeZone) {
+<span class="nc" id="L704">			super();</span>
+<span class="nc" id="L705">			this.indicesToRemove = new ArrayList&lt;&gt;(indicesToRemove);</span>
+<span class="nc" id="L706">			Collections.sort(this.indicesToRemove);</span>
+<span class="nc" id="L707">			this.insertions = new TreeMap&lt;&gt;(insertions);</span>
+<span class="nc" id="L708">			this.startDate = startDate;</span>
+<span class="nc" id="L709">			this.numIntervals = numIntervals;</span>
+<span class="nc" id="L710">			this.intervalLengthInMinutes = intervalLengthInMinutes;</span>
+<span class="nc" id="L711">			this.timeZone = timeZone;</span>
+<span class="nc" id="L712">		}</span>
+
 		/**
 		 * @returns a List (sorted by index) representing indices of elements to remove from the source to convert to the destination.
 		 */
 		public List&lt;Integer&gt; getIndicesToRemove() {
-<span class="fc" id="L697">			return indicesToRemove;</span>
+<span class="nc" id="L718">			return indicesToRemove;</span>
 		}
 
 		/**
 		 * @returns a List (sorted by index) representing indices at which to insert data to convert to the destination.
 		 */
 		public List&lt;Integer&gt; getIndicesAtWhichToInsertData() {
-<span class="fc" id="L704">			return new ArrayList&lt;Integer&gt;(insertions.keySet());</span>
+<span class="nc" id="L725">			return new ArrayList&lt;&gt;(insertions.keySet());</span>
 		}
-		
+
 		public Integer getNumPointsToInsert(Integer index) {
-<span class="fc" id="L708">			return insertions.get(index);</span>
+<span class="nc" id="L729">			return insertions.get(index);</span>
 		}
-		
+
 		public Date getStartDate() {
-<span class="nc" id="L712">			return startDate;</span>
+<span class="nc" id="L733">			return startDate;</span>
 		}
 
 		public int getNumIntervals() {
-<span class="nc" id="L716">			return numIntervals;</span>
+<span class="nc" id="L737">			return numIntervals;</span>
 		}
 
 		public int getIntervalLengthInMinutes() {
-<span class="nc" id="L720">			return intervalLengthInMinutes;</span>
+<span class="nc" id="L741">			return intervalLengthInMinutes;</span>
 		}
 
 		public TimeZone getTimeZone() {
-<span class="nc" id="L724">			return timeZone;</span>
+<span class="nc" id="L745">			return timeZone;</span>
 		}
 
 		public String toString() {
-<span class="nc" id="L728">			String retVal = &quot;DST Conversion Information for values starting on &quot; </span>
-				+ startDate + &quot; and spanning &quot; + numIntervals + &quot; intervals of &quot; 
+<span class="nc" id="L749">			String retVal = &quot;DST Conversion Information for values starting on &quot;</span>
+				+ startDate + &quot; and spanning &quot; + numIntervals + &quot; intervals of &quot;
 				+ intervalLengthInMinutes + &quot; minutes. IndicesToRemove: {&quot;;
-<span class="nc bnc" id="L731" title="All 2 branches missed.">			for (Integer i : indicesToRemove) { </span>
-<span class="nc" id="L732">				retVal += &quot; &quot; + i + &quot; &quot;; </span>
-<span class="nc" id="L733">			}</span>
-<span class="nc" id="L734">			retVal += &quot;} Insert Points: {&quot;;</span>
-<span class="nc bnc" id="L735" title="All 2 branches missed.">			for (Integer i : getIndicesAtWhichToInsertData()) { </span>
-<span class="nc" id="L736">				retVal += &quot; &quot; + i + &quot; &quot;; </span>
-<span class="nc" id="L737">			}</span>
-<span class="nc" id="L738">			retVal += &quot;}&quot;;</span>
-<span class="nc" id="L739">			return retVal;</span>
+<span class="nc bnc" id="L752" title="All 2 branches missed.">			for (Integer i : indicesToRemove) {</span>
+<span class="nc" id="L753">				retVal += &quot; &quot; + i + &quot; &quot;;</span>
+<span class="nc" id="L754">			}</span>
+<span class="nc" id="L755">			retVal += &quot;} Insert Points: {&quot;;</span>
+<span class="nc bnc" id="L756" title="All 2 branches missed.">			for (Integer i : getIndicesAtWhichToInsertData()) {</span>
+<span class="nc" id="L757">				retVal += &quot; &quot; + i + &quot; &quot;;</span>
+<span class="nc" id="L758">			}</span>
+<span class="nc" id="L759">			retVal += &quot;}&quot;;</span>
+<span class="nc" id="L760">			return retVal;</span>
 		}
 	}
 

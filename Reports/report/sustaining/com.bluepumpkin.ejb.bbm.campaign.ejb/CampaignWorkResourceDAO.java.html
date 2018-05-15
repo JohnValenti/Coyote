@@ -30,26 +30,79 @@ import com.bluepumpkin.ejb.bbm.workresource.model.WorkResourceInner;
 
 public class CampaignWorkResourceDAO extends DAOEffectivity {
 
-<span class="fc" id="L33">	private static FieldInfo m_fieldInfo = new CampaignWorkResourceFieldInfo();</span>
+<span class="nc" id="L33">	private static FieldInfo m_fieldInfo = new CampaignWorkResourceFieldInfo();</span>
 
 	@Override
 	protected FieldInfo getFieldInfo() {
-<span class="fc" id="L37">		return m_fieldInfo;</span>
+<span class="nc" id="L37">		return m_fieldInfo;</span>
 	}
 
-	// private ChangeManager m_changeManager = null;
-
 	public CampaignWorkResourceDAO() {
-<span class="fc" id="L43">		super();</span>
-<span class="fc" id="L44">	}</span>
+<span class="nc" id="L41">		super();</span>
+<span class="nc" id="L42">	}</span>
 
 	public CampaignWorkResourceDAO(Jdmo dmo) {
-<span class="nc" id="L47">		super(dmo);</span>
-<span class="nc" id="L48">	}</span>
+<span class="nc" id="L45">		super(dmo);</span>
+<span class="nc" id="L46">	}</span>
 
 	@Override
 	protected ValueObjectBase createValueObject() {
-<span class="nc" id="L52">		return (new CampaignWorkResource());</span>
+<span class="nc" id="L50">		return (new CampaignWorkResource());</span>
+	}
+
+	/**
+	 * When schedulingPeriod.isUsingAllEmployees() is set to false this is how
+	 * we determine the assignments
+	 */
+	public Collection&lt;CampaignWorkResource&gt; getCampaignWorkResourceAssignmentsByLinkedEmployees(
+			SchedulingPeriod schedulingPeriod) throws BbmFinderException {
+<span class="nc" id="L59">		List&lt;CampaignWorkResource&gt; resources = new ArrayList&lt;CampaignWorkResource&gt;();</span>
+<span class="nc" id="L60">		JdmoRowset r = null;</span>
+
+		try {
+<span class="nc" id="L63">			String query = &quot;SELECT DISTINCT map.WORKRESOURCEID, sp.FROMDATE, sp.TODATE, SP.SID \n&quot; + &quot; FROM SP sp \n&quot;</span>
+					+ &quot; INNER JOIN SPWORKRESOURCE map \n&quot; + &quot;    ON map.SPID = SP.ID  \n&quot; + &quot; INNER JOIN WORKRESOURCE r \n&quot;
+					+ &quot; 	ON r.ID = map.WORKRESOURCEID \n&quot; + &quot; 	AND r.WORKRESTYPE = '&quot; + WorkResourceInner.TYPE_EMPLOYEE
+<span class="nc" id="L66">					+ &quot;' \n&quot; + &quot; WHERE SP.SID = &quot; + schedulingPeriod.getID() + &quot;   AND SP.FROMDATE &lt; '&quot;</span>
+<span class="nc" id="L67">					+ JdmoUtil.formatDBString(schedulingPeriod.getEndTime()) + &quot;' \n&quot; + &quot; 	AND SP.TODATE &gt; '&quot;</span>
+<span class="nc" id="L68">					+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
+					+ &quot;'\n                                                                                               &quot;;
+
+			// convert data to entities
+<span class="nc" id="L72">			r = m_dmo.createRowset(query);</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L74">				ID employeeID = r.getID(&quot;WORKRESOURCEID&quot;);</span>
+<span class="nc" id="L75">				Date startDate = r.getTimestamp(&quot;FROMDATE&quot;);</span>
+<span class="nc" id="L76">				Date endDate = r.getTimestamp(&quot;TODATE&quot;);</span>
+<span class="nc" id="L77">				ID SPID = r.getID(&quot;SID&quot;);</span>
+
+<span class="nc" id="L79">				CampaignWorkResource resource = new CampaignWorkResource();</span>
+				// Note this is SID
+<span class="nc" id="L81">				resource.setCampaignID(schedulingPeriod.getCampaignID());</span>
+<span class="nc" id="L82">				resource.setWorkResourceID(employeeID);</span>
+<span class="nc" id="L83">				resource.setStartTime(startDate);</span>
+<span class="nc" id="L84">				resource.setEndTime(endDate);</span>
+<span class="nc" id="L85">				resource.setSPID(SPID);</span>
+
+<span class="nc" id="L87">				resources.add(resource);</span>
+<span class="nc" id="L88">			}</span>
+
+<span class="nc" id="L90">			return resources;</span>
+
+<span class="nc" id="L92">		} catch (JdmoException e) {</span>
+<span class="nc" id="L93">			e.printStackTrace();</span>
+<span class="nc" id="L94">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L96">			try {</span>
+<span class="nc bnc" id="L97" title="All 4 branches missed.">				if (r != null) {</span>
+<span class="nc" id="L98">					r.close();</span>
+				}
+<span class="nc" id="L100">			} catch (JdmoException e) {</span>
+<span class="nc" id="L101">				e.printStackTrace();</span>
+<span class="nc" id="L102">				throw new BbmFinderException(e);</span>
+<span class="nc" id="L103">			}</span>
+<span class="nc" id="L104">			m_dmo.cleanUp();</span>
+		}
 	}
 
 	/**
@@ -59,50 +112,141 @@ public class CampaignWorkResourceDAO extends DAOEffectivity {
 	 * 
 	 */
 	public Collection&lt;CampaignWorkResource&gt; getCampaignWorkResourceAssignmentsByLinkedEmployees(
-			SchedulingPeriod schedulingPeriod) throws BbmFinderException {
-<span class="fc" id="L63">		List&lt;CampaignWorkResource&gt; resources = new ArrayList&lt;CampaignWorkResource&gt;();</span>
-<span class="fc" id="L64">		JdmoRowset r = null;</span>
+			SchedulingPeriod schedulingPeriod, Collection &lt;ID&gt; orgIDs, ID employeeType) throws BbmFinderException {
+<span class="nc" id="L116">		List&lt;CampaignWorkResource&gt; resources = new ArrayList&lt;CampaignWorkResource&gt;();</span>
+<span class="nc" id="L117">		JdmoRowset r = null;</span>
 
 		try {
-<span class="fc" id="L67">			String query = &quot;SELECT DISTINCT map.WORKRESOURCEID, sp.FROMDATE, sp.TODATE, SP.SID \n&quot; + &quot; FROM SP sp \n&quot;</span>
-					+ &quot; INNER JOIN SPWORKRESOURCE map \n&quot; + &quot;    ON map.SPID = SP.ID  \n&quot; + &quot; INNER JOIN WORKRESOURCE r \n&quot;
-					+ &quot; 	ON r.ID = map.WORKRESOURCEID \n&quot; + &quot; 	AND r.WORKRESTYPE = '&quot; + WorkResourceInner.TYPE_EMPLOYEE
-<span class="fc" id="L70">					+ &quot;' \n&quot; + &quot; WHERE SP.SID = &quot; + schedulingPeriod.getID() + &quot;   AND SP.FROMDATE &lt; '&quot;</span>
-<span class="fc" id="L71">					+ JdmoUtil.formatDBString(schedulingPeriod.getEndTime()) + &quot;' \n&quot; + &quot; 	AND SP.TODATE &gt; '&quot;</span>
-<span class="fc" id="L72">					+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
-					+ &quot;'\n                                                                                               &quot;;
-
+<span class="nc" id="L120">			StringBuilder query = new StringBuilder(&quot;SELECT DISTINCT map.WORKRESOURCEID, sp.FROMDATE, sp.TODATE, SP.SID&quot;);</span>
+<span class="nc" id="L121">			query.append(&quot; FROM SP sp&quot;);</span>
+<span class="nc" id="L122">			query.append(&quot; INNER JOIN SPWORKRESOURCE map ON map.SPID = SP.ID&quot;);</span>
+<span class="nc" id="L123">			query.append(&quot; INNER JOIN WORKRESOURCE r ON r.ID = map.WORKRESOURCEID AND r.WORKRESTYPE = '&quot;);</span>
+<span class="nc" id="L124">			query.append(WorkResourceInner.TYPE_EMPLOYEE).append(&quot;'&quot;);</span>
+			
+			// Restrict By Employee Type if not null
+<span class="nc bnc" id="L127" title="All 2 branches missed.">			if (employeeType != null) {</span>
+<span class="nc" id="L128">				query.append(&quot; INNER JOIN EMPLOYEEAM EMAM ON EMAM.ID = r.ID AND EMAM.EMPLOYEETYPEID = &quot;).append(employeeType);</span>
+			}
+			
+			// Restrict By Org Type if not null
+<span class="nc bnc" id="L132" title="All 2 branches missed.">			if (orgIDs != null) {</span>
+<span class="nc" id="L133">				query.append(&quot; INNER JOIN WORKRESOURCEORGANIZATION WKORG ON WKORG.WORKRESOURCEID = r.ID&quot;);</span>
+<span class="nc" id="L134">				query.append(&quot; AND (WKORG.STARTTIME &lt;= '&quot;).append(JdmoUtil.formatDBString(schedulingPeriod.getEndTime()));</span>
+<span class="nc" id="L135">				query.append(&quot;' AND (WKORG.ENDTIME &gt; '&quot;).append(JdmoUtil.formatDBString(schedulingPeriod.getStartTime()));</span>
+<span class="nc" id="L136">				query.append(&quot;' OR WKORG.ENDTIME is NULL)) &quot;);</span>
+<span class="nc" id="L137">				query.append(&quot; AND WKORG.ORGANIZATIONID IN &quot;).append(m_dmo.createInClause(orgIDs));</span>
+			}
+			
+<span class="nc" id="L140">			query.append(&quot; WHERE SP.SID = &quot;).append(schedulingPeriod.getID());</span>
+<span class="nc" id="L141">			query.append(&quot; AND SP.FROMDATE &lt; '&quot;).append(JdmoUtil.formatDBString(schedulingPeriod.getEndTime()));</span>
+<span class="nc" id="L142">			query.append(&quot;' AND SP.TODATE &gt; '&quot;).append(JdmoUtil.formatDBString(schedulingPeriod.getStartTime())).append(&quot;'&quot;);</span>
+			
 			// convert data to entities
-<span class="fc" id="L76">			r = m_dmo.createRowset(query);</span>
-<span class="fc bfc" id="L77" title="All 2 branches covered.">			while (r.next()) {</span>
-<span class="fc" id="L78">				ID employeeID = r.getID(&quot;WORKRESOURCEID&quot;);</span>
-<span class="fc" id="L79">				Date startDate = r.getTimestamp(&quot;FROMDATE&quot;);</span>
-<span class="fc" id="L80">				Date endDate = r.getTimestamp(&quot;TODATE&quot;);</span>
-<span class="fc" id="L81">				ID SPID = r.getID(&quot;SID&quot;);</span>
+<span class="nc" id="L145">			r = m_dmo.createRowset(query.toString());</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L147">				ID employeeID = r.getID(&quot;WORKRESOURCEID&quot;);</span>
+<span class="nc" id="L148">				Date startDate = r.getTimestamp(&quot;FROMDATE&quot;);</span>
+<span class="nc" id="L149">				Date endDate = r.getTimestamp(&quot;TODATE&quot;);</span>
+<span class="nc" id="L150">				ID SPID = r.getID(&quot;SID&quot;);</span>
 
-<span class="fc" id="L83">				CampaignWorkResource resource = new CampaignWorkResource();</span>
+<span class="nc" id="L152">				CampaignWorkResource resource = new CampaignWorkResource();</span>
 				// Note this is SID
-<span class="fc" id="L85">				resource.setCampaignID(schedulingPeriod.getCampaignID());</span>
-<span class="fc" id="L86">				resource.setWorkResourceID(employeeID);</span>
-<span class="fc" id="L87">				resource.setStartTime(startDate);</span>
-<span class="fc" id="L88">				resource.setEndTime(endDate);</span>
-<span class="fc" id="L89">				resource.setSPID(SPID);</span>
+<span class="nc" id="L154">				resource.setCampaignID(schedulingPeriod.getCampaignID());</span>
+<span class="nc" id="L155">				resource.setWorkResourceID(employeeID);</span>
+<span class="nc" id="L156">				resource.setStartTime(startDate);</span>
+<span class="nc" id="L157">				resource.setEndTime(endDate);</span>
+<span class="nc" id="L158">				resource.setSPID(SPID);</span>
 
-<span class="fc" id="L91">				resources.add(resource);</span>
-<span class="fc" id="L92">			}</span>
+<span class="nc" id="L160">				resources.add(resource);</span>
+<span class="nc" id="L161">			}</span>
 
-<span class="fc" id="L94">			return resources;</span>
+<span class="nc" id="L163">			return resources;</span>
 
-<span class="nc" id="L96">		} catch (JdmoException e) {</span>
-<span class="nc" id="L97">			e.printStackTrace();</span>
-<span class="nc" id="L98">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L165">		} catch (JdmoException e) {</span>
+<span class="nc" id="L166">			throw new BbmFinderException(e);</span>
 		} finally {
-<span class="nc" id="L100">			try {</span>
-<span class="pc" id="L101">				r.close();</span>
-<span class="nc" id="L102">			} catch (JdmoException e) {</span>
+<span class="nc" id="L168">			m_dmo.cleanUp();</span>
+		}
+	}
 
-<span class="pc" id="L104">			}</span>
-<span class="pc" id="L105">			m_dmo.cleanUp();</span>
+	/**
+	 * When schedulingPeriod.isUsingAllEmployees() is set to true this is how we
+	 * determine the assignments
+	 */
+	public Collection&lt;CampaignWorkResource&gt; getCampaignWorkResourceAssignmentsByLinkedOrganizations(
+			SchedulingPeriod schedulingPeriod) throws BbmFinderException {
+<span class="nc" id="L178">		List&lt;CampaignWorkResource&gt; resources = new ArrayList&lt;CampaignWorkResource&gt;();</span>
+
+<span class="nc" id="L180">		String query = &quot;SELECT DISTINCT staff.WORKRESOURCEID, sp.FROMDATE, sp.TODATE, SP.SID, map.ORGANIZATIONID, staff.STARTTIME,&quot;</span>
+				+ &quot; staff.ENDTIME \n&quot;
+				+ &quot; FROM SP sp \n&quot;
+				+ &quot; INNER JOIN SPCALLCENTER map \n&quot;
+				+ &quot;    ON map.SPID = sp.ID \n&quot;
+				+ &quot; INNER JOIN WORKRESOURCEORGANIZATION staff \n&quot;
+				+ &quot;    ON staff.ORGANIZATIONID =map.ORGANIZATIONID \n&quot;
+				+ &quot;    AND staff.STARTTIME &lt; '&quot;
+<span class="nc" id="L188">				+ JdmoUtil.formatDBString(schedulingPeriod.getEndTime())</span>
+				+ &quot;' \n&quot;
+				+ &quot;    AND (staff.ENDTIME &gt; '&quot;
+<span class="nc" id="L191">				+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
+				+ &quot;' OR staff.ENDTIME is null) \n&quot;
+				+ &quot; INNER JOIN WORKRESOURCE r \n&quot;
+				+ &quot;    ON r.ID = staff.WORKRESOURCEID \n&quot;
+				+ &quot;    AND r.WORKRESTYPE = '&quot;
+				+ WorkResourceInner.TYPE_EMPLOYEE
+				+ &quot;' \n&quot;
+				+ &quot; WHERE SP.isusingallemployees = 1 AND SP.SID = &quot;
+<span class="nc" id="L199">				+ schedulingPeriod.getID()</span>
+				+ &quot; \nUnion\n&quot;
+				+ &quot; SELECT EMPLOYEEID, SP.FROMDATE, SP.TODATE, SP.SID, SPCALLCENTER.ORGANIZATIONID, PRule.STARTTIME, PRule.ENDTIME &quot;
+				+ &quot;FROM EmployeePoolingRules PRule,empPoolingRulesOrganizations, SP,SPCALLCENTER &quot;
+				+ &quot; WHERE SP.SID = &quot;
+<span class="nc" id="L204">				+ schedulingPeriod.getID()</span>
+				+ &quot; AND SPCALLCENTER.SPID = SP.ID &quot;
+				+ &quot; AND SPCALLCENTER.ORGANIZATIONID = empPoolingRulesOrganizations.ORGANIZATIONID &quot;
+				+ &quot; AND PRule.ID = empPoolingRulesOrganizations.poolingruleID &quot;
+				+ &quot; AND ((PRule.STARTTIME &lt;= '&quot;
+<span class="nc" id="L209">				+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
+				+ &quot;'&quot;
+				+ &quot; AND (PRule.ENDTIME &gt; '&quot;
+<span class="nc" id="L212">				+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
+				+ &quot;' OR PRule.ENDTIME is NULL))&quot;
+				+ &quot; OR (PRule.STARTTIME&gt;= '&quot;
+<span class="nc" id="L215">				+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
+<span class="nc" id="L216">				+ &quot;' AND PRule.STARTTIME &lt; '&quot; + JdmoUtil.formatDBString(schedulingPeriod.getEndTime()) + &quot;'))&quot;;</span>
+
+		// convert data to entities
+<span class="nc" id="L219">		JdmoRowset r = null;</span>
+		try {
+<span class="nc" id="L221">			r = m_dmo.createRowset(query);</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L223">				ID employeeID = r.getID(&quot;WORKRESOURCEID&quot;);</span>
+<span class="nc" id="L224">				Date startDate = r.getTimestamp(&quot;FROMDATE&quot;);</span>
+<span class="nc" id="L225">				Date endDate = r.getTimestamp(&quot;TODATE&quot;);</span>
+<span class="nc" id="L226">				ID SPID = r.getID(&quot;SID&quot;);</span>
+
+<span class="nc" id="L228">				CampaignWorkResource resource = new CampaignWorkResource();</span>
+				// Note this is SID
+<span class="nc" id="L230">				resource.setCampaignID(schedulingPeriod.getCampaignID());</span>
+<span class="nc" id="L231">				resource.setWorkResourceID(employeeID);</span>
+<span class="nc" id="L232">				resource.setStartTime(startDate);</span>
+<span class="nc" id="L233">				resource.setEndTime(endDate);</span>
+<span class="nc" id="L234">				resource.setSPID(SPID);</span>
+
+<span class="nc" id="L236">				resources.add(resource);</span>
+<span class="nc" id="L237">			}</span>
+
+<span class="nc" id="L239">			return resources;</span>
+
+<span class="nc" id="L241">		} catch (JdmoException e) {</span>
+<span class="nc" id="L242">			e.printStackTrace();</span>
+<span class="nc" id="L243">			throw new BbmFinderException(e);</span>
+		} finally {
+<span class="nc" id="L245">			try {</span>
+<span class="nc" id="L246">				r.close();</span>
+<span class="nc" id="L247">			} catch (JdmoException e) {</span>
+<span class="nc" id="L248">				m_dmo.cleanUp();</span>
+<span class="nc" id="L249">			}</span>
 		}
 	}
 
@@ -113,77 +257,81 @@ public class CampaignWorkResourceDAO extends DAOEffectivity {
 	 * 
 	 */
 	public Collection&lt;CampaignWorkResource&gt; getCampaignWorkResourceAssignmentsByLinkedOrganizations(
-			SchedulingPeriod schedulingPeriod) throws BbmFinderException {
-<span class="fc" id="L117">		List&lt;CampaignWorkResource&gt; resources = new ArrayList&lt;CampaignWorkResource&gt;();</span>
+			SchedulingPeriod schedulingPeriod, Collection&lt;ID&gt; orgIDs, ID employeeTypeSID) throws BbmFinderException {
+<span class="nc" id="L261">		List&lt;CampaignWorkResource&gt; resources = new ArrayList&lt;CampaignWorkResource&gt;();</span>
+<span class="nc" id="L262">		JdmoRowset r = null;</span>
 
-<span class="fc" id="L119">		String query = &quot;SELECT DISTINCT staff.WORKRESOURCEID, sp.FROMDATE, sp.TODATE, SP.SID, map.ORGANIZATIONID, staff.STARTTIME, staff.ENDTIME \n&quot;</span>
-				+ &quot; FROM SP sp \n&quot;
-				+ &quot; INNER JOIN SPCALLCENTER map \n&quot;
-				+ &quot;    ON map.SPID = sp.ID \n&quot;
-				+ &quot; INNER JOIN WORKRESOURCEORGANIZATION staff \n&quot;
-				+ &quot;    ON staff.ORGANIZATIONID =map.ORGANIZATIONID \n&quot;
-				+ &quot;    AND staff.STARTTIME &lt; '&quot;
-<span class="fc" id="L126">				+ JdmoUtil.formatDBString(schedulingPeriod.getEndTime())</span>
-				+ &quot;' \n&quot;
-				+ &quot;    AND (staff.ENDTIME &gt; '&quot;
-<span class="fc" id="L129">				+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
-				+ &quot;' OR staff.ENDTIME is null) \n&quot;
-				+ &quot; INNER JOIN WORKRESOURCE r \n&quot;
-				+ &quot;    ON r.ID = staff.WORKRESOURCEID \n&quot;
-				+ &quot;    AND r.WORKRESTYPE = '&quot;
-				+ WorkResourceInner.TYPE_EMPLOYEE
-				+ &quot;' \n&quot;
-				+ &quot; WHERE SP.isusingallemployees = 1 AND SP.SID = &quot;
-<span class="fc" id="L137">				+ schedulingPeriod.getID()</span>
-				+ &quot; \nUnion\n&quot;
-				+ &quot; SELECT EMPLOYEEID, SP.FROMDATE, SP.TODATE, SP.SID, SPCALLCENTER.ORGANIZATIONID, PRule.STARTTIME, PRule.ENDTIME FROM EmployeePoolingRules PRule,empPoolingRulesOrganizations, SP,SPCALLCENTER &quot;
-				+ &quot; WHERE SP.SID = &quot;
-<span class="fc" id="L141">				+ schedulingPeriod.getID()</span>
-				+ &quot; AND SPCALLCENTER.SPID = SP.ID &quot;
-				+ &quot; AND SPCALLCENTER.ORGANIZATIONID = empPoolingRulesOrganizations.ORGANIZATIONID &quot;
-				+ &quot; AND PRule.ID = empPoolingRulesOrganizations.poolingruleID &quot;
-				+ &quot; AND ((PRule.STARTTIME &lt;= '&quot;
-<span class="fc" id="L146">				+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
-				+ &quot;'&quot;
-				+ &quot; AND (PRule.ENDTIME &gt; '&quot;
-<span class="fc" id="L149">				+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
-				+ &quot;' OR PRule.ENDTIME is NULL))&quot;
-				+ &quot; OR (PRule.STARTTIME&gt;= '&quot;
-<span class="fc" id="L152">				+ JdmoUtil.formatDBString(schedulingPeriod.getStartTime())</span>
-<span class="fc" id="L153">				+ &quot;' AND PRule.STARTTIME &lt; '&quot; + JdmoUtil.formatDBString(schedulingPeriod.getEndTime()) + &quot;'))&quot;;</span>
-
-		// convert data to entities
-<span class="fc" id="L156">		JdmoRowset r = null;</span>
 		try {
-<span class="fc" id="L158">			r = m_dmo.createRowset(query);</span>
-<span class="fc bfc" id="L159" title="All 2 branches covered.">			while (r.next()) {</span>
-<span class="fc" id="L160">				ID employeeID = r.getID(&quot;WORKRESOURCEID&quot;);</span>
-<span class="fc" id="L161">				Date startDate = r.getTimestamp(&quot;FROMDATE&quot;);</span>
-<span class="fc" id="L162">				Date endDate = r.getTimestamp(&quot;TODATE&quot;);</span>
-<span class="fc" id="L163">				ID SPID = r.getID(&quot;SID&quot;);</span>
+<span class="nc" id="L265">			StringBuilder query = new StringBuilder(</span>
+					&quot;SELECT DISTINCT staff.WORKRESOURCEID, sp.FROMDATE, sp.TODATE, SP.SID, map.ORGANIZATIONID,&quot;);
+<span class="nc" id="L267">			query.append(&quot; staff.STARTTIME, staff.ENDTIME FROM SP sp&quot;);</span>
+<span class="nc" id="L268">			query.append(&quot; INNER JOIN SPCALLCENTER map ON map.SPID = sp.ID &quot;);</span>
+<span class="nc" id="L269">			query.append(&quot; INNER JOIN WORKRESOURCEORGANIZATION staff ON staff.ORGANIZATIONID = map.ORGANIZATIONID AND staff.STARTTIME &lt; '&quot;);</span>
+<span class="nc" id="L270">			query.append(JdmoUtil.formatDBString(schedulingPeriod.getEndTime())).append(&quot;' AND (staff.ENDTIME &gt; '&quot;);</span>
+<span class="nc" id="L271">			query.append(JdmoUtil.formatDBString(schedulingPeriod.getStartTime())).append(&quot;' OR staff.ENDTIME is null)&quot;);</span>
+			
+			// Restrict By Org if not null
+<span class="nc bnc" id="L274" title="All 2 branches missed.">			if (orgIDs != null) {</span>
+<span class="nc" id="L275">				query.append(&quot; AND staff.ORGANIZATIONID in &quot;).append(m_dmo.createInClause(orgIDs));</span>
+			}
+			
+<span class="nc" id="L278">			query.append(&quot; INNER JOIN WORKRESOURCE r ON r.ID = staff.WORKRESOURCEID AND r.WORKRESTYPE = '&quot;).append(WorkResourceInner.TYPE_EMPLOYEE).append(&quot;'&quot;);</span>
+			
+			// Restrict By Employee Type if not null
+<span class="nc bnc" id="L281" title="All 2 branches missed.">			if (employeeTypeSID != null) {</span>
+<span class="nc" id="L282">				query.append(&quot; INNER JOIN EMPLOYEEAM EPAM ON EPAM.ID = staff.WORKRESOURCEID and EPAM.EMPLOYEETYPEID = &quot;).append(employeeTypeSID);</span>
+			}
+			
+<span class="nc" id="L285">			query.append(&quot; WHERE SP.isusingallemployees = 1 AND SP.SID = &quot;).append(schedulingPeriod.getID());</span>
+<span class="nc" id="L286">			query.append(&quot; UNION&quot;);</span>
+<span class="nc" id="L287">			query.append(&quot; SELECT EMPLOYEEID, SP.FROMDATE, SP.TODATE, SP.SID, SPCALLCENTER.ORGANIZATIONID, PRule.STARTTIME, PRule.ENDTIME&quot;);</span>
+<span class="nc" id="L288">			query.append(&quot; FROM EmployeePoolingRules PRule&quot;);</span>
+<span class="nc" id="L289">			query.append(&quot; INNER JOIN SP on SP.SID = &quot;).append(schedulingPeriod.getID());</span>
+<span class="nc" id="L290">			query.append(&quot; INNER JOIN SPCALLCENTER on SPCALLCENTER.SPID = SP.ID&quot;);</span>
+			
+			// Restrict By Org if not null
+<span class="nc bnc" id="L293" title="All 2 branches missed.">			if (orgIDs != null) {</span>
+<span class="nc" id="L294">				query.append(&quot; AND SPCALLCENTER.ORGANIZATIONID in &quot;).append(m_dmo.createInClause(orgIDs));</span>
+			}
+<span class="nc" id="L296">			query.append(&quot; INNER JOIN empPoolingRulesOrganizations on empPoolingRulesOrganizations.ORGANIZATIONID = SPCALLCENTER.ORGANIZATIONID&quot;);</span>
+<span class="nc" id="L297">			query.append(&quot; AND empPoolingRulesOrganizations.poolingruleID = PRule.ID&quot;);</span>
+<span class="nc" id="L298">			query.append(&quot; AND ((PRule.STARTTIME &lt;= '&quot;).append(JdmoUtil.formatDBString(schedulingPeriod.getStartTime()));</span>
+<span class="nc" id="L299">			query.append(&quot; ' AND (PRule.ENDTIME &gt; '&quot;).append(JdmoUtil.formatDBString(schedulingPeriod.getStartTime()));</span>
+<span class="nc" id="L300">			query.append(&quot; ' OR PRule.ENDTIME is NULL))&quot;);</span>
+<span class="nc" id="L301">			query.append(&quot; OR (PRule.STARTTIME&gt;= '&quot;).append(JdmoUtil.formatDBString(schedulingPeriod.getStartTime()));</span>
+<span class="nc" id="L302">			query.append(&quot; ' AND PRule.STARTTIME &lt; '&quot;).append(JdmoUtil.formatDBString(schedulingPeriod.getEndTime())).append(&quot;'))&quot;);</span>
+			
+			// Restrict By Employee Type if not null
+<span class="nc bnc" id="L305" title="All 2 branches missed.">			if (employeeTypeSID != null) {</span>
+<span class="nc" id="L306">				query.append(&quot; INNER JOIN  EMPLOYEEAM EMAM on EMAM.ID = PRule.ID and EMAM.EMPLOYEETYPEID = &quot;).append(employeeTypeSID);</span>
+			}
+			
 
-<span class="fc" id="L165">				CampaignWorkResource resource = new CampaignWorkResource();</span>
+			// convert data to entities
+<span class="nc" id="L311">			r = m_dmo.createRowset(query.toString());</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L313">				ID employeeID = r.getID(&quot;WORKRESOURCEID&quot;);</span>
+<span class="nc" id="L314">				Date startDate = r.getTimestamp(&quot;FROMDATE&quot;);</span>
+<span class="nc" id="L315">				Date endDate = r.getTimestamp(&quot;TODATE&quot;);</span>
+<span class="nc" id="L316">				ID SPID = r.getID(&quot;SID&quot;);</span>
+
+<span class="nc" id="L318">				CampaignWorkResource resource = new CampaignWorkResource();</span>
 				// Note this is SID
-<span class="fc" id="L167">				resource.setCampaignID(schedulingPeriod.getCampaignID());</span>
-<span class="fc" id="L168">				resource.setWorkResourceID(employeeID);</span>
-<span class="fc" id="L169">				resource.setStartTime(startDate);</span>
-<span class="fc" id="L170">				resource.setEndTime(endDate);</span>
-<span class="fc" id="L171">				resource.setSPID(SPID);</span>
+<span class="nc" id="L320">				resource.setCampaignID(schedulingPeriod.getCampaignID());</span>
+<span class="nc" id="L321">				resource.setWorkResourceID(employeeID);</span>
+<span class="nc" id="L322">				resource.setStartTime(startDate);</span>
+<span class="nc" id="L323">				resource.setEndTime(endDate);</span>
+<span class="nc" id="L324">				resource.setSPID(SPID);</span>
 
-<span class="fc" id="L173">				resources.add(resource);</span>
-<span class="fc" id="L174">			}</span>
+<span class="nc" id="L326">				resources.add(resource);</span>
+<span class="nc" id="L327">			}</span>
 
-<span class="fc" id="L176">			return resources;</span>
+<span class="nc" id="L329">			return resources;</span>
 
-<span class="nc" id="L178">		} catch (JdmoException e) {</span>
-<span class="nc" id="L179">			e.printStackTrace();</span>
-<span class="nc" id="L180">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L331">		} catch (JdmoException e) {</span>
+<span class="nc" id="L332">			throw new BbmFinderException(e);</span>
 		} finally {
-<span class="nc" id="L182">			try {</span>
-<span class="pc" id="L183">				r.close();</span>
-<span class="nc" id="L184">			} catch (JdmoException e) {</span>
-<span class="nc" id="L185">				m_dmo.cleanUp();</span>
-<span class="pc" id="L186">			}</span>
+<span class="nc" id="L334">			m_dmo.cleanUp();</span>
 		}
 	}
 
@@ -192,60 +340,58 @@ public class CampaignWorkResourceDAO extends DAOEffectivity {
 	 * range, return a map of work resource ids to the campaigns they are
 	 * assigned to, only for those scheduling periods for which
 	 * isUsingAllEmployees() does not obtain
-	 * 
-	 * @param startDate
-	 *            null treated as unlimited
-	 * @param endDate
-	 *            null treated as unlimited
+	 *
+	 * @param startDate null treated as unlimited
+	 * @param endDate   null treated as unlimited
 	 */
 	public Map&lt;ID, List&lt;CampaignWorkResource&gt;&gt; getCampaignWorkResourceAssignmentsByLinkedEmployees(
 			Collection&lt;ID&gt; workResourceIds, Date startDate, Date endDate) throws BbmFinderException {
-<span class="fc" id="L203">		Map&lt;ID, List&lt;CampaignWorkResource&gt;&gt; resourceAssignmentMap = new HashMap&lt;ID, List&lt;CampaignWorkResource&gt;&gt;();</span>
-<span class="pc bpc" id="L204" title="2 of 4 branches missed.">		if (workResourceIds == null || workResourceIds.size() == 0) {</span>
-<span class="nc" id="L205">			return resourceAssignmentMap;</span>
+<span class="nc" id="L349">		Map&lt;ID, List&lt;CampaignWorkResource&gt;&gt; resourceAssignmentMap = new HashMap&lt;ID, List&lt;CampaignWorkResource&gt;&gt;();</span>
+<span class="nc bnc" id="L350" title="All 4 branches missed.">		if (workResourceIds == null || workResourceIds.isEmpty()) {</span>
+<span class="nc" id="L351">			return resourceAssignmentMap;</span>
 		}
 
 		// initialize map
-<span class="fc bfc" id="L209" title="All 2 branches covered.">		for (ID id : workResourceIds) {</span>
-<span class="fc" id="L210">			resourceAssignmentMap.put(id, new ArrayList&lt;CampaignWorkResource&gt;());</span>
-<span class="fc" id="L211">		}</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">		for (ID id : workResourceIds) {</span>
+<span class="nc" id="L356">			resourceAssignmentMap.put(id, new ArrayList&lt;CampaignWorkResource&gt;());</span>
+<span class="nc" id="L357">		}</span>
 
-<span class="fc" id="L213">		JdmoRowset r = null;</span>
+<span class="nc" id="L359">		JdmoRowset r = null;</span>
 		try {
-<span class="fc" id="L215">			String query = &quot;SELECT DISTINCT c.sid AS c_sid, \n&quot; + &quot;    sp.sid AS sp_sid,  \n&quot; + &quot;    sp.fromdate, \n&quot;</span>
+<span class="nc" id="L361">			String query = &quot;SELECT DISTINCT c.sid AS c_sid, \n&quot; + &quot;    sp.sid AS sp_sid,  \n&quot; + &quot;    sp.fromdate, \n&quot;</span>
 					+ &quot;    sp.todate, \n&quot; + &quot;    map.workresourceid \n&quot; + &quot; FROM spworkresource map \n&quot;
 					+ &quot; INNER JOIN sp sp \n&quot; + &quot;    ON sp.id = map.spid \n&quot; + &quot;    AND SP.isusingallemployees = 0 \n&quot;
-<span class="fc" id="L218">					+ &quot;    AND	sp.fromdate &lt; '&quot; + JdmoUtil.formatDBString(endDate) + &quot;' \n&quot; + &quot;    AND sp.todate &gt; '&quot;</span>
-<span class="fc" id="L219">					+ JdmoUtil.formatDBString(startDate) + &quot;' \n&quot; + &quot; INNER JOIN campaign c \n&quot;</span>
+<span class="nc" id="L364">					+ &quot;    AND	sp.fromdate &lt; '&quot; + JdmoUtil.formatDBString(endDate) + &quot;' \n&quot; + &quot;    AND sp.todate &gt; '&quot;</span>
+<span class="nc" id="L365">					+ JdmoUtil.formatDBString(startDate) + &quot;' \n&quot; + &quot; INNER JOIN campaign c \n&quot;</span>
 					+ &quot;    ON sp.campaignid = c.id \n&quot; + &quot; WHERE  \n&quot; + &quot;    map.workresourceid IN &quot;
-<span class="fc" id="L221">					+ (m_dmo.createInClause(workResourceIds));</span>
+<span class="nc" id="L367">					+ (m_dmo.createInClause(workResourceIds));</span>
 
 			// convert data to entities
-<span class="fc" id="L224">			r = m_dmo.createRowset(query);</span>
-<span class="fc bfc" id="L225" title="All 2 branches covered.">			while (r.next()) {</span>
-<span class="fc" id="L226">				ID campaignID = r.getID(&quot;c_sid&quot;);</span>
-<span class="fc" id="L227">				Date fromDate = r.getTimestamp(&quot;fromdate&quot;);</span>
-<span class="fc" id="L228">				Date toDate = r.getTimestamp(&quot;todate&quot;);</span>
-<span class="fc" id="L229">				ID spSID = r.getID(&quot;sp_sid&quot;);</span>
-<span class="fc" id="L230">				ID resourceID = r.getID(&quot;workresourceid&quot;);</span>
-<span class="fc" id="L231">				CampaignWorkResource assignment = new CampaignWorkResource();</span>
-<span class="fc" id="L232">				assignment.setCampaignID(campaignID);</span>
-<span class="fc" id="L233">				assignment.setWorkResourceID(resourceID);</span>
-<span class="fc" id="L234">				assignment.setStartTime(fromDate);</span>
-<span class="fc" id="L235">				assignment.setEndTime(toDate);</span>
-<span class="fc" id="L236">				assignment.setSPID(spSID);</span>
-<span class="fc" id="L237">				resourceAssignmentMap.get(resourceID).add(assignment);</span>
-<span class="fc" id="L238">			}</span>
-<span class="fc" id="L239">			return resourceAssignmentMap;</span>
-<span class="nc" id="L240">		} catch (JdmoException e) {</span>
-<span class="nc" id="L241">			e.printStackTrace();</span>
-<span class="nc" id="L242">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L370">			r = m_dmo.createRowset(query);</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L372">				ID campaignID = r.getID(&quot;c_sid&quot;);</span>
+<span class="nc" id="L373">				Date fromDate = r.getTimestamp(&quot;fromdate&quot;);</span>
+<span class="nc" id="L374">				Date toDate = r.getTimestamp(&quot;todate&quot;);</span>
+<span class="nc" id="L375">				ID spSID = r.getID(&quot;sp_sid&quot;);</span>
+<span class="nc" id="L376">				ID resourceID = r.getID(&quot;workresourceid&quot;);</span>
+<span class="nc" id="L377">				CampaignWorkResource assignment = new CampaignWorkResource();</span>
+<span class="nc" id="L378">				assignment.setCampaignID(campaignID);</span>
+<span class="nc" id="L379">				assignment.setWorkResourceID(resourceID);</span>
+<span class="nc" id="L380">				assignment.setStartTime(fromDate);</span>
+<span class="nc" id="L381">				assignment.setEndTime(toDate);</span>
+<span class="nc" id="L382">				assignment.setSPID(spSID);</span>
+<span class="nc" id="L383">				resourceAssignmentMap.get(resourceID).add(assignment);</span>
+<span class="nc" id="L384">			}</span>
+<span class="nc" id="L385">			return resourceAssignmentMap;</span>
+<span class="nc" id="L386">		} catch (JdmoException e) {</span>
+<span class="nc" id="L387">			e.printStackTrace();</span>
+<span class="nc" id="L388">			throw new BbmFinderException(e);</span>
 		} finally {
-<span class="nc" id="L244">			try {</span>
-<span class="pc" id="L245">				r.close();</span>
-<span class="nc" id="L246">			} catch (JdmoException e) {</span>
-<span class="nc" id="L247">				m_dmo.cleanUp();</span>
-<span class="pc" id="L248">			}</span>
+<span class="nc" id="L390">			try {</span>
+<span class="nc" id="L391">				r.close();</span>
+<span class="nc" id="L392">			} catch (JdmoException e) {</span>
+<span class="nc" id="L393">				m_dmo.cleanUp();</span>
+<span class="nc" id="L394">			}</span>
 		}
 	}
 
@@ -254,188 +400,179 @@ public class CampaignWorkResourceDAO extends DAOEffectivity {
 	 * range, return a map of work resource ids to the campaigns they are
 	 * assigned to, only for those scheduling periods for which
 	 * isUsingAllEmployees() obtains
-	 * 
-	 * @param startDate
-	 *            null treated as unlimited
-	 * @param endDate
-	 *            null treated as unlimited
+	 *
+	 * @param startDate null treated as unlimited
+	 * @param endDate   null treated as unlimited
 	 */
 	public Map&lt;ID, List&lt;CampaignWorkResource&gt;&gt; getCampaignWorkResourceAssignmentsByLinkedOrganizations(
 			Collection&lt;ID&gt; workResourceIds, Date startDate, Date endDate) throws BbmFinderException {
-<span class="fc" id="L265">		Map&lt;ID, List&lt;CampaignWorkResource&gt;&gt; resourceAssignmentMap = new HashMap&lt;ID, List&lt;CampaignWorkResource&gt;&gt;();</span>
-<span class="pc bpc" id="L266" title="2 of 4 branches missed.">		if (workResourceIds == null || workResourceIds.size() == 0) {</span>
-<span class="nc" id="L267">			return resourceAssignmentMap;</span>
+<span class="nc" id="L409">		Map&lt;ID, List&lt;CampaignWorkResource&gt;&gt; resourceAssignmentMap = new HashMap&lt;ID, List&lt;CampaignWorkResource&gt;&gt;();</span>
+<span class="nc bnc" id="L410" title="All 4 branches missed.">		if (workResourceIds == null || workResourceIds.isEmpty()) {</span>
+<span class="nc" id="L411">			return resourceAssignmentMap;</span>
 		}
 
 		// initialize map
-<span class="fc bfc" id="L271" title="All 2 branches covered.">		for (ID id : workResourceIds) {</span>
-<span class="fc" id="L272">			resourceAssignmentMap.put(id, new ArrayList&lt;CampaignWorkResource&gt;());</span>
-<span class="fc" id="L273">		}</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">		for (ID id : workResourceIds) {</span>
+<span class="nc" id="L416">			resourceAssignmentMap.put(id, new ArrayList&lt;CampaignWorkResource&gt;());</span>
+<span class="nc" id="L417">		}</span>
 
-<span class="fc" id="L275">		JdmoRowset r = null;</span>
+<span class="nc" id="L419">		JdmoRowset r = null;</span>
 		try {
-<span class="fc" id="L277">			String strEndDate = JdmoUtil.formatDBString(endDate);</span>
-<span class="fc" id="L278">			String strStartDate = JdmoUtil.formatDBString(startDate);</span>
-<span class="fc" id="L279">			String query = &quot;SELECT distinct c.sid AS c_sid, \n&quot; + &quot;    sp.sid AS sp_sid,  \n&quot; + &quot;    sp.fromdate, \n&quot;</span>
+<span class="nc" id="L421">			String query = &quot;SELECT DISTINCT c.sid AS c_sid, \n&quot; + &quot;    sp.sid AS sp_sid,  \n&quot; + &quot;    sp.fromdate, \n&quot;</span>
 					+ &quot;    sp.todate, \n&quot; + &quot;    r_o.workresourceid  \n&quot; + &quot; FROM workresourceorganization r_o \n&quot;
 					+ &quot; INNER JOIN spcallcenter sp_o \n&quot; + &quot;    ON sp_o.organizationid = r_o.organizationid \n&quot;
 					+ &quot; INNER JOIN sp sp \n&quot; + &quot;    ON sp.id = sp_o.spid \n&quot; + &quot;    AND SP.isusingallemployees = 1 \n&quot;
-					+ &quot;    AND sp.fromdate &lt; '&quot; + strEndDate + &quot;' \n&quot; + &quot;    AND sp.todate &gt; '&quot; + strStartDate + &quot;' \n&quot;
-					+ &quot; INNER JOIN campaign c \n&quot; + &quot;    ON sp.campaignid = c.id \n&quot; + &quot; WHERE  \n&quot;
-<span class="fc" id="L285">					+ &quot;    r_o.workresourceid IN &quot; + (m_dmo.createInClause(workResourceIds))</span>
-					+ &quot;   AND r_o.starttime &lt; '&quot; + strEndDate + &quot;' \n&quot; + &quot;   AND isnull(r_o.endtime,'22000101') &gt; '&quot;
-					+ strStartDate + &quot;'&quot;;
+<span class="nc" id="L425">					+ &quot;    AND sp.fromdate &lt; '&quot; + JdmoUtil.formatDBString(endDate) + &quot;' \n&quot; + &quot;    AND sp.todate &gt; '&quot;</span>
+<span class="nc" id="L426">					+ JdmoUtil.formatDBString(startDate) + &quot;' \n&quot; + &quot; INNER JOIN campaign c \n&quot;</span>
+					+ &quot;    ON sp.campaignid = c.id \n&quot; + &quot; WHERE  \n&quot; + &quot;    r_o.workresourceid IN &quot;
+<span class="nc" id="L428">					+ (m_dmo.createInClause(workResourceIds));</span>
 
 			// convert data to entities
-<span class="fc" id="L290">			r = m_dmo.createRowset(query);</span>
-<span class="fc bfc" id="L291" title="All 2 branches covered.">			while (r.next()) {</span>
-<span class="fc" id="L292">				ID campaignID = r.getID(&quot;c_sid&quot;);</span>
-<span class="fc" id="L293">				Date fromDate = r.getTimestamp(&quot;fromdate&quot;);</span>
-<span class="fc" id="L294">				Date toDate = r.getTimestamp(&quot;todate&quot;);</span>
-<span class="fc" id="L295">				ID spSID = r.getID(&quot;sp_sid&quot;);</span>
-<span class="fc" id="L296">				ID resourceID = r.getID(&quot;workresourceid&quot;);</span>
-<span class="fc" id="L297">				CampaignWorkResource assignment = new CampaignWorkResource();</span>
-<span class="fc" id="L298">				assignment.setCampaignID(campaignID);</span>
-<span class="fc" id="L299">				assignment.setWorkResourceID(resourceID);</span>
-<span class="fc" id="L300">				assignment.setStartTime(fromDate);</span>
-<span class="fc" id="L301">				assignment.setEndTime(toDate);</span>
-<span class="fc" id="L302">				assignment.setSPID(spSID);</span>
-<span class="fc" id="L303">				resourceAssignmentMap.get(resourceID).add(assignment);</span>
-<span class="fc" id="L304">			}</span>
-<span class="fc" id="L305">			return resourceAssignmentMap;</span>
-<span class="nc" id="L306">		} catch (JdmoException e) {</span>
-<span class="nc" id="L307">			e.printStackTrace();</span>
-<span class="nc" id="L308">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L431">			r = m_dmo.createRowset(query);</span>
+<span class="nc bnc" id="L432" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L433">				ID campaignID = r.getID(&quot;c_sid&quot;);</span>
+<span class="nc" id="L434">				Date fromDate = r.getTimestamp(&quot;fromdate&quot;);</span>
+<span class="nc" id="L435">				Date toDate = r.getTimestamp(&quot;todate&quot;);</span>
+<span class="nc" id="L436">				ID spSID = r.getID(&quot;sp_sid&quot;);</span>
+<span class="nc" id="L437">				ID resourceID = r.getID(&quot;workresourceid&quot;);</span>
+<span class="nc" id="L438">				CampaignWorkResource assignment = new CampaignWorkResource();</span>
+<span class="nc" id="L439">				assignment.setCampaignID(campaignID);</span>
+<span class="nc" id="L440">				assignment.setWorkResourceID(resourceID);</span>
+<span class="nc" id="L441">				assignment.setStartTime(fromDate);</span>
+<span class="nc" id="L442">				assignment.setEndTime(toDate);</span>
+<span class="nc" id="L443">				assignment.setSPID(spSID);</span>
+<span class="nc" id="L444">				resourceAssignmentMap.get(resourceID).add(assignment);</span>
+<span class="nc" id="L445">			}</span>
+<span class="nc" id="L446">			return resourceAssignmentMap;</span>
+<span class="nc" id="L447">		} catch (JdmoException e) {</span>
+<span class="nc" id="L448">			e.printStackTrace();</span>
+<span class="nc" id="L449">			throw new BbmFinderException(e);</span>
 		} finally {
-<span class="nc" id="L310">			try {</span>
-<span class="pc" id="L311">				r.close();</span>
-<span class="nc" id="L312">			} catch (JdmoException e) {</span>
-<span class="nc" id="L313">				m_dmo.cleanUp();</span>
-<span class="pc" id="L314">			}</span>
+<span class="nc" id="L451">			try {</span>
+<span class="nc" id="L452">				r.close();</span>
+<span class="nc" id="L453">			} catch (JdmoException e) {</span>
+<span class="nc" id="L454">				m_dmo.cleanUp();</span>
+<span class="nc" id="L455">			}</span>
 		}
 	}
 
 	/**
 	 * get the pooler assignments for the given set of Scheduling Periods.
-	 * 
-	 * @spIDs a collection of IDs of scheduling periods for which we want to
-	 *        retrieve the pooling assignments.
-	 * 
+	 *
 	 * @return a collection of work resource IDs which are poolers at any of the
-	 *         given scheduling periods.
+	 * given scheduling periods.
+	 * @spIDs a collection of IDs of scheduling periods for which we want to
+	 * retrieve the pooling assignments.
 	 */
 	public Collection&lt;ID&gt; getSPPoolerAssignments(Collection&lt;ID&gt; spIDs) throws BbmFinderException {
-<span class="fc" id="L328">		return getSPPoolerAssignments(spIDs, null, null);</span>
+<span class="nc" id="L468">		return getSPPoolerAssignments(spIDs, null, null);</span>
 	}
 
 	/**
 	 * get the pooler assignments for the given Scheduling Period between the
 	 * given date range.
-	 * 
+	 *
+	 * @return a collection of work resource IDs which are poolers at the given
+	 * scheduling period during the given time frame.
 	 * @spID sp id
 	 * @dtStart, @dtEnd: the time period, null date means a open period
-	 * 
-	 * @return a collection of work resource IDs which are poolers at the given
-	 *         scheduling period during the given time frame.
 	 */
 	public Collection&lt;ID&gt; getSPPoolerAssignments(ID spID, Date dtStart, Date dtEnd) throws BbmFinderException {
-<span class="pc bpc" id="L342" title="1 of 2 branches missed.">		if (spID == null) {</span>
-<span class="nc" id="L343">			return Collections.emptyList();</span>
+<span class="nc bnc" id="L481" title="All 2 branches missed.">		if (spID == null) {</span>
+<span class="nc" id="L482">			return Collections.emptyList();</span>
 		}
-<span class="fc" id="L345">		return getSPPoolerAssignments(Collections.singleton(spID), dtStart, dtEnd);</span>
+<span class="nc" id="L484">		return getSPPoolerAssignments(Collections.singleton(spID), dtStart, dtEnd);</span>
 	}
 
 	/**
 	 * get the pooler assignments for the given Scheduling Periods between the
 	 * given date range.
-	 * 
+	 * &lt;p&gt;
 	 * Note that if a collection of scheduling periods is given, then the dates
 	 * should be null in this case. The date ranges will then be ignored and the
 	 * dates used in the query will be the start and end dates of the respective
 	 * scheduling periods.
-	 * 
+	 * &lt;p&gt;
 	 * If a single scheduling period is given, then the date ranges could be
 	 * non-null if you want to specify a date range that might be a subset of
 	 * the scheduling period date range. If the dates are null, the method will
 	 * use the start/end dates of the scheduling period.
-	 * 
-	 * @spIDs a collection of IDs of scheduling periods for which we want to
-	 *        retrieve the pooling assignments.
-	 * @dtStart, @dtEnd: the time period, null date means a open period
-	 * 
+	 *
 	 * @return a collection of work resource IDs which are poolers at the given
-	 *         scheduling periods during the given time frame.
+	 * scheduling periods during the given time frame.
+	 * @spIDs a collection of IDs of scheduling periods for which we want to
+	 * retrieve the pooling assignments.
+	 * @dtStart, @dtEnd: the time period, null date means a open period
 	 */
 	private Collection&lt;ID&gt; getSPPoolerAssignments(Collection&lt;ID&gt; spIDs, Date dtStart, Date dtEnd) throws BbmFinderException {
-<span class="pc bpc" id="L370" title="2 of 4 branches missed.">		if (spIDs == null || spIDs.isEmpty()) {</span>
-<span class="nc" id="L371">			return Collections.emptyList();</span>
+<span class="nc bnc" id="L508" title="All 4 branches missed.">		if (spIDs == null || spIDs.isEmpty()) {</span>
+<span class="nc" id="L509">			return Collections.emptyList();</span>
 		}
 		// load all campaigns
-<span class="fc" id="L374">		HashSet&lt;ID&gt; aAssignments = new HashSet&lt;ID&gt;();</span>
-<span class="fc" id="L375">		JdmoRowset r = null;</span>
+<span class="nc" id="L512">		HashSet&lt;ID&gt; aAssignments = new HashSet&lt;ID&gt;();</span>
+<span class="nc" id="L513">		JdmoRowset r = null;</span>
 		try {
-<span class="fc" id="L377">			StringBuffer query = new StringBuffer();</span>
-<span class="fc" id="L378">			query.append(&quot;SELECT EMPLOYEEID FROM EmployeePoolingRules,empPoolingRulesOrganizations, SP,SPCALLCENTER &quot;);</span>
-<span class="fc" id="L379">			query.append(&quot; WHERE SP.SID IN &quot;);</span>
-<span class="fc" id="L380">			query.append(getDMO().createInClause(spIDs));</span>
-<span class="fc" id="L381">			query.append(&quot; AND SPCALLCENTER.SPID = SP.ID &quot;);</span>
-<span class="fc" id="L382">			query.append(&quot; AND SPCALLCENTER.ORGANIZATIONID = empPoolingRulesOrganizations.ORGANIZATIONID &quot;);</span>
-<span class="fc" id="L383">			query.append(&quot; AND EmployeePoolingRules.ID = empPoolingRulesOrganizations.poolingruleID &quot;);</span>
-<span class="fc" id="L384">			query.append(&quot; AND ((EmployeePoolingRules.STARTTIME &lt;= &quot;);</span>
-<span class="fc bfc" id="L385" title="All 2 branches covered.">			if (dtStart != null) {</span>
-<span class="fc" id="L386">				query.append(JdmoUtil.asSqlLiteral(dtStart));</span>
+<span class="nc" id="L515">			StringBuilder query = new StringBuilder();</span>
+<span class="nc" id="L516">			query.append(&quot;SELECT EMPLOYEEID FROM EmployeePoolingRules,empPoolingRulesOrganizations, SP,SPCALLCENTER &quot;);</span>
+<span class="nc" id="L517">			query.append(&quot; WHERE SP.SID IN &quot;);</span>
+<span class="nc" id="L518">			query.append(getDMO().createInClause(spIDs));</span>
+<span class="nc" id="L519">			query.append(&quot; AND SPCALLCENTER.SPID = SP.ID &quot;);</span>
+<span class="nc" id="L520">			query.append(&quot; AND SPCALLCENTER.ORGANIZATIONID = empPoolingRulesOrganizations.ORGANIZATIONID &quot;);</span>
+<span class="nc" id="L521">			query.append(&quot; AND EmployeePoolingRules.ID = empPoolingRulesOrganizations.poolingruleID &quot;);</span>
+<span class="nc" id="L522">			query.append(&quot; AND ((EmployeePoolingRules.STARTTIME &lt;= &quot;);</span>
+<span class="nc bnc" id="L523" title="All 2 branches missed.">			if (dtStart != null) {</span>
+<span class="nc" id="L524">				query.append(JdmoUtil.asSqlLiteral(dtStart));</span>
 			} else {
-<span class="fc" id="L388">				query.append(&quot; SP.FROMDATE &quot;);</span>
+<span class="nc" id="L526">				query.append(&quot; SP.FROMDATE &quot;);</span>
 			}
-<span class="fc" id="L390">			query.append(&quot; AND (EmployeePoolingRules.ENDTIME &gt; &quot;);</span>
-<span class="fc bfc" id="L391" title="All 2 branches covered.">			if (dtEnd != null) {</span>
-<span class="fc" id="L392">				query.append(JdmoUtil.asSqlLiteral(dtStart));</span>
+<span class="nc" id="L528">			query.append(&quot; AND (EmployeePoolingRules.ENDTIME &gt; &quot;);</span>
+<span class="nc bnc" id="L529" title="All 2 branches missed.">			if (dtEnd != null) {</span>
+<span class="nc" id="L530">				query.append(JdmoUtil.asSqlLiteral(dtStart));</span>
 			} else {
-<span class="fc" id="L394">				query.append(&quot; SP.FROMDATE &quot;);</span>
+<span class="nc" id="L532">				query.append(&quot; SP.FROMDATE &quot;);</span>
 			}
-<span class="fc" id="L396">			query.append(&quot; OR EmployeePoolingRules.ENDTIME is NULL))&quot;);</span>
-<span class="fc" id="L397">			query.append(&quot; OR (EmployeePoolingRules.STARTTIME &gt;= &quot;);</span>
-<span class="fc bfc" id="L398" title="All 2 branches covered.">			if (dtStart != null) {</span>
-<span class="fc" id="L399">				query.append(JdmoUtil.asSqlLiteral(dtStart));</span>
+<span class="nc" id="L534">			query.append(&quot; OR EmployeePoolingRules.ENDTIME is NULL))&quot;);</span>
+<span class="nc" id="L535">			query.append(&quot; OR (EmployeePoolingRules.STARTTIME &gt;= &quot;);</span>
+<span class="nc bnc" id="L536" title="All 2 branches missed.">			if (dtStart != null) {</span>
+<span class="nc" id="L537">				query.append(JdmoUtil.asSqlLiteral(dtStart));</span>
 			} else {
-<span class="fc" id="L401">				query.append(&quot; SP.FROMDATE &quot;);</span>
+<span class="nc" id="L539">				query.append(&quot; SP.FROMDATE &quot;);</span>
 			}
-<span class="fc" id="L403">			query.append(&quot; AND EmployeePoolingRules.STARTTIME &lt; &quot;);</span>
-<span class="fc bfc" id="L404" title="All 2 branches covered.">			if (dtEnd != null) {</span>
-<span class="fc" id="L405">				query.append(JdmoUtil.asSqlLiteral(dtEnd));</span>
+<span class="nc" id="L541">			query.append(&quot; AND EmployeePoolingRules.STARTTIME &lt; &quot;);</span>
+<span class="nc bnc" id="L542" title="All 2 branches missed.">			if (dtEnd != null) {</span>
+<span class="nc" id="L543">				query.append(JdmoUtil.asSqlLiteral(dtEnd));</span>
 			} else {
-<span class="fc" id="L407">				query.append(&quot; SP.TODATE &quot;);</span>
+<span class="nc" id="L545">				query.append(&quot; SP.TODATE &quot;);</span>
 			}
-<span class="fc" id="L409">			query.append(&quot;))&quot;);</span>
+<span class="nc" id="L547">			query.append(&quot;))&quot;);</span>
 
-<span class="fc" id="L411">			r = m_dmo.createRowset(query.toString());</span>
+<span class="nc" id="L549">			r = m_dmo.createRowset(query.toString());</span>
 
-<span class="pc bpc" id="L413" title="1 of 2 branches missed.">			while (r.next()) {</span>
-<span class="nc" id="L414">				ID idEmployee = r.getID(&quot;EMPLOYEEID&quot;);</span>
-<span class="nc" id="L415">				aAssignments.add(idEmployee);</span>
-<span class="nc" id="L416">			}</span>
+<span class="nc bnc" id="L551" title="All 2 branches missed.">			while (r.next()) {</span>
+<span class="nc" id="L552">				ID idEmployee = r.getID(&quot;EMPLOYEEID&quot;);</span>
+<span class="nc" id="L553">				aAssignments.add(idEmployee);</span>
+<span class="nc" id="L554">			}</span>
 
-<span class="fc" id="L418">			r.close();</span>
-<span class="fc" id="L419">			return aAssignments;</span>
+<span class="nc" id="L556">			r.close();</span>
+<span class="nc" id="L557">			return aAssignments;</span>
 
-<span class="nc" id="L421">		} catch (JdmoException e) {</span>
-<span class="nc" id="L422">			e.printStackTrace();</span>
-<span class="nc" id="L423">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L559">		} catch (JdmoException e) {</span>
+<span class="nc" id="L560">			e.printStackTrace();</span>
+<span class="nc" id="L561">			throw new BbmFinderException(e);</span>
 		} finally {
-<span class="nc" id="L425">			try {</span>
-<span class="pc" id="L426">				r.close();</span>
-<span class="nc" id="L427">			} catch (JdmoException e) {</span>
-<span class="nc" id="L428">				m_dmo.cleanUp();</span>
-<span class="pc" id="L429">			}</span>
+<span class="nc" id="L563">			try {</span>
+<span class="nc" id="L564">				r.close();</span>
+<span class="nc" id="L565">			} catch (JdmoException e) {</span>
+<span class="nc" id="L566">				m_dmo.cleanUp();</span>
+<span class="nc" id="L567">			}</span>
 		}
 	}
 
 	/**
 	 * get a campaign workresource assignment object by id
-	 * 
 	 */
 	public CampaignWorkResource getCampaignWorkResourceAssignmentByID(ID idAssignment) throws BbmFinderException {
-<span class="nc" id="L438">		return (CampaignWorkResource) getObjectByID(idAssignment);</span>
+<span class="nc" id="L575">		return (CampaignWorkResource) getObjectByID(idAssignment);</span>
 	}
 
 	/**
@@ -444,7 +581,7 @@ public class CampaignWorkResourceDAO extends DAOEffectivity {
 	@SuppressWarnings(&quot;unchecked&quot;)
 	public Collection&lt;CampaignWorkResource&gt; getCampaignWorkResourceAssignmentsByIDs(Collection&lt;ID&gt; colAssignmentIDs)
 			throws BbmFinderException {
-<span class="nc" id="L447">		return getObjectsByIDs(colAssignmentIDs);</span>
+<span class="nc" id="L584">		return getObjectsByIDs(colAssignmentIDs);</span>
 	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

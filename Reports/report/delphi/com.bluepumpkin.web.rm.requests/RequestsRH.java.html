@@ -1,18 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>RequestsRH.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.web.rm.requests</a> &gt; <span class="el_source">RequestsRH.java</span></div><h1>RequestsRH.java</h1><pre class="source lang-java linenums">package com.bluepumpkin.web.rm.requests;
 
+import java.rmi.RemoteException;
 import java.util.Collection;
+import java.util.Set;
 import java.util.TimeZone;
+
+import javax.servlet.http.HttpServletResponse;
 
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.datatypes.Pair;
 import com.bluepumpkin.common.localization.Localizer;
 import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.common.util.StringUtil;
+import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
+import com.bluepumpkin.ejb.bbm.schedule.model.BbmScheduleConflict;
+import com.bluepumpkin.ejb.bbm.schedule.model.BbmScheduleConflictException;
 import com.bluepumpkin.ejb.core.base.MultiUserException;
+import com.bluepumpkin.ejb.rm.RmManagerFactory;
 import com.bluepumpkin.ejb.rm.base.RmException;
 import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
 import com.bluepumpkin.ejb.rm.requests.common.model.Request;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.common.model.RequestDetailLevel;
 import com.bluepumpkin.ejb.rm.requests.commonrequestmanager.ejb.CommonRequestManager;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest;
+import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
 import com.bluepumpkin.web.rm.Log;
 import com.bluepumpkin.web.rm.keys.RmPageAction;
 import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
@@ -22,8 +35,9 @@ import com.bluepumpkin.web.rm.requests.flextime.FlexTimeRequestsMH;
 import com.bluepumpkin.web.rm.requests.shiftbidding.ShiftBiddingRequestsMH;
 import com.bluepumpkin.web.rm.requests.shiftswap.ShiftSwapRequestsMH;
 import com.bluepumpkin.web.rm.requests.timeoff.TimeOffRequestsMH;
+import com.bluepumpkin.web.rm.util.RmWebUtils;
+import com.witness.ejb.core.security.model.User;
 import com.witness.web.uif.base.Message;
-import com.witness.web.uif.base.WebException;
 import com.witness.web.uif.base.WorkpaneRequestHandler;
 import com.witness.web.uif.keys.PageAction;
 import com.witness.web.uif.pagemodel.WorkpanePageModel;
@@ -37,70 +51,88 @@ import com.witness.web.uif.system.RequestContext;
  * @author       David Su
  * @version      1.0
  */
-<span class="nc" id="L40">public class RequestsRH extends WorkpaneRequestHandler {</span>
-<span class="nc" id="L41">	private static Category m_log = Log.initCategory(RequestsRH.class.getName());</span>
-<span class="nc" id="L42">	private FlexTimeRequestsMH flexTimeRequestsMH = new FlexTimeRequestsMH();</span>
-
+<span class="nc" id="L54">public class RequestsRH extends WorkpaneRequestHandler {</span>
+<span class="nc" id="L55">	private static Category m_log = Log.initCategory(RequestsRH.class.getName());</span>
+<span class="nc" id="L56">	private final FlexTimeRequestsMH flexTimeRequestsMH = new FlexTimeRequestsMH();</span>
+	private static final String GET_METHOD= &quot;GET&quot;;
+	private static final String APPSCAN_ERROR_LOG = &quot;CSRF security constraint violated. Cannot GET with a pageAction parameter&quot;;
 	/**
 	 * Process Request for the User page
 	 *
 	 * @param context The Request Context
-	 * @throws WebException
+	 * @throws Exception
 	 */
 	@Override
-	public void processCustomRequest(RequestContext context) throws WebException {
+	public void processCustomRequest(RequestContext context) throws Exception {
+		//Fix Appscan issue &quot;Body Parameter Accepted in Query&quot;
+<span class="nc" id="L68">		String method = context.getRequest().getMethod();</span>
+<span class="nc" id="L69">		String pageAction = getPageAction(context);</span>
+<span class="nc bnc" id="L70" title="All 4 branches missed.">		boolean inValid = GET_METHOD.equals(method) &amp;&amp; isBlockedPageAction(pageAction);</span>
+<span class="nc" id="L71">		HttpServletResponse response = context.getResponse();</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">		if (inValid) {</span>
+<span class="nc" id="L73">			m_log.error(APPSCAN_ERROR_LOG);</span>
+<span class="nc" id="L74">			response.setStatus(HttpServletResponse.SC_FORBIDDEN);</span>
+<span class="nc" id="L75">			return;</span>
+		}
 		// Process requested action
-<span class="nc bnc" id="L53" title="All 2 branches missed.">		if (isAction(context, PageAction.DENY)) {</span>
-<span class="nc" id="L54">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_DENIED);</span>
-<span class="nc bnc" id="L55" title="All 2 branches missed.">		} else if (isAction(context, PageAction.ESCALATE)) {</span>
-<span class="nc" id="L56">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_ESCALATED);</span>
-<span class="nc bnc" id="L57" title="All 2 branches missed.">		} else if (isAction(context, PageAction.WITHDRAW)) {</span>
-<span class="nc" id="L58">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAWN);</span>
-<span class="nc bnc" id="L59" title="All 2 branches missed.">		} else if (isAction(context, PageAction.WITHDRAW_NEGOTIATION)) {</span>
-<span class="nc" id="L60">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION);</span>
-<span class="nc bnc" id="L61" title="All 2 branches missed.">		} else if (isAction(context, PageAction.APPROVE)) {</span>
-<span class="nc" id="L62">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_APPROVED);</span>
-<span class="nc bnc" id="L63" title="All 2 branches missed.">		} else if (isAction(context, PageAction.TENTATIVELY_APPROVE)) {</span>
-<span class="nc" id="L64">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_TENTATIVE);</span>
-<span class="nc bnc" id="L65" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.GO_TO_MY_BID_OPTION)) {</span>
-<span class="nc" id="L66">			processGoToMyBidOptions(context);</span>
-<span class="nc bnc" id="L67" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.ADD_TO_WAITLIST_ACTION)) {</span>
-<span class="nc" id="L68">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WAITLIST);</span>
-<span class="nc bnc" id="L69" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.ADD_TO_MAN_WAITLIST_ACTION)) {</span>
-<span class="nc" id="L70">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WAITLIST);</span>
-<span class="nc bnc" id="L71" title="All 2 branches missed.">		} else if (isAction(context, PageAction.ACCEPT_WITHDRAW_ACTION)) {</span>
-<span class="nc" id="L72">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAW_ACCEPT);</span>
-<span class="nc bnc" id="L73" title="All 2 branches missed.">		} else if (isAction(context, PageAction.REJECT_WITHDRAW_ACTION)) {</span>
-<span class="nc" id="L74">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAW_REJECT);</span>
-<span class="nc bnc" id="L75" title="All 2 branches missed.">		} else if (isAction(context, PageAction.CANCEL_WITHDRAW_ACTION)) {</span>
-<span class="nc" id="L76">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAW_CANCEL);</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">		if (isAction(context, PageAction.DENY)) {</span>
+<span class="nc" id="L79">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_DENIED);</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">		} else if (isAction(context, PageAction.ESCALATE)) {</span>
+<span class="nc" id="L81">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_ESCALATED);</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">		} else if (isAction(context, PageAction.WITHDRAW)) {</span>
+<span class="nc" id="L83">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAWN);</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">		} else if (isAction(context, PageAction.WITHDRAW_NEGOTIATION)) {</span>
+<span class="nc" id="L85">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION);</span>
+<span class="nc bnc" id="L86" title="All 2 branches missed.">		} else if (isAction(context, PageAction.APPROVE)) {</span>
+<span class="nc" id="L87">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_APPROVED);</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">		} else if (isAction(context, PageAction.TENTATIVELY_APPROVE)) {</span>
+<span class="nc" id="L89">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_TENTATIVE);</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.GO_TO_MY_BID_OPTION)) {</span>
+<span class="nc" id="L91">			processGoToMyBidOptions(context);</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.ADD_TO_WAITLIST_ACTION)) {</span>
+<span class="nc" id="L93">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WAITLIST);</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.ADD_TO_MAN_WAITLIST_ACTION)) {</span>
+<span class="nc" id="L95">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WAITLIST);</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">		} else if (isAction(context, PageAction.ACCEPT_WITHDRAW_ACTION)) {</span>
+<span class="nc" id="L97">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAW_ACCEPT);</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">		} else if (isAction(context, PageAction.REJECT_WITHDRAW_ACTION)) {</span>
+<span class="nc" id="L99">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAW_REJECT);</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">		} else if (isAction(context, PageAction.CANCEL_WITHDRAW_ACTION)) {</span>
+<span class="nc" id="L101">			processRequestChangeStatus(context, RequestAuditTrail.STATUS_WITHDRAW_CANCEL);</span>
 		} else {
-<span class="nc" id="L78">			String action = getGroupAction(context);</span>
-<span class="nc bnc" id="L79" title="All 2 branches missed.">			if (action != null) {</span>
-<span class="nc" id="L80">				processGroupAction(context, action);</span>
+<span class="nc" id="L103">			String action = getGroupAction(context);</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">			if (action != null) {</span>
+<span class="nc" id="L105">				processGroupAction(context, action);</span>
 			}
 		}
-<span class="nc" id="L83">	}</span>
-
+<span class="nc" id="L108">	}</span>
+	boolean isBlockedPageAction(String pageAction) {
+<span class="nc bnc" id="L110" title="All 2 branches missed.">		if (StringUtil.isEmpty(pageAction)) {</span>
+<span class="nc" id="L111">			return false;</span>
+		}
+<span class="nc" id="L113">		return (RmPageAction.GO_TO_MY_BID_OPTION).equals(pageAction);</span>
+	}
 	/**
 	 * Return Group Action used by backend
 	 */
 	protected String getGroupAction(RequestContext context) {
-<span class="nc" id="L89">		String groupAction = null;</span>
-<span class="nc bnc" id="L90" title="All 2 branches missed.">		if (isAction(context, RmPageAction.APPROVE_ALL_WO_VIOLATIONS_ACTION)) {</span>
-<span class="nc" id="L91">			groupAction = CommonRequestManager.GA_APPROVE_ALL_WITHOUT_VIOL;</span>
-<span class="nc bnc" id="L92" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.CONFIRM_ALL_TNTV_APPROVALS_ACTION)) {</span>
-<span class="nc" id="L93">			groupAction = CommonRequestManager.GA_CONFIRM_ALL_TENT_APPROVALS;</span>
-<span class="nc bnc" id="L94" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.DENY_ANY_W_VIOLATIONS_ACTION)) {</span>
-<span class="nc" id="L95">			groupAction = CommonRequestManager.GA_DENY_ALL_WITH_VIOLATIONS;</span>
-<span class="nc bnc" id="L96" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.REMOVE_ALL_TNTV_APPROVALS_ACTION)) {</span>
-<span class="nc" id="L97">			groupAction = CommonRequestManager.GA_REMOVE_ALL_TENT_APPROVALS;</span>
-<span class="nc bnc" id="L98" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.TENTV_APPROVE_ALL_WO_VIOLATIONS_ACTION)) {</span>
-<span class="nc" id="L99">			groupAction = CommonRequestManager.GA_TENT_APPROVE_ALL_WITHOUT_VIOL;</span>
-<span class="nc bnc" id="L100" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.APPROVE_TO_CHOICE_WO_VIOLATIONS_ACTION)) {</span>
-<span class="nc" id="L101">			groupAction = CommonRequestManager.GA_APPROVE_TO_CHOICE_WITHOUT_VIOL;</span>
+<span class="nc" id="L119">		String groupAction = null;</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">		if (isAction(context, RmPageAction.APPROVE_ALL_WO_VIOLATIONS_ACTION)) {</span>
+<span class="nc" id="L121">			groupAction = CommonRequestManager.GA_APPROVE_ALL_WITHOUT_VIOL;</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.CONFIRM_ALL_TNTV_APPROVALS_ACTION)) {</span>
+<span class="nc" id="L123">			groupAction = CommonRequestManager.GA_CONFIRM_ALL_TENT_APPROVALS;</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.DENY_ANY_W_VIOLATIONS_ACTION)) {</span>
+<span class="nc" id="L125">			groupAction = CommonRequestManager.GA_DENY_ALL_WITH_VIOLATIONS;</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.REMOVE_ALL_TNTV_APPROVALS_ACTION)) {</span>
+<span class="nc" id="L127">			groupAction = CommonRequestManager.GA_REMOVE_ALL_TENT_APPROVALS;</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.TENTV_APPROVE_ALL_WO_VIOLATIONS_ACTION)) {</span>
+<span class="nc" id="L129">			groupAction = CommonRequestManager.GA_TENT_APPROVE_ALL_WITHOUT_VIOL;</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.APPROVE_TO_CHOICE_WO_VIOLATIONS_ACTION)) {</span>
+<span class="nc" id="L131">			groupAction = CommonRequestManager.GA_APPROVE_TO_CHOICE_WITHOUT_VIOL;</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">		} else if (isAction(context, RmPageAction.PROCESS_VTO_OPTIONS_REQUESTS_ACTION)) {</span>
+<span class="nc" id="L133">			groupAction = CommonRequestManager.GA_PROCESS_VTO_OPTIONS_REQUESTS_WITHOUT_VIOL;</span>
 		}
-<span class="nc" id="L103">		return groupAction;</span>
+<span class="nc" id="L135">		return groupAction;</span>
 	}
 
 	/**
@@ -111,167 +143,258 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public void processRequestChangeStatus(RequestContext context, String rStatus) {
 		// Extract Form Parameter
-<span class="nc" id="L114">		RequestStatusChangePopupPM model = new RequestStatusChangePopupPM(context);</span>
-<span class="nc" id="L115">		model.extractParameters(context.getRequest());</span>
-<span class="nc" id="L116">		String rType = model.getRequestType();</span>
+<span class="nc" id="L146">		RequestStatusChangePopupPM model = new RequestStatusChangePopupPM(context);</span>
+<span class="nc" id="L147">		model.extractParameters(context.getRequest());</span>
+<span class="nc" id="L148">		String rType = model.getRequestType();</span>
+<span class="nc" id="L149">		User user = context.getUser();</span>
 
 		try {
-<span class="nc" id="L119">			ID rID = model.getRequestID();</span>
-<span class="nc" id="L120">			String rVersion = model.getRequestVersion();</span>
-<span class="nc" id="L121">			String comment = model.getComment();</span>
+<span class="nc" id="L152">			ID rID = model.getRequestID();</span>
+<span class="nc" id="L153">			String rVersion = model.getRequestVersion();</span>
+<span class="nc" id="L154">			String comment = model.getComment();</span>
 
-<span class="nc" id="L123">			boolean isTOType = Request.REQUESTTYPE_TIMEOFF.equals(rType);</span>
-<span class="nc" id="L124">			boolean isFTType = Request.REQUESTTYPE_FLEXTIME.equals(rType);</span>
-<span class="nc" id="L125">			boolean isSSType = Request.REQUESTTYPE_SHIFTSWAP.equals(rType);</span>
-<span class="nc" id="L126">			boolean isSBType = Request.REQUESTTYPE_SHIFTBID.equals(rType);</span>
-<span class="nc" id="L127">			boolean isCSType = Request.REQUESTTYPE_CUSTSHIFT.equals(rType);</span>
+<span class="nc" id="L156">			boolean isTOType = Request.REQUESTTYPE_TIMEOFF.equals(rType);</span>
+<span class="nc" id="L157">			boolean isFTType = Request.REQUESTTYPE_FLEXTIME.equals(rType);</span>
+<span class="nc" id="L158">			boolean isSSType = Request.REQUESTTYPE_SHIFTSWAP.equals(rType);</span>
+<span class="nc" id="L159">			boolean isSBType = Request.REQUESTTYPE_SHIFTBID.equals(rType);</span>
+<span class="nc" id="L160">			boolean isCSType = Request.REQUESTTYPE_CUSTSHIFT.equals(rType);</span>
 
-<span class="nc" id="L129">			boolean closeAfterLoad = true;</span>
+<span class="nc" id="L162">			boolean closeAfterLoad = true;</span>
 
-<span class="nc bnc" id="L131" title="All 4 branches missed.">			if (isTOType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
-<span class="nc" id="L132">				TimeOffRequestsMH.approveTORequest(rID, model.getTOChoiceID(), rVersion, comment);</span>
-<span class="nc bnc" id="L133" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_TENTATIVE.equals(rStatus)) {</span>
-<span class="nc" id="L134">				TimeOffRequestsMH.tentativelyApproveTORequest(rID, model.getTOChoiceID(), rVersion, comment);</span>
-<span class="nc bnc" id="L135" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
-<span class="nc" id="L136">				TimeOffRequestsMH.denyTORequest(rID, rVersion, comment);</span>
-<span class="nc bnc" id="L137" title="All 4 branches missed.">			} else if (isFTType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
-<span class="nc" id="L138">				flexTimeRequestsMH.approveFTRequest(rID, model.getTOChoiceID(), rVersion, comment);</span>
-<span class="nc bnc" id="L139" title="All 4 branches missed.">			} else if (isFTType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
-<span class="nc" id="L140">				flexTimeRequestsMH.denyFTRequest(rID, rVersion, comment);</span>
-<span class="nc bnc" id="L141" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
-<span class="nc" id="L142">				ShiftSwapRequestsMH.approveSSRequest(rID, rVersion, comment);</span>
-<span class="nc bnc" id="L143" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_TENTATIVE.equals(rStatus)) {</span>
-<span class="nc" id="L144">				ShiftSwapRequestsMH.tentativelyApproveSSRequest(rID, rVersion, comment);</span>
-<span class="nc bnc" id="L145" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
-<span class="nc" id="L146">				ShiftSwapRequestsMH.denySSRequest(rID, rVersion, comment);</span>
-<span class="nc bnc" id="L147" title="All 2 branches missed.">			} else if (isSSType</span>
-<span class="nc bnc" id="L148" title="All 4 branches missed.">					&amp;&amp; (RequestAuditTrail.STATUS_WITHDRAWN.equals(rStatus) || RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION.equals(rStatus))) {</span>
-<span class="nc" id="L149">				Pair pair = ShiftSwapRequestsMH.requestWithdrawOfApprovedRequest(rID, rType, rVersion, rStatus, comment);</span>
-<span class="nc bnc" id="L150" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
-<span class="nc" id="L151">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
-<span class="nc" id="L152">					closeAfterLoad = false;</span>
+<span class="nc bnc" id="L164" title="All 4 branches missed.">			if (isTOType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
+<span class="nc" id="L165">				closeAfterLoad = approveTORequests(model, rID, rVersion, comment);</span>
+<span class="nc" id="L166">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_APPROVED, RmWebBundleKey.RM_TIMEOFF_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_TIMEOFF_REQUEST);
+<span class="nc bnc" id="L168" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_TENTATIVE.equals(rStatus)) {</span>
+<span class="nc" id="L169">				TimeOffRequestsMH.tentativelyApproveTORequests(rID, model.getTOChoiceID(), rVersion, comment);</span>
+<span class="nc" id="L170">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_TENTATIVE, RmWebBundleKey.RM_TIMEOFF_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_TIMEOFF_REQUEST);
+<span class="nc bnc" id="L172" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
+<span class="nc" id="L173">				TimeOffRequestsMH.denyTORequest(rID, rVersion, comment);</span>
+<span class="nc" id="L174">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_DENIED, RmWebBundleKey.RM_TIMEOFF_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_TIMEOFF_REQUEST);
+<span class="nc bnc" id="L176" title="All 4 branches missed.">			} else if (isFTType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
+<span class="nc" id="L177">				flexTimeRequestsMH.approveFTRequest(rID, model.getTOChoiceID(), rVersion, comment);</span>
+<span class="nc" id="L178">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_APPROVED, RmWebBundleKey.RM_FLEXTIMEOFF_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_FLEXTIME_REQUEST);
+<span class="nc bnc" id="L180" title="All 4 branches missed.">			} else if (isFTType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
+<span class="nc" id="L181">				flexTimeRequestsMH.denyFTRequest(rID, rVersion, comment);</span>
+<span class="nc" id="L182">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_DENIED, RmWebBundleKey.RM_FLEXTIMEOFF_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_FLEXTIME_REQUEST);
+<span class="nc bnc" id="L184" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
+<span class="nc" id="L185">				ShiftSwapRequestsMH.approveSSRequest(rID, rVersion, comment);</span>
+<span class="nc" id="L186">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_APPROVED, RmWebBundleKey.RM_SHIFTSWAP_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTSWAP_REQUEST);
+<span class="nc bnc" id="L188" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_TENTATIVE.equals(rStatus)) {</span>
+<span class="nc" id="L189">				ShiftSwapRequestsMH.tentativelyApproveSSRequest(rID, rVersion, comment);</span>
+<span class="nc" id="L190">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_TENTATIVE, RmWebBundleKey.RM_SHIFTSWAP_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTSWAP_REQUEST);
+<span class="nc bnc" id="L192" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
+<span class="nc" id="L193">				ShiftSwapRequestsMH.denySSRequest(rID, rVersion, comment);</span>
+<span class="nc" id="L194">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_DENIED, RmWebBundleKey.RM_SHIFTSWAP_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTSWAP_REQUEST);
+<span class="nc bnc" id="L196" title="All 2 branches missed.">			} else if (isSSType</span>
+<span class="nc bnc" id="L197" title="All 4 branches missed.">					&amp;&amp; (RequestAuditTrail.STATUS_WITHDRAWN.equals(rStatus) || RequestAuditTrail.STATUS_WITHDRAW_NEGOTIATION.equals(rStatus))) {</span>
+<span class="nc" id="L198">				ShiftSwapRequest request = ShiftSwapRequestsMH.getSSRequest(rID);</span>
+<span class="nc" id="L199">				Pair pair = ShiftSwapRequestsMH.requestWithdrawOfApprovedRequest(user, request, rType, rStatus, comment);</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
+<span class="nc" id="L201">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
+<span class="nc" id="L202">					closeAfterLoad = false;</span>
+				} else {
+					//It should be Withdrawn if withdrawing a pending request and Withdrawal Requested if withdrawing an approved request
+<span class="nc bnc" id="L205" title="All 2 branches missed.">					String infoWithdrawStatus = request.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED) ?</span>
+							RmWebBundleKey.STATUS_WITHDRAW_REQUEST : RmWebBundleKey.RM_STATUS_WITHDRAWN;
+<span class="nc" id="L207">					addPageStatusMessage(context, infoWithdrawStatus, RmWebBundleKey.RM_SHIFTSWAP_REQUEST_STATUS,</span>
+							RmWebUtils.RM_WEB_SHIFTSWAP_REQUEST);
 				}
 
-<span class="nc bnc" id="L155" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_ACCEPT.equals(rStatus)) {</span>
-<span class="nc" id="L156">				Pair pair = ShiftSwapRequestsMH.acceptWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
-<span class="nc bnc" id="L157" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
-<span class="nc" id="L158">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
-<span class="nc" id="L159">					closeAfterLoad = false;</span>
+<span class="nc bnc" id="L211" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_ACCEPT.equals(rStatus)) {</span>
+<span class="nc" id="L212">				Pair pair = ShiftSwapRequestsMH.acceptWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
+<span class="nc bnc" id="L213" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
+<span class="nc" id="L214">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
+<span class="nc" id="L215">					closeAfterLoad = false;</span>
+				} else {
+<span class="nc" id="L217">					addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_WITHDRAWN_ACCEPT, RmWebBundleKey.RM_SHIFTSWAP_REQUEST_STATUS,</span>
+						RmWebUtils.RM_WEB_SHIFTSWAP_REQUEST);
 				}
-<span class="nc bnc" id="L161" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_REJECT.equals(rStatus)) {</span>
-<span class="nc" id="L162">				ShiftSwapRequestsMH.rejectWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
-<span class="nc bnc" id="L163" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_CANCEL.equals(rStatus)) {</span>
-<span class="nc" id="L164">				Pair pair = ShiftSwapRequestsMH.cancelWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
-<span class="nc bnc" id="L165" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
-<span class="nc" id="L166">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
-<span class="nc" id="L167">					closeAfterLoad = false;</span>
+<span class="nc bnc" id="L220" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_REJECT.equals(rStatus)) {</span>
+<span class="nc" id="L221">				ShiftSwapRequestsMH.rejectWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
+<span class="nc" id="L222">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_WITHDRAWN_REJECT, RmWebBundleKey.RM_SHIFTSWAP_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTSWAP_REQUEST);
+<span class="nc bnc" id="L224" title="All 4 branches missed.">			} else if (isSSType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_CANCEL.equals(rStatus)) {</span>
+<span class="nc" id="L225">				Pair pair = ShiftSwapRequestsMH.cancelWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
+<span class="nc bnc" id="L226" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
+<span class="nc" id="L227">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
+<span class="nc" id="L228">					closeAfterLoad = false;</span>
+				} else {
+<span class="nc" id="L230">					addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_WITHDRAWN_CANCEL, RmWebBundleKey.RM_SHIFTSWAP_REQUEST_STATUS,</span>
+						RmWebUtils.RM_WEB_SHIFTSWAP_REQUEST);
 				}
-<span class="nc bnc" id="L169" title="All 4 branches missed.">			} else if (isSBType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
-<span class="nc" id="L170">				ShiftBiddingRequestsMH.approveSBRequest(rID, rVersion, comment);</span>
-<span class="nc bnc" id="L171" title="All 4 branches missed.">			} else if (isSBType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
-<span class="nc" id="L172">				ShiftBiddingRequestsMH.denySBRequest(rID, rVersion, comment);</span>
-<span class="nc bnc" id="L173" title="All 4 branches missed.">			} else if (isSBType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAWN.equals(rStatus)) {</span>
-<span class="nc" id="L174">				ShiftBiddingRequestsMH.withdrawApprovedSBRequest(rID, rType, rVersion, rStatus, comment);</span>
-
-<span class="nc bnc" id="L176" title="All 4 branches missed.">			} else if (isCSType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
-<span class="nc" id="L177">				CustomShiftRequestsMH.approveCSRequest(rID, null, rVersion, comment);</span>
-<span class="nc bnc" id="L178" title="All 4 branches missed.">			} else if (isCSType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
-<span class="nc" id="L179">				CustomShiftRequestsMH.denyCSRequest(rID, rVersion, comment);</span>
-<span class="nc bnc" id="L180" title="All 4 branches missed.">			} else if (isCSType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAWN.equals(rStatus)) {</span>
-<span class="nc" id="L181">				CustomShiftRequestsMH.requestWithdrawOfApprovedRequest(rID, rType, rVersion, rStatus, comment);</span>
-<span class="nc bnc" id="L182" title="All 4 branches missed.">			} else if (isCSType &amp;&amp; RequestAuditTrail.STATUS_TENTATIVE.equals(rStatus)) {</span>
-<span class="nc" id="L183">				CustomShiftRequestsMH.tentativelyApproveCSRequest(rID, null, rVersion, comment);</span>
-
-<span class="nc bnc" id="L185" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WAITLIST.equals(rStatus)) {</span>
-<span class="nc" id="L186">				Pair pair = TimeOffRequestsMH.addRequestToWaitlist(context, model.getRequestID(), comment, model.getExpiryDate());</span>
-<span class="nc bnc" id="L187" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
-<span class="nc" id="L188">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
-<span class="nc" id="L189">					closeAfterLoad = false;</span>
+<span class="nc bnc" id="L233" title="All 4 branches missed.">			} else if (isSBType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
+<span class="nc" id="L234">				ShiftBiddingRequestsMH.approveSBRequest(rID, rVersion, comment);</span>
+<span class="nc" id="L235">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_APPROVED, RmWebBundleKey.RM_SHIFTBID_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTBID_REQUEST);
+<span class="nc bnc" id="L237" title="All 4 branches missed.">			} else if (isSBType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
+<span class="nc" id="L238">				ShiftBiddingRequestsMH.denySBRequest(rID, rVersion, comment);</span>
+<span class="nc" id="L239">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_DENIED, RmWebBundleKey.RM_SHIFTBID_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTBID_REQUEST);
+<span class="nc bnc" id="L241" title="All 4 branches missed.">			} else if (isSBType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAWN.equals(rStatus)) {</span>
+<span class="nc" id="L242">				ShiftBidRequest request = (ShiftBidRequest)RmManagerFactory.getInstance().getShiftBidRequestManager().getRequestByID(rID,</span>
+						false, false, ShiftBidRequest.DL_BASIC | ShiftBidRequest.DL_BIDDABLESCHEDULE_IDS
+		        		| ShiftBidRequest.DL_SHIFT_ASSIGNMENTS_COLL
+		        		| RequestDetailLevel.DL_INCLUDE_ZERO_NUM_OF_AVAIL_INSTANCES
+						);
+<span class="nc" id="L247">				ShiftBiddingRequestsMH.withdrawApprovedSBRequest(rID, rType, request, rStatus, comment);</span>
+				//It should be Withdrawn if withdrawing a pending request and Withdrawal Requested if withdrawing an approved request
+<span class="nc bnc" id="L249" title="All 2 branches missed.">				String infoWithdrawStatus = request.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED) ?</span>
+						RmWebBundleKey.STATUS_WITHDRAW_REQUEST : RmWebBundleKey.RM_STATUS_WITHDRAWN;
+<span class="nc" id="L251">				addPageStatusMessage(context, infoWithdrawStatus, RmWebBundleKey.RM_SHIFTBID_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTBID_REQUEST);
+<span class="nc bnc" id="L253" title="All 4 branches missed.">			} else if (isCSType &amp;&amp; RequestAuditTrail.STATUS_APPROVED.equals(rStatus)) {</span>
+<span class="nc" id="L254">				CustomShiftRequestsMH.approveCSRequest(rID, null, rVersion, comment);</span>
+<span class="nc" id="L255">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_APPROVED, RmWebBundleKey.RM_SHIFTCHANGE_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTCHANGE_REQUEST);
+<span class="nc bnc" id="L257" title="All 4 branches missed.">			} else if (isCSType &amp;&amp; RequestAuditTrail.STATUS_DENIED.equals(rStatus)) {</span>
+<span class="nc" id="L258">				CustomShiftRequestsMH.denyCSRequest(rID, rVersion, comment);</span>
+<span class="nc" id="L259">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_DENIED, RmWebBundleKey.RM_SHIFTCHANGE_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTCHANGE_REQUEST);
+<span class="nc bnc" id="L261" title="All 4 branches missed.">			} else if (isCSType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAWN.equals(rStatus)) {</span>
+<span class="nc" id="L262">				CustomShiftRequestsMH.requestWithdrawOfApprovedRequest(rID, rType, rVersion, rStatus, comment);</span>
+<span class="nc" id="L263">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_WITHDRAWN, RmWebBundleKey.RM_SHIFTCHANGE_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTCHANGE_REQUEST);
+<span class="nc bnc" id="L265" title="All 4 branches missed.">			} else if (isCSType &amp;&amp; RequestAuditTrail.STATUS_TENTATIVE.equals(rStatus)) {</span>
+<span class="nc" id="L266">				CustomShiftRequestsMH.tentativelyApproveCSRequest(rID, null, rVersion, comment);</span>
+<span class="nc" id="L267">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_TENTATIVE, RmWebBundleKey.RM_SHIFTCHANGE_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_SHIFTCHANGE_REQUEST);
+<span class="nc bnc" id="L269" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WAITLIST.equals(rStatus)) {</span>
+<span class="nc" id="L270">				Pair pair = TimeOffRequestsMH.addRequestToWaitlist(context, model.getRequestID(), comment, model.getExpiryDate());</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
+<span class="nc" id="L272">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
+<span class="nc" id="L273">					closeAfterLoad = false;</span>
+				} else {
+<span class="nc" id="L275">					addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_WAITLIST, RmWebBundleKey.RM_TIMEOFF_REQUEST_STATUS,</span>
+						RmWebUtils.RM_WEB_TIMEOFF_REQUEST);
 				}
-<span class="nc bnc" id="L191" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAWN.equals(rStatus)) {</span>
-<span class="nc" id="L192">				Pair pair = TimeOffRequestsMH.requestWithdrawOfApprovedRequest(rID, rType, rVersion, rStatus, comment);</span>
-<span class="nc bnc" id="L193" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
-<span class="nc" id="L194">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
-<span class="nc" id="L195">					closeAfterLoad = false;</span>
+<span class="nc bnc" id="L278" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAWN.equals(rStatus)) {</span>
+<span class="nc" id="L279">				TORequest request = TimeOffRequestsMH.getTORequest(rID);</span>
+<span class="nc" id="L280">				Pair pair = TimeOffRequestsMH.requestWithdrawOfApprovedRequest(request, rType, rStatus, comment);</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
+<span class="nc" id="L282">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
+<span class="nc" id="L283">					closeAfterLoad = false;</span>
+				} else {
+					//It should be Withdrawn if withdrawing a pending request and Withdrawal Requested if withdrawing an approved request
+<span class="nc bnc" id="L286" title="All 2 branches missed.">					String infoWithdrawStatus = request.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED) ?</span>
+							RmWebBundleKey.STATUS_WITHDRAW_REQUEST : RmWebBundleKey.RM_STATUS_WITHDRAWN;
+<span class="nc" id="L288">					addPageStatusMessage(context, infoWithdrawStatus, RmWebBundleKey.RM_TIMEOFF_REQUEST_STATUS,</span>
+						RmWebUtils.RM_WEB_TIMEOFF_REQUEST);
 				}
-<span class="nc bnc" id="L197" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_ACCEPT.equals(rStatus)) {</span>
-<span class="nc" id="L198">				Pair pair = TimeOffRequestsMH.acceptWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
-<span class="nc bnc" id="L199" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
-<span class="nc" id="L200">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
-<span class="nc" id="L201">					closeAfterLoad = false;</span>
+<span class="nc bnc" id="L291" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_ACCEPT.equals(rStatus)) {</span>
+<span class="nc" id="L292">				Pair pair = TimeOffRequestsMH.acceptWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
+<span class="nc" id="L294">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
+<span class="nc" id="L295">					closeAfterLoad = false;</span>
+				} else {
+<span class="nc" id="L297">					addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_WITHDRAWN_ACCEPT, RmWebBundleKey.RM_TIMEOFF_REQUEST_STATUS,</span>
+						RmWebUtils.RM_WEB_TIMEOFF_REQUEST);
 				}
-<span class="nc bnc" id="L203" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_REJECT.equals(rStatus)) {</span>
-<span class="nc" id="L204">				TimeOffRequestsMH.rejectWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
-<span class="nc bnc" id="L205" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_CANCEL.equals(rStatus)) {</span>
-<span class="nc" id="L206">				Pair pair = TimeOffRequestsMH.cancelWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
-<span class="nc bnc" id="L207" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
-<span class="nc" id="L208">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
-<span class="nc" id="L209">					closeAfterLoad = false;</span>
+<span class="nc bnc" id="L300" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_REJECT.equals(rStatus)) {</span>
+<span class="nc" id="L301">				TimeOffRequestsMH.rejectWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
+<span class="nc" id="L302">				addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_WITHDRAWN_REJECT, RmWebBundleKey.RM_TIMEOFF_REQUEST_STATUS,</span>
+					RmWebUtils.RM_WEB_TIMEOFF_REQUEST);
+<span class="nc bnc" id="L304" title="All 4 branches missed.">			} else if (isTOType &amp;&amp; RequestAuditTrail.STATUS_WITHDRAW_CANCEL.equals(rStatus)) {</span>
+<span class="nc" id="L305">				Pair pair = TimeOffRequestsMH.cancelWithdrawOfApprovedRequest(context, model.getRequestID(), comment);</span>
+<span class="nc bnc" id="L306" title="All 2 branches missed.">				if (!((Boolean) pair.getFirst()).booleanValue()) {</span>
+<span class="nc" id="L307">					model.addPageMessage(Message.ERROR_TYPE, pair.getSecond().toString());</span>
+<span class="nc" id="L308">					closeAfterLoad = false;</span>
+				} else {
+<span class="nc" id="L310">					addPageStatusMessage(context, RmWebBundleKey.RM_STATUS_WITHDRAWN_CANCEL, RmWebBundleKey.RM_TIMEOFF_REQUEST_STATUS,</span>
+						RmWebUtils.RM_WEB_TIMEOFF_REQUEST);
 				}
-<span class="nc" id="L211">			} else {</span>
-<span class="nc" id="L212">				RequestsMH.changeRequestStatus(rID, rType, rVersion, rStatus, comment);</span>
+<span class="nc" id="L313">			} else {</span>
+<span class="nc" id="L314">				RequestsMH.changeRequestStatus(rID, rType, rVersion, rStatus, comment);</span>
+<span class="nc" id="L315">				addPageStatusMessage(context, rType, rStatus);</span>
 			}
-
-<span class="nc" id="L215">			model.setIsCloseAfterLoad(closeAfterLoad);</span>
+<span class="nc" id="L317">			model.setIsRefreshOpenerOnClose(closeAfterLoad);</span>
+			//Use the its new variable isCloseAfterLoadCustomize instead of using parent's variable isCloseAfterLoad
+			//to handle for Chrome
+<span class="nc" id="L320">			model.setCloseAfterLoadCustomize(closeAfterLoad);</span>
 			//QC 176957:When approving a time off the page selector jumps back to page 1 in request management- ESR#4663410
 			//Fix for all actions that refresh the page after change status of requests
-<span class="nc bnc" id="L218" title="All 2 branches missed.">			if (closeAfterLoad) {</span>
-<span class="nc" id="L219">				model.setOpenerValue(AgentsRequestsPM.IS_ON_SAME_PAGE_FN, &quot;true&quot;);</span>
+<span class="nc bnc" id="L323" title="All 2 branches missed.">			if (closeAfterLoad) {</span>
+<span class="nc" id="L324">				model.setOpenerValue(AgentsRequestsPM.IS_ON_SAME_PAGE_FN, &quot;true&quot;);</span>
 			}
-<span class="nc" id="L221">		} catch (MultiUserException ex) {</span>
-<span class="nc" id="L222">			model.addPageMessage(Message.WARNING_TYPE, RmWebBundleKey.UNABLE_TO_UPDATE_REQUEST_DUE_TO_MULTIUSER_EXCEPTION,</span>
+<span class="nc" id="L326">		} catch (MultiUserException ex) {</span>
+<span class="nc" id="L327">			model.addPageMessage(Message.WARNING_TYPE, RmWebBundleKey.UNABLE_TO_UPDATE_REQUEST_DUE_TO_MULTIUSER_EXCEPTION,</span>
 					RmWebBundleKey.BUNDLE_NAME);
-<span class="nc" id="L224">		} catch (RmHardValidationException ex) {</span>
-<span class="nc" id="L225">			m_log.l7dDebug(RmWebLogBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, ex);</span>
-<span class="nc" id="L226">			Message msg = new Message(Message.ERROR_TYPE, RmWebBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, RmWebBundleKey.BUNDLE_NAME);</span>
-<span class="nc" id="L227">			msg.setAssociatedMessage(getLocMsgFromException(context, ex));</span>
-<span class="nc" id="L228">			model.addPageMessage(msg);</span>
-<span class="nc" id="L229">		} catch (RmException ex) {</span>
-<span class="nc" id="L230">			m_log.l7dDebug(RmWebLogBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, ex);</span>
-<span class="nc" id="L231">			Message msg = new Message(Message.ERROR_TYPE, RmWebBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, RmWebBundleKey.BUNDLE_NAME);</span>
-<span class="nc" id="L232">			msg.setAssociatedMessage(ex.getLocalizedMessage(context.getLocaleContext().getLanguageLocale()));</span>
-<span class="nc" id="L233">			model.addPageMessage(msg);</span>
-<span class="nc" id="L234">		} catch (Exception ex) {</span>
-<span class="nc" id="L235">			m_log.l7dError(RmWebLogBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, ex);</span>
-<span class="nc" id="L236">			Message msg = new Message(Message.ERROR_TYPE, RmWebBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, RmWebBundleKey.BUNDLE_NAME);</span>
-<span class="nc" id="L237">			model.addPageMessage(msg);</span>
-<span class="nc" id="L238">		}</span>
+<span class="nc" id="L329">		} catch (RmHardValidationException ex) {</span>
+<span class="nc" id="L330">			m_log.l7dDebug(RmWebLogBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, ex);</span>
+<span class="nc" id="L331">			Message msg = new Message(Message.ERROR_TYPE, RmWebBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L332">			msg.setAssociatedMessage(getLocMsgFromException(context, ex));</span>
+<span class="nc" id="L333">			model.addPageMessage(msg);</span>
+<span class="nc" id="L334">		} catch (RmException ex) {</span>
+<span class="nc" id="L335">			String msgError = ex.getLocalizedMessage(context.getLocaleContext().getLanguageLocale());</span>
+<span class="nc" id="L336">			m_log.l7dDebug(RmWebLogBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, ex);</span>
+<span class="nc bnc" id="L337" title="All 4 branches missed.">			if(ex.getCoreException()!=null &amp;&amp; ex.getCoreException() instanceof BbmScheduleConflictException ){</span>
+<span class="nc" id="L338">				BbmScheduleConflictException bbmSchConflictException =(BbmScheduleConflictException)ex.getCoreException();</span>
+<span class="nc" id="L339">				msgError = getMsgFromBbmScheduleConflictException(context,bbmSchConflictException);</span>
+			}
+<span class="nc" id="L341">			Message msg = new Message(Message.ERROR_TYPE, RmWebBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L342">			msg.setAssociatedMessage(msgError);</span>
+<span class="nc" id="L343">			model.addPageMessage(msg);</span>
+<span class="nc" id="L344">		} catch (Exception ex) {</span>
+<span class="nc" id="L345">			m_log.l7dError(RmWebLogBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, ex);</span>
+<span class="nc" id="L346">			Message msg = new Message(Message.ERROR_TYPE, RmWebBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L347">			model.addPageMessage(msg);</span>
+<span class="nc" id="L348">		}</span>
 
-<span class="nc" id="L240">		context.setPageModel(model);</span>
-<span class="nc" id="L241">	}</span>
+<span class="nc" id="L350">		context.setPageModel(model);</span>
+<span class="nc" id="L351">	}</span>
+
+	boolean approveTORequests(RequestStatusChangePopupPM model, ID requestID, String requestVersion, String comment)
+			throws MultiUserException, RmHardValidationException, BbmCreateException, RmException, RemoteException {
+
+<span class="nc" id="L356">		Set&lt;ID&gt; choiceIds = model.getTOChoiceID();</span>
+<span class="nc bnc" id="L357" title="All 2 branches missed.">		if (choiceIds.isEmpty()) {</span>
+<span class="nc" id="L358">			model.addPageMessage(Message.ERROR_TYPE, RmWebBundleKey.NO_TO_CHOICE_SELECTED, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L359">			return false;</span>
+		}
+
+<span class="nc" id="L362">		TimeOffRequestsMH.approveTORequests(requestID, choiceIds, requestVersion, comment);</span>
+<span class="nc" id="L363">		return true;</span>
+	}
 
 	/**
 	 * Process Group Action
 	 */
 	protected void processGroupAction(RequestContext context, String action) {
-<span class="nc" id="L247">		AgentsRequestsPM model = (AgentsRequestsPM) getPageModel(context);</span>
+<span class="nc" id="L370">		AgentsRequestsPM model = (AgentsRequestsPM) getPageModel(context);</span>
 
 		try {
-<span class="nc" id="L250">			Collection&lt;ID&gt; ids = model.getPageIDs();</span>
-<span class="nc" id="L251">			Collection objVers = model.getPageRequestsObjVer();</span>
-<span class="nc bnc" id="L252" title="All 4 branches missed.">			if (!ids.isEmpty() &amp;&amp; !objVers.isEmpty()) {</span>
-<span class="nc" id="L253">				RequestsMH.processRequests(ids, objVers, action);</span>
+<span class="nc" id="L373">			Collection&lt;ID&gt; ids = model.getPageIDs();</span>
+<span class="nc" id="L374">			Collection objVers = model.getPageRequestsObjVer();</span>
+<span class="nc bnc" id="L375" title="All 4 branches missed.">			if (!ids.isEmpty() &amp;&amp; !objVers.isEmpty()) {</span>
+<span class="nc" id="L376">				RequestsMH.processRequests(ids, objVers, action);</span>
 			}
-<span class="nc" id="L255">		} catch (MultiUserException ex) {</span>
-<span class="nc" id="L256">			model.addPageMessage(Message.WARNING_TYPE, RmWebBundleKey.UNABLE_TO_UPDATE_REQUEST_DUE_TO_MULTIUSER_EXCEPTION,</span>
+<span class="nc" id="L378">		} catch (MultiUserException ex) {</span>
+<span class="nc" id="L379">			model.addPageMessage(Message.WARNING_TYPE, RmWebBundleKey.UNABLE_TO_UPDATE_REQUEST_DUE_TO_MULTIUSER_EXCEPTION,</span>
 					RmWebBundleKey.BUNDLE_NAME);
-<span class="nc" id="L258">		} catch (Exception ex) {</span>
-<span class="nc" id="L259">			model.addPageMessage(Message.ERROR_TYPE, RmWebBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, RmWebBundleKey.BUNDLE_NAME);</span>
-<span class="nc" id="L260">			m_log.l7dError(RmWebLogBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, ex);</span>
-<span class="nc" id="L261">		}</span>
+<span class="nc" id="L381">		} catch (Exception ex) {</span>
+<span class="nc" id="L382">			model.addPageMessage(Message.ERROR_TYPE, RmWebBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, RmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L383">			m_log.l7dError(RmWebLogBundleKey.UNABLE_TO_CHANGE_REQUEST_STATUS, ex);</span>
+<span class="nc" id="L384">		}</span>
 
-<span class="nc" id="L263">		context.setPageModel(model);</span>
-<span class="nc" id="L264">	}</span>
+<span class="nc" id="L386">		context.setPageModel(model);</span>
+<span class="nc" id="L387">	}</span>
 
 	/**
 	 * Return Page Model to perform generic action request on
 	 */
 	@Override
 	public WorkpanePageModel getPageModel(RequestContext context) {
-<span class="nc" id="L271">		AgentsRequestsPM model = createAgentsRequestsPM(context);</span>
-<span class="nc" id="L272">		model.extractParameters(context.getRequest());</span>
-<span class="nc" id="L273">		context.setPageModel(model);</span>
-<span class="nc" id="L274">		return model;</span>
+<span class="nc" id="L394">		AgentsRequestsPM model = createAgentsRequestsPM(context);</span>
+<span class="nc" id="L395">		model.extractParameters(context.getRequest());</span>
+<span class="nc" id="L396">		context.setPageModel(model);</span>
+<span class="nc" id="L397">		return model;</span>
 	}
 
 	/**
@@ -280,23 +403,60 @@ import com.witness.web.uif.system.RequestContext;
 	 * NOTE: Meant to be overwritten by subclass
 	 */
 	protected AgentsRequestsPM createAgentsRequestsPM(RequestContext context) {
-<span class="nc" id="L283">		return new AgentsRequestsPM(context);</span>
+<span class="nc" id="L406">		return new AgentsRequestsPM(context);</span>
 	}
 
 	/**
 	 * Navigate to My Bid Options Screen
 	 */
 	protected void processGoToMyBidOptions(RequestContext context) {
-<span class="nc" id="L290">		setNextScreenName(context, &quot;RM_MYSCHEDULE_BIDS&quot;);</span>
-<span class="nc" id="L291">	}</span>
+<span class="nc" id="L413">		setNextScreenName(context, &quot;RM_MYSCHEDULE_BIDS&quot;);</span>
+<span class="nc" id="L414">	}</span>
 
 	/**
 	 * Return Localized Message from Exception
 	 */
 	protected String getLocMsgFromException(RequestContext context, RmHardValidationException ex) {
-<span class="nc" id="L297">		Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L298">		TimeZone tz = context.getViewingTimeZone();</span>
-<span class="nc" id="L299">		return ex.getLocalizedMessage(localizer, tz);</span>
+<span class="nc" id="L420">		Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L421">		TimeZone tz = context.getViewingTimeZone();</span>
+<span class="nc" id="L422">		return ex.getLocalizedMessage(localizer, tz);</span>
 	}
+
+	private String getMsgFromBbmScheduleConflictException(RequestContext context, BbmScheduleConflictException ex) {
+<span class="nc" id="L426">		Collection&lt;BbmScheduleConflict&gt; conflicts = ex.getConflicts();</span>
+<span class="nc" id="L427">		StringBuilder msgDetailError = new StringBuilder(300);</span>
+<span class="nc" id="L428">		msgDetailError.append(ex.getLocalizedMessage());</span>
+<span class="nc" id="L429">		msgDetailError.append(&quot;\r\n&quot;);</span>
+<span class="nc bnc" id="L430" title="All 2 branches missed.">		for (BbmScheduleConflict conflict : conflicts) {</span>
+<span class="nc" id="L431">			msgDetailError.append(conflict.getLocalizedMessage(context.getLocalizer(), context.getViewingTimeZone()));</span>
+<span class="nc" id="L432">		}</span>
+<span class="nc" id="L433">		return msgDetailError.toString();</span>
+	}
+
+	private void addPageStatusMessage(RequestContext context, String statusKey, String requestTypeStatus, String messageKey) {
+<span class="nc" id="L437">		String status = context.getLocalizer().i18n(RmWebBundleKey.BUNDLE_NAME, statusKey);</span>
+<span class="nc" id="L438">		Message message = new Message(Message.INFO_TYPE, requestTypeStatus, RmWebBundleKey.BUNDLE_NAME, new String[] { status });</span>
+<span class="nc" id="L439">		RmWebUtils.setContextAttribute(context, RequestContext.APPLICATION_SCOPE, messageKey, message);</span>
+<span class="nc" id="L440">	}</span>
+
+	private void addPageStatusMessage(RequestContext context, String requestType, String requestStatus) {
+<span class="nc" id="L443">		String messageTypeKey = &quot;&quot;;</span>
+
+<span class="nc bnc" id="L445" title="All 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(requestType)) {</span>
+<span class="nc" id="L446">			messageTypeKey = RmWebUtils.RM_WEB_TIMEOFF_REQUEST;</span>
+<span class="nc bnc" id="L447" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(requestType)) {</span>
+<span class="nc" id="L448">			messageTypeKey = RmWebUtils.RM_WEB_FLEXTIME_REQUEST;</span>
+<span class="nc bnc" id="L449" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(requestType)) {</span>
+<span class="nc" id="L450">			messageTypeKey = RmWebUtils.RM_WEB_SHIFTSWAP_REQUEST;</span>
+<span class="nc bnc" id="L451" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTBID.equals(requestType)) {</span>
+<span class="nc" id="L452">			messageTypeKey = RmWebUtils.RM_WEB_SHIFTBID_REQUEST;</span>
+		} else {
+<span class="nc" id="L454">			messageTypeKey = RmWebUtils.RM_WEB_SHIFTCHANGE_REQUEST;</span>
+		}
+
+<span class="nc" id="L457">		Message message = new Message(Message.INFO_TYPE, RmWebBundleKey.RM_REQUEST_STATUS, RmWebBundleKey.BUNDLE_NAME,</span>
+				new String[] { requestStatus });
+<span class="nc" id="L459">		RmWebUtils.setContextAttribute(context, RequestContext.APPLICATION_SCOPE, messageTypeKey, message);</span>
+<span class="nc" id="L460">	}</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

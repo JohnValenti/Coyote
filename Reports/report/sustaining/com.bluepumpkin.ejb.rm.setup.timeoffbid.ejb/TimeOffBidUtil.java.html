@@ -4,10 +4,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.TimeZone;
+import java.util.concurrent.TimeUnit;
 
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.datatypes.Pair;
+import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.localization.Localizer;
 import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
@@ -21,174 +24,199 @@ import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
 import com.bluepumpkin.ejb.rm.setup.timeoffbid.model.TimeOffBid;
 import com.bluepumpkin.ejb.rm.util.DateUtil;
-import java.util.concurrent.TimeUnit;
+import com.bluepumpkin.ejb.rm.util.ThreadLocalCache;
 
 
 public class TimeOffBidUtil {
-<span class="nc" id="L28">	private static Category LOGGER = Log.initCategory(TimeOffBidUtil.class.getName());</span>
+<span class="nc" id="L31">	private static Category LOGGER = Log.initCategory(TimeOffBidUtil.class.getName());</span>
 
 	private TimeOffBidUtil() {
-<span class="nc" id="L31">		super();</span>
-<span class="nc" id="L32">	}</span>
+<span class="nc" id="L34">		super();</span>
+<span class="nc" id="L35">	}</span>
 
 	public static int getNumberOfUnits(int unit, int value) {
-<span class="nc bnc" id="L35" title="All 2 branches missed.">		if (unit == TimeOffBid.TIMEOFF_BID_DAYS) {</span>
-<span class="nc" id="L36">			return value;</span>
+<span class="nc bnc" id="L38" title="All 2 branches missed.">		if (unit == TimeOffBid.TIMEOFF_BID_DAYS) {</span>
+<span class="nc" id="L39">			return value;</span>
 		} else {
-<span class="nc" id="L38">			return value * 7;</span>
+<span class="nc" id="L41">			return value * 7;</span>
 		}
 	}
 
 	public static int getMinimumDaysPerChoice(TimeOffBid bid) {
-<span class="nc" id="L43">		return getNumberOfUnits(bid.getMinUnitPerChoice(), bid.getMinValuePerChoice());</span>
+<span class="nc" id="L46">		return getNumberOfUnits(bid.getMinUnitPerChoice(), bid.getMinValuePerChoice());</span>
 	}
 
 	public static int getMaximumsPerChoice(TimeOffBid bid) {
-<span class="nc" id="L47">		return getNumberOfUnits(bid.getMaxUnitPerChoice(), bid.getMaxValuePerChoice());</span>
+<span class="nc" id="L50">		return getNumberOfUnits(bid.getMaxUnitPerChoice(), bid.getMaxValuePerChoice());</span>
 	}
 
 	public static String getPeriodText(Localizer localizer, int value, int periodUnit) {
-<span class="nc" id="L51">		String bundleName = RmEjbBundleKey.BUNDLE_NAME;</span>
-<span class="nc bnc" id="L52" title="All 2 branches missed.">		if (periodUnit == TimeOffBid.TIMEOFF_BID_WEEKS) {</span>
-<span class="nc bnc" id="L53" title="All 2 branches missed.">			return value == 1 ? localizer.i18n(bundleName, RmEjbBundleKey.PERIOD_WEEK) : localizer.i18n(bundleName,</span>
-<span class="nc" id="L54">					RmEjbBundleKey.PERIOD_WEEKS, String.valueOf(value));</span>
+<span class="nc" id="L54">		String bundleName = RmEjbBundleKey.BUNDLE_NAME;</span>
+<span class="nc bnc" id="L55" title="All 2 branches missed.">		if (periodUnit == TimeOffBid.TIMEOFF_BID_WEEKS) {</span>
+<span class="nc bnc" id="L56" title="All 2 branches missed.">			return value == 1 ? localizer.i18n(bundleName, RmEjbBundleKey.PERIOD_WEEK) : localizer.i18n(bundleName,</span>
+<span class="nc" id="L57">					RmEjbBundleKey.PERIOD_WEEKS, String.valueOf(value));</span>
 		} else {
-<span class="nc bnc" id="L56" title="All 2 branches missed.">			return value == 1 ? localizer.i18n(bundleName, RmEjbBundleKey.PERIOD_DAY) : localizer.i18n(bundleName,</span>
-<span class="nc" id="L57">					RmEjbBundleKey.PERIOD_DAYS, String.valueOf(value));</span>
+<span class="nc bnc" id="L59" title="All 2 branches missed.">			return value == 1 ? localizer.i18n(bundleName, RmEjbBundleKey.PERIOD_DAY) : localizer.i18n(bundleName,</span>
+<span class="nc" id="L60">					RmEjbBundleKey.PERIOD_DAYS, String.valueOf(value));</span>
 		}
 	}
 
 	/*Correct the choice duration due to DST*/
 	public static long getRealChoiceDuration(Date choiceStart, Date choiceEnd, TimeZone tz) {
-<span class="nc" id="L63">		long cStart = choiceStart.getTime();</span>
-<span class="nc" id="L64">		long cEnd = choiceEnd.getTime();</span>
-<span class="nc" id="L65">		long realChoiceDuration = cEnd - cStart;</span>
-<span class="nc" id="L66">		DSTTransitionMode dst = DateUtil.getDSTTransitionMode(choiceStart, choiceEnd, tz);</span>
-<span class="nc" id="L67">		long hourInMiliSeconds = TimeUnit.HOURS.toMillis(1);</span>
-<span class="nc bnc" id="L68" title="All 2 branches missed.">		if (dst == DSTTransitionMode.SPRINGFORWARD) {</span>
-<span class="nc" id="L69">			realChoiceDuration += hourInMiliSeconds;</span>
-<span class="nc bnc" id="L70" title="All 2 branches missed.">		} else if (dst == DSTTransitionMode.FALLBACK) {</span>
-<span class="nc" id="L71">			realChoiceDuration -= hourInMiliSeconds;</span>
+<span class="nc" id="L66">		long cStart = choiceStart.getTime();</span>
+<span class="nc" id="L67">		long cEnd = choiceEnd.getTime();</span>
+<span class="nc" id="L68">		long realChoiceDuration = cEnd - cStart;</span>
+<span class="nc" id="L69">		DSTTransitionMode dst = DateUtil.getDSTTransitionMode(choiceStart, choiceEnd, tz);</span>
+<span class="nc" id="L70">		long hourInMiliSeconds = TimeUnit.HOURS.toMillis(1);</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">		if (dst == DSTTransitionMode.SPRINGFORWARD) {</span>
+<span class="nc" id="L72">			realChoiceDuration += hourInMiliSeconds;</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">		} else if (dst == DSTTransitionMode.FALLBACK) {</span>
+<span class="nc" id="L74">			realChoiceDuration -= hourInMiliSeconds;</span>
 		}
-<span class="nc" id="L73">		return realChoiceDuration;</span>
+<span class="nc" id="L76">		return realChoiceDuration;</span>
+	}
+	public static long getDurationChoices(Collection&lt;TOChoice&gt; choices, TimeZone tz) {
+<span class="nc" id="L79">		long result=0;</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">		for(TOChoice choice:choices){</span>
+<span class="nc" id="L81">			result+= getRealChoiceDuration(choice.getStartDate(),choice.getEndDate(),tz);</span>
+<span class="nc" id="L82">		}</span>
+<span class="nc" id="L83">		return result;</span>
 	}
 
 	public static boolean isIncrementsOfWeek(long choiceDuration) {
-<span class="nc" id="L77">		long weekInMiliSeconds = TimeUnit.DAYS.toMillis(7);</span>
-<span class="nc" id="L78">		float week = (float) choiceDuration / weekInMiliSeconds;</span>
-<span class="nc bnc" id="L79" title="All 2 branches missed.">		if (week == (int) week) {</span>
-<span class="nc" id="L80">			return true;</span>
+<span class="nc" id="L87">		long weekInMiliSeconds = TimeUnit.DAYS.toMillis(7);</span>
+<span class="nc" id="L88">		float week = (float) choiceDuration / weekInMiliSeconds;</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">		if (week == (int) week) {</span>
+<span class="nc" id="L90">			return true;</span>
 		}
-<span class="nc" id="L82">		return false;</span>
+<span class="nc" id="L92">		return false;</span>
 	}
 
-	/**
-	* Getting the open time off bid for a specific activity of the request submitted by an employee
-	* @param activityId
-	* @param employeeId
-	* @return TimeOffBid
-	* */
-	public static TimeOffBid getOpenTimeOffBidForActivityIdAndEmployeId(ID activityId, ID employeeId, Date submittedDate)
-			throws BbmFinderException {
-<span class="nc" id="L93">		TimeOffBidDAO dao = null;</span>
-		try {
-<span class="nc" id="L95">			dao = new TimeOffBidDAO();</span>
-<span class="nc" id="L96">			return dao.getOpenTimeOffBidForActivityIdAndEmployeId(activityId, employeeId, submittedDate);</span>
-<span class="nc" id="L97">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L98">			throw e;</span>
-<span class="nc" id="L99">		} catch (Exception e) {</span>
-<span class="nc" id="L100">			throw RequestUtil.createBbmFinderExceptionWrapper(e, LOGGER);</span>
-		} finally {
-<span class="nc bnc" id="L102" title="All 4 branches missed.">			if (dao != null) {</span>
-<span class="nc" id="L103">				dao.cleanUp();</span>
-			}
-		}
-	}
 
 	public static Pair&lt;TimeOffBid, Pair&lt;Integer, Integer&gt;&gt; getOpenTimeOffBidDetailForActivityIdAndEmployeId(ID activityId, ID employeeId,
 			Date submittedDate) throws BbmFinderException {
-<span class="nc" id="L110">		TimeOffBidDAO dao = null;</span>
+<span class="nc" id="L98">		TimeOffBidDAO dao = null;</span>
 		try {
-<span class="nc" id="L112">			dao = new TimeOffBidDAO();</span>
-<span class="nc" id="L113">			return dao.getOpenTimeOffBidDetailForActivityIdAndEmployeId(activityId, employeeId, submittedDate);</span>
-<span class="nc" id="L114">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L115">			throw e;</span>
-<span class="nc" id="L116">		} catch (Exception e) {</span>
-<span class="nc" id="L117">			throw RequestUtil.createBbmFinderExceptionWrapper(e, LOGGER);</span>
+<span class="nc" id="L100">			dao = new TimeOffBidDAO();</span>
+<span class="nc" id="L101">			return dao.getOpenTimeOffBidDetailForActivityIdAndEmployeId(activityId, employeeId, submittedDate);</span>
+<span class="nc" id="L102">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L103">			throw e;</span>
+<span class="nc" id="L104">		} catch (Exception e) {</span>
+<span class="nc" id="L105">			throw RequestUtil.createBbmFinderExceptionWrapper(e, LOGGER);</span>
 		} finally {
-<span class="nc bnc" id="L119" title="All 4 branches missed.">			if (dao != null) {</span>
-<span class="nc" id="L120">				dao.cleanUp();</span>
+<span class="nc bnc" id="L107" title="All 4 branches missed.">			if (dao != null) {</span>
+<span class="nc" id="L108">				dao.cleanUp();</span>
 			}
 		}
 	}
 
 	public static long getTotalMinutesBidRequestApprovedPerEmployee(ID bidId, ID employeeId, ID activityId) throws BbmFinderException {
-<span class="nc" id="L126">		TimeOffBidDAO dao = null;</span>
+<span class="nc" id="L114">		TimeOffBidDAO dao = null;</span>
 		try {
-<span class="nc" id="L128">			dao = new TimeOffBidDAO();</span>
-<span class="nc" id="L129">			return dao.getTotalMinutesBidRequestApprovedPerEmployee(bidId, employeeId, activityId);</span>
-<span class="nc" id="L130">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L131">			throw e;</span>
-<span class="nc" id="L132">		} catch (Exception e) {</span>
-<span class="nc" id="L133">			throw RequestUtil.createBbmFinderExceptionWrapper(e, LOGGER);</span>
+<span class="nc" id="L116">			dao = new TimeOffBidDAO();</span>
+<span class="nc" id="L117">			return dao.getTotalMinutesBidRequestApprovedPerEmployee(bidId, employeeId, activityId);</span>
+<span class="nc" id="L118">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L119">			throw e;</span>
+<span class="nc" id="L120">		} catch (Exception e) {</span>
+<span class="nc" id="L121">			throw RequestUtil.createBbmFinderExceptionWrapper(e, LOGGER);</span>
 		} finally {
-<span class="nc bnc" id="L135" title="All 4 branches missed.">			if (dao != null) {</span>
-<span class="nc" id="L136">				dao.cleanUp();</span>
+<span class="nc bnc" id="L123" title="All 4 branches missed.">			if (dao != null) {</span>
+<span class="nc" id="L124">				dao.cleanUp();</span>
 			}
 		}
 	}
 
 	public static Collection&lt;TOChoice&gt; getApprovedTimeOffRequestChoiceDuringOpenBid(ID bidId, ID employeeId, Collection&lt;ID&gt; activityIds)
 			throws BbmFinderException {
-<span class="nc" id="L143">		TimeOffBidDAO dao = null;</span>
-<span class="nc" id="L144">		Collection&lt;TOChoice&gt; result = new ArrayList&lt;TOChoice&gt;();</span>
+<span class="nc" id="L131">		TimeOffBidDAO dao = null;</span>
+<span class="nc" id="L132">		Collection&lt;TOChoice&gt; result = new ArrayList&lt;TOChoice&gt;();</span>
 		try {
-<span class="nc" id="L146">			dao = new TimeOffBidDAO();</span>
-<span class="nc" id="L147">			result = dao.getApprovedTimeOffRequestChoiceDuringOpenBid(bidId, employeeId, activityIds);</span>
+<span class="nc" id="L134">			dao = new TimeOffBidDAO();</span>
+<span class="nc" id="L135">			result = dao.getApprovedTimeOffRequestChoiceDuringOpenBid(bidId, employeeId, activityIds);</span>
 		} finally {
-<span class="nc bnc" id="L149" title="All 4 branches missed.">			if (dao != null) {</span>
-<span class="nc" id="L150">				dao.cleanUp();</span>
+<span class="nc bnc" id="L137" title="All 4 branches missed.">			if (dao != null) {</span>
+<span class="nc" id="L138">				dao.cleanUp();</span>
 			}
 		}
-<span class="nc" id="L153">		return result;</span>
+<span class="nc" id="L141">		return result;</span>
 	}
 
 	public static Collection&lt;ID&gt; getActivityIDsByBidId(ID bidId) throws BbmFinderException {
-<span class="nc" id="L157">		TimeOffBidActivityDAO dao = null;</span>
-<span class="nc" id="L158">		Collection&lt;ID&gt; activityIds = new ArrayList&lt;ID&gt;();</span>
+
+<span class="nc bnc" id="L146" title="All 2 branches missed.">		if (!ThreadLocalCache.isEnabled()) {</span>
+<span class="nc" id="L147">			return getActivityIDsByBidIdFromDb(bidId);</span>
+		}
+
+<span class="nc" id="L150">		Map&lt;ID, Collection&lt;ID&gt;&gt; cache = ThreadLocalCache.getMap(&quot;TimeOffBidutil.getActivityIDsByBidId&quot;);</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">		if (cache.containsKey(bidId)) {</span>
+<span class="nc" id="L152">			return new ArrayList&lt;ID&gt;(cache.get(bidId));</span>
+		}
+
+<span class="nc" id="L155">		Collection&lt;ID&gt; result = getActivityIDsByBidIdFromDb(bidId);</span>
+<span class="nc" id="L156">		cache.put(bidId, result);</span>
+<span class="nc" id="L157">		return new ArrayList&lt;ID&gt;(result);</span>
+	}
+
+	public static Collection&lt;ID&gt; getActivityIDsByBidIdFromDb(ID bidId) throws BbmFinderException {
+<span class="nc" id="L161">		TimeOffBidActivityDAO dao = null;</span>
+<span class="nc" id="L162">		Collection&lt;ID&gt; activityIds = new ArrayList&lt;ID&gt;();</span>
 		try {
-<span class="nc" id="L160">			dao = new TimeOffBidActivityDAO();</span>
-<span class="nc" id="L161">			activityIds = dao.getActivityIDsByBidId(bidId);</span>
-<span class="nc" id="L162">		} catch (Exception e) {</span>
-<span class="nc" id="L163">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L164">			dao = new TimeOffBidActivityDAO();</span>
+<span class="nc" id="L165">			activityIds = dao.getActivityIDsByBidId(bidId);</span>
+<span class="nc" id="L166">		} catch (Exception e) {</span>
+<span class="nc" id="L167">			throw new BbmFinderException(e);</span>
 		} finally {
-<span class="nc bnc" id="L165" title="All 4 branches missed.">			if (dao != null) {</span>
-<span class="nc" id="L166">				dao.cleanUp();</span>
+<span class="nc bnc" id="L169" title="All 4 branches missed.">			if (dao != null) {</span>
+<span class="nc" id="L170">				dao.cleanUp();</span>
 			}
 		}
-<span class="nc" id="L169">		return activityIds;</span>
+<span class="nc" id="L173">		return activityIds;</span>
 	}
 
 	@SuppressWarnings(&quot;unchecked&quot;)
 	public static TimeZone getTimeZoneOfEmployee(ID employeeId) throws BbmFinderException {
-<span class="nc" id="L174">		TimeZone tz = TimeZone.getDefault();</span>
+<span class="nc" id="L178">		TimeZone tz = TimeZone.getDefault();</span>
 		try {
-<span class="nc" id="L176">			Collection&lt;WorkResourceAssignment&gt; wras = CacheUtilBBM.getWorkResourceAssnWithTZForWRID(employeeId);</span>
-<span class="nc bnc" id="L177" title="All 2 branches missed.">			if (!wras.isEmpty()) {</span>
+<span class="nc" id="L180">			Collection&lt;WorkResourceAssignment&gt; wras = CacheUtilBBM.getWorkResourceAssnWithTZForWRID(employeeId);</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">			if (!wras.isEmpty()) {</span>
 				// now look for overlap with now
-<span class="nc bnc" id="L179" title="All 2 branches missed.">				for (Iterator&lt;WorkResourceAssignment&gt; it = wras.iterator(); it.hasNext();) {</span>
-<span class="nc" id="L180">					WorkResourceAssignment wra = it.next();</span>
-<span class="nc bnc" id="L181" title="All 2 branches missed.">					if (TimePeriodUtil.overlap(wra.getStartTime(), wra.getEndTime(), new Date(), null)) {</span>
-<span class="nc" id="L182">						tz = wra.getStartTimeZone();</span>
-<span class="nc" id="L183">						break;</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">				for (Iterator&lt;WorkResourceAssignment&gt; it = wras.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L184">					WorkResourceAssignment wra = it.next();</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">					if (TimePeriodUtil.overlap(wra.getStartTime(), wra.getEndTime(), new Date(), null)) {</span>
+<span class="nc" id="L186">						tz = wra.getStartTimeZone();</span>
+<span class="nc" id="L187">						break;</span>
 					}
-<span class="nc" id="L185">				}</span>
+<span class="nc" id="L189">				}</span>
 			}
-<span class="nc" id="L187">		} catch (Exception e) {</span>
-<span class="nc" id="L188">			throw new BbmFinderException(e);</span>
-<span class="nc" id="L189">		}</span>
-<span class="nc" id="L190">		return tz;</span>
+<span class="nc" id="L191">		} catch (Exception e) {</span>
+<span class="nc" id="L192">			throw new BbmFinderException(e);</span>
+<span class="nc" id="L193">		}</span>
+<span class="nc" id="L194">		return tz;</span>
 	}
+	/**Find the choice range from choice list which is overlapped with a given range*/
+	public static TimeRange getChoiceRangeOverlapWithGivenRange(TimeRange givenRange, Collection&lt;TOChoice&gt; choices,boolean isForMultiMode) {
+<span class="nc" id="L198">		TimeRange resultRange = null;</span>
+<span class="nc" id="L199">		boolean isOverlapped = false;</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">		for (Iterator&lt;TOChoice&gt; it = choices.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L201">			TOChoice considerChoice = it.next();</span>
+<span class="nc" id="L202">			TimeRange considerChoiceRange = new TimeRange(considerChoice.getStartDate(), considerChoice.getEndDate());</span>
+<span class="nc" id="L203">			boolean isCover = considerChoiceRange.isInside(givenRange);</span>
+<span class="nc" id="L204">			boolean isInside = givenRange.isInside(considerChoiceRange);</span>
+			//We dont count givenRange.isInside(approveChoiceRange) 
+			//when using this utility for soft validation rule TimeOffBidRequestNotOverlapValidationRule
+			//since in this case, 
+			//The given range is completely contained within a block of scheduled time off 
+<span class="nc bnc" id="L209" title="All 4 branches missed.">			boolean toChoiceOverlapStart = givenRange.getStartDate().before(considerChoice.getStartDate()) &amp;&amp; considerChoice.getStartDate().before(givenRange.getEndDate());</span>
+<span class="nc bnc" id="L210" title="All 4 branches missed.">			boolean toChoiceOverlapEnd = givenRange.getStartDate().before(considerChoice.getEndDate()) &amp;&amp; considerChoice.getEndDate().before(givenRange.getEndDate());</span>
+<span class="nc bnc" id="L211" title="All 10 branches missed.">			isOverlapped = isCover || toChoiceOverlapStart || toChoiceOverlapEnd||(isForMultiMode&amp;&amp;isInside);</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">			if (isOverlapped) {</span>
+<span class="nc" id="L213">				resultRange = considerChoiceRange;</span>
+<span class="nc" id="L214">				break;</span>
+			}
+<span class="nc" id="L216">		}</span>
+<span class="nc" id="L217">		return resultRange;</span>
+	}
+
 
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

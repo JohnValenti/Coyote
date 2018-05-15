@@ -49,14 +49,14 @@ import com.witness.ejb.core.base.CoreFinderException;
 import com.witness.ejb.core.security.UserManager;
 import com.witness.ejb.core.security.model.User;
 
-<span class="fc" id="L52">public class ScheduleMessageSchedulerEJB extends SessionEJBBase {</span>
-<span class="fc" id="L53">	private static final Object _CREATE_LOCK = new Object();</span>
+<span class="nc" id="L52">public class ScheduleMessageSchedulerEJB extends SessionEJBBase {</span>
+<span class="nc" id="L53">	private static final Object _CREATE_LOCK = new Object();</span>
 
 	private static final int REQUEST_CONTINUE = SchedulingRequest.CONTINUE_SCHEDULE;
 	public static final int DEFAULT_NO_OF_CPU = 5;
 
 	// progress percentage for a completed job
-	private static final int COMPLETED_PERCENTAGE_PROGRESS = ScheduleMessageSchedulerUtil.COMPLETED_PERCENTAGE_PROGRESS;
+	private static final int COMPLETED_PERCENTAGE_PROGRESS = ScheduleMessageSchedulerHelper.COMPLETED_PERCENTAGE_PROGRESS;
 	private static final int DAYS_IN_WEEK = 7;
 	private static final int DAYS_IN_THREE_WEEKS = 3 * DAYS_IN_WEEK;
 
@@ -69,9 +69,12 @@ import com.witness.ejb.core.security.model.User;
 	// 15 minutes
 	private static final int DEFAULT_GIVE_UP_TIME = 900000;
 
-<span class="fc" id="L72">	private static Category m_cat = Log.initCategory(ScheduleMessageSchedulerEJB.class.getName());</span>
+	private static final String COULD_NOT_SCHEDULE_DUE_TO_FSSERVER_ERROR =
+			&quot;This could not be scheduled because of the integration server error!&quot;;
 
-<span class="fc" id="L74">	private boolean isWhatIf = false;</span>
+<span class="nc" id="L75">	private static Category m_cat = Log.initCategory(ScheduleMessageSchedulerEJB.class.getName());</span>
+
+<span class="nc" id="L77">	private boolean isWhatIf = false;</span>
 
 	private FacadeCorbaFacadeManager facadeCorbaFacadeManager;
 
@@ -81,11 +84,11 @@ import com.witness.ejb.core.security.model.User;
 
 	private UserManager userManager;
 
-	private ScheduleMessageSchedulerUtil schedulerUtil;
-	
+	private ScheduleMessageSchedulerHelper schedulerHelper;
+
 	{
-<span class="fc" id="L87">		super.init(ScheduleMessageSchedulerEJB.class.getName());</span>
-<span class="fc" id="L88">	}</span>
+<span class="nc" id="L90">		super.init(ScheduleMessageSchedulerEJB.class.getName());</span>
+<span class="nc" id="L91">	}</span>
 
 	/**
 	 * Perform one-time initialization of this EJB instance
@@ -93,41 +96,41 @@ import com.witness.ejb.core.security.model.User;
 	public void onEjbCreate() {
 		try {
 			// First query environment to get WIF setting from DD
-<span class="fc" id="L96">			Context initialContext = new InitialContext();</span>
-<span class="fc" id="L97">			Boolean wif = (Boolean) initialContext.lookup(&quot;java:comp/env/WIF&quot;);</span>
-<span class="pc bpc" id="L98" title="1 of 2 branches missed.">			if (wif != null) {</span>
-<span class="fc" id="L99">				isWhatIf = wif.booleanValue();</span>
+<span class="nc" id="L99">			Context initialContext = new InitialContext();</span>
+<span class="nc" id="L100">			Boolean wif = (Boolean) initialContext.lookup(&quot;java:comp/env/WIF&quot;);</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">			if (wif != null) {</span>
+<span class="nc" id="L102">				isWhatIf = wif.booleanValue();</span>
 			}
-<span class="fc" id="L101">			facadeCorbaFacadeManager = FacadeManagerFactory.getFacadeCorbaFacadeManager();</span>
-<span class="fc" id="L102">			campaignManager = WfmManagerFactory.getCampaignManager(isWhatIf);</span>
-<span class="fc" id="L103">			dbConfigManager = BbmManagerFactory.getDBConfigManager(isWhatIf);</span>
-<span class="fc" id="L104">			userManager = CoreManagerFactory.getUserManager(isWhatIf);</span>
-<span class="fc" id="L105">			schedulerUtil = new ScheduleMessageSchedulerUtil();</span>
+<span class="nc" id="L104">			facadeCorbaFacadeManager = FacadeManagerFactory.getFacadeCorbaFacadeManager();</span>
+<span class="nc" id="L105">			campaignManager = WfmManagerFactory.getCampaignManager(isWhatIf);</span>
+<span class="nc" id="L106">			dbConfigManager = BbmManagerFactory.getDBConfigManager(isWhatIf);</span>
+<span class="nc" id="L107">			userManager = CoreManagerFactory.getUserManager(isWhatIf);</span>
+<span class="nc" id="L108">			schedulerHelper = new ScheduleMessageSchedulerHelper();</span>
 
-<span class="nc" id="L107">		} catch (Exception e) {</span>
-<span class="nc" id="L108">			handleException(&quot;onEjbCreate&quot;, e, false);</span>
-<span class="fc" id="L109">		}</span>
-<span class="fc" id="L110">	}</span>
+<span class="nc" id="L110">		} catch (Exception e) {</span>
+<span class="nc" id="L111">			handleException(&quot;onEjbCreate&quot;, e, false);</span>
+<span class="nc" id="L112">		}</span>
+<span class="nc" id="L113">	}</span>
 
 	protected Category getCategory() {
-<span class="fc" id="L113">		return m_cat;</span>
+<span class="nc" id="L116">		return m_cat;</span>
 	}
 
 	public ID createMessage(ScheduleRequestsMessage message) throws BbmCreateException {
-<span class="pc bpc" id="L117" title="1 of 2 branches missed.">		if (message == null) {</span>
-<span class="nc" id="L118">			throw new IllegalArgumentException(&quot;The message to be persisted in empty&quot;);</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">		if (message == null) {</span>
+<span class="nc" id="L121">			throw new IllegalArgumentException(&quot;The message to be persisted in empty&quot;);</span>
 		}
 
-<span class="fc" id="L121">		ID created = null;</span>
-<span class="pc bpc" id="L122" title="1 of 2 branches missed.">		if (schedulerUtil.validateSecondaryParamsAndUpdateInvalidRequests(message)) {</span>
+<span class="nc" id="L124">		ID created = null;</span>
+<span class="nc bnc" id="L125" title="All 2 branches missed.">		if (schedulerHelper.validateSecondaryParamsAndUpdateInvalidRequests(message)) {</span>
 			// insert the scheduling parameters
-<span class="fc" id="L124">			created = createDBMessage(message);</span>
+<span class="nc" id="L127">			created = createDBMessage(message);</span>
 			// insert secondary scheduling parameters
-<span class="fc" id="L126">			schedulerUtil.createSecondaryParameters(message, created);</span>
+<span class="nc" id="L129">			schedulerHelper.createSecondaryParameters(message, created);</span>
 			// insert the mappings between message to requests
-<span class="fc" id="L128">			schedulerUtil.createRequestMappings(message, created);</span>
+<span class="nc" id="L131">			schedulerHelper.createRequestMappings(message, created);</span>
 		}
-<span class="fc" id="L130">		return created;</span>
+<span class="nc" id="L133">		return created;</span>
 	}
 
 	/**
@@ -137,31 +140,34 @@ import com.witness.ejb.core.security.model.User;
 	 * opposed to just processing messages in the order in which they arrive.
 	 */
 	public void scheduleReadyRequests() {
-<span class="fc" id="L140">		methodStart(&quot;scheduleReadyRequests&quot;);</span>
+<span class="nc" id="L143">		methodStart(&quot;scheduleReadyRequests&quot;);</span>
 		// get the capacity that we can schedule now
 		// get all the messages and try to consume one by one
 		// get the request IDs for a message
 		try {
-<span class="fc" id="L145">			int availableServers = checkServersAndUpdateStatusForNonAvailability();</span>
-<span class="fc bfc" id="L146" title="All 2 branches covered.">			if (availableServers &lt;= 0) {</span>
-<span class="fc" id="L147">				m_cat.error(&quot;Scheduling not done due to the non-availability of FS server to schedule.&quot;);</span>
-<span class="fc" id="L148">				return;</span>
+<span class="nc" id="L148">			int availableServers = checkServersAndUpdateStatusForNonAvailability();</span>
+<span class="nc" id="L149">			Collection&lt;ScheduleMessage&gt; allMessages = schedulerHelper.getAllMessages();</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">			if (availableServers &lt;= 0) {</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">				if (!allMessages.isEmpty()) {</span>
+<span class="nc" id="L152">					m_cat.error(&quot;Scheduling not done due to the non-availability of FS server to schedule.&quot;);</span>
+				}
+<span class="nc" id="L154">				return;</span>
 			}
-<span class="fc" id="L150">			scheduleMessages(availableServers);</span>
-<span class="nc" id="L151">		} catch (BbmFinderException e1) {</span>
-<span class="nc" id="L152">			m_cat.error(&quot;Could not get Request messages&quot;, e1);</span>
-<span class="nc" id="L153">		} catch (RemoteException re) {</span>
-<span class="nc" id="L154">			m_cat.error(&quot;Error scheduling the requests. They will be re-tried latter&quot;, re);</span>
-<span class="nc" id="L155">		} catch (MultiUserException e) {</span>
-<span class="nc" id="L156">			m_cat.error(&quot;Error updating the request/message&quot;, e);</span>
-<span class="nc" id="L157">		} catch (BbmUpdateException e) {</span>
-<span class="nc" id="L158">			m_cat.error(&quot;Error updating the request&quot;, e);</span>
-<span class="nc" id="L159">		} catch (Exception any) {</span>
-<span class="nc" id="L160">			m_cat.error(&quot;Error scheduling the requests. They will be re-tried latter&quot;, any);</span>
+<span class="nc" id="L156">			scheduleMessages(allMessages, availableServers);</span>
+<span class="nc" id="L157">		} catch (BbmFinderException e1) {</span>
+<span class="nc" id="L158">			m_cat.error(&quot;Could not get Request messages&quot;, e1);</span>
+<span class="nc" id="L159">		} catch (RemoteException re) {</span>
+<span class="nc" id="L160">			m_cat.error(&quot;Error scheduling the requests. They will be re-tried latter&quot;, re);</span>
+<span class="nc" id="L161">		} catch (MultiUserException e) {</span>
+<span class="nc" id="L162">			m_cat.error(&quot;Error updating the request/message&quot;, e);</span>
+<span class="nc" id="L163">		} catch (BbmUpdateException e) {</span>
+<span class="nc" id="L164">			m_cat.error(&quot;Error updating the request&quot;, e);</span>
+<span class="nc" id="L165">		} catch (Exception any) {</span>
+<span class="nc" id="L166">			m_cat.error(&quot;Error scheduling the requests. They will be re-tried latter&quot;, any);</span>
 		} finally {
-<span class="pc" id="L162">			methodFinish();</span>
-<span class="pc" id="L163">		}</span>
-<span class="fc" id="L164">	}</span>
+<span class="nc" id="L168">			methodFinish();</span>
+<span class="nc" id="L169">		}</span>
+<span class="nc" id="L170">	}</span>
 
 	/**
 	 * Copies the scheduling state for the in-progress requests and clears the
@@ -169,86 +175,85 @@ import com.witness.ejb.core.security.model.User;
 	 * and ScheduleMessage tables.
 	 */
 	public void updateStatusAndClearCompletedRequests() {
-<span class="fc" id="L172">		methodStart(&quot;updateStatusAndClearCompletedRequests&quot;);</span>
+<span class="nc" id="L178">		methodStart(&quot;updateStatusAndClearCompletedRequests&quot;);</span>
 		// clear schedule state from spShedStatus tables and update the
 		// WSAutoScheduleRequest tables
 		// get all the requests with status 'P'
 		try {
-<span class="fc" id="L177">			List&lt;WSAutoScheduleRequest&gt; requests = schedulerUtil.getRequestsByStatus(null,</span>
+<span class="nc" id="L183">			List&lt;WSAutoScheduleRequest&gt; requests = schedulerHelper.getRequestsByStatus(null,</span>
 					WSAutoScheduleRequest.SCHEDULE_STATUS_IN_PROGRESS);
-			
-<span class="fc bfc" id="L180" title="All 2 branches covered.">			if (!requests.isEmpty()) {</span>
-<span class="fc" id="L181">				List&lt;WSAutoScheduleRequest&gt; requestsToBeUpdated = updateStatus(requests);</span>
-<span class="pc bpc" id="L182" title="1 of 2 branches missed.">				if (!requestsToBeUpdated.isEmpty()) {</span>
-<span class="fc" id="L183">					schedulerUtil.updateRequests(requestsToBeUpdated);</span>
+
+<span class="nc bnc" id="L186" title="All 2 branches missed.">			if (!requests.isEmpty()) {</span>
+<span class="nc" id="L187">				List&lt;WSAutoScheduleRequest&gt; requestsToBeUpdated = updateStatus(requests);</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">				if (!requestsToBeUpdated.isEmpty()) {</span>
+<span class="nc" id="L189">					schedulerHelper.updateRequests(requestsToBeUpdated);</span>
 				}
 			}
 			// clear message, mappings and parameters tables if there are
 			// no more requests to process
-<span class="fc" id="L188">			schedulerUtil.clearCompletedMessages();</span>
+<span class="nc" id="L194">			schedulerHelper.clearCompletedMessages();</span>
 
-<span class="nc" id="L190">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L191">			m_cat.error(&quot;Exception while getting/clearing scheduling status from Campaign Manager &quot;, e);</span>
-<span class="nc" id="L192">		} catch (RemoteException e) {</span>
-<span class="nc" id="L193">			m_cat.error(&quot;Exception while clearing the schedule state&quot;, e);</span>
-<span class="nc" id="L194">		} catch (JdmoException e) {</span>
-<span class="nc" id="L195">			m_cat.error(&quot;Exception while updating scheduling status &quot;, e);</span>
-<span class="nc" id="L196">		} catch (MultiUserException e) {</span>
-<span class="nc" id="L197">			m_cat.error(&quot;Error while updating the scheduling status to the requests&quot;, e);</span>
-<span class="nc" id="L198">		} catch (BbmUpdateException e) {</span>
-<span class="nc" id="L199">			m_cat.error(&quot;Error while updating the scheduling status to the requests&quot;, e);</span>
-<span class="nc" id="L200">		} catch (BbmRemoveException e) {</span>
-<span class="nc" id="L201">			m_cat.error(&quot;Could not clear completed messages&quot;, e);</span>
+<span class="nc" id="L196">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L197">			m_cat.error(&quot;Exception while getting/clearing scheduling status from Campaign Manager &quot;, e);</span>
+<span class="nc" id="L198">		} catch (RemoteException e) {</span>
+<span class="nc" id="L199">			m_cat.error(&quot;Exception while clearing the schedule state&quot;, e);</span>
+<span class="nc" id="L200">		} catch (JdmoException e) {</span>
+<span class="nc" id="L201">			m_cat.error(&quot;Exception while updating scheduling status &quot;, e);</span>
+<span class="nc" id="L202">		} catch (MultiUserException e) {</span>
+<span class="nc" id="L203">			m_cat.error(&quot;Error while updating the scheduling status to the requests&quot;, e);</span>
+<span class="nc" id="L204">		} catch (BbmUpdateException e) {</span>
+<span class="nc" id="L205">			m_cat.error(&quot;Error while updating the scheduling status to the requests&quot;, e);</span>
+<span class="nc" id="L206">		} catch (BbmRemoveException e) {</span>
+<span class="nc" id="L207">			m_cat.error(&quot;Could not clear completed messages&quot;, e);</span>
 		} finally {
-<span class="pc" id="L203">			methodFinish();</span>
-<span class="pc" id="L204">		}</span>
-<span class="fc" id="L205">	}</span>
+<span class="nc" id="L209">			methodFinish();</span>
+<span class="nc" id="L210">		}</span>
+<span class="nc" id="L211">	}</span>
 
 	/**
 	 * Sets the older requests created when the message was not persisted to DB
 	 * as these cannot be processed any longer
 	 */
 	public void clearOrphanRequests() {
-<span class="fc" id="L212">		methodStart(&quot;clearOrphanRequests&quot;);</span>
+<span class="nc" id="L218">		methodStart(&quot;clearOrphanRequests&quot;);</span>
 		// what if these messages get hit before the message is created?
 		// Do a timecheck ...clean only those that are more than a week old
-<span class="fc" id="L215">		WSAutoScheduleRequestDAO dao = new WSAutoScheduleRequestDAO();</span>
-<span class="fc" id="L216">		Calendar cal = Calendar.getInstance();</span>
-<span class="fc" id="L217">		cal.add(Calendar.DAY_OF_MONTH, -DAYS_IN_WEEK);</span>
+<span class="nc" id="L221">		WSAutoScheduleRequestDAO dao = new WSAutoScheduleRequestDAO();</span>
+<span class="nc" id="L222">		Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L223">		cal.add(Calendar.DAY_OF_MONTH, -DAYS_IN_WEEK);</span>
 		try {
 			// get the requests that are not connected
-<span class="fc" id="L220">			String[] statuses = { WSAutoScheduleRequest.SCHEDULE_STATUS_NEW,</span>
+<span class="nc" id="L226">			String[] statuses = { WSAutoScheduleRequest.SCHEDULE_STATUS_NEW,</span>
 					WSAutoScheduleRequest.SCHEDULE_STATUS_IN_PROGRESS };
-<span class="fc" id="L222">			List&lt;ID&gt; requestIDs = dao.getRequestIDsNotLinkedToMessageByStatus(statuses, cal.getTime());</span>
-<span class="pc bpc" id="L223" title="1 of 2 branches missed.">			if (!requestIDs.isEmpty()) {</span>
-<span class="nc" id="L224">				m_cat.warn(&quot;Cleared &quot; + requestIDs.size() + &quot; requests not connected to schedule message.&quot;);</span>
-<span class="nc" id="L225">				dao.updateScheduleStatus(requestIDs, null, WSAutoScheduleRequest.SCHEDULE_STATUS_ERROR,</span>
+<span class="nc" id="L228">			List&lt;ID&gt; requestIDs = dao.getRequestIDsNotLinkedToMessageByStatus(statuses, cal.getTime());</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">			if (!requestIDs.isEmpty()) {</span>
+<span class="nc" id="L230">				m_cat.warn(&quot;Cleared &quot; + requestIDs.size() + &quot; requests not connected to schedule message.&quot;);</span>
+<span class="nc" id="L231">				dao.updateScheduleStatus(requestIDs, null, WSAutoScheduleRequest.SCHEDULE_STATUS_ERROR,</span>
 						&quot;Could not process requests as the schedule message could not be located.&quot;);
 			}
-<span class="nc" id="L228">		} catch (Exception any) {</span>
-<span class="nc" id="L229">			m_cat.error(&quot;Error purging new and in-process requests not connected to schedule message.&quot;, any);</span>
+<span class="nc" id="L234">		} catch (Exception any) {</span>
+<span class="nc" id="L235">			m_cat.error(&quot;Error purging new and in-process requests not connected to schedule message.&quot;, any);</span>
 		} finally {
-<span class="pc" id="L231">			dao.cleanUp();</span>
-<span class="pc" id="L232">			methodFinish();</span>
-<span class="pc" id="L233">		}</span>
-<span class="fc" id="L234">	}</span>
-	
+<span class="nc" id="L237">			dao.cleanUp();</span>
+<span class="nc" id="L238">			methodFinish();</span>
+<span class="nc" id="L239">		}</span>
+<span class="nc" id="L240">	}</span>
+
+
 	/**
 	 * Schedules messages if there is a free server to schedule.
 	 */
-	private void scheduleMessages(int availableServers)
+	private void scheduleMessages(Collection&lt;ScheduleMessage&gt; allMessages, int availableServers)
 			throws BbmFinderException, MultiUserException, BbmUpdateException, RemoteException {
-<span class="fc" id="L241">		Collection&lt;ScheduleMessage&gt; allMessages = schedulerUtil.getAllMessages();</span>
-
-<span class="fc bfc" id="L243" title="All 2 branches covered.">		for (ScheduleMessage message : allMessages) {</span>
-<span class="pc bpc" id="L244" title="1 of 2 branches missed.">			if (doesFreeServerExist(availableServers)) {</span>
-<span class="fc" id="L245">				scheduleMessage(message, availableServers);</span>
+<span class="nc bnc" id="L248" title="All 2 branches missed.">		for (ScheduleMessage message : allMessages) {</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">			if (doesFreeServerExist(availableServers)) {</span>
+<span class="nc" id="L250">				scheduleMessage(message, availableServers);</span>
 			} else {
 				// cannot schedule any more as there is no free server
 				break;
 			}
-<span class="fc" id="L250">		}</span>
-<span class="fc" id="L251">	}</span>
+<span class="nc" id="L255">		}</span>
+<span class="nc" id="L256">	}</span>
 
 	/**
 	 * Schedules the requests of a message (as many as possible) based on the
@@ -257,206 +262,206 @@ import com.witness.ejb.core.security.model.User;
 	private boolean scheduleMessage(ScheduleMessage message, int availableServers)
 			throws MultiUserException, BbmUpdateException, RemoteException {
 
-<span class="fc" id="L260">		boolean messageScheduled = false;</span>
-<span class="fc" id="L261">		Collection&lt;ScheduleMessageRequestMapping&gt; mappings = schedulerUtil.getMappings(message.getID());</span>
-<span class="pc bpc" id="L262" title="2 of 4 branches missed.">		if (mappings == null || mappings.isEmpty()) {</span>
-<span class="nc" id="L263">			return false;</span>
+<span class="nc" id="L265">		boolean messageScheduled = false;</span>
+<span class="nc" id="L266">		Collection&lt;ScheduleMessageRequestMapping&gt; mappings = schedulerHelper.getMappings(message.getID());</span>
+<span class="nc bnc" id="L267" title="All 4 branches missed.">		if (mappings == null || mappings.isEmpty()) {</span>
+<span class="nc" id="L268">			return false;</span>
 		}
 		List&lt;WSAutoScheduleRequest&gt; requests;
 		try {
-<span class="fc" id="L267">			requests = schedulerUtil.getRequestsByStatus(schedulerUtil.getRequestIDs(mappings),</span>
+<span class="nc" id="L272">			requests = schedulerHelper.getRequestsByStatus(schedulerHelper.getRequestIDs(mappings),</span>
 					WSAutoScheduleRequest.SCHEDULE_STATUS_NEW);
-<span class="nc" id="L269">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L270">			m_cat.error(&quot;Could not get requests for message &quot; + message.getID(), e);</span>
-<span class="nc" id="L271">			return false;</span>
-<span class="fc" id="L272">		}</span>
-<span class="fc" id="L273">		messageScheduled = scheduleRequests(requests, message, availableServers);</span>
+<span class="nc" id="L274">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L275">			m_cat.error(&quot;Could not get requests for message &quot; + message.getID(), e);</span>
+<span class="nc" id="L276">			return false;</span>
+<span class="nc" id="L277">		}</span>
+<span class="nc" id="L278">		messageScheduled = scheduleRequests(requests, message, availableServers);</span>
 
-<span class="fc bfc" id="L275" title="All 2 branches covered.">		if (messageScheduled) {</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">		if (messageScheduled) {</span>
 			// update the message
 			// this will help in all messages being treated fairly in a
 			// round robin rather than do messages sequentially
-<span class="fc" id="L279">			schedulerUtil.updateMessage(message);</span>
+<span class="nc" id="L284">			schedulerHelper.updateMessage(message);</span>
 		}
-<span class="fc" id="L281">		return messageScheduled;</span>
+<span class="nc" id="L286">		return messageScheduled;</span>
 	}
 
 	/**
 	 * Schedules the requests (as many as possible) based on the availability of
 	 * the server to schedule. Returns true if atleast one request is scheduled.
-	 * 
+	 *
 	 * @throws BbmUpdateException
 	 * @throws MultiUserException
 	 */
 	private boolean scheduleRequests(List&lt;WSAutoScheduleRequest&gt; requests, ScheduleMessage message,
 			int availableServers) throws RemoteException, MultiUserException, BbmUpdateException {
-<span class="fc" id="L293">		boolean requestScheduled = false;</span>
-<span class="fc bfc" id="L294" title="All 2 branches covered.">		for (WSAutoScheduleRequest request : requests) {</span>
+<span class="nc" id="L298">		boolean requestScheduled = false;</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">		for (WSAutoScheduleRequest request : requests) {</span>
 			// check for retry count
-<span class="pc bpc" id="L296" title="1 of 2 branches missed.">			if (checkForErrorsOrMaxRetriesAndUpdate(request)</span>
-<span class="pc bpc" id="L297" title="3 of 4 branches missed.">					|| (!message.isOverrideSchedules() &amp;&amp; schedulerUtil.checkIfAlreadyScheduledAndUpdate(request))) {</span>
-<span class="nc" id="L298">				continue;</span>
+<span class="nc bnc" id="L301" title="All 2 branches missed.">			if (checkForErrorsOrMaxRetriesAndUpdate(request)</span>
+<span class="nc bnc" id="L302" title="All 4 branches missed.">					|| (!message.isOverrideSchedules() &amp;&amp; schedulerHelper.checkIfAlreadyScheduledAndUpdate(request))) {</span>
+<span class="nc" id="L303">				continue;</span>
 			}
-<span class="pc bpc" id="L300" title="1 of 2 branches missed.">			if (!doesFreeServerExist(availableServers)) {</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">			if (!doesFreeServerExist(availableServers)) {</span>
 				// when there is no free server, we just return
 				// there is no point to go through the whole list.
-<span class="nc" id="L303">				return requestScheduled;</span>
+<span class="nc" id="L308">				return requestScheduled;</span>
 			}
-<span class="fc bfc" id="L305" title="All 2 branches covered.">			if (canScheduleNow(request.getSPID(), request.getMode(), message.isScheduleInOrder())</span>
-<span class="pc bpc" id="L306" title="1 of 2 branches missed.">					&amp;&amp; scheduleRequest(request, message)) {</span>
-<span class="fc" id="L307">				requestScheduled = true;</span>
+<span class="nc bnc" id="L310" title="All 2 branches missed.">			if (canScheduleNow(request.getSPID(), request.getMode(), message.isScheduleInOrder())</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">					&amp;&amp; scheduleRequest(request, message)) {</span>
+<span class="nc" id="L312">				requestScheduled = true;</span>
 			}
-<span class="fc" id="L309">		}</span>
-<span class="fc" id="L310">		return requestScheduled;</span>
+<span class="nc" id="L314">		}</span>
+<span class="nc" id="L315">		return requestScheduled;</span>
 	}
 
 	/**
 	 * Checks if the request has exceeded the max-retries/ max number of errors
 	 * and it has exceeded, updated the request as error
-	 * 
+	 *
 	 * @param request
 	 * @return true if the request has exceeded max-retries for scheduling of
 	 *         (in case the sp is not picked up by FS) max-retries after
 	 *         integration server errors.
 	 */
 	private boolean checkForErrorsOrMaxRetriesAndUpdate(WSAutoScheduleRequest request) {
-<span class="fc" id="L323">		boolean hasErrorOrMaxRetries = false;</span>
-<span class="fc" id="L324">		String message = request.getFormattedFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE);</span>
-<span class="fc" id="L325">		String newErrorMessage = null;</span>
-<span class="pc bpc" id="L326" title="1 of 2 branches missed.">		if (request.getFieldValueInt(WSAutoScheduleRequestFieldInfo.RETRYCOUNT) &gt; getSchedulingRetryCount()) {</span>
-<span class="nc" id="L327">			hasErrorOrMaxRetries = true;</span>
-<span class="nc" id="L328">			newErrorMessage = &quot;This could not be scheduled after &quot;</span>
-<span class="nc" id="L329">					+ request.getFieldValueInt(WSAutoScheduleRequestFieldInfo.RETRYCOUNT)</span>
+<span class="nc" id="L328">		boolean hasErrorOrMaxRetries = false;</span>
+<span class="nc" id="L329">		String message = request.getFormattedFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE);</span>
+<span class="nc" id="L330">		String newErrorMessage = null;</span>
+<span class="nc bnc" id="L331" title="All 2 branches missed.">		if (request.getFieldValueInt(WSAutoScheduleRequestFieldInfo.RETRYCOUNT) &gt; getSchedulingRetryCount()) {</span>
+<span class="nc" id="L332">			hasErrorOrMaxRetries = true;</span>
+<span class="nc" id="L333">			newErrorMessage = &quot;This could not be scheduled after &quot;</span>
+<span class="nc" id="L334">					+ request.getFieldValueInt(WSAutoScheduleRequestFieldInfo.RETRYCOUNT)</span>
 					+ &quot; retries. This will not be scheduled.&quot;;
-<span class="fc" id="L331">		} else if (request</span>
-<span class="pc bpc" id="L332" title="1 of 2 branches missed.">				.getFieldValueInt(WSAutoScheduleRequestFieldInfo.ERRORRETRYCOUNT) &gt; getSchedulingErrorRetryCount()) {</span>
-<span class="nc" id="L333">			hasErrorOrMaxRetries = true;</span>
-<span class="nc" id="L334">			newErrorMessage = &quot;This could not be scheduled because of the integration server error!&quot;;</span>
+<span class="nc" id="L336">		} else if (request</span>
+<span class="nc bnc" id="L337" title="All 2 branches missed.">				.getFieldValueInt(WSAutoScheduleRequestFieldInfo.ERRORRETRYCOUNT) &gt; getSchedulingErrorRetryCount()) {</span>
+<span class="nc" id="L338">			hasErrorOrMaxRetries = true;</span>
+<span class="nc" id="L339">			newErrorMessage = COULD_NOT_SCHEDULE_DUE_TO_FSSERVER_ERROR;</span>
 		}
 
-<span class="pc bpc" id="L337" title="1 of 2 branches missed.">		if (hasErrorOrMaxRetries) {</span>
+<span class="nc bnc" id="L342" title="All 2 branches missed.">		if (hasErrorOrMaxRetries) {</span>
 			try {
-<span class="nc bnc" id="L339" title="All 2 branches missed.">				schedulerUtil.updateScheduleStatusForRequest(request.getID(), WSAutoScheduleRequest.SCHEDULE_STATUS_NEW,</span>
+<span class="nc bnc" id="L344" title="All 2 branches missed.">				schedulerHelper.updateScheduleStatusForRequest(request.getID(), WSAutoScheduleRequest.SCHEDULE_STATUS_NEW,</span>
 						WSAutoScheduleRequest.SCHEDULE_STATUS_ERROR,
 						(message != null) ? message + &quot; &quot; + newErrorMessage : newErrorMessage);
-<span class="nc" id="L342">			} catch (Exception e) {</span>
-<span class="nc" id="L343">				m_cat.error(&quot;Error updating the Scheduling Request of ID &quot; + request.getID()</span>
-<span class="nc" id="L344">						+ &quot; for the scheduling period &quot; + request.getSPID(), e);</span>
-<span class="nc" id="L345">			}</span>
+<span class="nc" id="L347">			} catch (Exception e) {</span>
+<span class="nc" id="L348">				m_cat.error(&quot;Error updating the Scheduling Request of ID &quot; + request.getID()</span>
+<span class="nc" id="L349">						+ &quot; for the scheduling period &quot; + request.getSPID(), e);</span>
+<span class="nc" id="L350">			}</span>
 		}
-<span class="fc" id="L347">		return hasErrorOrMaxRetries;</span>
+<span class="nc" id="L352">		return hasErrorOrMaxRetries;</span>
 	}
 
 	/**
 	 * Returns true if the scheduling is successfully initiated for the request
-	 * 
+	 *
 	 * @throws BbmUpdateException
 	 * @throws MultiUserException
 	 */
 	private boolean scheduleRequest(WSAutoScheduleRequest request, ScheduleMessage message)
 			throws RemoteException, MultiUserException, BbmUpdateException {
-<span class="fc" id="L358">		boolean requestScheduled = false;</span>
-<span class="fc" id="L359">		int spID = request.getSPID();</span>
+<span class="nc" id="L363">		boolean requestScheduled = false;</span>
+<span class="nc" id="L364">		int spID = request.getSPID();</span>
 		// if able to trigger the auto scheduling for this,
 		// update the status to 'P'
 
 		// QC-124839 get the user from the request
-<span class="fc" id="L364">		String user = request.getFormattedFieldValue(WSAutoScheduleRequestFieldInfo.MODIFIEDBY);</span>
-<span class="pc bpc" id="L365" title="1 of 2 branches missed.">		if (user == null) {</span>
+<span class="nc" id="L369">		String user = request.getFormattedFieldValue(WSAutoScheduleRequestFieldInfo.MODIFIEDBY);</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">		if (user == null) {</span>
 			// user the super user
-<span class="nc" id="L367">			user = getSuperUser();</span>
+<span class="nc" id="L372">			user = getSuperUser();</span>
 		}
-<span class="fc" id="L369">		setSecondarySchedulingParameters(message.getID(), ID.fromInt(spID));</span>
+<span class="nc" id="L374">		setSecondarySchedulingParameters(message.getID(), ID.fromInt(spID));</span>
 
-<span class="fc" id="L371">		int status = facadeCorbaFacadeManager.recalcScheduling(user, getUserPassword(user, message.getUserSeal()),</span>
-<span class="fc" id="L372">				message.isWhatIfMode(), message.getSchedulingAction().getActionID(), ID.fromInt(request.getSPID()),</span>
-<span class="fc" id="L373">				message.isEnableLQF(), message.isRecalcSubCampaigns(), schedulerUtil.extractParamters(message));</span>
+<span class="nc" id="L376">		int status = facadeCorbaFacadeManager.recalcScheduling(user, getUserPassword(user, message.getUserSeal()),</span>
+<span class="nc" id="L377">				message.isWhatIfMode(), message.getSchedulingAction().getActionID(), ID.fromInt(request.getSPID()),</span>
+<span class="nc" id="L378">				message.isEnableLQF(), message.isRecalcSubCampaigns(), schedulerHelper.extractParamters(message));</span>
 		// if status is an invalid code (like absence of
 		// adapter, we need to re-attempt to schedule
-<span class="pc bpc" id="L376" title="1 of 2 branches missed.">		if (status == 1) {</span>
+<span class="nc bnc" id="L381" title="All 2 branches missed.">		if (status == 1) {</span>
 			// typical success scenario
-<span class="fc" id="L378">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
+<span class="nc" id="L383">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
 					WSAutoScheduleRequest.SCHEDULE_STATUS_IN_PROGRESS);
-<span class="fc" id="L380">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.ERRORRETRYCOUNT, 0);</span>
+<span class="nc" id="L385">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.ERRORRETRYCOUNT, 0);</span>
 			// Debug log message to indicate that the given
 			// sp
 			// were processed
-<span class="fc" id="L384">			m_cat.debug(&quot;Scheduling Triggered for the Scheduling Request of ID &quot; + request.getID()</span>
-<span class="fc" id="L385">					+ &quot; for the scheduling period &quot; + request.getSPID());</span>
-<span class="fc" id="L386">			requestScheduled = true;</span>
+<span class="nc" id="L389">			m_cat.debug(&quot;Scheduling Triggered for the Scheduling Request of ID &quot; + request.getID()</span>
+<span class="nc" id="L390">					+ &quot; for the scheduling period &quot; + request.getSPID());</span>
+<span class="nc" id="L391">			requestScheduled = true;</span>
 		} else {
 			// remove the set scheduling parameters?
 			// need to add to the unscheduled
-<span class="nc" id="L390">			m_cat.warn(&quot;An attempt to schedule the Scheduling Request of ID &quot; + request.getID()</span>
-<span class="nc" id="L391">					+ &quot; for the scheduling period &quot; + request.getSPID()</span>
+<span class="nc" id="L395">			m_cat.warn(&quot;An attempt to schedule the Scheduling Request of ID &quot; + request.getID()</span>
+<span class="nc" id="L396">					+ &quot; for the scheduling period &quot; + request.getSPID()</span>
 					+ &quot; failed. This will be reattempted at a later time. The error code from the Corba Facade Manager is &quot;
 					+ status + &quot;.&quot;);
-<span class="nc" id="L394">			int oldCount = request.getFieldValueInt(WSAutoScheduleRequestFieldInfo.ERRORRETRYCOUNT);</span>
-<span class="nc" id="L395">			oldCount++;</span>
-<span class="nc bnc" id="L396" title="All 2 branches missed.">			if (oldCount &gt;= getSchedulingErrorRetryCount()) {</span>
-<span class="nc" id="L397">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
+<span class="nc" id="L399">			int oldCount = request.getFieldValueInt(WSAutoScheduleRequestFieldInfo.ERRORRETRYCOUNT);</span>
+<span class="nc" id="L400">			oldCount++;</span>
+<span class="nc bnc" id="L401" title="All 2 branches missed.">			if (oldCount &gt;= getSchedulingErrorRetryCount()) {</span>
+<span class="nc" id="L402">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
 						WSAutoScheduleRequest.SCHEDULE_STATUS_ERROR);
 			}
 
-<span class="nc bnc" id="L401" title="All 2 branches missed.">			if (status == 3) {</span>
-<span class="nc" id="L402">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
+<span class="nc bnc" id="L406" title="All 2 branches missed.">			if (status == 3) {</span>
+<span class="nc" id="L407">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
 						&quot;There was an error connecting to the Integration Server.  Please verify that the integration server is running.&quot;);
 			}
-<span class="nc bnc" id="L405" title="All 2 branches missed.">			if (status == 4) {</span>
-<span class="nc" id="L406">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
+<span class="nc bnc" id="L410" title="All 2 branches missed.">			if (status == 4) {</span>
+<span class="nc" id="L411">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
 						&quot;There was an error with the configuration of the Integration Server.&quot;);
 			}
-<span class="nc" id="L409">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.ERRORRETRYCOUNT, oldCount);</span>
+<span class="nc" id="L414">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.ERRORRETRYCOUNT, oldCount);</span>
 		}
-<span class="fc" id="L411">		schedulerUtil.updateRequest(request);</span>
-<span class="fc" id="L412">		return requestScheduled;</span>
+<span class="nc" id="L416">		schedulerHelper.updateRequest(request);</span>
+<span class="nc" id="L417">		return requestScheduled;</span>
 	}
 
 	/**
 	 * Updates the status of the requests that need updation and returns the
 	 * requests to be updated.
-	 * 
+	 *
 	 * @throws RemoteException
 	 * @throws BbmFinderException
 	 * @throws JdmoException
 	 */
 	private List&lt;WSAutoScheduleRequest&gt; updateStatus(List&lt;WSAutoScheduleRequest&gt; requests)
 			throws BbmFinderException, RemoteException, JdmoException {
-<span class="fc" id="L425">		List&lt;WSAutoScheduleRequest&gt; requestsToBeUpdated = new ArrayList&lt;WSAutoScheduleRequest&gt;();</span>
+<span class="nc" id="L430">		List&lt;WSAutoScheduleRequest&gt; requestsToBeUpdated = new ArrayList&lt;WSAutoScheduleRequest&gt;();</span>
 		// get the scheduling action for requests
 		// this is needed for continue requests
-<span class="fc" id="L428">		Map&lt;ID, SchedulingAction&gt; schedulingActionByRequestID = schedulerUtil.getSchedulingActionForRequests(requests);</span>
+<span class="nc" id="L433">		Map&lt;ID, SchedulingAction&gt; schedulingActionByRequestID = schedulerHelper.getSchedulingActionForRequests(requests);</span>
 
-<span class="fc bfc" id="L430" title="All 2 branches covered.">		for (int i = 0; i &lt; requests.size(); i++) {</span>
-<span class="fc" id="L431">			WSAutoScheduleRequest request = requests.get(i);</span>
+<span class="nc bnc" id="L435" title="All 2 branches missed.">		for (int i = 0; i &lt; requests.size(); i++) {</span>
+<span class="nc" id="L436">			WSAutoScheduleRequest request = requests.get(i);</span>
 
-<span class="fc" id="L433">			int spIDInt = request.getSPID();</span>
-<span class="fc" id="L434">			ID spID = ID.fromInt(spIDInt);</span>
-<span class="fc" id="L435">			SchedulingAction schedulingAction = schedulingActionByRequestID.get(request.getID());</span>
-<span class="pc bpc" id="L436" title="1 of 2 branches missed.">			if (schedulingAction == null) {</span>
+<span class="nc" id="L438">			int spIDInt = request.getSPID();</span>
+<span class="nc" id="L439">			ID spID = ID.fromInt(spIDInt);</span>
+<span class="nc" id="L440">			SchedulingAction schedulingAction = schedulingActionByRequestID.get(request.getID());</span>
+<span class="nc bnc" id="L441" title="All 2 branches missed.">			if (schedulingAction == null) {</span>
 				// we can not further process this
 				// this is done to handle any left over records from earlier
 				// implementation
 				// they are to be marked as error
-<span class="nc" id="L441">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
+<span class="nc" id="L446">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
 						WSAutoScheduleRequest.SCHEDULE_STATUS_ERROR);
-<span class="nc" id="L443">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
+<span class="nc" id="L448">				request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
 						&quot;This request could not be processed as there is no scheduling information&quot;);
-<span class="nc" id="L445">				requestsToBeUpdated.add(request);</span>
-<span class="nc" id="L446">				continue;</span>
+<span class="nc" id="L450">				requestsToBeUpdated.add(request);</span>
+<span class="nc" id="L451">				continue;</span>
 			}
-<span class="fc" id="L448">			SchedulingState state = campaignManager.getSchedulingState(spID, schedulingAction.getActionCode());</span>
+<span class="nc" id="L453">			SchedulingState state = campaignManager.getSchedulingState(spID, schedulingAction.getActionCode());</span>
 
-<span class="pc bpc" id="L450" title="1 of 2 branches missed.">			if (state != null) {</span>
-<span class="fc" id="L451">				updateStatus(request, state, spID, schedulingAction);</span>
-<span class="fc" id="L452">				requestsToBeUpdated.add(request);</span>
+<span class="nc bnc" id="L455" title="All 2 branches missed.">			if (state != null) {</span>
+<span class="nc" id="L456">				updateStatus(request, state, spID, schedulingAction);</span>
+<span class="nc" id="L457">				requestsToBeUpdated.add(request);</span>
 			} else {
-<span class="nc bnc" id="L454" title="All 2 branches missed.">				if (updateRequestNotPickedUpByFS(request, spID, schedulingAction)) {</span>
-<span class="nc" id="L455">					requestsToBeUpdated.add(request);</span>
+<span class="nc bnc" id="L459" title="All 2 branches missed.">				if (updateRequestNotPickedUpByFS(request, spID, schedulingAction)) {</span>
+<span class="nc" id="L460">					requestsToBeUpdated.add(request);</span>
 				}
 			}
 		}
-<span class="fc" id="L459">		return requestsToBeUpdated;</span>
+<span class="nc" id="L464">		return requestsToBeUpdated;</span>
 	}
 
 	/**
@@ -465,35 +470,35 @@ import com.witness.ejb.core.security.model.User;
 	 */
 	private void updateStatus(WSAutoScheduleRequest request, SchedulingState state, ID spID,
 			SchedulingAction schedulingAction) {
-<span class="fc" id="L468">		boolean isStale = isScheduleStatusOld(state);</span>
-<span class="fc" id="L469">		int progress = state.getOverallStatus();</span>
+<span class="nc" id="L473">		boolean isStale = isScheduleStatusOld(state);</span>
+<span class="nc" id="L474">		int progress = state.getOverallStatus();</span>
 		// copy and update the ws request table and delete the state
 		// messages from spschedstatus tables
-<span class="fc" id="L472">		boolean hasError = schedulerUtil.copySchedulingStateToRequestAndGetErrorStatus(request, state);</span>
-<span class="fc" id="L473">		clearWarningMessages(state);</span>
+<span class="nc" id="L477">		boolean hasError = schedulerHelper.copySchedulingStateToRequestAndGetErrorStatus(request, state);</span>
+<span class="nc" id="L478">		clearWarningMessages(state);</span>
 
-<span class="pc bpc" id="L475" title="1 of 2 branches missed.">		if (state.hasWarning()</span>
-<span class="nc bnc" id="L476" title="All 4 branches missed.">				&amp;&amp; (WSAutoScheduleRequest.SCHEDULE_STATUS_IN_PROGRESS.equals(request.getSchedulingStatus()))</span>
+<span class="nc bnc" id="L480" title="All 2 branches missed.">		if (state.hasWarning()</span>
+<span class="nc bnc" id="L481" title="All 4 branches missed.">				&amp;&amp; (WSAutoScheduleRequest.SCHEDULE_STATUS_IN_PROGRESS.equals(request.getSchedulingStatus()))</span>
 				&amp;&amp; !isStale) {
 			// make a continue request
-<span class="nc" id="L479">			makeContinueRequest(spID, schedulingAction);</span>
+<span class="nc" id="L484">			makeContinueRequest(spID, schedulingAction);</span>
 		}
 
-<span class="pc bpc" id="L482" title="3 of 4 branches missed.">		if (isStale &amp;&amp; progress &lt; COMPLETED_PERCENTAGE_PROGRESS) {</span>
+<span class="nc bnc" id="L487" title="All 4 branches missed.">		if (isStale &amp;&amp; progress &lt; COMPLETED_PERCENTAGE_PROGRESS) {</span>
 			// update WSAutoScheduleRequest status and error message
-<span class="nc" id="L484">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
+<span class="nc" id="L489">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
 					WSAutoScheduleRequest.SCHEDULE_STATUS_ERROR);
-<span class="nc" id="L486">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
-<span class="nc" id="L487">					request.getStatusMessage() + &quot;|&quot; + &quot;Stopped By System due to Non-Progess&quot;);</span>
+<span class="nc" id="L491">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
+<span class="nc" id="L492">					request.getStatusMessage() + &quot;|&quot; + &quot;Stopped By System due to Non-Progess&quot;);</span>
 		}
 
-<span class="pc bpc" id="L490" title="5 of 6 branches missed.">		if (progress == COMPLETED_PERCENTAGE_PROGRESS || hasError || isStale) {</span>
+<span class="nc bnc" id="L495" title="All 6 branches missed.">		if (progress == COMPLETED_PERCENTAGE_PROGRESS || hasError || isStale) {</span>
 			// if there is a warning, we already put a continue
 			// request
 			// clear the state
-<span class="fc" id="L494">			clearSchedulingSession(spID, schedulingAction);</span>
+<span class="nc" id="L499">			clearSchedulingSession(spID, schedulingAction);</span>
 		}
-<span class="fc" id="L496">	}</span>
+<span class="nc" id="L501">	}</span>
 
 	/**
 	 * Updates the request if necessary. Updates when 1. Last updated time of
@@ -503,26 +508,26 @@ import com.witness.ejb.core.security.model.User;
 	private boolean updateRequestNotPickedUpByFS(WSAutoScheduleRequest request, ID spID,
 			SchedulingAction schedulingAction) {
 		// if it did not get picked up in 15 minutes
-<span class="nc" id="L506">		Date lastUpdated = request.getFieldValueDate(WSAutoScheduleRequestFieldInfo.LASTUPDATED);</span>
-<span class="nc bnc" id="L507" title="All 2 branches missed.">		if (lastUpdated == null) {</span>
-<span class="nc" id="L508">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.LASTUPDATED, Calendar.getInstance().getTime());</span>
-<span class="nc" id="L509">			return true;</span>
-<span class="nc bnc" id="L510" title="All 2 branches missed.">		} else if (isOld(lastUpdated, getGiveUpForClearing())) {</span>
+<span class="nc" id="L511">		Date lastUpdated = request.getFieldValueDate(WSAutoScheduleRequestFieldInfo.LASTUPDATED);</span>
+<span class="nc bnc" id="L512" title="All 2 branches missed.">		if (lastUpdated == null) {</span>
+<span class="nc" id="L513">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.LASTUPDATED, Calendar.getInstance().getTime());</span>
+<span class="nc" id="L514">			return true;</span>
+<span class="nc bnc" id="L515" title="All 2 branches missed.">		} else if (isOld(lastUpdated, getGiveUpForClearing())) {</span>
 			// probably never picked up by FS for some reason. we
 			// will re try
-<span class="nc" id="L513">			clearSchedulingSession(spID, schedulingAction);</span>
+<span class="nc" id="L518">			clearSchedulingSession(spID, schedulingAction);</span>
 			// we should attempt to retrigger
 			// set to new status and send a message again
-<span class="nc" id="L516">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
+<span class="nc" id="L521">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.SCHEDULESTATUS,</span>
 					WSAutoScheduleRequest.SCHEDULE_STATUS_NEW);
-<span class="nc" id="L518">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
+<span class="nc" id="L523">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.STATUSMESSAGE,</span>
 					&quot;Re trying the  scheduling due to a prior failure&quot;);
-<span class="nc" id="L520">			int retryCount = request.getFieldValueInt(WSAutoScheduleRequestFieldInfo.RETRYCOUNT);</span>
-<span class="nc" id="L521">			retryCount++;</span>
-<span class="nc" id="L522">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.RETRYCOUNT, retryCount);</span>
-<span class="nc" id="L523">			return true;</span>
+<span class="nc" id="L525">			int retryCount = request.getFieldValueInt(WSAutoScheduleRequestFieldInfo.RETRYCOUNT);</span>
+<span class="nc" id="L526">			retryCount++;</span>
+<span class="nc" id="L527">			request.setFieldValue(WSAutoScheduleRequestFieldInfo.RETRYCOUNT, retryCount);</span>
+<span class="nc" id="L528">			return true;</span>
 		}
-<span class="nc" id="L525">		return false;</span>
+<span class="nc" id="L530">		return false;</span>
 	}
 
 	/**
@@ -531,38 +536,38 @@ import com.witness.ejb.core.security.model.User;
 	private void makeContinueRequest(ID spID, SchedulingAction schedulingAction) {
 		// make a continue request
 		try {
-<span class="nc" id="L534">			SchedulingRequest schedRequest = new SchedulingRequest();</span>
-<span class="nc" id="L535">			schedRequest.setSPSID(spID);</span>
-<span class="nc" id="L536">			schedRequest.setRequest(REQUEST_CONTINUE);</span>
-<span class="nc" id="L537">			schedRequest.setMode(schedulingAction.getActionCode());</span>
-<span class="nc" id="L538">			campaignManager.makeSchedulingRequest(schedRequest);</span>
-<span class="nc" id="L539">		} catch (BbmCreateException e) {</span>
-<span class="nc" id="L540">			m_cat.error(&quot;Exception while continuing the scheduling for Scheduling Period &quot; + spID, e);</span>
-<span class="nc" id="L541">		} catch (RemoteException e) {</span>
-<span class="nc" id="L542">			m_cat.error(&quot;Remote exception while continuing the scheduling for Scheduling Period &quot; + spID, e);</span>
-<span class="nc" id="L543">		}</span>
-<span class="nc" id="L544">	}</span>
+<span class="nc" id="L539">			SchedulingRequest schedRequest = new SchedulingRequest();</span>
+<span class="nc" id="L540">			schedRequest.setSPSID(spID);</span>
+<span class="nc" id="L541">			schedRequest.setRequest(REQUEST_CONTINUE);</span>
+<span class="nc" id="L542">			schedRequest.setMode(schedulingAction.getActionCode());</span>
+<span class="nc" id="L543">			campaignManager.makeSchedulingRequest(schedRequest);</span>
+<span class="nc" id="L544">		} catch (BbmCreateException e) {</span>
+<span class="nc" id="L545">			m_cat.error(&quot;Exception while continuing the scheduling for Scheduling Period &quot; + spID, e);</span>
+<span class="nc" id="L546">		} catch (RemoteException e) {</span>
+<span class="nc" id="L547">			m_cat.error(&quot;Remote exception while continuing the scheduling for Scheduling Period &quot; + spID, e);</span>
+<span class="nc" id="L548">		}</span>
+<span class="nc" id="L549">	}</span>
 
 	/**
 	 * Clears the warning messages of the state
 	 */
 	private void clearWarningMessages(SchedulingState state) {
-<span class="fc" id="L550">		Collection&lt;SchedulingWarning&gt; warnings = state.getWarnings();</span>
-<span class="fc" id="L551">		List&lt;ID&gt; ids = new ArrayList&lt;ID&gt;();</span>
-<span class="pc bpc" id="L552" title="1 of 2 branches missed.">		for (SchedulingWarning warning : warnings) {</span>
-<span class="nc" id="L553">			ids.add(warning.getID());</span>
-<span class="nc" id="L554">		}</span>
+<span class="nc" id="L555">		Collection&lt;SchedulingWarning&gt; warnings = state.getWarnings();</span>
+<span class="nc" id="L556">		List&lt;ID&gt; ids = new ArrayList&lt;ID&gt;();</span>
+<span class="nc bnc" id="L557" title="All 2 branches missed.">		for (SchedulingWarning warning : warnings) {</span>
+<span class="nc" id="L558">			ids.add(warning.getID());</span>
+<span class="nc" id="L559">		}</span>
 
-<span class="pc bpc" id="L556" title="1 of 2 branches missed.">		if (!warnings.isEmpty()) {</span>
+<span class="nc bnc" id="L561" title="All 2 branches missed.">		if (!warnings.isEmpty()) {</span>
 			try {
-<span class="nc" id="L558">				campaignManager.clearSchedulingStateWarnings(ids);</span>
-<span class="nc" id="L559">			} catch (Exception e) {</span>
+<span class="nc" id="L563">				campaignManager.clearSchedulingStateWarnings(ids);</span>
+<span class="nc" id="L564">			} catch (Exception e) {</span>
 				// no big deal! the get Scheduling state in the DAO itself
 				// clears them sometimes
-<span class="nc" id="L562">				m_cat.warn(&quot;Could not find the warnings to clear!&quot;, e);</span>
-<span class="nc" id="L563">			}</span>
+<span class="nc" id="L567">				m_cat.warn(&quot;Could not find the warnings to clear!&quot;, e);</span>
+<span class="nc" id="L568">			}</span>
 		}
-<span class="fc" id="L565">	}</span>
+<span class="nc" id="L570">	}</span>
 
 	/**
 	 * Checks to see if there are any currently pending scheduling requests for
@@ -578,17 +583,17 @@ import com.witness.ejb.core.security.model.User;
 	 * scheduled). If so, this method will return false.
 	 */
 	private boolean canScheduleNow(int spID, String mode, boolean scheduleInOrder) {
-<span class="pc bpc" id="L581" title="1 of 4 branches missed.">		if (scheduleInOrder &amp;&amp; schedulerUtil.isEarlierSchedulingPeriodRequestIncomplete(spID)) {</span>
-<span class="fc" id="L582">			return false;</span>
+<span class="nc bnc" id="L586" title="All 4 branches missed.">		if (scheduleInOrder &amp;&amp; schedulerHelper.isEarlierSchedulingPeriodRequestIncomplete(spID)) {</span>
+<span class="nc" id="L587">			return false;</span>
 		}
 		try {
-<span class="pc bpc" id="L585" title="1 of 2 branches missed.">			return !areAdjacentSPsBeingScheduled(ID.fromInt(spID), mode);</span>
-<span class="nc" id="L586">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L587">			m_cat.error(&quot;Exception while getting the scheduling period/scheduling state &quot;, e);</span>
-<span class="nc" id="L588">			return false;</span>
-<span class="nc" id="L589">		} catch (RemoteException e) {</span>
-<span class="nc" id="L590">			m_cat.error(&quot;Exception while getting the scheduling periods &quot;, e);</span>
-<span class="nc" id="L591">			return false;</span>
+<span class="nc bnc" id="L590" title="All 2 branches missed.">			return !areAdjacentSPsBeingScheduled(ID.fromInt(spID), mode);</span>
+<span class="nc" id="L591">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L592">			m_cat.error(&quot;Exception while getting the scheduling period/scheduling state &quot;, e);</span>
+<span class="nc" id="L593">			return false;</span>
+<span class="nc" id="L594">		} catch (RemoteException e) {</span>
+<span class="nc" id="L595">			m_cat.error(&quot;Exception while getting the scheduling periods &quot;, e);</span>
+<span class="nc" id="L596">			return false;</span>
 		}
 	}
 
@@ -597,14 +602,14 @@ import com.witness.ejb.core.security.model.User;
 	 * Returns true even if one of them is being scheduled
 	 */
 	private boolean areAdjacentSPsBeingScheduled(ID spID, String mode) throws BbmFinderException, RemoteException {
-<span class="fc" id="L600">		Collection&lt;SchedulingPeriod&gt; sps = getAdjacentSPs(campaignManager.getSchedulingPeriodByID(spID));</span>
-<span class="fc bfc" id="L601" title="All 2 branches covered.">		for (SchedulingPeriod sp : sps) {</span>
-<span class="fc" id="L602">			ID currentSPID = sp.getID();</span>
-<span class="pc bpc" id="L603" title="2 of 4 branches missed.">			if (isSPBeingScheduled(currentSPID, mode) || schedulerUtil.doOpenRequestsExist(currentSPID)) {</span>
-<span class="nc" id="L604">				return true;</span>
+<span class="nc" id="L605">		Collection&lt;SchedulingPeriod&gt; sps = getAdjacentSPs(campaignManager.getSchedulingPeriodByID(spID));</span>
+<span class="nc bnc" id="L606" title="All 2 branches missed.">		for (SchedulingPeriod sp : sps) {</span>
+<span class="nc" id="L607">			ID currentSPID = sp.getID();</span>
+<span class="nc bnc" id="L608" title="All 4 branches missed.">			if (isSPBeingScheduled(currentSPID, mode) || schedulerHelper.doOpenRequestsExist(currentSPID)) {</span>
+<span class="nc" id="L609">				return true;</span>
 			}
-<span class="fc" id="L606">		}</span>
-<span class="fc" id="L607">		return false;</span>
+<span class="nc" id="L611">		}</span>
+<span class="nc" id="L612">		return false;</span>
 	}
 
 	/**
@@ -612,41 +617,41 @@ import com.witness.ejb.core.security.model.User;
 	 */
 	private boolean isSPBeingScheduled(ID spID, String mode) {
 		try {
-<span class="fc" id="L615">			Date lastUpdatedDate = campaignManager.getSchedulingStateLastUpdatedTime(spID, mode);</span>
-<span class="pc bpc" id="L616" title="3 of 4 branches missed.">			if (lastUpdatedDate != null &amp;&amp; !isOld(lastUpdatedDate)) {</span>
-<span class="nc" id="L617">				return true;</span>
+<span class="nc" id="L620">			Date lastUpdatedDate = campaignManager.getSchedulingStateLastUpdatedTime(spID, mode);</span>
+<span class="nc bnc" id="L621" title="All 4 branches missed.">			if (lastUpdatedDate != null &amp;&amp; !isOld(lastUpdatedDate)) {</span>
+<span class="nc" id="L622">				return true;</span>
 			}
-<span class="nc" id="L619">		} catch (Exception any) {</span>
-<span class="nc" id="L620">			m_cat.warn(&quot;Error gettting the last updated time for SP&quot; + spID + &quot;. The error is &quot; + any.getMessage(),</span>
+<span class="nc" id="L624">		} catch (Exception any) {</span>
+<span class="nc" id="L625">			m_cat.warn(&quot;Error gettting the last updated time for SP&quot; + spID + &quot;. The error is &quot; + any.getMessage(),</span>
 					any);
-<span class="fc" id="L622">		}</span>
-<span class="fc" id="L623">		return false;</span>
+<span class="nc" id="L627">		}</span>
+<span class="nc" id="L628">		return false;</span>
 	}
 
 	/**
 	 * Returns all the SPs within 3 week window of this SP for the same
 	 * campaign.
-	 * 
+	 *
 	 * @param sp
 	 * @throws RemoteException
 	 * @throws BbmFinderException
 	 */
 	private Collection&lt;SchedulingPeriod&gt; getAdjacentSPs(SchedulingPeriod sp)
 			throws BbmFinderException, RemoteException {
-<span class="fc" id="L636">		Date startDate = sp.getStartTime();</span>
-<span class="fc" id="L637">		Calendar cal = Calendar.getInstance();</span>
-<span class="fc" id="L638">		cal.clear();</span>
-<span class="fc" id="L639">		cal.setTime(startDate);</span>
+<span class="nc" id="L641">		Date startDate = sp.getStartTime();</span>
+<span class="nc" id="L642">		Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L643">		cal.clear();</span>
+<span class="nc" id="L644">		cal.setTime(startDate);</span>
 		// 3 weeks
-<span class="fc" id="L641">		cal.add(Calendar.DATE, -DAYS_IN_THREE_WEEKS);</span>
-<span class="fc" id="L642">		startDate = cal.getTime();</span>
-<span class="fc" id="L643">		Date endDate = sp.getEndTime();</span>
-<span class="fc" id="L644">		cal.clear();</span>
-<span class="fc" id="L645">		cal.setTime(endDate);</span>
-<span class="fc" id="L646">		cal.add(Calendar.DATE, DAYS_IN_THREE_WEEKS);</span>
-<span class="fc" id="L647">		endDate = cal.getTime();</span>
+<span class="nc" id="L646">		cal.add(Calendar.DATE, -DAYS_IN_THREE_WEEKS);</span>
+<span class="nc" id="L647">		startDate = cal.getTime();</span>
+<span class="nc" id="L648">		Date endDate = sp.getEndTime();</span>
+<span class="nc" id="L649">		cal.clear();</span>
+<span class="nc" id="L650">		cal.setTime(endDate);</span>
+<span class="nc" id="L651">		cal.add(Calendar.DATE, DAYS_IN_THREE_WEEKS);</span>
+<span class="nc" id="L652">		endDate = cal.getTime();</span>
 
-<span class="fc" id="L649">		return campaignManager.getSchedulingPeriods(sp.getCampaignID(), startDate, endDate);</span>
+<span class="nc" id="L654">		return campaignManager.getSchedulingPeriods(sp.getCampaignID(), startDate, endDate);</span>
 	}
 
 	/**
@@ -655,44 +660,44 @@ import com.witness.ejb.core.security.model.User;
 	private void clearSchedulingSession(ID spID, SchedulingAction action) {
 		// clear any requests
 		try {
-<span class="fc" id="L658">			SchedulingRequest request = new SchedulingRequest();</span>
-<span class="fc" id="L659">			request.setSPSID(spID);</span>
-<span class="fc" id="L660">			request.setMode(action.getActionCode());</span>
-<span class="fc" id="L661">			campaignManager.clearSchedulingRequest(request);</span>
+<span class="nc" id="L663">			SchedulingRequest request = new SchedulingRequest();</span>
+<span class="nc" id="L664">			request.setSPSID(spID);</span>
+<span class="nc" id="L665">			request.setMode(action.getActionCode());</span>
+<span class="nc" id="L666">			campaignManager.clearSchedulingRequest(request);</span>
 
-<span class="nc" id="L663">		} catch (BbmRemoveException e) {</span>
+<span class="nc" id="L668">		} catch (BbmRemoveException e) {</span>
 			// We don't care if there wasn't anything to clear.
-<span class="nc" id="L665">			m_cat.warn(&quot;Could not clear the scheduling request for sp &quot; + spID, e);</span>
-<span class="nc" id="L666">		} catch (RemoteException e) {</span>
+<span class="nc" id="L670">			m_cat.warn(&quot;Could not clear the scheduling request for sp &quot; + spID, e);</span>
+<span class="nc" id="L671">		} catch (RemoteException e) {</span>
 			// We don't care if there wasn't anything to clear or could not
 			// clear
-<span class="nc" id="L669">			m_cat.warn(&quot;Could not clear the scheduling request for sp &quot; + spID, e);</span>
-<span class="pc" id="L670">		}</span>
+<span class="nc" id="L674">			m_cat.warn(&quot;Could not clear the scheduling request for sp &quot; + spID, e);</span>
+<span class="nc" id="L675">		}</span>
 		try {
-<span class="fc" id="L672">			campaignManager.clearSPScheduleSession(spID);</span>
-<span class="nc" id="L673">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L674">			m_cat.debug(&quot;Could not find SP &quot; + spID + &quot;to clear.&quot;, e);</span>
+<span class="nc" id="L677">			campaignManager.clearSPScheduleSession(spID);</span>
+<span class="nc" id="L678">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L679">			m_cat.debug(&quot;Could not find SP &quot; + spID + &quot;to clear.&quot;, e);</span>
 			// We don't care if there wasn't anything to clear.
-<span class="nc" id="L676">		} catch (BbmRemoveException e) {</span>
+<span class="nc" id="L681">		} catch (BbmRemoveException e) {</span>
 			// We don't care if there wasn't anything to clear or could not
 			// clear
-<span class="nc" id="L679">			m_cat.warn(&quot;Could not clear the scheduling session for sp &quot; + spID, e);</span>
-<span class="nc" id="L680">		} catch (RemoteException e) {</span>
+<span class="nc" id="L684">			m_cat.warn(&quot;Could not clear the scheduling session for sp &quot; + spID, e);</span>
+<span class="nc" id="L685">		} catch (RemoteException e) {</span>
 			// We don't care if there wasn't anything to clear or could not
 			// clear
-<span class="nc" id="L683">			m_cat.warn(&quot;Could not clear the scheduling session for sp &quot; + spID, e);</span>
-<span class="pc" id="L684">		}</span>
+<span class="nc" id="L688">			m_cat.warn(&quot;Could not clear the scheduling session for sp &quot; + spID, e);</span>
+<span class="nc" id="L689">		}</span>
 		try {
-<span class="fc" id="L686">			campaignManager.clearSchedulingState(spID, action.getActionCode());</span>
-<span class="nc" id="L687">		} catch (BbmRemoveException bre) {</span>
+<span class="nc" id="L691">			campaignManager.clearSchedulingState(spID, action.getActionCode());</span>
+<span class="nc" id="L692">		} catch (BbmRemoveException bre) {</span>
 			// We don't care if there wasn't anything to clear.
-<span class="nc" id="L689">			m_cat.debug(&quot;Could not clear scheduling state for sp &quot; + spID, bre);</span>
-<span class="nc" id="L690">		} catch (RemoteException e) {</span>
+<span class="nc" id="L694">			m_cat.debug(&quot;Could not clear scheduling state for sp &quot; + spID, bre);</span>
+<span class="nc" id="L695">		} catch (RemoteException e) {</span>
 			// We don't care if there wasn't anything to clear or could not
 			// clear
-<span class="nc" id="L693">			m_cat.warn(&quot;Could not clear the scheduling state&quot; + spID, e);</span>
-<span class="pc" id="L694">		}</span>
-<span class="fc" id="L695">	}</span>
+<span class="nc" id="L698">			m_cat.warn(&quot;Could not clear the scheduling state&quot; + spID, e);</span>
+<span class="nc" id="L699">		}</span>
+<span class="nc" id="L700">	}</span>
 
 	/**
 	 * Checks if there is a free server available for scheduling. This method
@@ -701,56 +706,61 @@ import com.witness.ejb.core.security.model.User;
 	 */
 	private boolean doesFreeServerExist(int availableServers) {
 		// get the number of scheduling states (from schedstate table
-<span class="fc" id="L704">		List&lt;Integer&gt; inProcessSPs = new ArrayList&lt;Integer&gt;();</span>
+<span class="nc" id="L709">		List&lt;Integer&gt; inProcessSPs = new ArrayList&lt;Integer&gt;();</span>
 		try {
-<span class="fc" id="L706">			Map&lt;ID, Date&gt; spIdVsDate = campaignManager.getAllSchedulingStateLastUpdatedTimes();</span>
-<span class="fc bfc" id="L707" title="All 2 branches covered.">			for (ID spID : spIdVsDate.keySet()) {</span>
-<span class="pc bpc" id="L708" title="1 of 2 branches missed.">				if (!isOld(spIdVsDate.get(spID))) {</span>
-<span class="nc" id="L709">					inProcessSPs.add(spID.toInt());</span>
+<span class="nc" id="L711">			Map&lt;ID, Date&gt; spIdVsDate = campaignManager.getAllSchedulingStateLastUpdatedTimes();</span>
+<span class="nc bnc" id="L712" title="All 2 branches missed.">			for (ID spID : spIdVsDate.keySet()) {</span>
+<span class="nc bnc" id="L713" title="All 2 branches missed.">				if (!isOld(spIdVsDate.get(spID))) {</span>
+<span class="nc" id="L714">					inProcessSPs.add(spID.toInt());</span>
 				}
-<span class="fc" id="L711">			}</span>
-<span class="nc" id="L712">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L713">			m_cat.error(&quot;Could not get the last updated time of scheduling states&quot;, e);</span>
-<span class="nc" id="L714">		} catch (Exception e) {</span>
+<span class="nc" id="L716">			}</span>
+<span class="nc" id="L717">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L718">			m_cat.error(&quot;Could not get the last updated time of scheduling states&quot;, e);</span>
+<span class="nc" id="L719">		} catch (Exception e) {</span>
 			// should not throw runtime exceptions too!
-<span class="nc" id="L716">			m_cat.warn(&quot;Error getting the last updated time of scheduling states&quot;, e);</span>
-<span class="pc" id="L717">		}</span>
+<span class="nc" id="L721">			m_cat.warn(&quot;Error getting the last updated time of scheduling states&quot;, e);</span>
+<span class="nc" id="L722">		}</span>
 		// match their sp ids with wsautoscheduleRequest
 		// add any missing sp ids
-<span class="fc" id="L720">		WSAutoScheduleRequestDAO requestDAO = new WSAutoScheduleRequestDAO();</span>
-<span class="fc" id="L721">		List&lt;WSAutoScheduleRequest&gt; requests = new ArrayList&lt;WSAutoScheduleRequest&gt;();</span>
+<span class="nc" id="L725">		WSAutoScheduleRequestDAO requestDAO = new WSAutoScheduleRequestDAO();</span>
+<span class="nc" id="L726">		List&lt;WSAutoScheduleRequest&gt; requests = new ArrayList&lt;WSAutoScheduleRequest&gt;();</span>
 		try {
-<span class="fc" id="L723">			requests.addAll(requestDAO.getRequestsByStatus(WSAutoScheduleRequest.SCHEDULE_STATUS_IN_PROGRESS));</span>
-<span class="fc bfc" id="L724" title="All 2 branches covered.">			for (WSAutoScheduleRequest request : requests) {</span>
-<span class="fc" id="L725">				inProcessSPs.remove(new Integer(request.getSPID()));</span>
-<span class="fc" id="L726">			}</span>
+<span class="nc" id="L728">			requests.addAll(requestDAO.getRequestsByStatus(WSAutoScheduleRequest.SCHEDULE_STATUS_IN_PROGRESS));</span>
+<span class="nc bnc" id="L729" title="All 2 branches missed.">			for (WSAutoScheduleRequest request : requests) {</span>
+<span class="nc" id="L730">				inProcessSPs.remove(new Integer(request.getSPID()));</span>
+<span class="nc" id="L731">			}</span>
 
-<span class="nc" id="L728">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L729">			m_cat.error(&quot;Could not get the scheduling requests&quot;, e);</span>
-<span class="nc" id="L730">		} catch (Exception any) {</span>
+<span class="nc" id="L733">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L734">			m_cat.error(&quot;Could not get the scheduling requests&quot;, e);</span>
+<span class="nc" id="L735">		} catch (Exception any) {</span>
 			// should not throw runtime exceptions too!
-<span class="nc" id="L732">			m_cat.warn(&quot;Could not get the scheduling requests&quot;, any);</span>
+<span class="nc" id="L737">			m_cat.warn(&quot;Could not get the scheduling requests&quot;, any);</span>
 		} finally {
-<span class="pc" id="L734">			requestDAO.cleanUp();</span>
-<span class="pc" id="L735">		}</span>
+<span class="nc" id="L739">			requestDAO.cleanUp();</span>
+<span class="nc" id="L740">		}</span>
 
 		// deduct from the number of available servers and see if that is &gt;0 and
 		// return true, otherwise false
-<span class="pc bpc" id="L739" title="1 of 2 branches missed.">		return availableServers - (inProcessSPs.size() + requests.size()) &gt; 0;</span>
+<span class="nc bnc" id="L744" title="All 2 branches missed.">		return availableServers - (inProcessSPs.size() + requests.size()) &gt; 0;</span>
 	}
 
 	private int checkServersAndUpdateStatusForNonAvailability() {
-<span class="fc" id="L743">		int availableServers = getNumberOfAvailableServers();</span>
-<span class="fc bfc" id="L744" title="All 2 branches covered.">		if (availableServers &lt;= 0) {</span>
+<span class="nc" id="L748">		int availableServers = getNumberOfAvailableServers();</span>
+<span class="nc bnc" id="L749" title="All 2 branches missed.">		if (availableServers &lt;= 0) {</span>
 			// issue with integration server or no silent Fns configured!
 			// increment all new requests with one error count
 			try {
-<span class="fc" id="L748">				schedulerUtil.incrementErrorRetryCount(WSAutoScheduleRequest.SCHEDULE_STATUS_NEW);</span>
-<span class="nc" id="L749">			} catch (Exception any) {</span>
-<span class="nc" id="L750">				m_cat.error(&quot;Could not increment error sttaus as the silent Fns server is unavailable&quot;, any);</span>
-<span class="fc" id="L751">			}</span>
+<span class="nc" id="L753">				schedulerHelper.incrementErrorRetryCount(WSAutoScheduleRequest.SCHEDULE_STATUS_NEW);</span>
+				// update requests with error status if the retry count is
+				// beyond the max error retry count
+<span class="nc" id="L756">				schedulerHelper.updateErrorStatus(getSchedulingErrorRetryCount(),</span>
+						WSAutoScheduleRequest.SCHEDULE_STATUS_NEW, WSAutoScheduleRequest.SCHEDULE_STATUS_ERROR,
+						COULD_NOT_SCHEDULE_DUE_TO_FSSERVER_ERROR);
+<span class="nc" id="L759">			} catch (Exception any) {</span>
+<span class="nc" id="L760">				m_cat.error(&quot;Could not increment error status as the silent Fns server is unavailable&quot;, any);</span>
+<span class="nc" id="L761">			}</span>
 		}
-<span class="fc" id="L753">		return availableServers;</span>
+<span class="nc" id="L763">		return availableServers;</span>
 	}
 
 	/**
@@ -759,19 +769,19 @@ import com.witness.ejb.core.security.model.User;
 	 */
 	private int getNumberOfAvailableServers() {
 		// number of server nodes
-<span class="fc" id="L762">		int noOfServers = 1;</span>
+<span class="nc" id="L772">		int noOfServers = 1;</span>
 		try {
-<span class="fc" id="L764">			noOfServers = facadeCorbaFacadeManager.getCountOfServers(FacadeCorbaFacadeManager.SILENT_FNS_ADAPTER);</span>
-<span class="nc" id="L765">		} catch (RemoteException e) {</span>
-<span class="nc" id="L766">			m_cat.warn(&quot;Could not get the number of servers&quot;, e);</span>
-<span class="nc" id="L767">			return -1;</span>
-<span class="nc" id="L768">		} catch (Exception any) {</span>
+<span class="nc" id="L774">			noOfServers = facadeCorbaFacadeManager.getCountOfServers(FacadeCorbaFacadeManager.SILENT_FNS_ADAPTER);</span>
+<span class="nc" id="L775">		} catch (RemoteException e) {</span>
+<span class="nc" id="L776">			m_cat.warn(&quot;Could not get the number of servers&quot;, e);</span>
+<span class="nc" id="L777">			return -1;</span>
+<span class="nc" id="L778">		} catch (Exception any) {</span>
 			// should not throw runtime exceptions too!
-<span class="nc" id="L770">			m_cat.warn(&quot;Could not get the number of servers&quot;, any);</span>
-<span class="nc" id="L771">			return -1;</span>
-<span class="fc" id="L772">		}</span>
+<span class="nc" id="L780">			m_cat.warn(&quot;Could not get the number of servers&quot;, any);</span>
+<span class="nc" id="L781">			return -1;</span>
+<span class="nc" id="L782">		}</span>
 
-<span class="fc" id="L774">		return getCPUsPerFSServer() * noOfServers;</span>
+<span class="nc" id="L784">		return getCPUsPerFSServer() * noOfServers;</span>
 	}
 
 	/**
@@ -780,14 +790,14 @@ import com.witness.ejb.core.security.model.User;
 	 */
 	private int getCPUsPerFSServer() {
 		try {
-<span class="fc" id="L783">			int noOfCPUs = dbConfigManager.getIntValue(ConfigKey.FACADE_SCHEDULING_CPU);</span>
-<span class="pc bpc" id="L784" title="1 of 2 branches missed.">			if (noOfCPUs &gt; 0) {</span>
-<span class="nc" id="L785">				return noOfCPUs;</span>
+<span class="nc" id="L793">			int noOfCPUs = dbConfigManager.getIntValue(ConfigKey.FACADE_SCHEDULING_CPU);</span>
+<span class="nc bnc" id="L794" title="All 2 branches missed.">			if (noOfCPUs &gt; 0) {</span>
+<span class="nc" id="L795">				return noOfCPUs;</span>
 			}
-<span class="nc" id="L787">		} catch (Exception e) {</span>
-<span class="nc" id="L788">			m_cat.warn(&quot;Could not get the number of CPUs per FS server&quot;, e);</span>
-<span class="fc" id="L789">		}</span>
-<span class="fc" id="L790">		return DEFAULT_NO_OF_CPU;</span>
+<span class="nc" id="L797">		} catch (Exception e) {</span>
+<span class="nc" id="L798">			m_cat.warn(&quot;Could not get the number of CPUs per FS server&quot;, e);</span>
+<span class="nc" id="L799">		}</span>
+<span class="nc" id="L800">		return DEFAULT_NO_OF_CPU;</span>
 	}
 
 	/**
@@ -795,15 +805,15 @@ import com.witness.ejb.core.security.model.User;
 	 */
 	private String getSuperUser() {
 		try {
-<span class="nc" id="L798">			User superuser = userManager.getUserByID(User.SUPER_USERID);</span>
-<span class="nc" id="L799">			return superuser.getUserName();</span>
-<span class="nc" id="L800">		} catch (CoreFinderException e) {</span>
-<span class="nc" id="L801">			m_cat.warn(&quot;Could not find the super user&quot;, e);</span>
-<span class="nc" id="L802">		} catch (RemoteException e) {</span>
-<span class="nc" id="L803">			m_cat.error(&quot;Error getting the super user&quot;, e);</span>
-<span class="nc" id="L804">		}</span>
+<span class="nc" id="L808">			User superuser = userManager.getUserByID(User.SUPER_USERID);</span>
+<span class="nc" id="L809">			return superuser.getUserName();</span>
+<span class="nc" id="L810">		} catch (CoreFinderException e) {</span>
+<span class="nc" id="L811">			m_cat.warn(&quot;Could not find the super user&quot;, e);</span>
+<span class="nc" id="L812">		} catch (RemoteException e) {</span>
+<span class="nc" id="L813">			m_cat.error(&quot;Error getting the super user&quot;, e);</span>
+<span class="nc" id="L814">		}</span>
 
-<span class="nc" id="L806">		return null;</span>
+<span class="nc" id="L816">		return null;</span>
 	}
 
 	/**
@@ -812,15 +822,15 @@ import com.witness.ejb.core.security.model.User;
 	 */
 	private String getUserPassword(String username, String seal) {
 		try {
-<span class="pc bpc" id="L815" title="1 of 2 branches missed.">			if (!StringUtil.isEmpty(seal)) {</span>
-<span class="nc" id="L816">				return userManager.generateToken(username, seal);</span>
+<span class="nc bnc" id="L825" title="All 2 branches missed.">			if (!StringUtil.isEmpty(seal)) {</span>
+<span class="nc" id="L826">				return userManager.generateToken(username, seal);</span>
 			}
 			// hurry: this token is only valid for 1 minute!
-<span class="fc" id="L819">			return userManager.generateSSOTokenWIthNoSeal(username);</span>
-<span class="nc" id="L820">		} catch (RemoteException e) {</span>
-<span class="nc" id="L821">			m_cat.error(&quot;Error getting the super user credentials&quot;, e);</span>
+<span class="nc" id="L829">			return userManager.generateSSOTokenWIthNoSeal(username);</span>
+<span class="nc" id="L830">		} catch (RemoteException e) {</span>
+<span class="nc" id="L831">			m_cat.error(&quot;Error getting the super user credentials&quot;, e);</span>
 		}
-<span class="nc" id="L823">		return null;</span>
+<span class="nc" id="L833">		return null;</span>
 	}
 
 	/**
@@ -829,46 +839,46 @@ import com.witness.ejb.core.security.model.User;
 	 */
 	private long getSchedulingRetryInterval() {
 		try {
-<span class="fc" id="L832">			int retryInterval = dbConfigManager.getIntValue(ConfigKey.FACADE_SCHEDULING_RETRY_INTERVAL);</span>
-<span class="pc bpc" id="L833" title="1 of 2 branches missed.">			if (retryInterval &gt; 0) {</span>
-<span class="nc" id="L834">				return retryInterval;</span>
+<span class="nc" id="L842">			int retryInterval = dbConfigManager.getIntValue(ConfigKey.FACADE_SCHEDULING_RETRY_INTERVAL);</span>
+<span class="nc bnc" id="L843" title="All 2 branches missed.">			if (retryInterval &gt; 0) {</span>
+<span class="nc" id="L844">				return retryInterval;</span>
 			}
-<span class="nc" id="L836">		} catch (Exception e) {</span>
-<span class="nc" id="L837">			m_cat.debug(&quot;Could not get scheduling retry interval. The default interval &quot;</span>
+<span class="nc" id="L846">		} catch (Exception e) {</span>
+<span class="nc" id="L847">			m_cat.debug(&quot;Could not get scheduling retry interval. The default interval &quot;</span>
 					+ DEFAULT_SCHEDULING_RETRY_COUNT + &quot; will be used.&quot;, e);
-<span class="fc" id="L839">		}</span>
-<span class="fc" id="L840">		return DEFAULT_SCHEDULING_RETRY_INTERVAL;</span>
+<span class="nc" id="L849">		}</span>
+<span class="nc" id="L850">		return DEFAULT_SCHEDULING_RETRY_INTERVAL;</span>
 	}
 
 	/**
 	 * Returns the number of times scheduling should be retried before giving up
 	 * when there is an error
 	 */
-	private long getSchedulingErrorRetryCount() {
+	private int getSchedulingErrorRetryCount() {
 		try {
-<span class="fc" id="L849">			int retryInterval = dbConfigManager.getIntValue(ConfigKey.FACADE_SCHEDULING_ERROR_RETRY_COUNT);</span>
-<span class="pc bpc" id="L850" title="1 of 2 branches missed.">			if (retryInterval &gt; 0) {</span>
-<span class="nc" id="L851">				return retryInterval;</span>
+<span class="nc" id="L859">			int retryInterval = dbConfigManager.getIntValue(ConfigKey.FACADE_SCHEDULING_ERROR_RETRY_COUNT);</span>
+<span class="nc bnc" id="L860" title="All 2 branches missed.">			if (retryInterval &gt; 0) {</span>
+<span class="nc" id="L861">				return retryInterval;</span>
 			}
-<span class="nc" id="L853">		} catch (Exception e) {</span>
-<span class="nc" id="L854">			m_cat.warn(&quot;Could not get the scheduling error retry count&quot;, e);</span>
-<span class="fc" id="L855">		}</span>
-<span class="fc" id="L856">		return DEFAULT_SCHEDULING_ERROR_RETRY_COUNT;</span>
+<span class="nc" id="L863">		} catch (Exception e) {</span>
+<span class="nc" id="L864">			m_cat.warn(&quot;Could not get the scheduling error retry count&quot;, e);</span>
+<span class="nc" id="L865">		}</span>
+<span class="nc" id="L866">		return DEFAULT_SCHEDULING_ERROR_RETRY_COUNT;</span>
 	}
 
 	/**
 	 * Returns the number of times scheduling should be retried before giving up
 	 */
-	private long getSchedulingRetryCount() {
+	private int getSchedulingRetryCount() {
 		try {
-<span class="fc" id="L864">			int retryInterval = dbConfigManager.getIntValue(ConfigKey.FACADE_SCHEDULING_RETRY_COUNT);</span>
-<span class="pc bpc" id="L865" title="1 of 2 branches missed.">			if (retryInterval &gt; 0) {</span>
-<span class="nc" id="L866">				return retryInterval;</span>
+<span class="nc" id="L874">			int retryInterval = dbConfigManager.getIntValue(ConfigKey.FACADE_SCHEDULING_RETRY_COUNT);</span>
+<span class="nc bnc" id="L875" title="All 2 branches missed.">			if (retryInterval &gt; 0) {</span>
+<span class="nc" id="L876">				return retryInterval;</span>
 			}
-<span class="nc" id="L868">		} catch (Exception e) {</span>
-<span class="nc" id="L869">			m_cat.warn(&quot;Could not get the scheduling retry count&quot;, e);</span>
-<span class="fc" id="L870">		}</span>
-<span class="fc" id="L871">		return DEFAULT_SCHEDULING_RETRY_COUNT;</span>
+<span class="nc" id="L878">		} catch (Exception e) {</span>
+<span class="nc" id="L879">			m_cat.warn(&quot;Could not get the scheduling retry count&quot;, e);</span>
+<span class="nc" id="L880">		}</span>
+<span class="nc" id="L881">		return DEFAULT_SCHEDULING_RETRY_COUNT;</span>
 	}
 
 	/**
@@ -876,13 +886,13 @@ import com.witness.ejb.core.security.model.User;
 	 * {@link ScheduleRequestsMessage}
 	 **/
 	private ID createDBMessage(ScheduleRequestsMessage message) throws BbmCreateException {
-<span class="fc" id="L879">		ScheduleMessageDAO messageDAO = new ScheduleMessageDAO();</span>
+<span class="nc" id="L889">		ScheduleMessageDAO messageDAO = new ScheduleMessageDAO();</span>
 		try {
-<span class="fc" id="L881">			synchronized (_CREATE_LOCK) {</span>
-<span class="fc" id="L882">				return messageDAO.createObject(schedulerUtil.getDBMessageFromJMSMessage(message));</span>
-<span class="nc" id="L883">			}</span>
+<span class="nc" id="L891">			synchronized (_CREATE_LOCK) {</span>
+<span class="nc" id="L892">				return messageDAO.createObject(schedulerHelper.getDBMessageFromJMSMessage(message));</span>
+<span class="nc" id="L893">			}</span>
 		} finally {
-<span class="pc" id="L885">			messageDAO.cleanUp();</span>
+<span class="nc" id="L895">			messageDAO.cleanUp();</span>
 		}
 	}
 
@@ -891,43 +901,43 @@ import com.witness.ejb.core.security.model.User;
 	 * during scheduling.
 	 */
 	private void setSecondarySchedulingParameters(ID messageID, ID spID) {
-<span class="fc" id="L894">		Map&lt;String, Object&gt; secondaryParams = null;</span>
-<span class="fc" id="L895">		ScheduleMessageParametersDAO dao = new ScheduleMessageParametersDAO();</span>
+<span class="nc" id="L904">		Map&lt;String, Object&gt; secondaryParams = null;</span>
+<span class="nc" id="L905">		ScheduleMessageParametersDAO dao = new ScheduleMessageParametersDAO();</span>
 		try {
-<span class="fc" id="L897">			Collection&lt;ScheduleMessageParameters&gt; allParameters = dao.getObjectsByParentID(messageID);</span>
-<span class="pc bpc" id="L898" title="2 of 4 branches missed.">			if (allParameters != null &amp;&amp; !allParameters.isEmpty()) {</span>
-<span class="fc" id="L899">				ScheduleMessageParameters parameters = allParameters.iterator().next();</span>
-<span class="fc" id="L900">				secondaryParams = new HashMap&lt;String, Object&gt;();</span>
+<span class="nc" id="L907">			Collection&lt;ScheduleMessageParameters&gt; allParameters = dao.getObjectsByParentID(messageID);</span>
+<span class="nc bnc" id="L908" title="All 4 branches missed.">			if (allParameters != null &amp;&amp; !allParameters.isEmpty()) {</span>
+<span class="nc" id="L909">				ScheduleMessageParameters parameters = allParameters.iterator().next();</span>
+<span class="nc" id="L910">				secondaryParams = new HashMap&lt;String, Object&gt;();</span>
 				//omit id and message id...they are not part of the parameters
-<span class="fc" id="L902">				for (int i = ScheduleMessageParametersFieldInfo.DAYS_TO_SCHEDULE; i &lt; dao.getDaoFieldInfo()</span>
-<span class="fc bfc" id="L903" title="All 2 branches covered.">						.getFieldCount(); i++) {</span>
-<span class="fc bfc" id="L904" title="All 2 branches covered.">					if (parameters.getFieldValue(i) != null) {</span>
-<span class="fc" id="L905">						secondaryParams.put(dao.getDaoFieldInfo().getFieldName(i), parameters.getFieldValue(i));</span>
+<span class="nc" id="L912">				for (int i = ScheduleMessageParametersFieldInfo.DAYS_TO_SCHEDULE; i &lt; dao.getDaoFieldInfo()</span>
+<span class="nc bnc" id="L913" title="All 2 branches missed.">						.getFieldCount(); i++) {</span>
+<span class="nc bnc" id="L914" title="All 2 branches missed.">					if (parameters.getFieldValue(i) != null) {</span>
+<span class="nc" id="L915">						secondaryParams.put(dao.getDaoFieldInfo().getFieldName(i), parameters.getFieldValue(i));</span>
 					}
 				}
 			}
-<span class="nc" id="L909">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L910">			m_cat.error(&quot;Could not get the scheduling parameters&quot;, e);</span>
+<span class="nc" id="L919">		} catch (BbmFinderException e) {</span>
+<span class="nc" id="L920">			m_cat.error(&quot;Could not get the scheduling parameters&quot;, e);</span>
 		} finally {
-<span class="pc" id="L912">			dao.cleanUp();</span>
-<span class="pc" id="L913">		}</span>
-<span class="pc bpc" id="L914" title="2 of 4 branches missed.">		if (secondaryParams != null &amp;&amp; secondaryParams.size() &gt; 0) {</span>
+<span class="nc" id="L922">			dao.cleanUp();</span>
+<span class="nc" id="L923">		}</span>
+<span class="nc bnc" id="L924" title="All 4 branches missed.">		if (secondaryParams != null &amp;&amp; secondaryParams.size() &gt; 0) {</span>
 			try {
-<span class="fc" id="L916">				campaignManager.setSchedulingParameters(spID, secondaryParams, &quot;&quot;);</span>
-<span class="nc" id="L917">			} catch (BbmCreateException e) {</span>
-<span class="nc" id="L918">				m_cat.error(&quot;Could not set the scheduling parameters&quot;, e);</span>
-<span class="nc" id="L919">			} catch (RemoteException e) {</span>
-<span class="nc" id="L920">				m_cat.error(&quot;Could not set the scheduling parameters&quot;, e);</span>
-<span class="pc" id="L921">			}</span>
+<span class="nc" id="L926">				campaignManager.setSchedulingParameters(spID, secondaryParams, &quot;&quot;);</span>
+<span class="nc" id="L927">			} catch (BbmCreateException e) {</span>
+<span class="nc" id="L928">				m_cat.error(&quot;Could not set the scheduling parameters&quot;, e);</span>
+<span class="nc" id="L929">			} catch (RemoteException e) {</span>
+<span class="nc" id="L930">				m_cat.error(&quot;Could not set the scheduling parameters&quot;, e);</span>
+<span class="nc" id="L931">			}</span>
 		}
-<span class="fc" id="L923">	}</span>
+<span class="nc" id="L933">	}</span>
 
 	/**
 	 * Compares the time with the current system time. If that time difference
 	 * is greater than MAX_OLD_SCHEDULE_STATUS_MILLIS milliseconds
 	 */
 	private boolean isOld(Date date) {
-<span class="fc" id="L930">		return isOld(date, MAX_OLD_SCHEDULE_STATUS_MILLIS);</span>
+<span class="nc" id="L940">		return isOld(date, MAX_OLD_SCHEDULE_STATUS_MILLIS);</span>
 	}
 
 	/**
@@ -937,7 +947,7 @@ import com.witness.ejb.core.security.model.User;
 	 * state.getTimeLastUpdated is null, this will return a false.
 	 */
 	private boolean isScheduleStatusOld(SchedulingState state) {
-<span class="fc" id="L940">		return isScheduleStatusOld(state, MAX_OLD_SCHEDULE_STATUS_MILLIS);</span>
+<span class="nc" id="L950">		return isScheduleStatusOld(state, MAX_OLD_SCHEDULE_STATUS_MILLIS);</span>
 	}
 
 	/**
@@ -947,13 +957,13 @@ import com.witness.ejb.core.security.model.User;
 	 * thestate.getTimeLastUpdated is null, this will return a false.
 	 */
 	private boolean isScheduleStatusOld(SchedulingState state, int time) {
-<span class="pc bpc" id="L950" title="1 of 2 branches missed.">		if (state == null) {</span>
-<span class="nc" id="L951">			throw new IllegalArgumentException(&quot;The state cannot be null&quot;);</span>
+<span class="nc bnc" id="L960" title="All 2 branches missed.">		if (state == null) {</span>
+<span class="nc" id="L961">			throw new IllegalArgumentException(&quot;The state cannot be null&quot;);</span>
 		}
-<span class="pc bpc" id="L953" title="1 of 2 branches missed.">		if (state.getTimeLastUpdated() == null) {</span>
-<span class="nc" id="L954">			return false;</span>
+<span class="nc bnc" id="L963" title="All 2 branches missed.">		if (state.getTimeLastUpdated() == null) {</span>
+<span class="nc" id="L964">			return false;</span>
 		}
-<span class="fc" id="L956">		return isOld(state.getTimeLastUpdated(), time);</span>
+<span class="nc" id="L966">		return isOld(state.getTimeLastUpdated(), time);</span>
 	}
 
 	/**
@@ -961,23 +971,23 @@ import com.witness.ejb.core.security.model.User;
 	 * is greater than 'time' milliseconds
 	 */
 	private boolean isOld(Date date, long time) {
-<span class="pc bpc" id="L964" title="1 of 2 branches missed.">		if (date == null) {</span>
-<span class="nc" id="L965">			throw new IllegalArgumentException(&quot;The date cannot be null&quot;);</span>
+<span class="nc bnc" id="L974" title="All 2 branches missed.">		if (date == null) {</span>
+<span class="nc" id="L975">			throw new IllegalArgumentException(&quot;The date cannot be null&quot;);</span>
 		}
 
 		// Determine the current time and compare that to the status's time
 		// to see if there is a significant time difference.
-<span class="fc bfc" id="L970" title="All 2 branches covered.">		return Math.abs((new Date()).getTime() - date.getTime()) &gt; Math.max(time, getSchedulingRetryInterval());</span>
+<span class="nc bnc" id="L980" title="All 2 branches missed.">		return Math.abs((new Date()).getTime() - date.getTime()) &gt; Math.max(time, getSchedulingRetryInterval());</span>
 	}
 
 	/**
 	 * Returns the time that needs to elapse for FS to pick up scheduling
 	 * request before this request is deemed as not takenup.
-	 * 
+	 *
 	 * @return
 	 */
 	private long getGiveUpForClearing() {
-<span class="nc" id="L980">		return Math.max(DEFAULT_GIVE_UP_TIME, getSchedulingRetryInterval() * 20);</span>
+<span class="nc" id="L990">		return Math.max(DEFAULT_GIVE_UP_TIME, getSchedulingRetryInterval() * 20);</span>
 	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

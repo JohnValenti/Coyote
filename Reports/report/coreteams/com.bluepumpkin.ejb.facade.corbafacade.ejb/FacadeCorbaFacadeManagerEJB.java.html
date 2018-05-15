@@ -41,29 +41,30 @@ import com.witness.ejb.core.security.model.User;
 import com.witness.ejb.core.security.util.UserConverter;
 
 /**
- * @author AYu
- *
- * TODO To change the template for this generated type comment go to
- * Window - Preferences - Java - Code Style - Code Templates
+ * Title:        FacadeCorbaFacadeManagerEJB
+ * Description:  Methods to facilitate communication with FIS (Integration Server).  There are however some methods in this class
+ * which have a different purpose, and ideally these should be moved to a different class.
+ * Copyright:    Copyright (c) 2003, 2017
+ * Company:      Verint Systems, Inc.
  */
-<span class="fc" id="L49">public class FacadeCorbaFacadeManagerEJB extends SessionEJBBase {</span>
+<span class="fc" id="L50">public class FacadeCorbaFacadeManagerEJB extends SessionEJBBase {</span>
 	/**
-	 * 
+	 *
 	 */
 	private static final long serialVersionUID = 1L;
 
-<span class="fc" id="L55">	private static Category m_cat = Log.initCategory(FacadeCorbaFacadeManagerEJB.class.getName());</span>
-	
+<span class="fc" id="L56">	private final static Category m_cat = Log.initCategory(FacadeCorbaFacadeManagerEJB.class.getName());</span>
+
 	private EmployeeFilter m_employeeFilterEJB;
 	private UserManager m_userManager;
 	private CampaignManager m_campaignManager;
 
-	
+
 	/*
 	 * Constants for error conditions encountered when importing staffing
 	 * profiles. This will be interpreted by DE and signalled accordingly 
 	 */
-	public static final int OUTSOURCER_IMPORT_SUCCESSFUL = 0;
+	private static final int OUTSOURCER_IMPORT_SUCCESSFUL = 0;
 
 	/*
 	 * The import operation failed because of adapter errors and could be 
@@ -71,7 +72,7 @@ import com.witness.ejb.core.security.util.UserConverter;
 	 * 1. Empty or non-existent file to import
 	 * 2. File did not contain staffing profiles for the date/time specified
 	 */
-	public static final int OUTSOURCER_ADAPTER_PROCESSING_ERROR = 1;
+	private static final int OUTSOURCER_ADAPTER_PROCESSING_ERROR = 1;
 
 	/*
 	 * The import operation failed because of adapter errors and could be 
@@ -79,7 +80,7 @@ import com.witness.ejb.core.security.util.UserConverter;
 	 * 1. Remote connection to the adapter was broken.
 	 * 2. The Integration server or adapter was shutdown.  
 	 */
-	public static final int OUTSOURCER_ADAPTER_ERROR = 2;
+	private static final int OUTSOURCER_ADAPTER_ERROR = 2;
 
 	/*
 	 * The import operation failed because of integration server errors 
@@ -88,7 +89,7 @@ import com.witness.ejb.core.security.util.UserConverter;
 	 * 2. Integration server not running
 	 * 3. Import adapter not configured on the integration server.
 	 */
-	public static final int OUTSOURCER_INTEGRATION_SERVER_ERROR = 3;
+	private static final int OUTSOURCER_INTEGRATION_SERVER_ERROR = 3;
 
 	/*
 	 * The import operation failed because of adapter errors and could be 
@@ -96,21 +97,21 @@ import com.witness.ejb.core.security.util.UserConverter;
 	 * 1. Import adapter not configured for the correct organization and
 	 * campaign.
 	 */
-	public static final int OUTSOURCER_ADAPTER_CONFIGURATION_ERROR = 4;
-	
+	private static final int OUTSOURCER_ADAPTER_CONFIGURATION_ERROR = 4;
+
 	/*
 	 * The import operation was unsuccessful due to application server errors
 	 */
-	public static final int OUTSOURCER_APPLICATION_SERVER_ERROR = 5;
+	private static final int OUTSOURCER_APPLICATION_SERVER_ERROR = 5;
 
-	
+
 	/* a flag that indicates whether or not this instance is running in what
 	 if mode */
-<span class="fc" id="L109">	private boolean m_isWhatIf = false;</span>
+<span class="fc" id="L110">	private boolean m_isWhatIf = false;</span>
 
 	{
-<span class="fc" id="L112">		super.init(FacadeCorbaFacadeManagerEJB.class.getName());</span>
-<span class="fc" id="L113">	}</span>
+<span class="fc" id="L113">		super.init(FacadeCorbaFacadeManagerEJB.class.getName());</span>
+<span class="fc" id="L114">	}</span>
 
 	/**
 	 * Perform one-time initialization of this EJB instance
@@ -118,616 +119,579 @@ import com.witness.ejb.core.security.util.UserConverter;
 	public void onEjbCreate() {
 		try {
 			// First query environment to get WIF setting from DD
-<span class="fc" id="L121">			Context initialContext = new InitialContext();</span>
-<span class="fc" id="L122">			Boolean WIF = (Boolean) initialContext.lookup(&quot;java:comp/env/WIF&quot;);</span>
-<span class="pc bpc" id="L123" title="1 of 2 branches missed.">			if (WIF != null)</span>
-<span class="fc" id="L124">				m_isWhatIf = WIF.booleanValue();</span>
-<span class="fc" id="L125">			m_employeeFilterEJB = BbmManagerFactory.getEmployeeFilter(m_isWhatIf);</span>
-<span class="fc" id="L126">			m_userManager = CoreManagerFactory.getUserManager(m_isWhatIf);</span>
-<span class="fc" id="L127">			m_campaignManager = WfmManagerFactory.getCampaignManager(m_isWhatIf);</span>
-<span class="nc" id="L128">		} catch (Exception e) {</span>
-<span class="nc" id="L129">			handleException(&quot;onEjbCreate&quot;, e, false);</span>
-<span class="fc" id="L130">		}</span>
-<span class="fc" id="L131">	}</span>
-	
-	protected Category getCategory() {
-<span class="fc" id="L134">		return m_cat;</span>
-	}
-	
-	public Collection&lt;ID&gt; getEmployeeIDsForOrgs(Collection&lt;ID&gt; orgIDs, Date start, Date end) 
-		throws RemoteException {
-<span class="nc" id="L139">		methodStart(&quot;getEmployeeIDsForOrgs&quot;, orgIDs, start, end);</span>
-		try {
-<span class="nc" id="L141">			User currentUser = getCurrentUser();</span>
-<span class="nc" id="L142">			Filter filter = buildEmployeeFilterForOrgs(currentUser, orgIDs, start, end);</span>
-<span class="nc" id="L143">			Collection&lt;ID&gt; employeeIDs = getEmployeeIDs(currentUser,filter, null);</span>
-<span class="nc" id="L144">			return employeeIDs;</span>
-<span class="nc" id="L145">		} catch (Exception ex) {</span>
-<span class="nc" id="L146">			m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L147">			throw new RemoteException(ex.getMessage(), ex);</span>
-		} finally {
-<span class="nc" id="L149">			methodFinish();</span>
-		}
-	}	
-	
-	public Collection&lt;ID&gt; getEmployeeIDsAssignedToSP(ID spID)
-		throws RemoteException{
-<span class="fc" id="L155">		methodStart(&quot;getEmployeeIDsAssignedToSP&quot;, spID);</span>
-		try {
-			
-<span class="fc" id="L158">			SchedulingPeriod schedulingPeriod = m_campaignManager.getSchedulingPeriodByID(spID);</span>
-<span class="fc bfc" id="L159" title="All 2 branches covered.">			if (schedulingPeriod.isUsingAllEmployees()){</span>
-<span class="fc" id="L160">				Collection&lt;ID&gt; organizationIDs = m_campaignManager.getLinkedOrgsforSP(spID);</span>
-<span class="pc bpc" id="L161" title="1 of 2 branches missed.">				if (organizationIDs == null){</span>
-<span class="nc" id="L162">					organizationIDs = new ArrayList&lt;ID&gt;();</span>
-				}
-<span class="fc" id="L164">				User currentUser = getCurrentUser();</span>
-<span class="fc" id="L165">				Filter filter = buildEmployeeFilterForOrgs(currentUser, organizationIDs, </span>
-<span class="fc" id="L166">						schedulingPeriod.getStartTime(), schedulingPeriod.getEndTime());</span>
-<span class="fc" id="L167">				Collection&lt;ID&gt; employeeIDs = getEmployeeIDs(currentUser,filter, spID);</span>
-<span class="fc" id="L168">				return employeeIDs; </span>
-			} else {
-<span class="fc" id="L170">				User currentUser = getCurrentUser();</span>
-<span class="fc" id="L171">				Filter filter = Filter.createAllFilter(currentUser.getID());</span>
-<span class="fc" id="L172">				Collection&lt;ID&gt; employeeIDs = getEmployeeIDsAssignedDirectlyToSP(currentUser, spID, filter);</span>
-<span class="fc" id="L173">				return employeeIDs;</span>
+<span class="fc" id="L122">			Context initialContext = new InitialContext();</span>
+<span class="fc" id="L123">			Boolean WIF = (Boolean) initialContext.lookup(&quot;java:comp/env/WIF&quot;);</span>
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">			if (WIF != null) {</span>
+<span class="fc" id="L125">				m_isWhatIf = WIF;</span>
 			}
-<span class="nc" id="L175">		} catch (Exception ex) {</span>
-			//how to handle?
-<span class="nc" id="L177">			m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L178">			throw new RemoteException(ex.getMessage(), ex);</span>
-		} finally {
-<span class="pc" id="L180">			methodFinish();</span>
-		}
+<span class="fc" id="L127">			m_employeeFilterEJB = BbmManagerFactory.getEmployeeFilter(m_isWhatIf);</span>
+<span class="fc" id="L128">			m_userManager = CoreManagerFactory.getUserManager(m_isWhatIf);</span>
+<span class="fc" id="L129">			m_campaignManager = WfmManagerFactory.getCampaignManager(m_isWhatIf);</span>
+<span class="nc" id="L130">		} catch (Exception e) {</span>
+<span class="nc" id="L131">			handleException(&quot;onEjbCreate&quot;, e, false);</span>
+<span class="fc" id="L132">		}</span>
+<span class="fc" id="L133">	}</span>
+
+	protected Category getCategory() {
+<span class="fc" id="L136">		return m_cat;</span>
 	}
-	
-	public Collection&lt;ID&gt; getFilteredEmployeeIDsAssignedToSP(ID spID, ID filterID) throws RemoteException {
-<span class="fc" id="L185">		methodStart(&quot;getFilteredEmployeeIDsAssignedToSP&quot;, spID, filterID);</span>
+
+	public Collection&lt;ID&gt; getEmployeeIDsForOrgs(Collection&lt;ID&gt; orgIDs, Date start, Date end)
+			throws RemoteException {
+<span class="nc" id="L141">		methodStart(&quot;getEmployeeIDsForOrgs&quot;, orgIDs, start, end);</span>
 		try {
-<span class="fc" id="L187">			User currentUser = getCurrentUser();</span>
-<span class="fc" id="L188">			return getFilteredEmployeeIDsAssignedToSPWithUser(spID, filterID, currentUser);</span>
-<span class="nc" id="L189">		} catch (Exception ex) {</span>
-<span class="nc" id="L190">			m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L191">			throw new RemoteException(ex.getMessage(), ex);</span>
+<span class="nc" id="L143">			User currentUser = getCurrentUser();</span>
+<span class="nc" id="L144">			Filter filter = buildEmployeeFilterForOrgs(currentUser, orgIDs, start, end);</span>
+<span class="nc" id="L145">			Collection&lt;ID&gt; employeeIDs = getEmployeeIDs(currentUser, filter, null);</span>
+<span class="nc" id="L146">			return employeeIDs;</span>
+<span class="nc" id="L147">		} catch (Exception ex) {</span>
+<span class="nc" id="L148">			m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L149">			throw new RemoteException(ex.getMessage(), ex);</span>
 		} finally {
-<span class="pc" id="L193">			methodFinish();</span>
+<span class="nc" id="L151">			methodFinish();</span>
 		}
 	}
-	
+
+	public Collection&lt;ID&gt; getEmployeeIDsAssignedToSP(ID spID)
+			throws RemoteException {
+<span class="fc" id="L157">		methodStart(&quot;getEmployeeIDsAssignedToSP&quot;, spID);</span>
+		try {
+
+<span class="fc" id="L160">			SchedulingPeriod schedulingPeriod = m_campaignManager.getSchedulingPeriodByID(spID);</span>
+<span class="pc bpc" id="L161" title="1 of 2 branches missed.">			if (schedulingPeriod.isUsingAllEmployees()) {</span>
+<span class="fc" id="L162">				Collection&lt;ID&gt; organizationIDs = m_campaignManager.getLinkedOrgsforSP(spID);</span>
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">				if (organizationIDs == null) {</span>
+<span class="nc" id="L164">					organizationIDs = new ArrayList&lt;ID&gt;();</span>
+				}
+<span class="fc" id="L166">				User currentUser = getCurrentUser();</span>
+<span class="fc" id="L167">				Filter filter = buildEmployeeFilterForOrgs(currentUser, organizationIDs,</span>
+<span class="fc" id="L168">						schedulingPeriod.getStartTime(), schedulingPeriod.getEndTime());</span>
+<span class="fc" id="L169">				Collection&lt;ID&gt; employeeIDs = getEmployeeIDs(currentUser, filter, spID);</span>
+<span class="fc" id="L170">				return employeeIDs;</span>
+			} else {
+<span class="nc" id="L172">				User currentUser = getCurrentUser();</span>
+<span class="nc" id="L173">				Filter filter = Filter.createAllFilter(currentUser.getID());</span>
+<span class="nc" id="L174">				Collection&lt;ID&gt; employeeIDs = getEmployeeIDsAssignedDirectlyToSP(currentUser, spID, filter);</span>
+<span class="nc" id="L175">				return employeeIDs;</span>
+			}
+<span class="nc" id="L177">		} catch (Exception ex) {</span>
+			//how to handle?
+<span class="nc" id="L179">			m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L180">			throw new RemoteException(ex.getMessage(), ex);</span>
+		} finally {
+<span class="pc" id="L182">			methodFinish();</span>
+		}
+	}
+
+	public Collection&lt;ID&gt; getFilteredEmployeeIDsAssignedToSP(ID spID, ID filterID) throws RemoteException {
+<span class="nc" id="L187">		methodStart(&quot;getFilteredEmployeeIDsAssignedToSP&quot;, spID, filterID);</span>
+		try {
+<span class="nc" id="L189">			User currentUser = getCurrentUser();</span>
+<span class="nc" id="L190">			return getFilteredEmployeeIDsAssignedToSPWithUser(spID, filterID, currentUser);</span>
+<span class="nc" id="L191">		} catch (Exception ex) {</span>
+<span class="nc" id="L192">			m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L193">			throw new RemoteException(ex.getMessage(), ex);</span>
+		} finally {
+<span class="nc" id="L195">			methodFinish();</span>
+		}
+	}
+
 	private Collection&lt;ID&gt; getFilteredEmployeeIDsAssignedToSPWithUser(ID spID,
 			ID filterID, User currentUser) throws BbmFinderException,
 			BbmObjectNotFoundException, RemoteException {
-<span class="fc" id="L200">		SchedulingPeriod schedulingPeriod = m_campaignManager.getSchedulingPeriodByID(spID);</span>
-<span class="fc" id="L201">		Collection&lt;ID&gt; employeeIDs = m_campaignManager.getWorkResourceIDsBySchedulingPeriod(schedulingPeriod);</span>
-<span class="fc" id="L202">		Filter filter = m_employeeFilterEJB.getFilterByID(filterID);</span>
-<span class="fc" id="L203">		employeeIDs.retainAll(m_employeeFilterEJB.getEmployeeIDs(filter, currentUser,</span>
-<span class="fc" id="L204">				Collections.emptyList(), true, 0, Integer.MAX_VALUE));</span>
-<span class="fc" id="L205">		return employeeIDs;</span>
+<span class="nc" id="L202">		SchedulingPeriod schedulingPeriod = m_campaignManager.getSchedulingPeriodByID(spID);</span>
+<span class="nc" id="L203">		Collection&lt;ID&gt; employeeIDs = m_campaignManager.getWorkResourceIDsBySchedulingPeriod(schedulingPeriod);</span>
+<span class="nc" id="L204">		Filter filter = m_employeeFilterEJB.getFilterByID(filterID);</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">		if (filter.getTimePeriodType() == Filter.TIMEPERIODTYPE_CONTEXT) {</span>
+<span class="nc" id="L206">			filter.setStartTime(schedulingPeriod.getStartTime());</span>
+<span class="nc" id="L207">			filter.setEndTime(schedulingPeriod.getEndTime());</span>
+		}
+<span class="nc" id="L209">		employeeIDs.retainAll(m_employeeFilterEJB.getEmployeeIDs(filter, currentUser,</span>
+<span class="nc" id="L210">				Collections.emptyList(), true, 0, Integer.MAX_VALUE));</span>
+<span class="nc" id="L211">		return employeeIDs;</span>
 	}
 
-	private Collection&lt;ID&gt; getEmployeeIDs(User currentUser, Filter filter, ID spID) 
-		throws RemoteException {
-<span class="fc" id="L210">		methodStart(&quot;getEmployeeIDs&quot;, filter);</span>
+	private Collection&lt;ID&gt; getEmployeeIDs(User currentUser, Filter filter, ID spID)
+			throws RemoteException {
+<span class="fc" id="L216">		methodStart(&quot;getEmployeeIDs&quot;, filter);</span>
 		try {
-<span class="fc" id="L212">			Collection&lt;ID&gt; employeeIDs = new  ArrayList&lt;ID&gt;(m_employeeFilterEJB.getEmployeeIDs(filter, currentUser,  new ArrayList(), true, 0, Integer.MAX_VALUE, false, spID));</span>
-<span class="fc" id="L213">			return employeeIDs;</span>
-<span class="nc" id="L214">		} catch (Exception ex) {</span>
+<span class="fc" id="L218">			Collection&lt;ID&gt; employeeIDs = new ArrayList&lt;ID&gt;(m_employeeFilterEJB.getEmployeeIDs(filter, currentUser, new ArrayList(), true, 0, Integer.MAX_VALUE, false, spID));</span>
+<span class="fc" id="L219">			return employeeIDs;</span>
+<span class="nc" id="L220">		} catch (Exception ex) {</span>
 			//how to handle?
-<span class="nc" id="L216">			m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L217">			throw new RemoteException(ex.getMessage(), ex);</span>
+<span class="nc" id="L222">			m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L223">			throw new RemoteException(ex.getMessage(), ex);</span>
 		} finally {
-<span class="pc" id="L219">			methodFinish();</span>
+<span class="pc" id="L225">			methodFinish();</span>
 		}
 	}
-	
+
 	private Collection&lt;ID&gt; getEmployeeIDsAssignedDirectlyToSP(User currentUser, ID spID, Filter filter)
-		throws RemoteException{
-<span class="fc" id="L225">		methodStart(&quot;getEmployeeIDsAssignedDirectlyToSP&quot;, spID, filter);</span>
+			throws RemoteException {
+<span class="nc" id="L231">		methodStart(&quot;getEmployeeIDsAssignedDirectlyToSP&quot;, spID, filter);</span>
 		try {
-<span class="fc" id="L227">				SchedulingPeriod schedulingPeriod = m_campaignManager.getSchedulingPeriodByID(spID);</span>
-<span class="pc bpc" id="L228" title="1 of 2 branches missed.">				if (filter.getStartTime() == null){</span>
-<span class="fc" id="L229">					filter.setStartTime(schedulingPeriod.getStartTime());</span>
-				}
-<span class="pc bpc" id="L231" title="1 of 2 branches missed.">				if (filter.getEndTime() == null){</span>
-<span class="fc" id="L232">					filter.setEndTime(schedulingPeriod.getEndTime());</span>
-				}
-<span class="fc" id="L234">				List&lt;ID&gt; employeeIDs = new ArrayList&lt;ID&gt;(m_employeeFilterEJB.getEmployeeIDs(filter, currentUser, new ArrayList(), true, 0, Integer.MAX_VALUE, false, spID));</span>
-<span class="fc" id="L235">				return employeeIDs;</span>
-<span class="nc" id="L236">		} catch (Exception ex) {</span>
-<span class="nc" id="L237">			m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L238">			throw new RemoteException(ex.getMessage(), ex);</span>
+<span class="nc" id="L233">			SchedulingPeriod schedulingPeriod = m_campaignManager.getSchedulingPeriodByID(spID);</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">			if (filter.getStartTime() == null) {</span>
+<span class="nc" id="L235">				filter.setStartTime(schedulingPeriod.getStartTime());</span>
+			}
+<span class="nc bnc" id="L237" title="All 2 branches missed.">			if (filter.getEndTime() == null) {</span>
+<span class="nc" id="L238">				filter.setEndTime(schedulingPeriod.getEndTime());</span>
+			}
+<span class="nc" id="L240">			List&lt;ID&gt; employeeIDs = new ArrayList&lt;ID&gt;(m_employeeFilterEJB.getEmployeeIDs(filter, currentUser, new ArrayList(), true, 0, Integer.MAX_VALUE, false, spID));</span>
+<span class="nc" id="L241">			return employeeIDs;</span>
+<span class="nc" id="L242">		} catch (Exception ex) {</span>
+<span class="nc" id="L243">			m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L244">			throw new RemoteException(ex.getMessage(), ex);</span>
 		} finally {
-<span class="pc" id="L240">			methodFinish();</span>
+<span class="nc" id="L246">			methodFinish();</span>
 		}
 	}
 
 	private Filter buildEmployeeFilterForOrgs(User currentUser, Collection orgIDs, Date start, Date end) throws Exception {
-<span class="fc" id="L245">		ArrayList alParameters = new ArrayList();</span>
-<span class="fc" id="L246">		alParameters.add(new ArrayList(orgIDs)); // the parameter must be a list of lists in the sacred interest of confusion, not telling and type un-safety.</span>
-<span class="fc" id="L247">		Filter filter = new Filter(Filter.ORGANIZATIONID,Filter.OPERATOR_IN,alParameters);</span>
-<span class="fc" id="L248">		filter.setUserID(currentUser.getID());</span>
-<span class="fc" id="L249">		filter.setTimePeriodType(Filter.TIMEPERIODTYPE_TIMEWINDOW);</span>
-<span class="fc" id="L250">		filter.setStartTime(start);</span>
-<span class="fc" id="L251">		filter.setEndTime(end);</span>
-<span class="fc" id="L252">		return filter;</span>
+<span class="fc" id="L251">		ArrayList alParameters = new ArrayList();</span>
+<span class="fc" id="L252">		alParameters.add(new ArrayList(orgIDs)); // the parameter must be a list of lists in the sacred interest of confusion, not telling and type un-safety.</span>
+<span class="fc" id="L253">		Filter filter = new Filter(Filter.ORGANIZATIONID, Filter.OPERATOR_IN, alParameters);</span>
+<span class="fc" id="L254">		filter.setUserID(currentUser.getID());</span>
+<span class="fc" id="L255">		filter.setTimePeriodType(Filter.TIMEPERIODTYPE_TIMEWINDOW);</span>
+<span class="fc" id="L256">		filter.setStartTime(start);</span>
+<span class="fc" id="L257">		filter.setEndTime(end);</span>
+<span class="fc" id="L258">		return filter;</span>
 	}
-	
-	public Collection&lt;ID&gt; getPhantomsIDsAssignedToSP(ID spID) 
-		throws RemoteException{
-<span class="fc" id="L257">		methodStart(&quot;getPhantomsIDsAssignedToSP&quot;, spID);</span>
+
+	public Collection&lt;ID&gt; getPhantomsIDsAssignedToSP(ID spID)
+			throws RemoteException {
+<span class="fc" id="L263">		methodStart(&quot;getPhantomsIDsAssignedToSP&quot;, spID);</span>
 		try {
-<span class="fc" id="L259">			User currentUser = getCurrentUser();</span>
-<span class="fc" id="L260">			Filter filter = Filter.createAllFilter(currentUser.getID());</span>
-<span class="fc" id="L261">			return new ArrayList&lt;ID&gt;(m_employeeFilterEJB.getEmployeeIDs(filter, currentUser, new ArrayList(), true, 0, Integer.MAX_VALUE, true, spID));</span>
-<span class="nc" id="L262">		} catch (Exception ex) {</span>
+<span class="fc" id="L265">			User currentUser = getCurrentUser();</span>
+<span class="fc" id="L266">			Filter filter = Filter.createAllFilter(currentUser.getID());</span>
+<span class="fc" id="L267">			return new ArrayList&lt;ID&gt;(m_employeeFilterEJB.getEmployeeIDs(filter, currentUser, new ArrayList(), true, 0, Integer.MAX_VALUE, true, spID));</span>
+<span class="nc" id="L268">		} catch (Exception ex) {</span>
 			//how to handle?
-<span class="nc" id="L264">			m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L265">			throw new RemoteException(ex.getMessage(), ex);</span>
+<span class="nc" id="L270">			m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L271">			throw new RemoteException(ex.getMessage(), ex);</span>
 		} finally {
-<span class="pc" id="L267">			methodFinish();</span>
+<span class="pc" id="L273">			methodFinish();</span>
 		}
 	}
-	
+
 	public CFUserRemote getUserByName(String userName) throws RemoteException {
-<span class="fc" id="L272">		methodStart(&quot;getUserByName&quot;, userName);</span>
+<span class="fc" id="L278">		methodStart(&quot;getUserByName&quot;, userName);</span>
 		try {
-<span class="fc" id="L274">			return CFUserRemote.convert(UserConverter.convertUser(m_userManager</span>
-<span class="fc" id="L275">					.getUserByName(userName), new short[] { 1 }));</span>
-<span class="nc" id="L276">		} catch (Exception ex) {</span>
-<span class="nc" id="L277">			m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L278">			throw new RemoteException(ex.getMessage(), ex);</span>
+<span class="fc" id="L280">			return CFUserRemote.convert(UserConverter.convertUser(m_userManager</span>
+<span class="fc" id="L281">					.getUserByName(userName), new short[]{1}));</span>
+<span class="nc" id="L282">		} catch (Exception ex) {</span>
+<span class="nc" id="L283">			m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L284">			throw new RemoteException(ex.getMessage(), ex);</span>
 		} finally {
-<span class="pc" id="L280">			methodFinish();</span>
+<span class="pc" id="L286">			methodFinish();</span>
 		}
 	}
-	
-	
+
+
 	private User getCurrentUser() throws Exception {
-<span class="fc" id="L286">		String userName = this.m_sessionContext.getCallerPrincipal().getName();</span>
-		
-<span class="fc" id="L288">		User currentUser = m_userManager.getUserByName(userName);</span>
-		
-<span class="fc bfc" id="L290" title="All 2 branches covered.">		if (currentUser == null){</span>
-<span class="fc" id="L291">			m_cat.debug(&quot;Can't get current user name &quot; + userName + &quot;, use supperuser as default user&quot;);</span>
-<span class="fc" id="L292">			currentUser = m_userManager.getUserByID(User.SUPER_USERID);</span>
+<span class="fc" id="L292">		String userName = this.m_sessionContext.getCallerPrincipal().getName();</span>
+
+<span class="fc" id="L294">		User currentUser = m_userManager.getUserByName(userName);</span>
+
+<span class="pc bpc" id="L296" title="1 of 2 branches missed.">		if (currentUser == null) {</span>
+<span class="nc" id="L297">			m_cat.debug(&quot;Can't get current user name &quot; + userName + &quot;, use supperuser as default user&quot;);</span>
+<span class="nc" id="L298">			currentUser = m_userManager.getUserByID(User.SUPER_USERID);</span>
 		}
-		
-<span class="fc" id="L295">		return currentUser;</span>
+
+<span class="fc" id="L301">		return currentUser;</span>
 	}
 
-	private IRemoteScheduleImport[] getOutsourcerImportStubs() throws Exception{
-<span class="nc" id="L299">		 return getRemoteImportStubs(IRemoteScheduleImport.class, IRemoteScheduleImport.RMT_ID );</span>
+	private IRemoteScheduleImport[] getOutsourcerImportStubs() throws Exception {
+<span class="nc" id="L305">		return getRemoteImportStubs(IRemoteScheduleImport.class, IRemoteScheduleImport.RMT_ID);</span>
 	}
 
-	private IRemoteInterface[] getGenericStubs() throws Exception{
-<span class="fc" id="L303">		 return getRemoteImportStubs(IRemoteInterface.class, IRemoteInterface.RMT_ID );</span>
+	private IRemoteInterface[] getGenericStubs() throws Exception {
+<span class="fc" id="L309">		return getRemoteImportStubs(IRemoteInterface.class, IRemoteInterface.RMT_ID);</span>
 	}
 
-	
-	private &lt;T&gt; T[] getRemoteImportStubs(Class&lt;T&gt; cls, String typeID ) throws Exception
-	{
-<span class="fc" id="L309">		methodStart(&quot;getRemoteImportStubs&quot;);</span>
-		
-		try
-		{
-<span class="fc" id="L313">			FXRegistrationManager fxMgr = BbmManagerFactory.getFXRegistrationManager();</span>
-	
-<span class="fc" id="L315">			Collection coll = fxMgr.getAllServers();</span>
-<span class="pc bpc" id="L316" title="2 of 4 branches missed.">			if( coll == null || coll.size() &lt;= 0 )</span>
-			{
-<span class="nc bnc" id="L318" title="All 2 branches missed.">				if( m_cat.isDebugEnabled() )</span>
-<span class="nc" id="L319">					m_cat.debug(&quot; No integration servers registered &quot;);</span>
-<span class="nc" id="L320">				return null;</span>
+
+	private &lt;T&gt; T[] getRemoteImportStubs(Class&lt;T&gt; cls, String typeID) throws Exception {
+<span class="fc" id="L314">		methodStart(&quot;getRemoteImportStubs&quot;);</span>
+
+		try {
+<span class="fc" id="L317">			FXRegistrationManager fxMgr = BbmManagerFactory.getFXRegistrationManager();</span>
+
+<span class="fc" id="L319">			Collection coll = fxMgr.getAllServers();</span>
+<span class="pc bpc" id="L320" title="2 of 4 branches missed.">			if (coll == null || coll.size() &lt;= 0) {</span>
+<span class="nc bnc" id="L321" title="All 2 branches missed.">				if (m_cat.isDebugEnabled())</span>
+<span class="nc" id="L322">					m_cat.debug(&quot; No integration servers registered &quot;);</span>
+<span class="nc" id="L323">				return null;</span>
 			}
-		
-<span class="fc" id="L323">			ArrayList&lt;T&gt; objList = new ArrayList&lt;T&gt;();</span>
-			
-<span class="fc" id="L325">			Iterator iter = coll.iterator();</span>
-<span class="fc bfc" id="L326" title="All 2 branches covered.">			while( iter.hasNext() )</span>
-			{
-<span class="fc" id="L328">				int count = 0;</span>
-<span class="fc" id="L329">				FXServer srvr = (FXServer)iter.next();</span>
-<span class="fc" id="L330">				String url =  &quot;//&quot; + srvr.getRmiHost() + &quot;:&quot; + srvr.getRmiPort();</span>
-<span class="pc bpc" id="L331" title="1 of 2 branches missed.">				if( m_cat.isDebugEnabled() )</span>
-<span class="fc" id="L332">					m_cat.debug(&quot; Looking up integration server url=&quot; + url );</span>
-			
-				try
-				{
-<span class="fc" id="L336">					String []list = Naming.list(url);</span>
-<span class="fc" id="L337">					url = url + &quot;/&quot;;</span>
-<span class="pc bpc" id="L338" title="1 of 4 branches missed.">					for( int i=0; list != null  &amp;&amp; i &lt; list.length; ++i )</span>
-					{
-<span class="fc" id="L340">						String objUrl = list[i].substring( url.length() );</span>
-						
-<span class="pc bpc" id="L342" title="1 of 4 branches missed.">						if( objUrl != null &amp;&amp; objUrl.startsWith(typeID) )</span>
-						{
-<span class="pc bpc" id="L344" title="1 of 2 branches missed.">							if( m_cat.isDebugEnabled() )</span>
-<span class="fc" id="L345">								m_cat.debug(&quot; Looking up adapter=&quot; + list[i] );	</span>
-<span class="fc" id="L346">							T obj = (T)Naming.lookup(list[i]);</span>
-<span class="pc bpc" id="L347" title="1 of 2 branches missed.">							if( obj != null )</span>
-							{
-<span class="fc" id="L349">								objList.add(obj);</span>
-<span class="fc" id="L350">								++count;</span>
-<span class="pc bpc" id="L351" title="1 of 2 branches missed.">								if( m_cat.isDebugEnabled() )</span>
-<span class="fc" id="L352">									m_cat.debug(&quot; Found Import Adapter running on url=&quot; + list[i] ); </span>
+
+<span class="fc" id="L326">			ArrayList&lt;T&gt; objList = new ArrayList&lt;T&gt;();</span>
+
+<span class="fc" id="L328">			Iterator iter = coll.iterator();</span>
+<span class="fc bfc" id="L329" title="All 2 branches covered.">			while (iter.hasNext()) {</span>
+<span class="fc" id="L330">				int count = 0;</span>
+<span class="fc" id="L331">				FXServer srvr = (FXServer) iter.next();</span>
+<span class="fc" id="L332">				String url = &quot;//&quot; + srvr.getRmiHost() + &quot;:&quot; + srvr.getRmiPort();</span>
+<span class="pc bpc" id="L333" title="1 of 2 branches missed.">				if (m_cat.isDebugEnabled())</span>
+<span class="fc" id="L334">					m_cat.debug(&quot; Looking up integration server url=&quot; + url);</span>
+
+				try {
+<span class="fc" id="L337">					String[] list = Naming.list(url);</span>
+<span class="fc" id="L338">					url = url + &quot;/&quot;;</span>
+<span class="pc bpc" id="L339" title="1 of 4 branches missed.">					for (int i = 0; list != null &amp;&amp; i &lt; list.length; ++i) {</span>
+<span class="fc" id="L340">						String objUrl = list[i].substring(url.length());</span>
+
+<span class="pc bpc" id="L342" title="1 of 4 branches missed.">						if (objUrl != null &amp;&amp; objUrl.startsWith(typeID)) {</span>
+<span class="pc bpc" id="L343" title="1 of 2 branches missed.">							if (m_cat.isDebugEnabled())</span>
+<span class="fc" id="L344">								m_cat.debug(&quot; Looking up adapter=&quot; + list[i]);</span>
+<span class="fc" id="L345">							T obj = (T) Naming.lookup(list[i]);</span>
+<span class="pc bpc" id="L346" title="1 of 2 branches missed.">							if (obj != null) {</span>
+<span class="fc" id="L347">								objList.add(obj);</span>
+<span class="fc" id="L348">								++count;</span>
+<span class="pc bpc" id="L349" title="1 of 2 branches missed.">								if (m_cat.isDebugEnabled())</span>
+<span class="fc" id="L350">									m_cat.debug(&quot; Found Import Adapter running on url=&quot; + list[i]);</span>
 							}
 						}
 					}
-				}
-<span class="nc" id="L357">				catch( Exception ex )</span>
-				{
-<span class="nc" id="L359">					m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L360">					continue;</span>
-<span class="fc" id="L361">				}</span>
+<span class="nc" id="L354">				} catch (Exception ex) {</span>
+<span class="nc" id="L355">					m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L356">					continue;</span>
+<span class="fc" id="L357">				}</span>
 
-<span class="pc bpc" id="L363" title="1 of 2 branches missed.">				if( count == 0 )</span>
-<span class="nc" id="L364">					m_cat.debug(&quot; Import Adapter is not running on url=&quot; + url ); </span>
-<span class="fc" id="L365">			}</span>
-			
-<span class="fc" id="L367">			return  objList.toArray( (T[])java.lang.reflect.Array.newInstance(cls, objList.size())  );</span>
-		}
-		finally
-		{
-<span class="pc" id="L371">			methodFinish();</span>
-		}
-	}
-	
-	public boolean isConfiguredForImport( ID orgID, ID campaignID )
-														throws RemoteException
-	{
-<span class="nc" id="L378">		methodStart(&quot;isConfiguredForImport&quot;, orgID, campaignID);</span>
-		try 
-		{
-<span class="nc" id="L381">			IRemoteScheduleImport []impList = this.getOutsourcerImportStubs();</span>
-<span class="nc bnc" id="L382" title="All 4 branches missed.">			if( impList == null || impList.length &lt;= 0 )</span>
-			{
-<span class="nc" id="L384">				return false;</span>
-			}
-			
-<span class="nc bnc" id="L387" title="All 2 branches missed.">			for( int i=0; i &lt; impList.length; ++i)</span>
-			{
-				try
-				{
-<span class="nc" id="L391">					IRemoteScheduleImport imp = impList[i];</span>
-<span class="nc bnc" id="L392" title="All 2 branches missed.">					if( imp.isConfiguredForImport(orgID,campaignID) )</span>
-					{
-<span class="nc" id="L394">						return true;</span>
-					}
-				}
-<span class="nc" id="L397">				catch (Exception ex) </span>
-				{
-<span class="nc" id="L399">					m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L400">				}				</span>
-			}
+<span class="pc bpc" id="L359" title="1 of 2 branches missed.">				if (count == 0)</span>
+<span class="nc" id="L360">					m_cat.debug(&quot; Import Adapter is not running on url=&quot; + url);</span>
+<span class="fc" id="L361">			}</span>
 
-<span class="nc bnc" id="L403" title="All 2 branches missed.">			if( m_cat.isDebugEnabled() )</span>
-<span class="nc" id="L404">				m_cat.debug(&quot; No Adapters configured for import&quot;  ); </span>
-			
-<span class="nc" id="L406">			return false;</span>
-		}
-<span class="nc" id="L408">		catch (Exception ex) </span>
-		{
-<span class="nc" id="L410">			m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L411">			throw new RemoteException(ex.getMessage(), ex);</span>
-		} 
-		finally
-		{
-<span class="nc" id="L415">			methodFinish();</span>
+<span class="fc" id="L363">			return objList.toArray((T[]) java.lang.reflect.Array.newInstance(cls, objList.size()));</span>
+		} finally {
+<span class="pc" id="L365">			methodFinish();</span>
 		}
 	}
 
-	public int importOutsourcerStaffingProfiles( ID orgID, ID campaignID,
-														Date start,
-														Date end)
-							throws RemoteException
-	{
-
-<span class="nc" id="L425">		methodStart(&quot;importOutsourcerStaffingProfiles&quot;, orgID, campaignID, start, end);</span>
-
-		try
-		{
-<span class="nc" id="L429">			ArrayList retVal = null;</span>
-<span class="nc" id="L430">			IRemoteScheduleImport []impList = null;</span>
-			
-			try
-			{
-<span class="nc" id="L434">				impList = this.getOutsourcerImportStubs();</span>
-<span class="nc bnc" id="L435" title="All 4 branches missed.">				if( impList == null || impList.length &lt;= 0 )</span>
-				{
-<span class="nc" id="L437">					return OUTSOURCER_INTEGRATION_SERVER_ERROR;</span>
-				}
+	public boolean isConfiguredForImport(ID orgID, ID campaignID)
+			throws RemoteException {
+<span class="nc" id="L371">		methodStart(&quot;isConfiguredForImport&quot;, orgID, campaignID);</span>
+		try {
+<span class="nc" id="L373">			IRemoteScheduleImport[] impList = this.getOutsourcerImportStubs();</span>
+<span class="nc bnc" id="L374" title="All 4 branches missed.">			if (impList == null || impList.length &lt;= 0) {</span>
+<span class="nc" id="L375">				return false;</span>
 			}
-<span class="nc" id="L440">			catch( Exception ex )</span>
-			{
-<span class="nc" id="L442">				return OUTSOURCER_INTEGRATION_SERVER_ERROR;</span>
-<span class="nc" id="L443">			}</span>
-	
-<span class="nc bnc" id="L445" title="All 2 branches missed.">			for( int i=0; i &lt; impList.length; ++i)</span>
-			{
-				try
-				{
-<span class="nc" id="L449">					IRemoteScheduleImport imp = impList[i];</span>
-<span class="nc bnc" id="L450" title="All 2 branches missed.">					if( !imp.isConfiguredForImport(orgID,campaignID) )</span>
-					{
-<span class="nc" id="L452">						continue;</span>
+
+<span class="nc bnc" id="L378" title="All 2 branches missed.">			for (int i = 0; i &lt; impList.length; ++i) {</span>
+				try {
+<span class="nc" id="L380">					IRemoteScheduleImport imp = impList[i];</span>
+<span class="nc bnc" id="L381" title="All 2 branches missed.">					if (imp.isConfiguredForImport(orgID, campaignID)) {</span>
+<span class="nc" id="L382">						return true;</span>
 					}
-							
-<span class="nc bnc" id="L455" title="All 2 branches missed.">					if( m_cat.isDebugEnabled() )</span>
-<span class="nc" id="L456">						m_cat.debug(&quot; Importing staffing profile for orgID=&quot; + orgID +</span>
+<span class="nc" id="L384">				} catch (Exception ex) {</span>
+<span class="nc" id="L385">					m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L386">				}</span>
+			}
+
+<span class="nc bnc" id="L389" title="All 2 branches missed.">			if (m_cat.isDebugEnabled())</span>
+<span class="nc" id="L390">				m_cat.debug(&quot; No Adapters configured for import&quot;);</span>
+
+<span class="nc" id="L392">			return false;</span>
+<span class="nc" id="L393">		} catch (Exception ex) {</span>
+<span class="nc" id="L394">			m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L395">			throw new RemoteException(ex.getMessage(), ex);</span>
+		} finally {
+<span class="nc" id="L397">			methodFinish();</span>
+		}
+	}
+
+	public int importOutsourcerStaffingProfiles(ID orgID, ID campaignID,
+			Date start,
+			Date end)
+			throws RemoteException {
+
+<span class="nc" id="L406">		methodStart(&quot;importOutsourcerStaffingProfiles&quot;, orgID, campaignID, start, end);</span>
+
+		try {
+<span class="nc" id="L409">			ArrayList retVal = null;</span>
+<span class="nc" id="L410">			IRemoteScheduleImport[] impList = null;</span>
+
+			try {
+<span class="nc" id="L413">				impList = this.getOutsourcerImportStubs();</span>
+<span class="nc bnc" id="L414" title="All 4 branches missed.">				if (impList == null || impList.length &lt;= 0) {</span>
+<span class="nc" id="L415">					return OUTSOURCER_INTEGRATION_SERVER_ERROR;</span>
+				}
+<span class="nc" id="L417">			} catch (Exception ex) {</span>
+<span class="nc" id="L418">				return OUTSOURCER_INTEGRATION_SERVER_ERROR;</span>
+<span class="nc" id="L419">			}</span>
+
+<span class="nc bnc" id="L421" title="All 2 branches missed.">			for (int i = 0; i &lt; impList.length; ++i) {</span>
+				try {
+<span class="nc" id="L423">					IRemoteScheduleImport imp = impList[i];</span>
+<span class="nc bnc" id="L424" title="All 2 branches missed.">					if (!imp.isConfiguredForImport(orgID, campaignID)) {</span>
+<span class="nc" id="L425">						continue;</span>
+					}
+
+<span class="nc bnc" id="L428" title="All 2 branches missed.">					if (m_cat.isDebugEnabled())</span>
+<span class="nc" id="L429">						m_cat.debug(&quot; Importing staffing profile for orgID=&quot; + orgID +</span>
 								&quot; campaignID=&quot; + campaignID +
 								&quot; start=&quot; + start +
-								&quot; end=&quot; + end );
-<span class="nc" id="L460">						retVal = (ArrayList)imp.importStaffingProfiles(orgID, campaignID, start, end);</span>
-				}
-<span class="nc" id="L462">				catch( Exception ex )</span>
-				{
-<span class="nc" id="L464">					m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L465">					return OUTSOURCER_ADAPTER_ERROR;</span>
-<span class="nc" id="L466">				}</span>
-				
-<span class="nc" id="L468">				int count = 0;</span>
-<span class="nc bnc" id="L469" title="All 4 branches missed.">				if( retVal != null  &amp;&amp; retVal.size() &gt; 1 )</span>
-				{
-<span class="nc" id="L471">					count = ((ArrayList)retVal.get(1)).size();</span>
+								&quot; end=&quot; + end);
+<span class="nc" id="L433">					retVal = (ArrayList) imp.importStaffingProfiles(orgID, campaignID, start, end);</span>
+<span class="nc" id="L434">				} catch (Exception ex) {</span>
+<span class="nc" id="L435">					m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L436">					return OUTSOURCER_ADAPTER_ERROR;</span>
+<span class="nc" id="L437">				}</span>
+
+<span class="nc" id="L439">				int count = 0;</span>
+<span class="nc bnc" id="L440" title="All 4 branches missed.">				if (retVal != null &amp;&amp; retVal.size() &gt; 1) {</span>
+<span class="nc" id="L441">					count = ((ArrayList) retVal.get(1)).size();</span>
 				}
 
 				// check if profiles are available for import
-<span class="nc bnc" id="L475" title="All 2 branches missed.">				if(  count &gt; 0 )</span>
-				{
-					try
-					{
-<span class="nc" id="L479">						ScheduleAccessManager mgr = WfmManagerFactory.getScheduleAccessManager();</span>
-<span class="nc" id="L480">						mgr.importStaffingProfiles(orgID, </span>
-													campaignID, 
-													(ArrayList)retVal,
-													start,
-													end );
-<span class="nc" id="L485">						return OUTSOURCER_IMPORT_SUCCESSFUL;</span>
+<span class="nc bnc" id="L445" title="All 2 branches missed.">				if (count &gt; 0) {</span>
+					try {
+<span class="nc" id="L447">						ScheduleAccessManager mgr = WfmManagerFactory.getScheduleAccessManager();</span>
+<span class="nc" id="L448">						mgr.importStaffingProfiles(orgID,</span>
+								campaignID,
+								(ArrayList) retVal,
+								start,
+								end);
+<span class="nc" id="L453">						return OUTSOURCER_IMPORT_SUCCESSFUL;</span>
+<span class="nc" id="L454">					} catch (Exception ex) {</span>
+<span class="nc" id="L455">						m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L456">						return OUTSOURCER_APPLICATION_SERVER_ERROR;</span>
 					}
-<span class="nc" id="L487">					catch( Exception ex )</span>
-					{
-<span class="nc" id="L489">						m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L490">						return OUTSOURCER_APPLICATION_SERVER_ERROR;</span>
-					}
-				}
-				else
-				{
-<span class="nc bnc" id="L495" title="All 2 branches missed.">					if( m_cat.isDebugEnabled() )</span>
-<span class="nc" id="L496">						m_cat.debug(&quot; Adapter returned null or empty collection for &quot; +</span>
+				} else {
+<span class="nc bnc" id="L459" title="All 2 branches missed.">					if (m_cat.isDebugEnabled())</span>
+<span class="nc" id="L460">						m_cat.debug(&quot; Adapter returned null or empty collection for &quot; +</span>
 								&quot; orgID=&quot; + orgID +
 								&quot; campaignID=&quot; + campaignID +
 								&quot; start=&quot; + start +
 								&quot; end=&quot; + end);
-<span class="nc" id="L501">					return OUTSOURCER_ADAPTER_PROCESSING_ERROR;</span>
+<span class="nc" id="L465">					return OUTSOURCER_ADAPTER_PROCESSING_ERROR;</span>
 				}
 			}
-	
-<span class="nc bnc" id="L505" title="All 2 branches missed.">			if( m_cat.isDebugEnabled() )</span>
-<span class="nc" id="L506">				m_cat.debug(&quot; No adapters configured to import orgID=&quot; + orgID +</span>
+
+<span class="nc bnc" id="L469" title="All 2 branches missed.">			if (m_cat.isDebugEnabled())</span>
+<span class="nc" id="L470">				m_cat.debug(&quot; No adapters configured to import orgID=&quot; + orgID +</span>
 						&quot; campaignID=&quot; + campaignID);
-			
-<span class="nc" id="L509">			return OUTSOURCER_ADAPTER_CONFIGURATION_ERROR;</span>
-		}
-		finally 
-		{
-<span class="nc" id="L513">			methodFinish();</span>
+
+<span class="nc" id="L473">			return OUTSOURCER_ADAPTER_CONFIGURATION_ERROR;</span>
+		} finally {
+<span class="nc" id="L475">			methodFinish();</span>
 		}
 	}
-	
-<span class="fc" id="L517">	public static String SILENT_FNS_ADAPTER = &quot;SILENT_FNS_ADAPTER&quot;;</span>
-<span class="fc" id="L518">	public static String SILENT_FNS_ADAPER_IDLE = &quot;SILENT_FNS_ADAPER_IDLE&quot;;</span>
+
+<span class="fc" id="L479">	public static String SILENT_FNS_ADAPTER = &quot;SILENT_FNS_ADAPTER&quot;;</span>
+<span class="fc" id="L480">	public static String SILENT_FNS_ADAPER_IDLE = &quot;SILENT_FNS_ADAPER_IDLE&quot;;</span>
 
 	/**
 	 * Initiates a schedule recalculation for the given SP (spID) using the Silent FnS Adapter in Integration Services.
+	 *
 	 * @param userName
 	 * @param token
 	 * @param isWhatIfMode
-	 * @param actionID	1-recalc; 2-scheduling; 3-analyze
+	 * @param actionID            1-recalc; 2-scheduling; 3-analyze
 	 * @param spID
 	 * @param isEnableLQF
 	 * @param isRecalcSubCampaign
 	 * @param params
 	 * @return An integer indicating the status of the operation.
-	 * 	1 - recalc was successfully initiated (the calc itself is done asynchronously so this gives no information on whether the
-	 * 	calc itself was successful).
+	 * 1 - recalc was successfully initiated (the calc itself is done asynchronously so this gives no information on whether the
+	 * calc itself was successful).
 	 * OUTSOURCER_INTEGRATION_SERVER_ERROR (3) - Will be returned if there was a problem connecting to the integration server.
 	 * OUTSOURCER_ADAPTER_CONFIGURATION_ERROR (4) - Will be returned if there was a problem with the configuration of the integration
 	 * server (perhaps the Silent FnS module was not present or configured?)
 	 */
-	public int recalcScheduling(String userName, String token, boolean isWhatIfMode, int actionID, ID spID, boolean isEnableLQF, boolean isRecalcSubCampaign, String[] params){
-<span class="fc" id="L538">		methodStart(&quot;recalcScheduling&quot;, new Integer(actionID), spID, new Boolean(isEnableLQF));</span>
-<span class="fc" id="L539">		String command = &quot;&quot;;</span>
-<span class="pc bpc" id="L540" title="3 of 4 branches missed.">		switch (actionID) {</span>
-<span class="nc" id="L541">			case 1: command = &quot;ReCalc&quot;; break;</span>
-<span class="fc" id="L542">			case 2: command = &quot;Scheduling&quot;; break;</span>
-<span class="nc" id="L543">			case 3: command = &quot;Analyze&quot;; break;</span>
+	public int recalcScheduling(String userName, String token, boolean isWhatIfMode, int actionID, ID spID, boolean isEnableLQF, boolean isRecalcSubCampaign, String[] params) {
+<span class="fc" id="L501">		methodStart(&quot;recalcScheduling&quot;, new Integer(actionID), spID, new Boolean(isEnableLQF));</span>
+<span class="fc" id="L502">		String command = &quot;&quot;;</span>
+<span class="pc bpc" id="L503" title="3 of 4 branches missed.">		switch (actionID) {</span>
+			case 1:
+<span class="nc" id="L505">				command = &quot;ReCalc&quot;;</span>
+<span class="nc" id="L506">				break;</span>
+			case 2:
+<span class="fc" id="L508">				command = &quot;Scheduling&quot;;</span>
+<span class="fc" id="L509">				break;</span>
+			case 3:
+<span class="nc" id="L511">				command = &quot;Analyze&quot;;</span>
+				break;
 		}
 		try {
-<span class="fc" id="L546">			Pair stubPair = getStub();</span>
-<span class="pc bpc" id="L547" title="1 of 2 branches missed.">			IRemoteInterface imp = (IRemoteInterface) (stubPair != null ? stubPair.getSecond() : null);</span>
-<span class="pc bpc" id="L548" title="1 of 2 branches missed.">			if (imp == null) {</span>
-<span class="nc" id="L549">				m_cat.info(&quot; No adapters configured to recalc or scheduling!&quot;);</span>
-<span class="nc bnc" id="L550" title="All 4 branches missed.">				if (stubPair != null &amp;&amp; stubPair.getFirst() != null) {</span>
-<span class="nc" id="L551">					return ((Integer) stubPair.getFirst()).intValue();</span>
+<span class="fc" id="L515">			Pair stubPair = getStub();</span>
+<span class="pc bpc" id="L516" title="1 of 2 branches missed.">			IRemoteInterface imp = (IRemoteInterface) (stubPair != null ? stubPair.getSecond() : null);</span>
+<span class="pc bpc" id="L517" title="1 of 2 branches missed.">			if (imp == null) {</span>
+<span class="nc" id="L518">				m_cat.info(&quot; No adapters configured to recalc or scheduling!&quot;);</span>
+<span class="nc bnc" id="L519" title="All 4 branches missed.">				if (stubPair != null &amp;&amp; stubPair.getFirst() != null) {</span>
+<span class="nc" id="L520">					return ((Integer) stubPair.getFirst()).intValue();</span>
 				}
-<span class="nc" id="L553">				return OUTSOURCER_ADAPTER_CONFIGURATION_ERROR;</span>
+<span class="nc" id="L522">				return OUTSOURCER_ADAPTER_CONFIGURATION_ERROR;</span>
 			}
-<span class="pc bpc" id="L555" title="1 of 2 branches missed.">			if (m_cat.isDebugEnabled()) m_cat.debug(command + &quot; for spID=&quot; + spID);</span>
-<span class="fc" id="L556">			String[] deiParams = new String[]{userName, token, String.valueOf(isWhatIfMode), String.valueOf(actionID), spID.toString(), String.valueOf(isEnableLQF)};</span>
-<span class="pc bpc" id="L557" title="3 of 4 branches missed.">			if(actionID == 1 &amp;&amp; isRecalcSubCampaign)//1-recalc,2-scheduling, 3-analyze</span>
+<span class="pc bpc" id="L524" title="1 of 2 branches missed.">			if (m_cat.isDebugEnabled()) m_cat.debug(command + &quot; for spID=&quot; + spID);</span>
+<span class="fc" id="L525">			String[] deiParams = new String[]{userName, token, String.valueOf(isWhatIfMode), String.valueOf(actionID), spID.toString(), String.valueOf(isEnableLQF)};</span>
+<span class="pc bpc" id="L526" title="3 of 4 branches missed.">			if (actionID == 1 &amp;&amp; isRecalcSubCampaign)//1-recalc,2-scheduling, 3-analyze</span>
 			{
-<span class="nc" id="L559">				deiParams = new String[]{userName, token, String.valueOf(isWhatIfMode), String.valueOf(actionID), spID.toString(), String.valueOf(isEnableLQF), String.valueOf(isRecalcSubCampaign)};</span>
+<span class="nc" id="L528">				deiParams = new String[]{userName, token, String.valueOf(isWhatIfMode), String.valueOf(actionID), spID.toString(), String.valueOf(isEnableLQF), String.valueOf(isRecalcSubCampaign)};</span>
 			}
-			
-<span class="pc bpc" id="L562" title="3 of 4 branches missed.">			if (actionID == 2 || actionID == 3) {//1-recalc,2-scheduling, 3-analyze</span>
-		    		//maybe more parameters for dei file
-<span class="pc bpc" id="L564" title="2 of 4 branches missed.">				if (params != null &amp;&amp; params.length &gt; 0) {</span>
-<span class="fc" id="L565">					int numParams = 6 + params.length;</span>
-<span class="fc" id="L566">					deiParams = new String[numParams];</span>
-<span class="fc" id="L567">					int index = 0;</span>
-<span class="fc" id="L568">					deiParams[index++] = userName;</span>
-<span class="fc" id="L569">					deiParams[index++] = token;</span>
-<span class="fc" id="L570">					deiParams[index++] = String.valueOf(isWhatIfMode);</span>
-<span class="fc" id="L571">					deiParams[index++] = String.valueOf(actionID);</span>
-<span class="fc" id="L572">					deiParams[index++] = spID.toString();</span>
-<span class="fc" id="L573">					deiParams[index++] = String.valueOf(isEnableLQF);</span>
 
-<span class="fc bfc" id="L575" title="All 2 branches covered.">					for (int j = 0; j &lt; params.length; j++) {</span>
-<span class="fc" id="L576">						deiParams[index++] = params[j];</span>
+<span class="pc bpc" id="L531" title="3 of 4 branches missed.">			if (actionID == 2 || actionID == 3) {//1-recalc,2-scheduling, 3-analyze</span>
+				//maybe more parameters for dei file
+<span class="pc bpc" id="L533" title="2 of 4 branches missed.">				if (params != null &amp;&amp; params.length &gt; 0) {</span>
+<span class="fc" id="L534">					int numParams = 6 + params.length;</span>
+<span class="fc" id="L535">					deiParams = new String[numParams];</span>
+<span class="fc" id="L536">					int index = 0;</span>
+<span class="fc" id="L537">					deiParams[index++] = userName;</span>
+<span class="fc" id="L538">					deiParams[index++] = token;</span>
+<span class="fc" id="L539">					deiParams[index++] = String.valueOf(isWhatIfMode);</span>
+<span class="fc" id="L540">					deiParams[index++] = String.valueOf(actionID);</span>
+<span class="fc" id="L541">					deiParams[index++] = spID.toString();</span>
+<span class="fc" id="L542">					deiParams[index++] = String.valueOf(isEnableLQF);</span>
+
+<span class="fc bfc" id="L544" title="All 2 branches covered.">					for (int j = 0; j &lt; params.length; j++) {</span>
+<span class="fc" id="L545">						deiParams[index++] = params[j];</span>
 					}
 				}
 			}
 			// test here
 			//generateDEI(deiParams);
-<span class="fc" id="L582">			System.out.println(imp+ &quot;================&quot; + imp.doCommand(deiParams));</span>
-<span class="fc" id="L583">			return 1;</span>
-<span class="nc" id="L584">		} catch (Exception ex) {</span>
-<span class="nc" id="L585">			m_cat.error(ex.getMessage(), ex);</span>
-<span class="nc" id="L586">			return OUTSOURCER_ADAPTER_ERROR;</span>
+<span class="fc" id="L551">			System.out.println(imp + &quot;================&quot; + imp.doCommand(deiParams));</span>
+<span class="fc" id="L552">			return 1;</span>
+<span class="nc" id="L553">		} catch (Exception ex) {</span>
+<span class="nc" id="L554">			m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L555">			return OUTSOURCER_ADAPTER_ERROR;</span>
 		} finally {
-<span class="pc" id="L588">			methodFinish();</span>
+<span class="pc" id="L557">			methodFinish();</span>
 		}
 	}
-	
+
 
 	public int getCountOfServers(String type) throws RemoteException {
-<span class="fc" id="L594">		int count = 0;</span>
+<span class="fc" id="L563">		int count = 0;</span>
 
 		try {
-			FXRegistrationManager fxMgr = BbmManagerFactory
-<span class="fc" id="L598">					.getFXRegistrationManager();</span>
+<span class="fc" id="L566">			FXRegistrationManager fxMgr = BbmManagerFactory.getFXRegistrationManager();</span>
 
-<span class="fc" id="L600">			Collection coll = fxMgr.getAllServers();</span>
-<span class="pc bpc" id="L601" title="1 of 4 branches missed.">			if (coll == null || coll.size() &lt;= 0) {</span>
-<span class="pc bpc" id="L602" title="1 of 2 branches missed.">				if (m_cat.isDebugEnabled())</span>
-<span class="fc" id="L603">					m_cat.debug(&quot; No integration servers registered &quot;);</span>
-<span class="fc" id="L604">				return 0;</span>
+<span class="fc" id="L568">			Collection&lt;FXServer&gt; coll = fxMgr.getAllServers();</span>
+<span class="pc bpc" id="L569" title="1 of 4 branches missed.">			if (coll == null || coll.size() &lt;= 0) {</span>
+<span class="pc bpc" id="L570" title="1 of 2 branches missed.">				if (m_cat.isDebugEnabled()) {</span>
+<span class="fc" id="L571">					m_cat.debug(&quot; No integration servers registered &quot;);</span>
+				}
+<span class="fc" id="L573">				return 0;</span>
 			}
 
-<span class="fc" id="L607">			Iterator iter = coll.iterator();</span>
-<span class="fc bfc" id="L608" title="All 2 branches covered.">			while (iter.hasNext()) {</span>
-<span class="fc" id="L609">				FXServer srvr = (FXServer) iter.next();</span>
-<span class="fc" id="L610">				String url = &quot;//&quot; + srvr.getRmiHost() + &quot;:&quot; + srvr.getRmiPort();</span>
-<span class="pc bpc" id="L611" title="1 of 2 branches missed.">				if (m_cat.isDebugEnabled())</span>
-<span class="fc" id="L612">					m_cat.debug(&quot; Looking up integration server url=&quot; + url);</span>
+<span class="fc" id="L576">			Iterator&lt;FXServer&gt; iter = coll.iterator();</span>
+<span class="fc bfc" id="L577" title="All 2 branches covered.">			while (iter.hasNext()) {</span>
+<span class="fc" id="L578">				FXServer srvr = iter.next();</span>
+<span class="fc" id="L579">				String url = &quot;//&quot; + srvr.getRmiHost() + &quot;:&quot; + srvr.getRmiPort();</span>
+<span class="pc bpc" id="L580" title="1 of 2 branches missed.">				if (m_cat.isDebugEnabled()) {</span>
+<span class="fc" id="L581">					m_cat.debug(&quot; Looking up integration server url=&quot; + url);</span>
+				}
 
 				try {
-<span class="fc" id="L615">					String[] list = Naming.list(url);</span>
-<span class="fc" id="L616">					url = url + &quot;/&quot;;</span>
-<span class="pc bpc" id="L617" title="1 of 4 branches missed.">					for (int i = 0; list != null &amp;&amp; i &lt; list.length; ++i) {</span>
-<span class="fc" id="L618">						String objUrl = list[i].substring(url.length());</span>
+<span class="fc" id="L585">					String[] list = Naming.list(url);</span>
+<span class="fc" id="L586">					url = url + &quot;/&quot;;</span>
+<span class="pc bpc" id="L587" title="1 of 4 branches missed.">					for (int i = 0; list != null &amp;&amp; i &lt; list.length; ++i) {</span>
+<span class="fc" id="L588">						String objUrl = list[i].substring(url.length());</span>
 
-<span class="pc bpc" id="L620" title="1 of 2 branches missed.">						if (objUrl != null</span>
-<span class="fc bfc" id="L621" title="All 2 branches covered.">								&amp;&amp; objUrl.startsWith(IRemoteInterface.RMT_ID)) {</span>
-<span class="pc bpc" id="L622" title="1 of 2 branches missed.">							if (m_cat.isDebugEnabled())</span>
-<span class="fc" id="L623">								m_cat.debug(&quot; Looking up adapter=&quot; + list[i]);</span>
-<span class="fc" id="L624">							IRemoteInterface iRemInterface = (IRemoteInterface) Naming</span>
-<span class="fc" id="L625">									.lookup(list[i]);</span>
-<span class="pc bpc" id="L626" title="1 of 2 branches missed.">							if (iRemInterface != null</span>
-<span class="pc bpc" id="L627" title="1 of 2 branches missed.">									&amp;&amp; iRemInterface.getInstanceID() != null</span>
-<span class="fc" id="L628">									&amp;&amp; iRemInterface.getInstanceID()</span>
-<span class="pc bpc" id="L629" title="1 of 2 branches missed.">											.startsWith(type)) {</span>
+<span class="fc bfc" id="L590" title="All 2 branches covered.">						if (objUrl.startsWith(IRemoteInterface.RMT_ID)) {</span>
+<span class="pc bpc" id="L591" title="1 of 2 branches missed.">							if (m_cat.isDebugEnabled()) {</span>
+<span class="fc" id="L592">								m_cat.debug(&quot; Looking up adapter=&quot; + list[i]);</span>
+							}
+<span class="fc" id="L594">							IRemoteInterface iRemInterface = (IRemoteInterface) Naming.lookup(list[i]);</span>
+<span class="pc bpc" id="L595" title="1 of 2 branches missed.">							if (iRemInterface != null</span>
+<span class="pc bpc" id="L596" title="1 of 2 branches missed.">									&amp;&amp; iRemInterface.getInstanceID() != null</span>
+<span class="pc bpc" id="L597" title="1 of 2 branches missed.">									&amp;&amp; iRemInterface.getInstanceID().startsWith(type)) {</span>
 								// count only one adapter for one server
-<span class="fc" id="L631">								count++;</span>
-<span class="fc" id="L632">								break;</span>
+<span class="fc" id="L599">								count++;</span>
+<span class="fc" id="L600">								break;</span>
 
 							}
 						}
 					}
-<span class="fc" id="L637">				} catch (Exception ex) {</span>
-<span class="fc" id="L638">					m_cat.error(ex.getMessage(), ex);</span>
-<span class="fc" id="L639">					continue;</span>
-<span class="fc" id="L640">				}</span>
-<span class="fc" id="L641">			}</span>
-<span class="nc" id="L642">		} catch (BbmFinderException e) {</span>
-<span class="nc" id="L643">			m_cat.error(e.getMessage(), e);</span>
-<span class="nc" id="L644">		} catch (BbmEJBCreateException e) {</span>
-<span class="nc" id="L645">			m_cat.error(e.getMessage(), e);</span>
-<span class="pc" id="L646">		}</span>
-<span class="fc" id="L647">		return count;</span>
+<span class="nc" id="L605">				} catch (Exception ex) {</span>
+<span class="nc" id="L606">					m_cat.error(ex.getMessage(), ex);</span>
+<span class="nc" id="L607">					continue;</span>
+<span class="fc" id="L608">				}</span>
+<span class="fc" id="L609">			}</span>
+<span class="nc" id="L610">		} catch (BbmFinderException | BbmEJBCreateException e) {</span>
+<span class="nc" id="L611">			m_cat.error(e.getMessage(), e);</span>
+<span class="fc" id="L612">		}</span>
+<span class="fc" id="L613">		return count;</span>
 	}
 
-	/*private void generateDEI (String args[]) throws Exception
-	{
-		// for debug: test here
-	}*/
-<span class="fc" id="L654">	static Queue&lt;String&gt; queue = new LinkedList&lt;String&gt;();</span>
+<span class="fc" id="L616">	static Queue&lt;String&gt; queue = new LinkedList&lt;String&gt;();</span>
+
 	public Pair&lt;Integer, IRemoteInterface&gt; getStub() throws Exception {
-<span class="fc" id="L656">		Pair&lt;Integer, IRemoteInterface&gt; retPair = new Pair&lt;Integer, IRemoteInterface&gt;();</span>
-<span class="fc" id="L657">		HashMap&lt;String, IRemoteInterface&gt; remoteListUsable = new HashMap&lt;String, IRemoteInterface&gt;();</span>
-<span class="fc" id="L658">		IRemoteInterface iRemInterface = null;</span>
-		try  {
-<span class="fc" id="L660">			IRemoteInterface[] remoteList  = this.getGenericStubs();</span>
-<span class="pc bpc" id="L661" title="2 of 4 branches missed.">			if (remoteList == null || remoteList.length &lt;= 0) {</span>
-<span class="nc" id="L662">				retPair.setPair(new Integer(OUTSOURCER_INTEGRATION_SERVER_ERROR), null);</span>
-<span class="nc" id="L663">				return retPair;</span>
+<span class="fc" id="L619">		Pair&lt;Integer, IRemoteInterface&gt; retPair = new Pair&lt;Integer, IRemoteInterface&gt;();</span>
+<span class="fc" id="L620">		HashMap&lt;String, IRemoteInterface&gt; remoteListUsable = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L621">		IRemoteInterface iRemInterface = null;</span>
+		try {
+<span class="fc" id="L623">			IRemoteInterface[] remoteList = this.getGenericStubs();</span>
+<span class="pc bpc" id="L624" title="2 of 4 branches missed.">			if (remoteList == null || remoteList.length &lt;= 0) {</span>
+<span class="nc" id="L625">				retPair.setPair(new Integer(OUTSOURCER_INTEGRATION_SERVER_ERROR), null);</span>
+<span class="nc" id="L626">				return retPair;</span>
 			}
-<span class="fc bfc" id="L665" title="All 2 branches covered.">			for (int i = 0; i &lt; remoteList.length; ++i) {</span>
+<span class="fc bfc" id="L628" title="All 2 branches covered.">			for (int i = 0; i &lt; remoteList.length; ++i) {</span>
 				try {
-<span class="fc" id="L667">					iRemInterface = remoteList[i];</span>
-<span class="pc bpc" id="L668" title="2 of 4 branches missed.">					if (iRemInterface != null &amp;&amp; iRemInterface.getInstanceID() != null</span>
-<span class="pc bpc" id="L669" title="2 of 4 branches missed.">					        &amp;&amp; iRemInterface.getInstanceID().startsWith(SILENT_FNS_ADAPTER) &amp;&amp; isAdapterIdle(iRemInterface)) {</span>
-<span class="fc" id="L670">						remoteListUsable.put(iRemInterface.getInstanceID(), iRemInterface);</span>
+<span class="fc" id="L630">					iRemInterface = remoteList[i];</span>
+<span class="pc bpc" id="L631" title="2 of 4 branches missed.">					if (iRemInterface != null &amp;&amp; iRemInterface.getInstanceID() != null</span>
+<span class="pc bpc" id="L632" title="2 of 4 branches missed.">							&amp;&amp; iRemInterface.getInstanceID().startsWith(SILENT_FNS_ADAPTER) &amp;&amp; isAdapterIdle(iRemInterface)) {</span>
+<span class="fc" id="L633">						remoteListUsable.put(iRemInterface.getInstanceID(), iRemInterface);</span>
 					}
-<span class="nc" id="L672">				} catch (RemoteException e) {</span>
-<span class="nc" id="L673">					m_cat.debug(e);</span>
-<span class="nc" id="L674">					m_cat.info(&quot;Adapter is not responding; ignoring it (must be stopped). moving to next one i=&quot;+i);</span>
-<span class="fc" id="L675">				}</span>
+<span class="nc" id="L635">				} catch (RemoteException e) {</span>
+<span class="nc" id="L636">					m_cat.debug(e);</span>
+<span class="nc" id="L637">					m_cat.info(&quot;Adapter is not responding; ignoring it (must be stopped). moving to next one i=&quot; + i);</span>
+<span class="fc" id="L638">				}</span>
 			}
-<span class="pc bpc" id="L677" title="2 of 4 branches missed.">			if (remoteListUsable == null || remoteListUsable.isEmpty()) {</span>
-<span class="nc" id="L678">				retPair.setPair(new Integer(OUTSOURCER_ADAPTER_CONFIGURATION_ERROR), null);</span>
-<span class="nc" id="L679">				return retPair;</span>
+<span class="pc bpc" id="L640" title="2 of 4 branches missed.">			if (remoteListUsable == null || remoteListUsable.isEmpty()) {</span>
+<span class="nc" id="L641">				retPair.setPair(new Integer(OUTSOURCER_ADAPTER_CONFIGURATION_ERROR), null);</span>
+<span class="nc" id="L642">				return retPair;</span>
 			}
-<span class="nc" id="L681">		} catch (Exception ex) {</span>
-<span class="nc" id="L682">			retPair.setPair(new Integer(OUTSOURCER_INTEGRATION_SERVER_ERROR), null);</span>
-<span class="nc" id="L683">			return retPair;</span>
-<span class="fc" id="L684">		}</span>
-<span class="fc" id="L685">		iRemInterface = null;</span>
+<span class="nc" id="L644">		} catch (Exception ex) {</span>
+<span class="nc" id="L645">			retPair.setPair(new Integer(OUTSOURCER_INTEGRATION_SERVER_ERROR), null);</span>
+<span class="nc" id="L646">			return retPair;</span>
+<span class="fc" id="L647">		}</span>
+<span class="fc" id="L648">		iRemInterface = null;</span>
 		//If size is 1 then no need to bother about round robin implementation. just return the first adapter.
-<span class="pc bpc" id="L687" title="2 of 4 branches missed.">		if (remoteListUsable != null &amp;&amp; remoteListUsable.size() == 1) {</span>
-<span class="pc bpc" id="L688" title="2 of 4 branches missed.">			if (queue != null &amp;&amp; !queue.isEmpty()) queue.clear();</span>
-<span class="fc" id="L689">			iRemInterface = (IRemoteInterface) remoteListUsable.values().iterator().next();</span>
-<span class="fc" id="L690">			retPair.setPair(null, iRemInterface);</span>
-<span class="fc" id="L691">			return retPair;</span>
+<span class="pc bpc" id="L650" title="2 of 4 branches missed.">		if (remoteListUsable != null &amp;&amp; remoteListUsable.size() == 1) {</span>
+<span class="pc bpc" id="L651" title="2 of 4 branches missed.">			if (queue != null &amp;&amp; !queue.isEmpty()) queue.clear();</span>
+<span class="fc" id="L652">			iRemInterface = (IRemoteInterface) remoteListUsable.values().iterator().next();</span>
+<span class="fc" id="L653">			retPair.setPair(null, iRemInterface);</span>
+<span class="fc" id="L654">			return retPair;</span>
 		}
 		//round robin implementation; applicable only if adapters found on more than one integration servers.
-<span class="nc" id="L694">		synchronized (queue) {</span>
-<span class="nc bnc" id="L695" title="All 4 branches missed.">			if (remoteListUsable != null &amp;&amp; queue.size() &gt; remoteListUsable.size()) {</span>
+<span class="nc" id="L657">		synchronized (queue) {</span>
+<span class="nc bnc" id="L658" title="All 4 branches missed.">			if (remoteListUsable != null &amp;&amp; queue.size() &gt; remoteListUsable.size()) {</span>
 				//should go here only if a running adapter is removed
-<span class="nc" id="L697">				m_cat.info(&quot;Existing adapter has been removed; clearing the round robin queue&quot;);</span>
-<span class="nc" id="L698">				queue.clear();</span>
+<span class="nc" id="L660">				m_cat.info(&quot;Existing adapter has been removed; clearing the round robin queue&quot;);</span>
+<span class="nc" id="L661">				queue.clear();</span>
 			}
-<span class="nc bnc" id="L700" title="All 4 branches missed.">			if ( queue.size() == remoteListUsable.size() &amp;&amp; remoteListUsable.keySet().containsAll(queue)) {</span>
+<span class="nc bnc" id="L663" title="All 4 branches missed.">			if (queue.size() == remoteListUsable.size() &amp;&amp; remoteListUsable.keySet().containsAll(queue)) {</span>
 				//normal scenario get the adapters in round robin. Rely on linked list for that
-<span class="nc" id="L702">				String interfaceName= (String)queue.remove();</span>
-<span class="nc" id="L703">				iRemInterface = (IRemoteInterface) remoteListUsable.get(interfaceName);</span>
-<span class="nc" id="L704">				queue.add(interfaceName);</span>
-<span class="nc" id="L705">			} else {</span>
-<span class="nc bnc" id="L706" title="All 2 branches missed.">				for (Iterator&lt;IRemoteInterface&gt; iterator = remoteListUsable.values().iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L665">				String interfaceName = (String) queue.remove();</span>
+<span class="nc" id="L666">				iRemInterface = (IRemoteInterface) remoteListUsable.get(interfaceName);</span>
+<span class="nc" id="L667">				queue.add(interfaceName);</span>
+<span class="nc" id="L668">			} else {</span>
+<span class="nc bnc" id="L669" title="All 2 branches missed.">				for (Iterator&lt;IRemoteInterface&gt; iterator = remoteListUsable.values().iterator(); iterator.hasNext(); ) {</span>
 					//only should got here on startup or when a new adapter is added
-<span class="nc" id="L708">					iRemInterface = iterator.next();</span>
-<span class="nc bnc" id="L709" title="All 2 branches missed.">					if (!queue.contains(iRemInterface.getInstanceID())) {</span>
-<span class="nc" id="L710">						m_cat.info(&quot; new Adapter found; adding it to the round robin queue:&quot; + iRemInterface.getInstanceID());</span>
-<span class="nc" id="L711">						queue.add(iRemInterface.getInstanceID());</span>
-<span class="nc" id="L712">						break;</span>
+<span class="nc" id="L671">					iRemInterface = iterator.next();</span>
+<span class="nc bnc" id="L672" title="All 2 branches missed.">					if (!queue.contains(iRemInterface.getInstanceID())) {</span>
+<span class="nc" id="L673">						m_cat.info(&quot; new Adapter found; adding it to the round robin queue:&quot; + iRemInterface.getInstanceID());</span>
+<span class="nc" id="L674">						queue.add(iRemInterface.getInstanceID());</span>
+<span class="nc" id="L675">						break;</span>
 					}
 				}
 			}
-<span class="nc" id="L716">		}</span>
-<span class="nc" id="L717">		retPair.setPair(null, iRemInterface);</span>
-<span class="nc" id="L718">		return retPair;</span>
+<span class="nc" id="L679">		}</span>
+<span class="nc" id="L680">		retPair.setPair(null, iRemInterface);</span>
+<span class="nc" id="L681">		return retPair;</span>
 	}
 
-<span class="fc" id="L721">	private static String STAT_IDLE_KEY = &quot;STAT_IDLE_KEY&quot;; //defined in SilentFnSAdapter.java as well</span>
+	private final static String STAT_IDLE_KEY = &quot;STAT_IDLE_KEY&quot;; //defined in SilentFnSAdapter.java as well
+
 	private boolean isAdapterIdle(IRemoteInterface imp) throws RemoteException {
-<span class="fc" id="L723">		boolean isAdapterIdle = true;</span>
-<span class="fc" id="L724">		String[] keys = new String[]{STAT_IDLE_KEY};</span>
-<span class="fc" id="L725">		String[] values = imp.get(keys);</span>
-<span class="pc bpc" id="L726" title="1 of 2 branches missed.">		if (values.length == 1) {</span>
-<span class="pc bpc" id="L727" title="2 of 4 branches missed.">			if (values[0] != null &amp;&amp; values[0].trim().equals(&quot;false&quot;))</span>
-<span class="nc" id="L728">				isAdapterIdle = false;</span>
+<span class="fc" id="L687">		boolean isAdapterIdle = true;</span>
+<span class="fc" id="L688">		String[] keys = new String[]{STAT_IDLE_KEY};</span>
+<span class="fc" id="L689">		String[] values = imp.get(keys);</span>
+<span class="pc bpc" id="L690" title="1 of 2 branches missed.">		if (values.length == 1) {</span>
+<span class="pc bpc" id="L691" title="2 of 4 branches missed.">			if (values[0] != null &amp;&amp; values[0].trim().equals(&quot;false&quot;))</span>
+<span class="nc" id="L692">				isAdapterIdle = false;</span>
 		}
-<span class="fc" id="L730">		return isAdapterIdle;</span>
+<span class="fc" id="L694">		return isAdapterIdle;</span>
 	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -5,17 +5,23 @@
  */
 package com.bluepumpkin.ejb.rm.requests.timeoff.validation;
 
+import java.util.Collection;
 import java.util.List;
 
 import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.logging.Category;
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
 import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
 import com.bluepumpkin.ejb.rm.Log;
 import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.model.ShiftBidAuction;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest;
 import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.TimeOffIntervalAllocationUtil;
 import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.ejb.PublishingPeriodStatus;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
@@ -34,69 +40,90 @@ import com.bluepumpkin.ejb.rm.util.TORequestUtil;
  *
  **/
 
-<span class="nc" id="L37">public class TimeoffIntervalAllocationPublishedStatusRule implements Validator {</span>
+<span class="nc" id="L43">public class TimeoffIntervalAllocationPublishedStatusRule implements Validator {</span>
 
-<span class="nc" id="L39">    private static final Category LOG = Log.initCategory( TimeoffIntervalAllocationPublishedStatusRule.class.getName());</span>
+<span class="nc" id="L45">    private static final Category LOG = Log.initCategory( TimeoffIntervalAllocationPublishedStatusRule.class.getName());</span>
 
 
     @Override
     public ValidationResult validate(Validatable validatable) throws Exception {
 
-<span class="nc" id="L45">        String methodName = &quot;validate&quot;;</span>
-<span class="nc bnc" id="L46" title="All 2 branches missed.">        if (LOG.isDebugEnabled()){</span>
-<span class="nc" id="L47">        	LOG.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
+<span class="nc" id="L51">        String methodName = &quot;validate&quot;;</span>
+<span class="nc bnc" id="L52" title="All 2 branches missed.">        if (LOG.isDebugEnabled()){</span>
+<span class="nc" id="L53">        	LOG.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
         }
 
-<span class="nc" id="L50">        ValidationResult result = null;</span>
+<span class="nc" id="L56">        ValidationResult result = null;</span>
 
-<span class="nc" id="L52">        TORequest toRequest = (TORequest)validatable;</span>
+<span class="nc" id="L58">        TORequest toRequest = (TORequest)validatable;</span>
 
         // If we are not using the interval pool, no need to validate
-<span class="nc" id="L55">        boolean checkInvervalPool = isUseIntervalTOPool(toRequest);</span>
-<span class="nc bnc" id="L56" title="All 2 branches missed.">        if(!checkInvervalPool){</span>
-<span class="nc" id="L57">        	return result;</span>
+<span class="nc" id="L61">        boolean checkInvervalPool = isUseIntervalTOPool(toRequest);</span>
+<span class="nc bnc" id="L62" title="All 2 branches missed.">        if(!checkInvervalPool){</span>
+<span class="nc" id="L63">        	return result;</span>
         }
 
-<span class="nc" id="L60">		PublishingPeriodStatus publishingPeriodStatus = initPublishedPeriodStatusForTimeoffRequest(toRequest);</span>
-<span class="nc" id="L61">		ID empId = toRequest.getEmployeeID();</span>
+<span class="nc" id="L66">		PublishingPeriodStatus publishingPeriodStatus = initPublishedPeriodStatusForTimeoffRequest(toRequest);</span>
+<span class="nc" id="L67">		ID empId = toRequest.getEmployeeID();</span>
 
 		// for each TOChoice
         @SuppressWarnings(&quot;unchecked&quot;)
-<span class="nc" id="L65">		List&lt;TOChoice&gt; choiceList = toRequest.getRequestChoiceList();</span>
-<span class="nc bnc" id="L66" title="All 2 branches missed.">        for(TOChoice toChoice : choiceList){</span>
-<span class="nc bnc" id="L67" title="All 2 branches missed.">            if( toChoice== null){</span>
-<span class="nc" id="L68">            	continue;</span>
+<span class="nc" id="L71">		List&lt;TOChoice&gt; choiceList = toRequest.getRequestChoiceList();</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">        for(TOChoice toChoice : choiceList){</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">            if( toChoice== null){</span>
+<span class="nc" id="L74">            	continue;</span>
             }
 
-<span class="nc bnc" id="L71" title="All 2 branches missed.">            if(!validatePublishedStatusGood(publishingPeriodStatus, empId, toChoice)){</span>
-<span class="nc" id="L72">            	result = ValidationUtil</span>
-<span class="nc" id="L73">	    			.setHardValidationResult(toChoice,</span>
-	    				RmEjbBundleKey.TIMEOFFINTERVALALLOCATIONSEGMENT_CHOICE_SCHEDULES_PARTLY_PUBLISHED,
-<span class="nc" id="L75">	    				toChoice.getStartDate(), this.getClass().getName());</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">            if(!validatePublishedStatusGood(publishingPeriodStatus, empId, toChoice)){</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">            	if (!hasPublishedSchedule(empId, toChoice)) {</span>
+<span class="nc" id="L79">            		result = ValidationUtil</span>
+<span class="nc" id="L80">	    				.setHardValidationResult(toChoice,</span>
+	    						RmEjbBundleKey.TIMEOFFINTERVALALLOCATIONSEGMENT_CHOICE_SCHEDULES_PARTLY_PUBLISHED,
+<span class="nc" id="L82">	    						toChoice.getStartDate(), this.getClass().getName());</span>
+            	}
 
             }
-<span class="nc" id="L78">        }</span>
+<span class="nc" id="L86">        }</span>
 
-<span class="nc bnc" id="L80" title="All 2 branches missed.">        if (LOG.isDebugEnabled()) {</span>
-<span class="nc" id="L81">        	LOG.debug(RmUtil.dumpExitMethod(methodName, result));</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">        if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L89">        	LOG.debug(RmUtil.dumpExitMethod(methodName, result));</span>
         }
-<span class="nc" id="L83">        return result;</span>
+<span class="nc" id="L91">        return result;</span>
     }
 
 	protected boolean validatePublishedStatusGood(PublishingPeriodStatus publishingPeriodStatus, ID empId,
 			TOChoice toChoice) {
-<span class="nc" id="L88">		return TimeOffIntervalAllocationUtil.validatePublishedStatusGood(publishingPeriodStatus, empId, toChoice);</span>
+<span class="nc" id="L96">		return TimeOffIntervalAllocationUtil.validatePublishedStatusGood(publishingPeriodStatus, empId, toChoice);</span>
 	}
 
 	protected PublishingPeriodStatus initPublishedPeriodStatusForTimeoffRequest(TORequest toRequest)
 			throws BbmFinderException {
-<span class="nc" id="L93">		return TimeOffIntervalAllocationUtil</span>
-<span class="nc" id="L94">				.initPublishedPeriodStatusForTimeoffRequest(toRequest);</span>
+<span class="nc" id="L101">		return TimeOffIntervalAllocationUtil</span>
+<span class="nc" id="L102">				.initPublishedPeriodStatusForTimeoffRequest(toRequest);</span>
 	}
 
     protected boolean isUseIntervalTOPool(TORequest toRequest) throws Exception {
-<span class="nc" id="L98">        return TORequestUtil.isUseIntervalTOPool(toRequest);</span>
+<span class="nc" id="L106">        return TORequestUtil.isUseIntervalTOPool(toRequest);</span>
     }
 
+	protected boolean hasPublishedSchedule(ID employeeID, TOChoice toChoice) throws Exception {
+<span class="nc" id="L110">		boolean hasPublishedScheddules = false;</span>
+		
+<span class="nc" id="L112">		Collection&lt;ShiftAssignment&gt; events =  ValidationUtil.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT,</span>
+<span class="nc" id="L113">				employeeID, toChoice.getStartDate(), toChoice.getEndDate());</span>
+		
+<span class="nc bnc" id="L115" title="All 2 branches missed.">		if (!events.isEmpty()) {</span>
+<span class="nc" id="L116">			ShiftAssignment event = events.iterator().next();</span>
+<span class="nc" id="L117">			TimeRange range = new TimeRange(event.getStartTime(), event.getEndTime());</span>
+			
+<span class="nc bnc" id="L119" title="All 4 branches missed.">			if (range.includes(toChoice.getStartDate()) &amp;&amp; range.includes(toChoice.getEndDate())) {</span>
+<span class="nc" id="L120">				hasPublishedScheddules = true;</span>
+			} else {
+<span class="nc" id="L122">				hasPublishedScheddules = false;</span>
+			}
+		}
+		
+<span class="nc" id="L126">		return hasPublishedScheddules;</span>
+	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

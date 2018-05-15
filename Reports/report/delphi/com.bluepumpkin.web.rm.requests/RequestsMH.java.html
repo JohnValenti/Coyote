@@ -17,6 +17,7 @@ import java.util.TimeZone;
 
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.datatypes.IDStringPair;
+import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.common.util.DateTimeUtil;
 import com.bluepumpkin.common.util.StringUtil;
@@ -24,8 +25,8 @@ import com.bluepumpkin.ejb.bbm.activity.model.Event;
 import com.bluepumpkin.ejb.bbm.base.BbmCreateException;
 import com.bluepumpkin.ejb.bbm.base.BbmException;
 import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
-import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodUtil;
 import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeName;
+import com.bluepumpkin.ejb.bbm.workresource.model.Organization;
 import com.bluepumpkin.ejb.core.CoreManagerFactory;
 import com.bluepumpkin.ejb.core.base.CoreException;
 import com.bluepumpkin.ejb.core.base.MultiUserException;
@@ -33,6 +34,7 @@ import com.bluepumpkin.ejb.core.base.SupportNavigation;
 import com.bluepumpkin.ejb.rm.RmManagerFactory;
 import com.bluepumpkin.ejb.rm.base.RmException;
 import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
+import com.bluepumpkin.ejb.rm.base.RmRuntimeException;
 import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
 import com.bluepumpkin.ejb.rm.requests.common.model.Request;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
@@ -45,20 +47,24 @@ import com.bluepumpkin.ejb.rm.requests.commonrequestmanager.model.RequestFilter;
 import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
 import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest;
 import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
+import com.bluepumpkin.ejb.rm.requests.timeoff.ejb.TOPoolUtil;
+import com.bluepumpkin.ejb.rm.requests.timeoff.ejb.TORequestManager;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
 import com.bluepumpkin.ejb.rm.setup.calendartimeoff.ejb.CalendarTimeOffDayFacade;
 import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.EmpTOPoolAssignment;
 import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPool;
 import com.bluepumpkin.ejb.rm.setup.settings.ejb.OrganizationConfigManager;
 import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
+import com.bluepumpkin.ejb.rm.setup.timeoffbid.model.TimeOffBid;
+import com.bluepumpkin.ejb.rm.util.LicenseUtil;
 import com.bluepumpkin.web.bbm.employee.EmployeeModelHandler;
 import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
-import com.bluepumpkin.web.bbm.people.PeopleMH;
 import com.bluepumpkin.web.core.base.ModelHandler;
 import com.verint.ejb.wfm.WfmManagerFactory;
 import com.witness.ejb.core.security.UserManager;
 import com.witness.web.uif.Log;
 import com.witness.web.uif.system.RequestContext;
+
 
 /**
  * Title:        RequestsMH
@@ -68,57 +74,57 @@ import com.witness.web.uif.system.RequestContext;
  * @author       David Su
  * @version 1.0
  */
-<span class="nc" id="L71">public class RequestsMH extends ModelHandler {</span>
-<span class="nc" id="L72">	protected static Category log	= Log.initCategory(RequestsMH.class.getName());</span>
-<span class="nc" id="L73">	protected static RmManagerFactory m_managerFactory = RmManagerFactory.getInstance();</span>
+<span class="nc" id="L77">public class RequestsMH extends ModelHandler {</span>
+<span class="nc" id="L78">	protected static Category log	= Log.initCategory(RequestsMH.class.getName());</span>
+<span class="nc" id="L79">	protected static RmManagerFactory m_managerFactory = RmManagerFactory.getInstance();</span>
 
 	protected static CommonRequestManager getRequestManager() throws BbmCreateException {
-<span class="nc" id="L76">		return m_managerFactory.getCommonRequestManager();</span>
+<span class="nc" id="L82">		return m_managerFactory.getCommonRequestManager();</span>
 	}
 
 	protected static OrganizationConfigManager getOrgConfigManager() throws BbmCreateException {
-<span class="nc" id="L80">		return m_managerFactory.getOrganizationConfigManager();</span>
+<span class="nc" id="L86">		return m_managerFactory.getOrganizationConfigManager();</span>
 	}
 
 	/**
 	 * Return Request Type from Filter ID
 	 */
 	public static String getRequestTypeFromFilterID(ID filterID) {
-<span class="nc" id="L87">		String result=null;</span>
+<span class="nc" id="L93">		String result=null;</span>
 
 		try {
-<span class="nc" id="L90">			RequestFilter rFilter = getRequestManager().getRequestFilterById(filterID);</span>
-<span class="nc bnc" id="L91" title="All 2 branches missed.">			if (rFilter!=null) {</span>
-<span class="nc" id="L92">				result = (String)rFilter.getValueForKey(RequestFilter.REQUEST_TYPE_KEY);</span>
+<span class="nc" id="L96">			RequestFilter rFilter = getRequestManager().getRequestFilterById(filterID);</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">			if (rFilter!=null) {</span>
+<span class="nc" id="L98">				result = (String)rFilter.getValueForKey(RequestFilter.REQUEST_TYPE_KEY);</span>
 
-<span class="nc bnc" id="L94" title="All 2 branches missed.">				if (rFilter.getValueForKey(RequestFilter.STATUS_KEY) != null</span>
-<span class="nc bnc" id="L95" title="All 2 branches missed.">						&amp;&amp; rFilter.getValueForKey(RequestFilter.STATUS_KEY).equals(RequestAuditTrail.STATUS_WAITLIST)){</span>
-<span class="nc" id="L96">					result = RequestAuditTrail.STATUS_WAITLIST;</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">				if (rFilter.getValueForKey(RequestFilter.STATUS_KEY) != null</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">						&amp;&amp; rFilter.getValueForKey(RequestFilter.STATUS_KEY).equals(RequestAuditTrail.STATUS_WAITLIST)){</span>
+<span class="nc" id="L102">					result = RequestAuditTrail.STATUS_WAITLIST;</span>
 				}
 			}
-<span class="nc" id="L99">		} catch (Exception ex) {</span>
+<span class="nc" id="L105">		} catch (Exception ex) {</span>
 			// We can ignore this exception and just return null;
-<span class="nc" id="L101">		}</span>
+<span class="nc" id="L107">		}</span>
 
-<span class="nc" id="L103">		return result;</span>
+<span class="nc" id="L109">		return result;</span>
 	}
 
 	/**
 	 * Check if there is status on Filter
 	 */
 	public static boolean filterDependOnStatus(ID filterID) {
-<span class="nc" id="L110">		boolean result=false;</span>
+<span class="nc" id="L116">		boolean result=false;</span>
 
 		try {
-<span class="nc" id="L113">			RequestFilter rFilter = getRequestManager().getRequestFilterById(filterID);</span>
-<span class="nc bnc" id="L114" title="All 4 branches missed.">			if (rFilter!=null &amp;&amp; rFilter.getValueForKey(RequestFilter.STATUS_KEY) != null) {</span>
-<span class="nc" id="L115">				result = true;</span>
+<span class="nc" id="L119">			RequestFilter rFilter = getRequestManager().getRequestFilterById(filterID);</span>
+<span class="nc bnc" id="L120" title="All 4 branches missed.">			if (rFilter!=null &amp;&amp; rFilter.getValueForKey(RequestFilter.STATUS_KEY) != null) {</span>
+<span class="nc" id="L121">				result = true;</span>
 			}
-<span class="nc" id="L117">		} catch (Exception ex) {</span>
+<span class="nc" id="L123">		} catch (Exception ex) {</span>
 			// We can ignore this exception and just return null;
-<span class="nc" id="L119">		}</span>
+<span class="nc" id="L125">		}</span>
 
-<span class="nc" id="L121">		return result;</span>
+<span class="nc" id="L127">		return result;</span>
 	}
 
 	/**
@@ -126,7 +132,7 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static IDStringPair[] getRequestFilterNamesByUserID(ID userID)
 			throws RemoteException, BbmFinderException, BbmCreateException {
-<span class="nc" id="L129">		return getRequestManager().getRequestFilterNamesByUserID(userID);</span>
+<span class="nc" id="L135">		return getRequestManager().getRequestFilterNamesByUserID(userID);</span>
 	}
 
 	/**
@@ -142,9 +148,9 @@ import com.witness.web.uif.system.RequestContext;
 			String requestVersion, String requestStatus, String comment)
 			throws RemoteException, RmHardValidationException, BbmCreateException, RmException
 	{
-<span class="nc" id="L145">		getRequestManager().changeRequestState(requestID, requestStatus,</span>
+<span class="nc" id="L151">		getRequestManager().changeRequestState(requestID, requestStatus,</span>
 				requestVersion, comment, requestType);
-<span class="nc" id="L147">	}</span>
+<span class="nc" id="L153">	}</span>
 
 
 	/**
@@ -157,7 +163,7 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static Collection&lt;RequestAggregate&gt; getRequestsForEmp(ID empID, String reqType, boolean incExpired)
 			throws RemoteException, BbmFinderException, BbmCreateException, RmHardValidationException {
-<span class="nc" id="L160">		return fixRequestTypeForFlexRequests(getRequestManager().getRequestsByEmployee(empID, reqType, incExpired, true, RequestAggregate.DL_AUDIT_TRAIL));</span>
+<span class="nc" id="L166">		return fixRequestTypeForFlexRequests(getRequestManager().getRequestsByEmployee(empID, reqType, incExpired, true, RequestAggregate.DL_AUDIT_TRAIL));</span>
 	}
 
 	/**
@@ -179,11 +185,11 @@ import com.witness.web.uif.system.RequestContext;
 	public static Collection&lt;RequestAggregate&gt; getRequestsForEmpFull(ID empID, String reqType, boolean incExpired)
 			throws RemoteException, BbmFinderException, BbmCreateException, RmHardValidationException {
 
-<span class="nc" id="L182">		long detailLevel = RequestAggregate.DL_AUDIT_TRAIL |</span>
+<span class="nc" id="L188">		long detailLevel = RequestAggregate.DL_AUDIT_TRAIL |</span>
 				RequestDetailLevel.DL_INCLUDE_ZERO_NUM_OF_AVAIL_INSTANCES |
 				ShiftBidRequest.DL_BIDRANK_FOR_SHIFTBIDREQUEST;
 
-<span class="nc" id="L186">		return fixRequestTypeForFlexRequests(getRequestManager().getRequestsByEmployee(empID, reqType, incExpired, true, detailLevel));</span>
+<span class="nc" id="L192">		return fixRequestTypeForFlexRequests(getRequestManager().getRequestsByEmployee(empID, reqType, incExpired, true, detailLevel));</span>
 	}
 
 	/**
@@ -199,58 +205,58 @@ import com.witness.web.uif.system.RequestContext;
 	 * @return
 	 */
 	protected static Collection&lt;RequestAggregate&gt; fixRequestTypeForFlexRequests(Collection&lt;RequestAggregate&gt; requests) {
-<span class="nc bnc" id="L202" title="All 4 branches missed.">		if (requests != null &amp;&amp; !requests.isEmpty()) {</span>
-<span class="nc bnc" id="L203" title="All 2 branches missed.">			for (RequestAggregate request : requests) {</span>
-<span class="nc" id="L204">				fixRequestTypeForFlexRequest(request);</span>
-<span class="nc" id="L205">			}</span>
+<span class="nc bnc" id="L208" title="All 4 branches missed.">		if (requests != null &amp;&amp; !requests.isEmpty()) {</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">			for (RequestAggregate request : requests) {</span>
+<span class="nc" id="L210">				fixRequestTypeForFlexRequest(request);</span>
+<span class="nc" id="L211">			}</span>
 		}
-<span class="nc" id="L207">		return requests;</span>
+<span class="nc" id="L213">		return requests;</span>
 	}
 
 	/**
 	 * @param request - the request to &quot;fix&quot; if it's a flex request. If not a flex request, do nothing.
 	 */
 	protected static RequestAggregate fixRequestTypeForFlexRequest(RequestAggregate request) {
-<span class="nc bnc" id="L214" title="All 4 branches missed.">		if (request != null &amp;&amp; request.isFlexTimeRequest()) {</span>
-<span class="nc" id="L215">			request.getAggregatedRequest().setFieldValue(RequestFieldInfo.REQUEST_S_REQUESTTYPE, Request.REQUESTTYPE_FLEXTIME);</span>
+<span class="nc bnc" id="L220" title="All 4 branches missed.">		if (request != null &amp;&amp; request.isFlexTimeRequest()) {</span>
+<span class="nc" id="L221">			request.getAggregatedRequest().setFieldValue(RequestFieldInfo.REQUEST_S_REQUESTTYPE, Request.REQUESTTYPE_FLEXTIME);</span>
 		}
-<span class="nc" id="L217">		return request;</span>
+<span class="nc" id="L223">		return request;</span>
 	}
 
 	private static RequestCollection fixRequestTypeForFlexRequests(RequestCollection requests) {
-<span class="nc" id="L221">		fixRequestTypeForFlexRequests(requests.getRequests());</span>
-<span class="nc" id="L222">		return requests;</span>
+<span class="nc" id="L227">		fixRequestTypeForFlexRequests(requests.getRequests());</span>
+<span class="nc" id="L228">		return requests;</span>
 	}
 
 	/**
 	 * Return Default Request Detail Level for specified Filter Type
 	 */
 	private static long getDefaultDetailLevelForRequestFilter(RequestFilter reqFilter) {
-<span class="nc" id="L229">		long detailLevel = RequestAggregate.DL_AUDIT_TRAIL;</span>
+<span class="nc" id="L235">		long detailLevel = RequestAggregate.DL_AUDIT_TRAIL;</span>
 
-<span class="nc bnc" id="L231" title="All 2 branches missed.">		if (reqFilter!=null) {</span>
-<span class="nc" id="L232">			String reqType = (String)reqFilter.getValueForKey(RequestFilter.REQUEST_TYPE_KEY);</span>
-<span class="nc bnc" id="L233" title="All 2 branches missed.">			if (Request.REQUESTTYPE_TIMEOFF.equals(reqType)) {</span>
-<span class="nc" id="L234">				detailLevel |= TORequest.DL_TIMEOFF_CHOICES</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">		if (reqFilter!=null) {</span>
+<span class="nc" id="L238">			String reqType = (String)reqFilter.getValueForKey(RequestFilter.REQUEST_TYPE_KEY);</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">			if (Request.REQUESTTYPE_TIMEOFF.equals(reqType)) {</span>
+<span class="nc" id="L240">				detailLevel |= TORequest.DL_TIMEOFF_CHOICES</span>
 						| TORequest.DL_TIMEOFF_CHOICES_LENGTH
                         | Request.DL_EMPLOYEE;
                 /* commenting this, since
 				String reqStatus = (String)reqFilter.getValueForKey(RequestFilter.STATUS_KEY);
 				if(RequestAuditTrail.STATUS_WAITLIST.equals(reqStatus)){*/
-<span class="nc" id="L240">                    detailLevel |= TORequest.DL_TIMEOFF_WAITLIST;</span>
-<span class="nc" id="L241">                    detailLevel |= TORequest.DL_TIMEOFF_WITHDRAW;</span>
+<span class="nc" id="L246">                    detailLevel |= TORequest.DL_TIMEOFF_WAITLIST;</span>
+<span class="nc" id="L247">                    detailLevel |= TORequest.DL_TIMEOFF_WITHDRAW;</span>
                 /*} */
-<span class="nc bnc" id="L243" title="All 2 branches missed.">            } else if (Request.REQUESTTYPE_SHIFTSWAP.equals(reqType)) {</span>
-<span class="nc" id="L244">				detailLevel |= ShiftSwapRequest.DL_SHIFTSWAP_ITEMS;</span>
-<span class="nc bnc" id="L245" title="All 2 branches missed.">			} else if (Request.REQUESTTYPE_SHIFTBID.equals(reqType)) {</span>
-<span class="nc" id="L246">				detailLevel |= ShiftBidRequest.DL_BIDRANK_FOR_SHIFTBIDREQUEST</span>
-						| ShiftBidRequest.DL_SCORECOMPUTED_FOR_SHIFTBID_REQUEST;
-<span class="nc bnc" id="L248" title="All 2 branches missed.">            } else if (Request.REQUESTTYPE_CUSTSHIFT.equals(reqType)) {</span>
-<span class="nc" id="L249">				detailLevel |= CustShiftReq.DL_BASIC;</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">            } else if (Request.REQUESTTYPE_SHIFTSWAP.equals(reqType)) {</span>
+<span class="nc" id="L250">				detailLevel |= ShiftSwapRequest.DL_SHIFTSWAP_ITEMS;</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">			} else if (Request.REQUESTTYPE_SHIFTBID.equals(reqType)) {</span>
+				//shift bid request filtering is done in SQL, however we need to show scores in the employee request page
+<span class="nc" id="L253">				detailLevel |= ShiftBidRequest.DL_BIDRANK_FOR_SHIFTBIDREQUEST;</span>
+<span class="nc bnc" id="L254" title="All 2 branches missed.">            } else if (Request.REQUESTTYPE_CUSTSHIFT.equals(reqType)) {</span>
+<span class="nc" id="L255">				detailLevel |= CustShiftReq.DL_BASIC;</span>
 			}
 		}
 
-<span class="nc" id="L253">		return detailLevel;</span>
+<span class="nc" id="L259">		return detailLevel;</span>
 	}
 
 	/**
@@ -268,34 +274,34 @@ import com.witness.web.uif.system.RequestContext;
 			String findName, String sortColumn, boolean isSortAscending, int blockSize,
 			boolean isSoftValEnabled, boolean isNetStaffingSoftValEnabled, Date sDate, Date eDate, String allFilterName) throws RemoteException, BbmException, RmHardValidationException {
 		//ESR3001270 fix -- catch the exception if filter doesn't exists
-<span class="nc" id="L271">		RequestFilter reqFilter = null;</span>
+<span class="nc" id="L277">		RequestFilter reqFilter = null;</span>
 		try {
-<span class="nc bnc" id="L273" title="All 2 branches missed.">			reqFilter = filterID != null ? getRequestManager().getRequestFilterById(filterID) : null;</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">			reqFilter = filterID != null ? getRequestManager().getRequestFilterById(filterID) : null;</span>
 		}
-<span class="nc" id="L275">		catch(Exception e) {</span>
-<span class="nc" id="L276">			log.info(&quot;unable to load the request filter because filter has been deleted&quot;);</span>
-<span class="nc" id="L277">			e.printStackTrace();</span>
-<span class="nc" id="L278">		}</span>
+<span class="nc" id="L281">		catch(Exception e) {</span>
+<span class="nc" id="L282">			log.info(&quot;unable to load the request filter because filter has been deleted&quot;);</span>
+<span class="nc" id="L283">			e.printStackTrace();</span>
+<span class="nc" id="L284">		}</span>
 
         // if reqFilter == null, then create a default filter.
-<span class="nc bnc" id="L281" title="All 2 branches missed.">        if (reqFilter == null) {</span>
-<span class="nc" id="L282">            reqFilter = new RequestFilter(empID, RequestUtil.DEFAULT_FILTER);//&quot;default filter&quot;);</span>
+<span class="nc bnc" id="L287" title="All 2 branches missed.">        if (reqFilter == null) {</span>
+<span class="nc" id="L288">            reqFilter = new RequestFilter(empID, RequestUtil.DEFAULT_FILTER);//&quot;default filter&quot;);</span>
             //set key based on &quot;All&quot; vs &quot;All Active&quot;
-<span class="nc bnc" id="L284" title="All 4 branches missed."> 			if (allFilterName != null &amp;&amp; allFilterName.equals(RequestUtil.ALL_FILTER)){</span>
-<span class="nc" id="L285"> 				reqFilter.setName(RequestUtil.ALL_FILTER);</span>
+<span class="nc bnc" id="L290" title="All 4 branches missed."> 			if (allFilterName != null &amp;&amp; allFilterName.equals(RequestUtil.ALL_FILTER)){</span>
+<span class="nc" id="L291"> 				reqFilter.setName(RequestUtil.ALL_FILTER);</span>
  			}
-<span class="nc" id="L287"> 			reqFilter.setKey(RequestFilter.REQUEST_TYPE_KEY, Request.REQUESTTYPE_ALL);</span>
+<span class="nc" id="L293"> 			reqFilter.setKey(RequestFilter.REQUEST_TYPE_KEY, Request.REQUESTTYPE_ALL);</span>
         }
 
         //set filter date range if not null
-<span class="nc bnc" id="L291" title="All 4 branches missed.">        if (sDate != null &amp;&amp; eDate != null){</span>
-<span class="nc" id="L292">	        List dates = new ArrayList(2);</span>
-<span class="nc" id="L293">	        dates.add(sDate);</span>
-<span class="nc" id="L294">	        dates.add(eDate);</span>
-<span class="nc" id="L295">	        reqFilter.setKey(RequestFilter.REQUEST_DATE_RANGE_KEY, (Serializable) dates);</span>
+<span class="nc bnc" id="L297" title="All 4 branches missed.">        if (sDate != null &amp;&amp; eDate != null){</span>
+<span class="nc" id="L298">	        List dates = new ArrayList(2);</span>
+<span class="nc" id="L299">	        dates.add(sDate);</span>
+<span class="nc" id="L300">	        dates.add(eDate);</span>
+<span class="nc" id="L301">	        reqFilter.setKey(RequestFilter.REQUEST_DATE_RANGE_KEY, (Serializable) dates);</span>
         }
-
-<span class="nc" id="L298">        return fixRequestTypeForFlexRequests(getRequestsForManager(empID, reqFilter, findName, sortColumn, isSortAscending, blockSize, isSoftValEnabled, isNetStaffingSoftValEnabled));</span>
+       
+<span class="nc" id="L304">        return fixRequestTypeForFlexRequests(getRequestsForManager(empID, reqFilter, findName, sortColumn, isSortAscending, blockSize, isSoftValEnabled, isNetStaffingSoftValEnabled));</span>
 	}
 
 	/**
@@ -311,20 +317,47 @@ import com.witness.web.uif.system.RequestContext;
 	public static RequestCollection getRequestsForManager(ID empID, RequestFilter reqFilter,
 			String findName, String sortColumn, boolean isSortAscending, int blockSize,
 			boolean isSoftValEnabled, boolean isNetStaffingSoftValEnabled)	throws RemoteException, BbmException, RmHardValidationException {
-<span class="nc bnc" id="L314" title="All 4 branches missed.">		if (findName!=null &amp;&amp; findName.trim().equals(&quot;&quot;)) {</span>
-<span class="nc" id="L315">			findName = null;</span>
+<span class="nc bnc" id="L320" title="All 4 branches missed.">		if (findName!=null &amp;&amp; findName.trim().equals(&quot;&quot;)) {</span>
+<span class="nc" id="L321">			findName = null;</span>
 		}
 
-<span class="nc bnc" id="L318" title="All 2 branches missed.">		int iSortOrder = isSortAscending?</span>
+<span class="nc bnc" id="L324" title="All 2 branches missed.">		int iSortOrder = isSortAscending?</span>
 				SupportNavigation.SORT_ASCENDING:SupportNavigation.SORT_DESCENDING;
 
-<span class="nc bnc" id="L321" title="All 2 branches missed.">		int iSortColumn = StringUtil.isEmpty(sortColumn)?</span>
-<span class="nc" id="L322">				Request.SORT_LAST_NAME_FIRST:Integer.parseInt(sortColumn);</span>
+<span class="nc bnc" id="L327" title="All 2 branches missed.">		int iSortColumn = StringUtil.isEmpty(sortColumn)?</span>
+<span class="nc" id="L328">				Request.SORT_LAST_NAME_FIRST:Integer.parseInt(sortColumn);</span>
 
-<span class="nc" id="L324">		long detailLevel = getDefaultDetailLevelForRequestFilter(reqFilter);</span>
-<span class="nc" id="L325">        return getRequestManager().getRequestsForManager(empID, reqFilter, findName,</span>
+<span class="nc" id="L330">		long detailLevel = getDefaultDetailLevelForRequestFilter(reqFilter);</span>
+<span class="nc" id="L331">        return getRequestManager().getRequestsForManager(empID, reqFilter, findName,</span>
         		iSortColumn, iSortOrder, blockSize, true, isSoftValEnabled, isNetStaffingSoftValEnabled,
 				detailLevel);
+
+    }
+	
+	/**
+	 * Return Requests for specified Manager, reqFilter, find Name and list configuration
+	 *
+	 * @param empID The Employee ID of the Manager
+	 * @param reqFilter The Filter to reqFilter requests
+	 * @param findName The Employee Name which Requests belong to
+	 * @param blockSize The indicates the maximum number of records returned
+	 * @return RequestCollection The Value Object which contain Collection of Requests
+	 *  and HashMap of Employee Names.
+	 */
+	public static RequestCollection getRequestsForManagerForGroupAction(ID empID, RequestFilter reqFilter,
+			String findName, int blockSize)	throws RemoteException, BbmException, RmHardValidationException {
+<span class="nc bnc" id="L349" title="All 4 branches missed.">		if (findName!=null &amp;&amp; findName.trim().equals(&quot;&quot;)) {</span>
+<span class="nc" id="L350">			findName = null;</span>
+		}
+
+<span class="nc" id="L353">		long detailLevel = getDefaultDetailLevelForRequestFilter(reqFilter);</span>
+<span class="nc" id="L354">		reqFilter.setKey(RequestFilter.STATUS_KEY, RequestAuditTrail.STATUS_PENDING);</span>
+<span class="nc" id="L355">        return getRequestManager().getRequestsForManager(empID, reqFilter, findName,</span>
+        		Request.SORT_LAST_NAME_FIRST, SupportNavigation.SORT_ASCENDING, blockSize,
+        		false,//Not include Expired
+        		false,//Not run soft validation
+        		false,//Not include netstaffing rule
+        		detailLevel);
 
     }
 
@@ -340,12 +373,12 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static RequestCollection getNextRequestsForManager(ID empID, ID filterID,
 			Collection reqIDs, boolean isSoftValEnabled, boolean isNetStaffingSoftValEnabled) throws RemoteException, BbmException, RmHardValidationException {
-<span class="nc bnc" id="L343" title="All 2 branches missed.">		List requestIDs = (reqIDs instanceof List)?(List)reqIDs:new ArrayList(reqIDs);</span>
+<span class="nc bnc" id="L376" title="All 2 branches missed.">		List requestIDs = (reqIDs instanceof List)?(List)reqIDs:new ArrayList(reqIDs);</span>
 
-<span class="nc bnc" id="L345" title="All 2 branches missed.">		RequestFilter reqFilter = filterID!=null?getRequestManager().getRequestFilterById(filterID) : null;</span>
-<span class="nc" id="L346">		long detailLevel = getDefaultDetailLevelForRequestFilter(reqFilter);</span>
+<span class="nc bnc" id="L378" title="All 2 branches missed.">		RequestFilter reqFilter = filterID!=null?getRequestManager().getRequestFilterById(filterID) : null;</span>
+<span class="nc" id="L379">		long detailLevel = getDefaultDetailLevelForRequestFilter(reqFilter);</span>
 
-<span class="nc" id="L348">		return fixRequestTypeForFlexRequests(getRequestManager().getNextRequestsForManager(empID, requestIDs, null, true, isSoftValEnabled, isNetStaffingSoftValEnabled, detailLevel));</span>
+<span class="nc" id="L381">		return fixRequestTypeForFlexRequests(getRequestManager().getNextRequestsForManager(empID, requestIDs, null, true, isSoftValEnabled, isNetStaffingSoftValEnabled, detailLevel));</span>
 	}
 
 	/**
@@ -355,14 +388,14 @@ import com.witness.web.uif.system.RequestContext;
 			throws RemoteException, BbmFinderException, BbmCreateException, RmHardValidationException {
 
 		// Pass Time Off Choice Length if its time off
-<span class="nc" id="L358">		long detailLevel = Request.DL_BASIC|Request.DL_AUDIT_TRAIL;</span>
-<span class="nc bnc" id="L359" title="All 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(requestType)) {</span>
-<span class="nc" id="L360">			detailLevel|=TORequest.DL_TIMEOFF_CHOICES_LENGTH;</span>
-<span class="nc bnc" id="L361" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(requestType)) {</span>
-<span class="nc" id="L362">			detailLevel|=TORequest.DL_TIMEOFF_CHOICES_LENGTH | TORequest.DL_TIMEOFF_FLEXMAKEUP;</span>
+<span class="nc" id="L391">		long detailLevel = Request.DL_BASIC|Request.DL_AUDIT_TRAIL;</span>
+<span class="nc bnc" id="L392" title="All 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(requestType)) {</span>
+<span class="nc" id="L393">			detailLevel|=TORequest.DL_TIMEOFF_CHOICES_LENGTH;</span>
+<span class="nc bnc" id="L394" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(requestType)) {</span>
+<span class="nc" id="L395">			detailLevel|=TORequest.DL_TIMEOFF_CHOICES_LENGTH | TORequest.DL_TIMEOFF_FLEXMAKEUP;</span>
 		}
 
-<span class="nc" id="L365">		return fixRequestTypeForFlexRequest(getRequestManager().getRequestByID(requestID, requestType, true, true, detailLevel));</span>
+<span class="nc" id="L398">		return fixRequestTypeForFlexRequest(getRequestManager().getRequestByID(requestID, requestType, true, true, detailLevel));</span>
 	}
 
 	/**
@@ -371,31 +404,31 @@ import com.witness.web.uif.system.RequestContext;
 	public static RequestCollection getRequestCollectionForRequest(ID requestID, String requestType, RequestContext context)
 			throws RemoteException, BbmFinderException, BbmCreateException, RmHardValidationException, BbmException {
 
-<span class="nc" id="L374">		RequestAggregate request = getRequest(requestID, requestType);</span>
+<span class="nc" id="L407">		RequestAggregate request = getRequest(requestID, requestType);</span>
 		// Pass Time Off Choice Length if its time off
-<span class="nc" id="L376">		long detailLevel = Request.DL_BASIC;</span>
-<span class="nc bnc" id="L377" title="All 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(requestType)) {</span>
-<span class="nc" id="L378">			detailLevel|=TORequest.DL_TIMEOFF_CHOICES_LENGTH;</span>
+<span class="nc" id="L409">		long detailLevel = Request.DL_BASIC;</span>
+<span class="nc bnc" id="L410" title="All 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(requestType)) {</span>
+<span class="nc" id="L411">			detailLevel|=TORequest.DL_TIMEOFF_CHOICES_LENGTH;</span>
 		}
 
-<span class="nc" id="L381">		ArrayList listIDs = new ArrayList();</span>
-<span class="nc bnc" id="L382" title="All 2 branches missed.">		if (request != null) {</span>
-<span class="nc" id="L383">			listIDs.add(request.getID());</span>
+<span class="nc" id="L414">		ArrayList listIDs = new ArrayList();</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">		if (request != null) {</span>
+<span class="nc" id="L416">			listIDs.add(request.getID());</span>
 		}
 
-<span class="nc" id="L386">		ArrayList requestList = new ArrayList();</span>
-<span class="nc bnc" id="L387" title="All 2 branches missed.">		if (request != null) {</span>
-<span class="nc" id="L388">			requestList.add(request);</span>
+<span class="nc" id="L419">		ArrayList requestList = new ArrayList();</span>
+<span class="nc bnc" id="L420" title="All 2 branches missed.">		if (request != null) {</span>
+<span class="nc" id="L421">			requestList.add(request);</span>
 		}
 
-<span class="nc" id="L391">		Map&lt;ID, EmployeeName&gt; empNameMap = new HashMap&lt;ID, EmployeeName&gt;(1);</span>
-<span class="nc" id="L392">		List&lt;ID&gt; empList = new ArrayList&lt;ID&gt;();</span>
-<span class="nc bnc" id="L393" title="All 2 branches missed.">		if (request != null){</span>
-<span class="nc" id="L394">			empList.add(request.getEmployeeID());</span>
-<span class="nc" id="L395">			empNameMap = getEmpNameMap(context, empList);</span>
+<span class="nc" id="L424">		Map&lt;ID, EmployeeName&gt; empNameMap = new HashMap&lt;ID, EmployeeName&gt;(1);</span>
+<span class="nc" id="L425">		List&lt;ID&gt; empList = new ArrayList&lt;ID&gt;();</span>
+<span class="nc bnc" id="L426" title="All 2 branches missed.">		if (request != null){</span>
+<span class="nc" id="L427">			empList.add(request.getEmployeeID());</span>
+<span class="nc" id="L428">			empNameMap = getEmpNameMap(context, empList);</span>
 		}
 
-<span class="nc" id="L398">		return new RequestCollection(listIDs, requestList, empNameMap);</span>
+<span class="nc" id="L431">		return new RequestCollection(listIDs, requestList, empNameMap);</span>
 	}
 
 	/**
@@ -403,7 +436,7 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static OrganizationSetting getOrgSetting(ID orgID)
 			throws RemoteException, BbmFinderException, BbmCreateException {
-<span class="nc" id="L406">		return getOrgConfigManager().getConfiguration(orgID);</span>
+<span class="nc" id="L439">		return getOrgConfigManager().getConfiguration(orgID);</span>
 	}
 
 	/**
@@ -411,12 +444,12 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static OrganizationSetting getOrgSettingForEmployee(RequestContext context, ID empID)
 			throws RemoteException, BbmException {
-<span class="nc" id="L414">		ID orgID = OrganizationModelHandler.getEmployeeOrgID(context, empID);</span>
-<span class="nc bnc" id="L415" title="All 2 branches missed.">		if (orgID==null) {</span>
-<span class="nc" id="L416">			return null;</span>
+<span class="nc" id="L447">		ID orgID = OrganizationModelHandler.getEmployeeOrgID(context, empID);</span>
+<span class="nc bnc" id="L448" title="All 2 branches missed.">		if (orgID==null) {</span>
+<span class="nc" id="L449">			return null;</span>
 		}
 
-<span class="nc" id="L419">		return getOrgSetting(orgID);</span>
+<span class="nc" id="L452">		return getOrgSetting(orgID);</span>
 	}
 
 	/**
@@ -424,23 +457,23 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static Map getUserMapForRequest(RequestAggregate request)
 			throws RemoteException, CoreException {
-<span class="nc" id="L427">		Map userMap = Collections.EMPTY_MAP;</span>
+<span class="nc" id="L460">		Map userMap = Collections.emptyMap();</span>
 
-<span class="nc" id="L429">		UserManager uManager = CoreManagerFactory.getUserManager(false);</span>
+<span class="nc" id="L462">		UserManager uManager = CoreManagerFactory.getUserManager(false);</span>
 
 		// Handle users from Request Audit
-<span class="nc" id="L432">		Collection ratList = request.getAuditTrail();</span>
-<span class="nc bnc" id="L433" title="All 2 branches missed.">		if (!ratList.isEmpty()) {</span>
-<span class="nc" id="L434">			HashSet userIDs = new HashSet(ratList.size());</span>
-<span class="nc bnc" id="L435" title="All 2 branches missed.">			for(Iterator it=ratList.iterator(); it.hasNext(); ) {</span>
-<span class="nc" id="L436">				RequestAuditTrail rat = (RequestAuditTrail)it.next();</span>
-<span class="nc" id="L437">				ID userID = rat.getBpUserId();</span>
-<span class="nc" id="L438">				userIDs.add(userID);</span>
-<span class="nc" id="L439">			}</span>
-<span class="nc" id="L440">			userMap = uManager.getUsersByIDs(userIDs);</span>
+<span class="nc" id="L465">		Collection ratList = request.getAuditTrail();</span>
+<span class="nc bnc" id="L466" title="All 2 branches missed.">		if (!ratList.isEmpty()) {</span>
+<span class="nc" id="L467">			HashSet userIDs = new HashSet(ratList.size());</span>
+<span class="nc bnc" id="L468" title="All 2 branches missed.">			for(Iterator it=ratList.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L469">				RequestAuditTrail rat = (RequestAuditTrail)it.next();</span>
+<span class="nc" id="L470">				ID userID = rat.getBpUserId();</span>
+<span class="nc" id="L471">				userIDs.add(userID);</span>
+<span class="nc" id="L472">			}</span>
+<span class="nc" id="L473">			userMap = uManager.getUsersByIDs(userIDs);</span>
 		}
 
-<span class="nc" id="L443">		return userMap;</span>
+<span class="nc" id="L476">		return userMap;</span>
 	}
 
 	/**
@@ -449,25 +482,25 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static Event findShiftAssignmentEvent(ID empID, Date shiftDate, TimeZone tz)
 			throws RemoteException, BbmException {
-<span class="nc" id="L452">		Event result = null;</span>
-<span class="nc" id="L453">		Date fromDate = DateTimeUtil.getDayStart(shiftDate, tz);</span>
-<span class="nc" id="L454">		Date toDate = DateTimeUtil.getDayEnd(shiftDate, tz);</span>
+<span class="nc" id="L485">		Event result = null;</span>
+<span class="nc" id="L486">		Date fromDate = DateTimeUtil.getDayStart(shiftDate, tz);</span>
+<span class="nc" id="L487">		Date toDate = DateTimeUtil.getDayEnd(shiftDate, tz);</span>
 
-<span class="nc" id="L456">		int eventTypeMask = Event.EVENT_TYPE_SHIFT_ASSIGNMENT;</span>
-<span class="nc" id="L457">		Collection scheduleEvents = WfmManagerFactory.getScheduleAccessManager()</span>
-<span class="nc" id="L458">				.getPublishedEventsForWorkResourceByType(eventTypeMask, empID, fromDate, toDate);</span>
+<span class="nc" id="L489">		int eventTypeMask = Event.EVENT_TYPE_SHIFT_ASSIGNMENT;</span>
+<span class="nc" id="L490">		Collection scheduleEvents = WfmManagerFactory.getScheduleAccessManager()</span>
+<span class="nc" id="L491">				.getPublishedEventsForWorkResourceByType(eventTypeMask, empID, fromDate, toDate);</span>
 
 		// Find Shift Assignment Event and adjust Shift Swap Item
-<span class="nc bnc" id="L461" title="All 2 branches missed.">		for (Iterator i = scheduleEvents.iterator(); i.hasNext();){</span>
-<span class="nc" id="L462">			Event event = (Event)i.next();</span>
+<span class="nc bnc" id="L494" title="All 2 branches missed.">		for (Iterator i = scheduleEvents.iterator(); i.hasNext();){</span>
+<span class="nc" id="L495">			Event event = (Event)i.next();</span>
 			// IN40778-1: ensure that starttime of event is after fromDate
-<span class="nc bnc" id="L464" title="All 2 branches missed.">			if (event.getStartTime().compareTo(fromDate) &gt;= 0) {</span>
-<span class="nc" id="L465">				result = event;</span>
-<span class="nc" id="L466">				break;</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">			if (event.getStartTime().compareTo(fromDate) &gt;= 0) {</span>
+<span class="nc" id="L498">				result = event;</span>
+<span class="nc" id="L499">				break;</span>
 			}
-<span class="nc" id="L468">		}</span>
+<span class="nc" id="L501">		}</span>
 
-<span class="nc" id="L470">		return result;</span>
+<span class="nc" id="L503">		return result;</span>
 	}
 
 	/**
@@ -475,26 +508,26 @@ import com.witness.web.uif.system.RequestContext;
 	 * Requests
 	 */
 	public static Collection&lt;ID&gt; getUniqueEmpIDs(Collection requests) {
-<span class="nc" id="L478">		Set&lt;ID&gt; empIDSet = new HashSet&lt;ID&gt;(requests.size());</span>
+<span class="nc" id="L511">		Set&lt;ID&gt; empIDSet = new HashSet&lt;ID&gt;(requests.size());</span>
 
-<span class="nc bnc" id="L480" title="All 2 branches missed.">		for (Iterator it = requests.iterator(); it.hasNext(); ) {</span>
-<span class="nc" id="L481">			RequestAggregate req = (RequestAggregate)it.next();</span>
-<span class="nc bnc" id="L482" title="All 2 branches missed.">			if (req instanceof TORequest) {</span>
-<span class="nc" id="L483">				TORequest tor = (TORequest)req;</span>
-<span class="nc" id="L484">				empIDSet.add(tor.getEmployeeID());</span>
-<span class="nc bnc" id="L485" title="All 2 branches missed.">			} else if (req instanceof ShiftSwapRequest) {</span>
-<span class="nc" id="L486">				ShiftSwapRequest ssr = (ShiftSwapRequest)req;</span>
-<span class="nc" id="L487">				empIDSet.addAll(ssr.getEmployees());</span>
-<span class="nc bnc" id="L488" title="All 2 branches missed.">			} else if (req instanceof ShiftBidRequest) {</span>
-<span class="nc" id="L489">				ShiftBidRequest sbr = (ShiftBidRequest)req;</span>
-<span class="nc" id="L490">				empIDSet.add(sbr.getEmployeeID());</span>
-<span class="nc bnc" id="L491" title="All 2 branches missed.">			} else if (req instanceof CustShiftReq) {</span>
-<span class="nc" id="L492">				CustShiftReq csr = (CustShiftReq)req;</span>
-<span class="nc" id="L493">				empIDSet.add(csr.getEmployeeID());</span>
+<span class="nc bnc" id="L513" title="All 2 branches missed.">		for (Iterator it = requests.iterator(); it.hasNext(); ) {</span>
+<span class="nc" id="L514">			RequestAggregate req = (RequestAggregate)it.next();</span>
+<span class="nc bnc" id="L515" title="All 2 branches missed.">			if (req instanceof TORequest) {</span>
+<span class="nc" id="L516">				TORequest tor = (TORequest)req;</span>
+<span class="nc" id="L517">				empIDSet.add(tor.getEmployeeID());</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">			} else if (req instanceof ShiftSwapRequest) {</span>
+<span class="nc" id="L519">				ShiftSwapRequest ssr = (ShiftSwapRequest)req;</span>
+<span class="nc" id="L520">				empIDSet.addAll(ssr.getEmployees());</span>
+<span class="nc bnc" id="L521" title="All 2 branches missed.">			} else if (req instanceof ShiftBidRequest) {</span>
+<span class="nc" id="L522">				ShiftBidRequest sbr = (ShiftBidRequest)req;</span>
+<span class="nc" id="L523">				empIDSet.add(sbr.getEmployeeID());</span>
+<span class="nc bnc" id="L524" title="All 2 branches missed.">			} else if (req instanceof CustShiftReq) {</span>
+<span class="nc" id="L525">				CustShiftReq csr = (CustShiftReq)req;</span>
+<span class="nc" id="L526">				empIDSet.add(csr.getEmployeeID());</span>
 			}
-<span class="nc" id="L495">		}</span>
+<span class="nc" id="L528">		}</span>
 
-<span class="nc" id="L497">		return empIDSet;</span>
+<span class="nc" id="L530">		return empIDSet;</span>
 	}
 
 	/**
@@ -502,7 +535,7 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static Map&lt;ID, EmployeeName&gt; getEmpNameMap(RequestContext context, Collection&lt;ID&gt; empIDList)
 			throws RemoteException, BbmException {
-<span class="nc" id="L505">		return EmployeeModelHandler.getEmployeeNamesByIDs(context, empIDList);</span>
+<span class="nc" id="L538">		return EmployeeModelHandler.getEmployeeNamesByIDs(context, empIDList);</span>
 	}
 
 	/**
@@ -512,80 +545,84 @@ import com.witness.web.uif.system.RequestContext;
 			throws RemoteException, BbmException {
 
 		// Get Employee Names for Users
-<span class="nc" id="L515">		Collection users = userMap.values();</span>
-<span class="nc" id="L516">		HashMap empNameMap = EmployeeModelHandler.getEmployeeNamesByUsers(context, users);</span>
+<span class="nc" id="L548">		Collection users = userMap.values();</span>
+<span class="nc" id="L549">		HashMap empNameMap = EmployeeModelHandler.getEmployeeNamesByUsers(context, users);</span>
 
-<span class="nc bnc" id="L518" title="All 2 branches missed.">		if(empNameMap==null) {</span>
-<span class="nc" id="L519">			empNameMap = new HashMap();</span>
+<span class="nc bnc" id="L551" title="All 2 branches missed.">		if(empNameMap==null) {</span>
+<span class="nc" id="L552">			empNameMap = new HashMap();</span>
 		}
 		// Get Employee Name for Request
-<span class="nc" id="L522">		ID empID = request.getEmployeeID();</span>
-<span class="nc" id="L523">		EmployeeName empName = EmployeeModelHandler.getEmployeeNameByID(context, empID);</span>
-<span class="nc" id="L524">		empNameMap.put(empID, empName);</span>
+<span class="nc" id="L555">		ID empID = request.getEmployeeID();</span>
+<span class="nc" id="L556">		EmployeeName empName = EmployeeModelHandler.getEmployeeNameByID(context, empID);</span>
+<span class="nc" id="L557">		empNameMap.put(empID, empName);</span>
 
-<span class="nc" id="L526">		return empNameMap;</span>
+<span class="nc" id="L559">		return empNameMap;</span>
 	}
 
 	/**
 	 * Return Map of EmployeeID and their Organization IDs
 	 */
-	public static Map getEmpOrgMap(RequestContext context, Collection empIDList)
+	public static Map&lt;ID, ID&gt; getEmpOrgMap(RequestContext context, Collection empIDList)
 			throws RemoteException, BbmException {
-<span class="nc" id="L534">		return OrganizationModelHandler.getEmployeeOrgMap(context, empIDList, null);</span>
+<span class="nc" id="L567">		return OrganizationModelHandler.getEmployeeOrgMap(context, empIDList, null);</span>
 	}
-
+	
+	/**
+	 * Return Employee's Organization
+	 */
+	public static Organization getEmpOrg(RequestContext context, ID empID) 
+			throws RemoteException, BbmException {
+<span class="nc" id="L575">		return OrganizationModelHandler.getEmployeeOrg(context, empID);</span>
+	}
+	
 	/**
 	 * Return Employee's Organization ID
 	 */
 	public static ID getEmpOrgID(RequestContext context, ID empID) throws RemoteException, BbmException {
-<span class="nc" id="L541">		return OrganizationModelHandler.getEmployeeOrgID(context, empID);</span>
+<span class="nc" id="L582">		return OrganizationModelHandler.getEmployeeOrgID(context, empID);</span>
 	}
 
+	public TimeZone getEmpOrgTimeZone(RequestContext context, ID employeeID) 
+			throws RemoteException, BbmException {
+<span class="nc" id="L587">		return OrganizationModelHandler.getEmployeeOrgTZ(context, employeeID);</span>
+	}
+
+
+
 	/**
-	 * Return Employee's current Time Off Pool. If he isn't assigned to any pool right now,
+	 * Return Employee's current Time Off Pool (by activity if passed in). If he isn't assigned to any pool right now,
 	 * return his first pool assignment. If he has no pool assignments, return null.
 	 */
-	public static TOPool getEmpPool(RequestContext context, ID empoyeeID) throws Exception
+	public static TOPool getEmpPool(ID empoyeeID, ID activityID) throws Exception
 	{
-<span class="nc" id="L550">		ID poolID = null;</span>
-<span class="nc" id="L551">		TOPool pool = null;</span>
-<span class="nc" id="L552">		Date now = new Date();</span>
-
-        //Get all the pool assignments for the employee
-<span class="nc" id="L555">        Calendar bigBangCal = Calendar.getInstance();</span>
-<span class="nc" id="L556">		bigBangCal.set(Calendar.YEAR, 1900);</span>
-<span class="nc" id="L557">		Calendar armageddonCal = Calendar.getInstance();</span>
-<span class="nc" id="L558">		armageddonCal.set(Calendar.YEAR, 2100);</span>
-<span class="nc" id="L559">		Collection poolHistoryList = PeopleMH.getValidEmpTOPoolAssignments(empoyeeID, bigBangCal.getTime(), armageddonCal.getTime());</span>
-
-<span class="nc bnc" id="L561" title="All 4 branches missed.">		if (poolHistoryList != null &amp;&amp; poolHistoryList.size() &gt; 0)</span>
-		{
-			//Look for overlap with current time
-<span class="nc bnc" id="L564" title="All 2 branches missed.">			for (Iterator it= poolHistoryList.iterator(); it.hasNext();)</span>
-			{
-<span class="nc" id="L566">				EmpTOPoolAssignment poolAss = (EmpTOPoolAssignment) it.next();</span>
-<span class="nc bnc" id="L567" title="All 2 branches missed.">				if (TimePeriodUtil.overlap(poolAss.getStartTime(), poolAss.getEndTime(), now, null))</span>
-				{
-<span class="nc" id="L569">					poolID = poolAss.getTOPoolID();</span>
-<span class="nc" id="L570">					break;</span>
-				}
-<span class="nc" id="L572">			}</span>
-
-<span class="nc bnc" id="L574" title="All 2 branches missed.">			if (poolID == null)</span>
-			{
-				//still not found: use first available pool
-<span class="nc" id="L577">				EmpTOPoolAssignment poolAss = (EmpTOPoolAssignment) poolHistoryList.iterator().next();</span>
-<span class="nc" id="L578">				poolID = poolAss.getTOPoolID();</span>
-			}
-
-<span class="nc bnc" id="L581" title="All 2 branches missed.">			if (poolID != null)</span>
-			{
-				//get the pool
-<span class="nc" id="L584">		        CalendarTimeOffDayFacade ctodf = RmManagerFactory.getInstance().getTimeOffDayFacade();</span>
-<span class="nc" id="L585">		        pool = ctodf.getTOPool(poolID);</span>
-			}
+		
+<span class="nc" id="L599">		Date now = new Date();</span>
+		//Get all the pool assignments for the employee
+<span class="nc" id="L601">        Calendar bigBangCal = Calendar.getInstance();</span>
+<span class="nc" id="L602">		bigBangCal.set(Calendar.YEAR, 1900);</span>
+<span class="nc" id="L603">		Calendar armageddonCal = Calendar.getInstance();</span>
+<span class="nc" id="L604">		armageddonCal.set(Calendar.YEAR, 2100);</span>
+		List&lt;EmpTOPoolAssignment&gt; poolHistoryList;
+		
+<span class="nc" id="L607">		CalendarTimeOffDayFacade toCalFacade = RmManagerFactory.getInstance().getTimeOffDayFacade();</span>
+		
+<span class="nc bnc" id="L609" title="All 4 branches missed.">		if (LicenseUtil.isAdvancedRMLicense() &amp;&amp; activityID != null) {</span>
+			//JT: Pools are by activity (or default)
+<span class="nc" id="L611">			poolHistoryList = toCalFacade.getAllEmpTOPoolAssignments(empoyeeID, bigBangCal.getTime(), armageddonCal.getTime(),</span>
+					activityID);
+		} else {
+			//Pools are not by activity
+<span class="nc" id="L615">			poolHistoryList = toCalFacade.getDefaultEmpTOPoolAssignments(empoyeeID, bigBangCal.getTime(), armageddonCal.getTime());</span>
 		}
-<span class="nc" id="L588">        return pool;</span>
+
+<span class="nc" id="L618">		ID poolID = TOPoolUtil.getPoolWithOverlapCurrentTime(poolHistoryList, now, activityID);</span>
+
+<span class="nc bnc" id="L620" title="All 2 branches missed.">		if (poolID != null) {</span>
+<span class="nc" id="L621">			return TOPoolUtil.getTOPool(poolID);</span>
+		}
+		
+<span class="nc" id="L624">		return null;</span>
+		
 	}
 
 	/**
@@ -600,8 +637,8 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static void processRequests(Collection reqIDs, Collection objVerNums, String action)
 			throws MultiUserException, RemoteException, BbmCreateException, RmException, RmHardValidationException {
-<span class="nc" id="L603">		getRequestManager().processRequests(reqIDs, objVerNums, action);</span>
-<span class="nc" id="L604">	}</span>
+<span class="nc" id="L640">		getRequestManager().processRequests(reqIDs, objVerNums, action);</span>
+<span class="nc" id="L641">	}</span>
 
 	/**
 	 * Get the time off year month and day for an employee
@@ -611,14 +648,61 @@ import com.witness.web.uif.system.RequestContext;
 	 */
 	public static int[] getEmployeeTimeOffYearStart(RequestContext context, ID empID, ID orgID) throws BbmFinderException, Exception {
 		// Get the month and day for the employee's time off year
-<span class="nc" id="L614">		return com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil.getEmployeeTimeOffYearStart(empID, orgID);</span>
+<span class="nc" id="L651">		return com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil.getEmployeeTimeOffYearStart(empID, orgID);</span>
 	}
 
 	/**
 	 * Get the Request filetr by id
 	 */
 	public static RequestFilter getRequestFilterById(ID filterID) throws BbmFinderException, Exception {
-<span class="nc" id="L621">		return getRequestManager().getRequestFilterById(filterID);</span>
+<span class="nc" id="L658">		return getRequestManager().getRequestFilterById(filterID);</span>
 	}
+
+	public static void calculateAdvancedVtoTimeOffChoices(TORequest toRequest) {
+		try {
+<span class="nc" id="L663">			TORequestManager toManager = m_managerFactory.getTimeOffRequestManager();</span>
+<span class="nc" id="L664">			toManager.calculateAdvancedVtoTimeOffChoices(toRequest);</span>
+<span class="nc" id="L665">		} catch (Exception e) {</span>
+<span class="nc" id="L666">			throw RmRuntimeException.toRuntimeException(e);</span>
+<span class="nc" id="L667">		}</span>
+
+<span class="nc" id="L669">	}</span>
+	
+	private static boolean isTimeOffBidOfRequestClosed(TORequest toReq,Collection&lt;TimeOffBid&gt; timeOffBids) throws  BbmFinderException, BbmCreateException, RemoteException{
+<span class="nc" id="L672">		boolean isTOBClosed=false;</span>
+<span class="nc bnc" id="L673" title="All 2 branches missed.">		if(toReq.getTimeOffBidInfo()==null){</span>
+<span class="nc" id="L674">			Date submittedDate = toReq.getSubmittedOn();</span>
+		    //with Requests having validation rules run(e.g: status=Pending), once the time off bid is open, the value TimeOffBidInfo is not null	
+<span class="nc bnc" id="L676" title="All 2 branches missed.">			for(TimeOffBid bid:timeOffBids){</span>
+<span class="nc" id="L677">				TimeRange bidRange= new TimeRange(bid.getBidStartTime(),bid.getBidEndTime());</span>
+<span class="nc" id="L678">				Collection&lt;ID&gt; activityIds= RmManagerFactory.getInstance().getTimeOffBiddingManager().getBidActivityIds(bid.getId());</span>
+				//It means the activities in bid settings has time off type and the time off request submitted in bid range time.
+<span class="nc bnc" id="L680" title="All 4 branches missed.">				boolean isTOB=activityIds.contains(toReq.getTimeOffType())&amp;&amp; bidRange.includes(submittedDate);</span>
+<span class="nc bnc" id="L681" title="All 2 branches missed.">				if (!isTOB) {</span>
+<span class="nc" id="L682">					continue;</span>
+				}
+<span class="nc bnc" id="L684" title="All 2 branches missed.">				if(bid.isStatusClosed()) {</span>
+<span class="nc" id="L685">					isTOBClosed=true;</span>
+				} else {
+<span class="nc" id="L687">					isTOBClosed=false;</span>
+				}
+<span class="nc" id="L689">			}</span>
+		}
+<span class="nc" id="L691">		return isTOBClosed;</span>
+	}
+	//Assign time off bid information( closed or not) to each requests in the list of the requests 
+	public static Map&lt;ID,Boolean&gt; assignClosedTimeOffBidToRequests(ID employeeId,Collection&lt;RequestAggregate&gt; requests) throws BbmFinderException, BbmCreateException, RemoteException{
+<span class="nc" id="L695">		Collection&lt;TimeOffBid&gt; timeOffBids=RmManagerFactory.getInstance().getTimeOffBiddingManager().getTimeOffBidsEmpIdAssigned(employeeId);</span>
+<span class="nc" id="L696">		Map&lt;ID,Boolean&gt; result=new HashMap&lt;ID,Boolean&gt;();</span>
+		//Only do for time off requests
+<span class="nc bnc" id="L698" title="All 2 branches missed.">		for(RequestAggregate req:requests){</span>
+<span class="nc bnc" id="L699" title="All 2 branches missed.">			if(req.isTimeOffRequest()) {</span>
+<span class="nc" id="L700">				TORequest toReq = (TORequest) req;</span>
+<span class="nc" id="L701">				result.put(toReq.getID(),isTimeOffBidOfRequestClosed(toReq,timeOffBids));</span>
+			}
+<span class="nc" id="L703">		}</span>
+<span class="nc" id="L704">		return result;</span>
+	}
+	
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

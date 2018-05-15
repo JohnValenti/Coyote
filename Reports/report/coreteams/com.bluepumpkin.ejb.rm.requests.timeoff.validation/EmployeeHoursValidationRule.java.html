@@ -6,38 +6,13 @@
 
 package com.bluepumpkin.ejb.rm.requests.timeoff.validation;
 
-import java.io.Serializable;
-import java.util.Calendar;
-import java.util.Collection;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.Set;
-
-import com.bluepumpkin.common.datatypes.ID;
-import com.bluepumpkin.common.jdmo.Jdmo;
 import com.bluepumpkin.common.localization.Localizer;
-import com.bluepumpkin.common.logging.Category;
-import com.bluepumpkin.ejb.bbm.activity.model.Activity;
-import com.bluepumpkin.ejb.bbm.activity.model.ActivityCategory;
-import com.bluepumpkin.ejb.bbm.activity.model.ActivityTimeOffBalance;
 import com.bluepumpkin.ejb.bbm.localization.DefaultLocalizationManager;
-import com.bluepumpkin.ejb.bbm.workresource.model.Employee;
-import com.bluepumpkin.ejb.bbm.workresource.model.EmployeeTimeOffAccrued;
-import com.bluepumpkin.ejb.rm.Log;
-import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
-import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
-import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
-import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
-import com.bluepumpkin.ejb.rm.requests.timeoff.ejb.TOAccrualCalculator;
-import com.bluepumpkin.ejb.rm.requests.timeoff.hoursperday.model.TOHoursPerDay;
-import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOAccrual;
-import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOAccrualDetailRow;
-import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidatorForMultiChoice;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
-import com.bluepumpkin.ejb.rm.util.RmUtil;
-import com.bluepumpkin.ejb.rm.util.TORequestUtil;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.employeehours.EmployeeHoursValidationRuleMultiChoice;
 
 /**
  * Rule in UI: Employee has enough time off hours.
@@ -56,328 +31,32 @@ import com.bluepumpkin.ejb.rm.util.TORequestUtil;
  * &quot;don't debit&quot; requests as they do not have the &quot;time off length&quot; property.
  * &lt;p/&gt;
  * &lt;p/&gt;
- * x TODO: verify with pavel for tentative requests. Applies equally for
- * tentative and non-tentative requests (unpublished schedule information used,
- * but must be part of this validation).
  */
-<span class="fc" id="L63">public class EmployeeHoursValidationRule implements Validator {</span>
-<span class="fc" id="L64">	private static final String m_className = EmployeeHoursValidationRule.class.getName();</span>
 
-<span class="fc" id="L66">	private static final Category m_cat = Log.initCategory(m_className);</span>
-<span class="fc" id="L67">	private boolean isZeroCarryOverBal = false; // Zero carry over balance for</span>
-												// this activity
+/*
+ * The  logic has been moved to EmployeeHoursValidationRuleMultiChoice. 
+ * This class is kept as a shell so that it is easy to verify the old logic in git
+ * When the logic is stable EmployeeHoursValidationRuleMultiChoice can be merged back into this class 
+ * and  EmployeeHoursValidationRuleMultiChoice can be removed. 
+ */
 
-	/**
-	 * Validate a time off request.
-	 */
+<span class="nc" id="L43">public class EmployeeHoursValidationRule implements ValidatorForMultiChoice   {</span>
+
+	@Override
 	public ValidationResult validate(Validatable validatable) throws Exception {
-<span class="fc" id="L74">		TORequest tor = (TORequest) validatable;</span>
-
-<span class="fc" id="L76">		String methodName = &quot;validate&quot;;</span>
-<span class="pc bpc" id="L77" title="1 of 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
-<span class="fc" id="L78">			m_cat.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
-		}
-<span class="fc" id="L80">		ValidationResult result = null;</span>
-<span class="pc bpc" id="L81" title="1 of 2 branches missed.">		if (!tor.isUnavailability()) {</span>
-<span class="fc" id="L82">			TOChoice toChoice = tor.getTOChoiceForValidation();</span>
-<span class="fc bfc" id="L83" title="All 2 branches covered.">			if (toChoice != null) {</span>
-<span class="fc" id="L84">				result = processTOChoice(tor, toChoice);</span>
-			} else {
-				// Loop through the choices and check each one
-<span class="fc bfc" id="L87" title="All 2 branches covered.">				for (Iterator itx = tor.getRequestChoiceList().iterator(); itx.hasNext();) {</span>
-<span class="fc" id="L88">					toChoice = (TOChoice) itx.next();</span>
-<span class="fc" id="L89">					result = processTOChoice(tor, toChoice);</span>
-				}
-			}
-		}
-<span class="pc bpc" id="L93" title="1 of 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
-<span class="fc" id="L94">			m_cat.debug(RmUtil.dumpExitMethod(methodName, result));</span>
-		}
-		
-<span class="fc" id="L97">		return result;</span>
+<span class="nc" id="L47">		return validateForMultiChoice(validatable);</span>
 	}
 
-	/**
-	 * Process each TOChoice associated with the request.
-	 * &lt;li&gt;for each choice verify if TOChoice violates the yearly timeoff
-	 * allocations (specified for the TOReq's activity).
-	 * &lt;li&gt;In case the TOChoice spans multiple TOAllocation years, handle each
-	 * year separately.
-	 *
-	 * @param tor
-	 * @param toChoice
-	 * @return
-	 * @throws Exception
-	 */
-	private ValidationResult processTOChoice(TORequest tor, TOChoice toChoice) throws Exception {
-		/*
-		 * if (!TOAccrualCalculator.hasLicenseForAccrual()) { return
-		 * processTOChoiceOld(tor, toChoice); }
-		 */
-<span class="fc" id="L117">		Activity act = getActivity(tor.getTimeOffType());</span>
-<span class="fc" id="L118">		ActivityCategory cat = getActivityCategory(act.getActivityCategoryId());</span>
-<span class="pc bpc" id="L119" title="2 of 4 branches missed.">		if (!(cat.isTOAllotment() || act.isTimeoffWithAllotment())) {</span>
-<span class="nc" id="L120">			return null; // This validation rule applies only to activities</span>
-							// where accrual is enabled.
-		}
-<span class="fc" id="L123">		EmployeeTimeOffAccrued accrd = getLastUpdatedTOAccrued(null, tor.getEmployeeID(),</span>
-<span class="pc bpc" id="L124" title="2 of 4 branches missed.">				!cat.isTOAllotment() ? act.getID() : null, cat.isTOAllotment() ? cat.getID() : null, null);</span>
-<span class="pc bpc" id="L125" title="3 of 4 branches missed.">		if (TORequestUtil.isTimeOffChoiceForPastDate(tor, toChoice) &amp;&amp; accrd != null</span>
-<span class="nc bnc" id="L126" title="All 2 branches missed.">				&amp;&amp; toChoice.getStartDate().before(accrd.getAccruedAtDate())) {</span>
-<span class="nc" id="L127">			m_cat.debug(</span>
-					&quot;Requested Choice is for a date that falls before Last update date so we skip validation; Start date:&quot;
-<span class="nc" id="L129">							+ toChoice.getStartDate() + &quot;: Balance update date:&quot; + accrd.getAccruedAtDate());</span>
-<span class="nc" id="L130">			return null;</span>
-		}
-		// Determining that carryover==0 is very important for timeoff crossing
-		// TO year boundary!!!
-<span class="fc bfc" id="L134" title="All 2 branches covered.">		isZeroCarryOverBal = (accrd == null);</span>
-<span class="fc bfc" id="L135" title="All 2 branches covered.">		if (!isZeroCarryOverBal) {</span>
-			// If Accrued is not null then check if carryover is explicitly set
-			// to zero for this activity / act category
-<span class="fc" id="L138">			ActivityTimeOffBalance actTOBal = getActivityTimeOffBalance(tor.getEmployeeID(),</span>
-<span class="pc bpc" id="L139" title="2 of 4 branches missed.">					!cat.isTOAllotment() ? act.getID() : null, cat.isTOAllotment() ? cat.getID() : null);</span>
-<span class="pc bpc" id="L140" title="2 of 4 branches missed.">			isZeroCarryOverBal = (actTOBal != null &amp;&amp; actTOBal.getMaxCarryOver() == 0);</span>
-		}
-<span class="fc" id="L142">		ValidationResult result = null;</span>
-<span class="fc" id="L143">		Date stDate = null;</span>
-		// If Carry Over is zero then we need to pass the start date of TO year
-		// ( based on choice start date)as well
-		// because it might involve validation across TO Year boundary.
-		// If carry over is not zero then Accrual calculator is smart enough to
-		// find out from where to start calculation.
-		// It does not hurt to pass the start date whenever carryover==0
-<span class="fc" id="L150">		Date enDate = null;</span>
-		// Adding the boolean flag newly to calculate the TO accrued hours
-		// correctly , when the TO request is crossing year boundary
-<span class="fc" id="L153">		boolean reqCrossingYearlyBndry = false;</span>
-<span class="fc bfc" id="L154" title="All 2 branches covered.">		if (isZeroCarryOverBal) {</span>
-<span class="fc" id="L155">			int[] empTOYrStArr = getEmployeeTimeOffYearStart(tor.getCache().getEmployeeID(),</span>
-<span class="fc" id="L156">					tor.getCache().getOrg().getID());</span>
-<span class="fc" id="L157">			Calendar empTOYearStartCalToChoiceStart = RequestUtil.getEmployeeTimeOffYearStart(toChoice.getStartDate(),</span>
-<span class="fc" id="L158">					tor.getCache().getOrg(), empTOYrStArr);</span>
-<span class="fc" id="L159">			Calendar empTOYearStartCalToChoiceEnd = RequestUtil.getEmployeeTimeOffYearStart(toChoice.getEndDate(),</span>
-<span class="fc" id="L160">					tor.getCache().getOrg(), empTOYrStArr);</span>
-<span class="pc bpc" id="L161" title="1 of 2 branches missed.">			if (empTOYearStartCalToChoiceEnd.after(empTOYearStartCalToChoiceStart)) {</span>
-<span class="nc" id="L162">				reqCrossingYearlyBndry = true;</span>
-				// Compute start date only if ToChoice crosses year boundary ;
-				// else pass null
-<span class="nc" id="L165">				Employee emp = tor.getCache().getEmployee(Employee.DETAIL_LEVEL_EMPLOYEE_BASIC);</span>
-<span class="nc" id="L166">				Date empStart = emp.getStartTime();</span>
-				// st date to be passed to accrual calc should never be earlier
-				// than the employee start date.
-				// if st date is earlier than emp start date then set st date =
-				// emp start date
-<span class="nc bnc" id="L171" title="All 2 branches missed.">				stDate = empTOYearStartCalToChoiceStart.getTime().after(empStart)</span>
-<span class="nc" id="L172">						? empTOYearStartCalToChoiceStart.getTime() : empStart;</span>
-
-			}
-<span class="pc bpc" id="L175" title="1 of 2 branches missed.">			if (toChoice.getEndDate().equals(empTOYearStartCalToChoiceEnd.getTime())) {</span>
-				// enDate = new Date(toChoice.getEndDate().getTime());
-<span class="nc" id="L177">				enDate = new Date(toChoice.getEndDate().getTime() - 1);</span>
-			} else {
-<span class="fc" id="L179">				Calendar empTOYearEndCalToChoiceEnd = RequestUtil.getEmployeeTimeOffYearEnd(toChoice.getEndDate(),</span>
-<span class="fc" id="L180">						tor.getCache().getOrg(), empTOYrStArr);</span>
-<span class="fc" id="L181">				enDate = empTOYearEndCalToChoiceEnd.getTime();</span>
-			}
-		}
-<span class="fc" id="L184">		TOAccrual toAccrual = getTOAccruedForValidation(stDate, toChoice.getHoursPerDay(), enDate);</span>
-<span class="fc" id="L185">		result = setValidationResults(toAccrual, toChoice);</span>
-<span class="fc bfc" id="L186" title="All 2 branches covered.">		if (result != null) {</span>
-<span class="fc" id="L187">			return result;</span>
-		}
-<span class="fc" id="L189">		Set violationSet = toAccrual.getViolations();</span>
-<span class="pc bpc" id="L190" title="1 of 4 branches missed.">		if (violationSet != null &amp;&amp; !violationSet.isEmpty()) {</span>
-<span class="fc" id="L191">			Iterator iter = violationSet.iterator();</span>
-<span class="pc bpc" id="L192" title="1 of 2 branches missed.">			while (iter.hasNext()) {</span>
-<span class="fc" id="L193">				TOAccrualDetailRow row = (TOAccrualDetailRow) iter.next();</span>
-<span class="fc" id="L194">				TOHoursPerDay hrsPerDay = row.getTOHoursPerDay();</span>
-				// Accrued Hrs Till date are always for the end date of the
-				// request hence need to add the accounted hours
-				// for TO Choice to accrued_hours_till_date because we always
-				// show hours at start of the requested range
-
-<span class="pc bpc" id="L200" title="2 of 4 branches missed.">				if (hrsPerDay != null &amp;&amp; hrsPerDay.getTOChoiceID() != null</span>
-<span class="pc bpc" id="L201" title="1 of 2 branches missed.">						&amp;&amp; hrsPerDay.getTOChoiceID().equals(toChoice.getID())) {</span>
-					/// Accrl Calculator always return Accrd Hrs Till Date of
-					/// request taking into account current request as well
-					// hence Accrued hours on start date should be calculated by
-					/// getting Accrd Hrs on Date of Time Off request
-					// and substracting accounted hours for this request from
-					/// it.
-<span class="pc bpc" id="L208" title="1 of 2 branches missed.">					String key = TOAccrualCalculator.hasLicenseForAccrual() ? RmEjbBundleKey.TO_NOT_ENOUGH_HOURS_ACCR</span>
-							: RmEjbBundleKey.TO_NOT_ENOUGH_HOURS;
-<span class="fc" id="L210">					double reqHrs = ((double) toChoice.getHoursPerDay().getTotalMinutes() / 60.0);</span>
-
-<span class="pc bpc" id="L212" title="1 of 2 branches missed.">					if (reqCrossingYearlyBndry) {</span>
-<span class="nc" id="L213">						double accrdHrsTillDate = row.getAccrdHrsTillDate() + row.getAcctHrsTillDate();</span>
-<span class="nc" id="L214">						result = ValidationUtil.setSoftValidationResult(toChoice, key,</span>
-<span class="nc" id="L215">								new Serializable[] { getEmployeeNameByID(tor), toChoice.getStartDate(),</span>
-<span class="nc" id="L216">										getLocalizer().formatNumber(reqHrs, 2), getLocalizer().formatNumber(accrdHrsTillDate, 2),</span>
-<span class="nc" id="L217">										row.getStartDate() },</span>
-								m_className);
-<span class="nc" id="L219">					} else {</span>
-<span class="fc" id="L220">						double accrdHrsTillDate = row.getAccrdHrsTillDate() + reqHrs;</span>
-<span class="fc" id="L221">						result = ValidationUtil.setSoftValidationResult(toChoice, key,</span>
-<span class="fc" id="L222">								new Serializable[] { getEmployeeNameByID(tor), toChoice.getStartDate(),</span>
-<span class="fc" id="L223">										getLocalizer().formatNumber(reqHrs, 2), getLocalizer().formatNumber(accrdHrsTillDate, 2),</span>
-<span class="fc" id="L224">										toChoice.getStartDate() },</span>
-								m_className);
-					}
-<span class="fc" id="L227">					break;</span>
-<span class="nc bnc" id="L228" title="All 4 branches missed.">				} else if (hrsPerDay != null &amp;&amp; hrsPerDay.getStartTime().after(toChoice.getStartDate())) {</span>
-<span class="nc bnc" id="L229" title="All 2 branches missed.">					if (toAccrual.actTOBal.getMaxCarryOver() == ActivityTimeOffBalance.MAX_BALANCE_NA) {</span>
-						// there is no concept of carryover; definitely raise an
-						// alert for any violation found anywhere in future.
-<span class="nc" id="L232">						return setSoftValidationResult(tor, toChoice, row.getAccrdHrsTillDate(),</span>
-<span class="nc" id="L233">								hrsPerDay.getStartTime());</span>
-					} else {
-<span class="nc" id="L235">						Calendar empTOYearEndCal = RequestUtil.getEmployeeTimeOffYearEnd(toChoice.getStartDate(),</span>
-								toAccrual.org, toAccrual.empTOYrStArr);
-<span class="nc bnc" id="L237" title="All 2 branches missed.">						if (!empTOYearEndCal.getTime().before(toChoice.getEndDate())) {</span>
-							// A ;entire time off choice Falls in the same time
-							// off year
-<span class="nc" id="L240">							checkForYear(tor, toChoice, toAccrual, row, empTOYearEndCal);</span>
-						} else {
-							// B or C; Time off choice end crosses time off year
-<span class="nc" id="L243">							Calendar empTOYearEndForTOChoiceEnDate = RequestUtil.getEmployeeTimeOffYearEnd(</span>
-<span class="nc" id="L244">									toChoice.getEndDate(), toAccrual.org, toAccrual.empTOYrStArr);</span>
-<span class="nc" id="L245">							checkForYear(tor, toChoice, toAccrual, row, empTOYearEndForTOChoiceEnDate);</span>
-						}
-					}
-<span class="nc" id="L248">					break;</span>
-				} else {
-					// This violation occurs before the start date of request
-					// therefore cannot use it to show alert for this
-					// request/choice because it might not be relevant here
-<span class="nc" id="L253">					m_cat.info(&quot; skipping this violation TOR=&quot; + tor + &quot; :TOCHOICE=&quot; + toChoice + &quot;: ROW=&quot;</span>
-<span class="nc" id="L254">							+ row.getTOHoursPerDay() + &quot;: toAccrual=&quot; + toAccrual);</span>
-				}
-<span class="nc" id="L256">			}</span>
-		}
-<span class="fc" id="L258">		return result;</span>
+	@Override
+	public ValidationResult validateForMultiChoice(Validatable validatable) throws Exception {
+<span class="nc" id="L52">		TORequest tor = (TORequest) validatable;</span>
+<span class="nc" id="L53">		EmployeeHoursValidationRuleMultiChoice multiValidator = new EmployeeHoursValidationRuleMultiChoice(getLocalizer());</span>
+<span class="nc" id="L54">		return multiValidator.validateForMultiChoice(tor);</span>
 	}
 
-	/* consider all cases for three scenarios where violation is found. We dont want to always raise an alert
-    		  TO YR EN       TO YR EN
-	_____________|_______________|____________________________________________________
-	       |               |
-	|-TOM A-|    |               |       A:  Entire Choice falls before Yr End
-	|--------TOM B-----|         |       B:  Choice crosses Year Boundary
-	|------------+----TOM C------|-----| C:  Choice crosses 2 Year Boundaries (is greater than 365 days, is an extreme scenario. decided not to implemnt for now)
-		|--TO E--| |             |       E:  TO EVENT entirely in Current year
-			|--TO F+----|        |       F:  TO EVENT crosses year boundary; F1= violation in current year F2= Violation in next year
-	       		 |     |-TO G-|  |       G:  TO EVENT entirely falls in Next year
-	_____________|_______________|_____________________________________________________
-	/* consider all cases for three scenarios where violation is found. We dop not want to always raise a alert
-	X -&gt; Raise alert;
-	NA -&gt; alert will not be raised;
-	-- -&gt; not implemented /verified;
-	QQ -&gt; Alert raised but not sure it is correct.
-	
-	CASE 1&gt; CARRYOVER ==0          :
-	X =A  B  C    &lt;-TOM Request
-	E =X  X  --
-	F1=X  X  --
-	F2=NA X  --
-	G =NA X  --
-	
-	CASE 2&gt; CARRYOVER &gt; 0          : few test case not handled right now; need to handle later
-	X =A  B  C
-	E =X    --
-	F1=     --
-	F2=     --
-	G =QQ   --
-	CASE 3&gt; CARRYOVER not enforced : No check necessary; just show the first violation found. (coded above)
-	*/
-	private ValidationResult checkForYear(TORequest tor, TOChoice toChoice, TOAccrual toAccrual, TOAccrualDetailRow row,
-			Calendar yrEndCal) throws Exception {
-<span class="nc" id="L295">		TOHoursPerDay hrsPerDay = row.getTOHoursPerDay();</span>
-<span class="nc bnc" id="L296" title="All 2 branches missed.">		if (!yrEndCal.getTime().before(hrsPerDay.getEndTime())) {</span>
-			// E: violating TO EVENT entirely occurs BEFORE the passed TO Year
-			// End Date
-<span class="nc" id="L299">			return setSoftValidationResult(tor, toChoice, row.getAccrdHrsTillDate(), hrsPerDay.getStartTime());</span>
-<span class="nc bnc" id="L300" title="All 2 branches missed.">		} else if (yrEndCal.getTime().before(hrsPerDay.getStartTime())) {</span>
-			// G : violating TO EVENT entirely occurs AFTER the passed TO Year
-			// End Date
-<span class="nc bnc" id="L303" title="All 2 branches missed.">			if (isZeroCarryOverBal) {</span>
-				// because carryover==0 &amp; entire violation is in next year so no
-				// violation here.
-<span class="nc" id="L306">				return null;</span>
-			} else {
-				// TODO: Accrual is more than zero, we are not sure right now if
-				// TO Chocie caused it but
-				// raise a violation anyway . We will need to fine tune this
-				// later
-				// to raise violation only if the TOChoice causes it.
-<span class="nc" id="L313">				return setSoftValidationResult(tor, toChoice, row.getAccrdHrsTillDate(), hrsPerDay.getStartTime());</span>
-			}
-		} else {
-			// F: (F1&amp; F2 )Violating TO EVENT crosses year boundary; just raise
-			// the exception
-			// Accrual calculator will raise vioaltion approriately based on
-			// when accrued hours go negative
-			// Trust it and raise the exception.
-<span class="nc" id="L321">			return setSoftValidationResult(tor, toChoice, row.getAccrdHrsTillDate(), hrsPerDay.getStartTime());</span>
-		}
-	}
-
-	private ValidationResult setSoftValidationResult(TORequest tor, TOChoice toChoice, double accrdHrsTillDate,
-			Date startTime) throws Exception {
-<span class="nc" id="L327">		return ValidationUtil.setSoftValidationResult(toChoice, RmEjbBundleKey.TO_NOT_ENOUGH_HOURS_FUTURE,</span>
-<span class="nc" id="L328">				new Serializable[] { getEmployeeNameByID(tor), toChoice.getStartDate(),</span>
-<span class="nc" id="L329">						getLocalizer().formatNumber(accrdHrsTillDate, 2), startTime },</span>
-				m_className);
-	}
-
-	protected ValidationResult setValidationResults(TOAccrual toAccrual, TOChoice toChoice) {
-<span class="fc" id="L334">		ValidationResult vr = null;</span>
-<span class="pc bpc" id="L335" title="2 of 4 branches missed.">		if (toAccrual != null &amp;&amp; toAccrual.getValidationResults(true) != null</span>
-<span class="fc bfc" id="L336" title="All 2 branches covered.">				&amp;&amp; !toAccrual.getValidationResults(true).isEmpty()) {</span>
-<span class="fc" id="L337">			Collection m_valResults = toAccrual.getValidationResults(true);</span>
-<span class="fc bfc" id="L338" title="All 2 branches covered.">			for (Iterator it = m_valResults.iterator(); it.hasNext();) {</span>
-<span class="fc" id="L339">				vr = (ValidationResult) it.next();</span>
-				// m_cat.info(&quot;IS SOFT=&quot; + vr.isSoft() + &quot;MSG=&quot; +
-				// vr.getMessageResource());
-<span class="fc" id="L342">				toChoice.addValidationResult(vr);</span>
-<span class="fc" id="L343">				vr.setValidatorName(m_className);</span>
-			}
-		}
-<span class="fc" id="L346">		return vr;</span>
-	}
-
-	protected Activity getActivity(ID timeOffTypeID) throws Exception {
-<span class="fc" id="L350">		return TOAccrualCalculator.getActivity(timeOffTypeID);</span>
-	}
-
-	protected ActivityCategory getActivityCategory(ID activityCategoryID) throws Exception {
-<span class="fc" id="L354">		return TOAccrualCalculator.getActivityCategory(activityCategoryID);</span>
-	}
-
-	protected EmployeeTimeOffAccrued getLastUpdatedTOAccrued(Jdmo dmo, ID empID, ID activityID, ID actCatID,
-			Date startDate) throws Exception {
-<span class="fc" id="L359">		return TOAccrualCalculator.getLastUpdatedTOAccrued(dmo, empID, activityID, actCatID, startDate);</span>
-	}
-
-	protected ActivityTimeOffBalance getActivityTimeOffBalance(ID empID, ID activityID, ID actCatID) throws Exception {
-<span class="fc" id="L363">		return TOAccrualCalculator.getActivityTimeOffBalance(empID, activityID, actCatID);</span>
-	}
-
-	protected TOAccrual getTOAccruedForValidation(Date stDate, TOHoursPerDay hrsPerDaytoVal, Date enDate) {
-<span class="fc" id="L367">		return TOAccrualCalculator.getTOAccruedForValidation(stDate, hrsPerDaytoVal, enDate);</span>
-	}
-	
 	protected Localizer getLocalizer() {
-<span class="fc" id="L371">		return DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
+<span class="nc" id="L58">		return DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
 	}
 
-	protected int[] getEmployeeTimeOffYearStart(ID empID, ID orgID) throws Exception {
-<span class="fc" id="L375">		return RequestUtil.getEmployeeTimeOffYearStart(empID, orgID);</span>
-	}
-	
-	protected String getEmployeeNameByID(TORequest tor) throws Exception {    	
-<span class="fc" id="L379">    	return tor.getCache().getEmployeeNameByID();</span>
-    }
-	
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

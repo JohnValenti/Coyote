@@ -11,6 +11,9 @@ import com.bluepumpkin.ejb.rm.base.RmRuntimeException;
  * At the function which needs to cache its return, call ThreadLocalCache.getMap with a unique key to return a map. 
  * This map can be used to cache the function result by the function inputs.  
  * 
+ * Note that the cache is enabled while group approving requests. This means that if you cache anything that approving a request would 
+ * invalidate, it is up to the client to remove or update the stale item. 
+ * 
  * &lt;pre&gt;
  * for example:
  * {@code
@@ -48,11 +51,11 @@ import com.bluepumpkin.ejb.rm.base.RmRuntimeException;
  */
 public class ThreadLocalCache {
 
-<span class="fc" id="L51">	private static final ThreadLocal&lt;Map&lt;String, Object&gt;&gt; cache = new ThreadLocal&lt;Map&lt;String, Object&gt;&gt;();</span>
+<span class="nc" id="L54">	private static final ThreadLocal&lt;Map&lt;String, Object&gt;&gt; cache = new ThreadLocal&lt;Map&lt;String, Object&gt;&gt;();</span>
 
-<span class="nc" id="L53">	private ThreadLocalCache() {</span>
+<span class="nc" id="L56">	private ThreadLocalCache() {</span>
 
-<span class="nc" id="L55">	}</span>
+<span class="nc" id="L58">	}</span>
 
 	/**
 	 * Enable the cache for the calling thread
@@ -63,17 +66,17 @@ public class ThreadLocalCache {
 	 */
 	public static boolean enable() {
 
-<span class="fc" id="L66">		Map&lt;String, Object&gt; map = cache.get();</span>
-<span class="fc bfc" id="L67" title="All 2 branches covered.">		if (map == null) {</span>
-<span class="fc" id="L68">			cache.set(new HashMap&lt;String, Object&gt;());</span>
-<span class="fc" id="L69">			return true;</span>
+<span class="nc" id="L69">		Map&lt;String, Object&gt; map = cache.get();</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">		if (map == null) {</span>
+<span class="nc" id="L71">			cache.set(new HashMap&lt;String, Object&gt;());</span>
+<span class="nc" id="L72">			return true;</span>
 		}
-<span class="fc" id="L71">		return false;</span>
+<span class="nc" id="L74">		return false;</span>
 	}
 
 	public static boolean isEnabled() {
-<span class="fc" id="L75">		Map&lt;String, Object&gt; map = cache.get();</span>
-<span class="fc bfc" id="L76" title="All 2 branches covered.">		return map != null;</span>
+<span class="nc" id="L78">		Map&lt;String, Object&gt; map = cache.get();</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">		return map != null;</span>
 
 	}
 
@@ -82,96 +85,98 @@ public class ThreadLocalCache {
 	 * The thread local map for the specified key. 
 	 * If the key does not exists and the cache is enabled then an empty map is created for the key and returned. 
 	 * If cache is not enabled then a NoOperationMap (a map that does nothing) is returned.
+	 * Clients should not count on any object remaining in the returned map.
+	 * Even putting and getting immediately is not guaranteed to work (if the cache is disabled a NoOperationMap which ignore call to put) 
 	 */
 	public static &lt;K, V&gt; Map&lt;K, V&gt; getMap(String key) {
 
-<span class="fc" id="L88">		checkKey(key);</span>
+<span class="nc" id="L93">		checkKey(key);</span>
 
-<span class="fc" id="L90">		Map&lt;String, Object&gt; map = cache.get();</span>
-<span class="pc bpc" id="L91" title="1 of 2 branches missed.">		if (map == null) {</span>
-<span class="nc" id="L92">			return NoOperationMap.getNoOperationMap();</span>
+<span class="nc" id="L95">		Map&lt;String, Object&gt; map = cache.get();</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">		if (map == null) {</span>
+<span class="nc" id="L97">			return NoOperationMap.getNoOperationMap();</span>
 		}
 
 		@SuppressWarnings(&quot;unchecked&quot;)
-<span class="fc" id="L96">		Map&lt;K, V&gt; cachedMap = (Map&lt;K, V&gt;) map.get(key);</span>
-<span class="fc bfc" id="L97" title="All 2 branches covered.">		if (cachedMap != null) {</span>
-<span class="fc" id="L98">			return cachedMap;</span>
+<span class="nc" id="L101">		Map&lt;K, V&gt; cachedMap = (Map&lt;K, V&gt;) map.get(key);</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">		if (cachedMap != null) {</span>
+<span class="nc" id="L103">			return cachedMap;</span>
 		}
 
-<span class="fc" id="L101">		cachedMap = new HashMap&lt;K, V&gt;();</span>
+<span class="nc" id="L106">		cachedMap = new HashMap&lt;K, V&gt;();</span>
 
-<span class="fc" id="L103">		map.put(key, cachedMap);</span>
-<span class="fc" id="L104">		return cachedMap;</span>
+<span class="nc" id="L108">		map.put(key, cachedMap);</span>
+<span class="nc" id="L109">		return cachedMap;</span>
 	}
 
 	public static &lt;T&gt; T get(Class&lt;T&gt; clazz, Factory&lt;T&gt; factory) {
-<span class="nc" id="L108">		return get(clazz.getName(), factory);</span>
+<span class="nc" id="L113">		return get(clazz.getName(), factory);</span>
 	}
 
 	public static &lt;T&gt; T get(String key, Factory&lt;T&gt; factory) {
 
-<span class="nc" id="L113">		checkKey(key);</span>
+<span class="nc" id="L118">		checkKey(key);</span>
 
-<span class="nc" id="L115">		Map&lt;String, Object&gt; map = cache.get();</span>
-<span class="nc bnc" id="L116" title="All 2 branches missed.">		if (map == null) {</span>
-<span class="nc" id="L117">			return factory.create();</span>
+<span class="nc" id="L120">		Map&lt;String, Object&gt; map = cache.get();</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">		if (map == null) {</span>
+<span class="nc" id="L122">			return factory.create();</span>
 		}
 
 		@SuppressWarnings(&quot;unchecked&quot;)
-<span class="nc" id="L121">		T object = (T) map.get(key);</span>
-<span class="nc bnc" id="L122" title="All 2 branches missed.">		if (object != null) {</span>
-<span class="nc" id="L123">			return object;</span>
+<span class="nc" id="L126">		T object = (T) map.get(key);</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">		if (object != null) {</span>
+<span class="nc" id="L128">			return object;</span>
 		}
 
-<span class="nc" id="L126">		object = factory.create();</span>
-<span class="nc" id="L127">		map.put(key, object);</span>
-<span class="nc" id="L128">		return object;</span>
+<span class="nc" id="L131">		object = factory.create();</span>
+<span class="nc" id="L132">		map.put(key, object);</span>
+<span class="nc" id="L133">		return object;</span>
 	}
 
 	public static &lt;T&gt; T get(Class&lt;T&gt; clazz) {
-<span class="nc" id="L132">		return get(clazz.getName(), clazz);</span>
+<span class="nc" id="L137">		return get(clazz.getName(), clazz);</span>
 	}
 
 	public static &lt;T&gt; T get(String key, Class&lt;T&gt; clazz) {
 
 		try {
 
-<span class="nc" id="L139">			checkKey(key);</span>
+<span class="nc" id="L144">			checkKey(key);</span>
 
-<span class="nc" id="L141">			Map&lt;String, Object&gt; map = cache.get();</span>
-<span class="nc bnc" id="L142" title="All 2 branches missed.">			if (map == null) {</span>
-<span class="nc" id="L143">				return clazz.newInstance();</span>
+<span class="nc" id="L146">			Map&lt;String, Object&gt; map = cache.get();</span>
+<span class="nc bnc" id="L147" title="All 2 branches missed.">			if (map == null) {</span>
+<span class="nc" id="L148">				return clazz.newInstance();</span>
 			}
 
 			@SuppressWarnings(&quot;unchecked&quot;)
-<span class="nc" id="L147">			T object = (T) map.get(key);</span>
-<span class="nc bnc" id="L148" title="All 2 branches missed.">			if (object != null) {</span>
-<span class="nc" id="L149">				return object;</span>
+<span class="nc" id="L152">			T object = (T) map.get(key);</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">			if (object != null) {</span>
+<span class="nc" id="L154">				return object;</span>
 			}
 
-<span class="nc" id="L152">			object = clazz.newInstance();</span>
-<span class="nc" id="L153">			map.put(key, object);</span>
-<span class="nc" id="L154">			return object;</span>
-<span class="nc" id="L155">		} catch (Exception e) {</span>
-<span class="nc" id="L156">			throw new RmRuntimeException(e);</span>
+<span class="nc" id="L157">			object = clazz.newInstance();</span>
+<span class="nc" id="L158">			map.put(key, object);</span>
+<span class="nc" id="L159">			return object;</span>
+<span class="nc" id="L160">		} catch (Exception e) {</span>
+<span class="nc" id="L161">			throw new RmRuntimeException(e);</span>
 		}
 	}
 
 	private static void checkKey(String key) {
-<span class="pc bpc" id="L161" title="2 of 4 branches missed.">		if (key == null || key.isEmpty()) {</span>
-<span class="nc" id="L162">			throw new IllegalArgumentException(&quot;The key to ThreadLocal cannot be null or empty&quot;);</span>
+<span class="nc bnc" id="L166" title="All 4 branches missed.">		if (key == null || key.isEmpty()) {</span>
+<span class="nc" id="L167">			throw new IllegalArgumentException(&quot;The key to ThreadLocal cannot be null or empty&quot;);</span>
 		}
-<span class="fc" id="L164">	}</span>
+<span class="nc" id="L169">	}</span>
 
 	/**
 	 * clear the cache associated with this thread
 	 */
 	public static void clear(boolean clear) {
-<span class="fc bfc" id="L170" title="All 2 branches covered.">		if (!clear) {</span>
-<span class="fc" id="L171">			return;</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">		if (!clear) {</span>
+<span class="nc" id="L176">			return;</span>
 		}
-<span class="fc" id="L173">		cache.set(null);</span>
-<span class="fc" id="L174">	}</span>
+<span class="nc" id="L178">		cache.set(null);</span>
+<span class="nc" id="L179">	}</span>
 
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

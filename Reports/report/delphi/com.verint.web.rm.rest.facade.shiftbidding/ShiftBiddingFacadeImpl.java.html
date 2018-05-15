@@ -18,21 +18,19 @@ import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
 import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
 import com.bluepumpkin.ejb.bbm.schedule.model.ShiftEventAssignment;
-import com.bluepumpkin.ejb.core.base.SupportNavigation;
 import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
 import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
 import com.bluepumpkin.ejb.rm.requests.common.model.Request;
-import com.bluepumpkin.ejb.rm.requests.common.model.RequestAggregate;
 import com.bluepumpkin.ejb.rm.requests.common.model.RequestAuditTrail;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.ejb.BiddableSchedulesForAuctionParameter;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.filtersortbidoptions.RmFilterChain;
 import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidauction.model.ShiftBidAuction;
+import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.BidOptionRow;
 import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.BiddableSchedule;
 import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest;
-import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest.ShiftBidRequestOptMethods;
-import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidRequest.ShiftBidRequestSetters;
 import com.bluepumpkin.ejb.rm.requests.shiftbid.shiftbidrequest.model.ShiftBidder;
 import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
 import com.bluepumpkin.ejb.rm.util.LicenseUtil;
-import com.bluepumpkin.ejb.rm.util.RmFilterChain;
 import com.bluepumpkin.web.bbm.organization.OrganizationModelHandler;
 import com.bluepumpkin.web.fs.schedule.ScheduleViewUtil;
 import com.bluepumpkin.web.rm.Log;
@@ -63,10 +61,10 @@ import com.verint.web.rm.rest.util.RmUtils;
 import com.witness.web.uif.system.RequestContext;
 
 public class ShiftBiddingFacadeImpl implements IShiftBiddingFacade {
-<span class="nc" id="L66">	private static final Category LOG = Log.initCategory(ShiftBiddingFacadeImpl.class.getName());</span>
+<span class="nc" id="L64">	private static final Category LOG = Log.initCategory(ShiftBiddingFacadeImpl.class.getName());</span>
 
-<span class="nc" id="L68">	public ShiftBiddingFacadeImpl() { // NOSONAR</span>
-<span class="nc" id="L69">	}</span>
+<span class="nc" id="L66">	public ShiftBiddingFacadeImpl() { // NOSONAR</span>
+<span class="nc" id="L67">	}</span>
 
 	/**
 	 * Creates a new shift bid request.
@@ -75,13 +73,14 @@ public class ShiftBiddingFacadeImpl implements IShiftBiddingFacade {
 	public ShiftBidRequestResponseEntity createRequest(RequestContext context, ShiftBidRequest request, String comment)
 			throws WFOException {
 		try {
-<span class="nc" id="L78">			assertCreateEditRequest(context, request);</span>
-<span class="nc" id="L79">			ID requestID = AuctionMH.createRequest(request, comment);</span>
-<span class="nc" id="L80">			request.setID(requestID);</span>
+<span class="nc" id="L76">			assertCreateEditRequest(context, request);</span>
 
-<span class="nc" id="L82">			return getShiftBidRequestResponseEntity(context, request);</span>
-<span class="nc" id="L83">		} catch (Exception ex) {</span>
-<span class="nc" id="L84">			throw RmUtils.handleFacadeException(ex, LOG);</span>
+<span class="nc" id="L78">			ID requestID = AuctionMH.createRequest(request, comment);</span>
+<span class="nc" id="L79">			request.setID(requestID);</span>
+
+<span class="nc" id="L81">			return getShiftBidRequestResponseEntity(context, request);</span>
+<span class="nc" id="L82">		} catch (Exception ex) {</span>
+<span class="nc" id="L83">			throw RmUtils.handleFacadeException(context, ex, LOG);</span>
 		}
 	}
 
@@ -92,24 +91,20 @@ public class ShiftBiddingFacadeImpl implements IShiftBiddingFacade {
 	public ShiftBidRequestResponseEntity editRequest(RequestContext context, ShiftBidRequest shiftBidRequest, String comment)
 			throws WFOException {
 		try {
-<span class="nc" id="L95">			Localizer localizer = context.getLocalizer();</span>
 			// get the request from DB and only update fields that can be changed
-<span class="nc" id="L97">			ShiftBidRequest request = AuctionMH.getRequest(shiftBidRequest.getID(), true);</span>
-<span class="nc bnc" id="L98" title="All 2 branches missed.">			if (request == null) {</span>
-<span class="nc" id="L99">				String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.FAILED_TO_LOAD_REQUEST_WITH_ID,</span>
-<span class="nc" id="L100">						shiftBidRequest.getID());</span>
-<span class="nc" id="L101">				throw new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
-			}
-<span class="nc" id="L103">			request.setIsBonusUsed(shiftBidRequest.getIsBonusUsed());</span>
-<span class="nc" id="L104">			request.setName(shiftBidRequest.getName());</span>
-<span class="nc" id="L105">			request.setPreference(shiftBidRequest.getPreference());</span>
+<span class="nc" id="L95">			ShiftBidRequest request = AuctionMH.getRequest(shiftBidRequest.getID(), true);</span>
+<span class="nc" id="L96">			RmUtils.assertNotNull(context, request, shiftBidRequest.getID());</span>
 
-<span class="nc" id="L107">			assertCreateEditRequest(context, request);</span>
-<span class="nc" id="L108">			AuctionMH.updateRequest(request, comment);</span>
+<span class="nc" id="L98">			request.setIsBonusUsed(shiftBidRequest.getIsBonusUsed());</span>
+<span class="nc" id="L99">			request.setName(shiftBidRequest.getName());</span>
+<span class="nc" id="L100">			request.setPreference(shiftBidRequest.getPreference());</span>
 
-<span class="nc" id="L110">			return getShiftBidRequestResponseEntity(context, request);</span>
-<span class="nc" id="L111">		} catch (Exception ex) {</span>
-<span class="nc" id="L112">			throw RmUtils.handleFacadeException(ex, LOG);</span>
+<span class="nc" id="L102">			assertCreateEditRequest(context, request);</span>
+<span class="nc" id="L103">			AuctionMH.updateRequest(request, comment);</span>
+
+<span class="nc" id="L105">			return getShiftBidRequestResponseEntity(context, request);</span>
+<span class="nc" id="L106">		} catch (Exception ex) {</span>
+<span class="nc" id="L107">			throw RmUtils.handleFacadeException(context, ex, LOG);</span>
 		}
 	}
 
@@ -120,106 +115,105 @@ public class ShiftBiddingFacadeImpl implements IShiftBiddingFacade {
 	@Override
 	public AuctionListEntity getMyAuctions(RequestContext context) throws WFOException {
 		try {
-<span class="nc" id="L123">			ID employeeID = context.getUser().getEmployeeID();</span>
-<span class="nc" id="L124">			int maxPreference = AuctionMH.getEmpMaxPrefLevel(context, employeeID);</span>
+<span class="nc" id="L118">			ID employeeID = context.getUser().getEmployeeID();</span>
+<span class="nc" id="L119">			int maxPreference = AuctionMH.getEmpMaxPrefLevel(context, employeeID);</span>
 
-<span class="nc" id="L126">			Collection&lt;ShiftBidAuction&gt; auctionList = AuctionMH.getAuctionsForBidder(context.getUser());</span>
-<span class="nc" id="L127">			AuctionListEntity list = new AuctionListEntity();</span>
-<span class="nc" id="L128">			Map&lt;ID, AuctionEntity&gt; idToAuctionEntities = new HashMap&lt;ID, AuctionEntity&gt;();</span>
-<span class="nc bnc" id="L129" title="All 2 branches missed.">			for (ShiftBidAuction auction : auctionList) {</span>
-<span class="nc" id="L130">				AuctionEntity entity = new AuctionEntity(auction);</span>
-<span class="nc" id="L131">				entity.setMaxPreference(maxPreference);</span>
-<span class="nc" id="L132">				list.add(entity);</span>
-<span class="nc" id="L133">				idToAuctionEntities.put(auction.getID(), entity);</span>
-<span class="nc" id="L134">			}</span>
+<span class="nc" id="L121">			Collection&lt;ShiftBidAuction&gt; auctionList = AuctionMH.getAuctionsForBidder(context.getUser());</span>
+<span class="nc" id="L122">			AuctionListEntity list = new AuctionListEntity();</span>
+<span class="nc" id="L123">			Map&lt;ID, AuctionEntity&gt; idToAuctionEntities = new HashMap&lt;ID, AuctionEntity&gt;();</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">			for (ShiftBidAuction auction : auctionList) {</span>
+<span class="nc" id="L125">				AuctionEntity entity = new AuctionEntity(auction);</span>
+<span class="nc" id="L126">				entity.setMaxPreference(maxPreference);</span>
+<span class="nc" id="L127">				list.add(entity);</span>
+<span class="nc" id="L128">				idToAuctionEntities.put(auction.getID(), entity);</span>
+<span class="nc" id="L129">			}</span>
 
-<span class="nc" id="L136">			Collection&lt;ShiftBidder&gt; bidders = AuctionMH</span>
-<span class="nc" id="L137">					.getBasicShiftBidderForEmpAndAuctions(employeeID, idToAuctionEntities.keySet());</span>
-<span class="nc bnc" id="L138" title="All 2 branches missed.">			for (ShiftBidder bidder : bidders) {</span>
-<span class="nc" id="L139">				ID auctionID = bidder.getShiftBidAuctionID();</span>
-<span class="nc bnc" id="L140" title="All 2 branches missed.">				if (idToAuctionEntities.containsKey(auctionID)) {</span>
-<span class="nc" id="L141">					AuctionEntity entity = idToAuctionEntities.get(auctionID);</span>
-<span class="nc" id="L142">					entity.setShiftBidder(bidder);</span>
+<span class="nc" id="L131">			Collection&lt;ShiftBidder&gt; bidders = AuctionMH</span>
+<span class="nc" id="L132">					.getBasicShiftBidderForEmpAndAuctions(employeeID, idToAuctionEntities.keySet());</span>
+<span class="nc bnc" id="L133" title="All 2 branches missed.">			for (ShiftBidder bidder : bidders) {</span>
+<span class="nc" id="L134">				ID auctionID = bidder.getShiftBidAuctionID();</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">				if (idToAuctionEntities.containsKey(auctionID)) {</span>
+<span class="nc" id="L136">					AuctionEntity entity = idToAuctionEntities.get(auctionID);</span>
+<span class="nc" id="L137">					entity.setShiftBidder(bidder);</span>
 				}
-<span class="nc" id="L144">			}</span>
+<span class="nc" id="L139">			}</span>
 
-<span class="nc" id="L146">			Map&lt;ID, Integer&gt; requestCounts = ShiftBiddingRequestsMH.getRequestCountsForEmployeeAuctions(employeeID,</span>
-<span class="nc" id="L147">					idToAuctionEntities.keySet());</span>
-<span class="nc bnc" id="L148" title="All 2 branches missed.">			for (ID auctionID : requestCounts.keySet()) {</span>
-<span class="nc bnc" id="L149" title="All 2 branches missed.">				if (idToAuctionEntities.containsKey(auctionID)) {</span>
-<span class="nc" id="L150">					AuctionEntity entity = idToAuctionEntities.get(auctionID);</span>
-<span class="nc" id="L151">					entity.setEmployeeRequestCount(requestCounts.get(auctionID));</span>
+<span class="nc" id="L141">			Map&lt;ID, Integer&gt; requestCounts = ShiftBiddingRequestsMH.getRequestCountsForEmployeeAuctions(employeeID,</span>
+<span class="nc" id="L142">					idToAuctionEntities.keySet());</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">			for (ID auctionID : requestCounts.keySet()) {</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">				if (idToAuctionEntities.containsKey(auctionID)) {</span>
+<span class="nc" id="L145">					AuctionEntity entity = idToAuctionEntities.get(auctionID);</span>
+<span class="nc" id="L146">					entity.setEmployeeRequestCount(requestCounts.get(auctionID));</span>
 				}
-<span class="nc" id="L153">			}</span>
+<span class="nc" id="L148">			}</span>
 
-<span class="nc" id="L155">			return list;</span>
-<span class="nc" id="L156">		} catch (Exception ex) {</span>
-<span class="nc" id="L157">			throw RmUtils.handleFacadeException(ex, LOG);</span>
+<span class="nc" id="L150">			return list;</span>
+<span class="nc" id="L151">		} catch (Exception ex) {</span>
+<span class="nc" id="L152">			throw RmUtils.handleFacadeException(context, ex, LOG);</span>
 		}
 	}
 
 	/**
 	 * Gets the biddable schedules for the specified auction and employee.
 	 */
-	@SuppressWarnings(&quot;unchecked&quot;)
 	@Override
 	public BiddableScheduleListEntity getBiddableSchedules(RequestContext context, ID auctionID, ID employeeID)
 			throws WFOException {
 		// this implementation mimics the one in BaseBidOptionsPM
 		try {
-<span class="nc" id="L170">			BiddableScheduleListEntity list = new BiddableScheduleListEntity();</span>
-<span class="nc" id="L171">			list.setId(auctionID.toString());</span>
+<span class="nc" id="L164">			BiddableScheduleListEntity list = new BiddableScheduleListEntity();</span>
+<span class="nc" id="L165">			list.setId(auctionID.toString());</span>
 
-<span class="nc" id="L173">			List&lt;BiddableScheduleEntity&gt; schedules = list.getSchedules();</span>
+<span class="nc" id="L167">			List&lt;BiddableScheduleEntity&gt; schedules = list.getSchedules();</span>
 
-<span class="nc" id="L175">			ShiftBidder bidder = AuctionMH.getShiftBidder(auctionID, employeeID);</span>
-<span class="nc bnc" id="L176" title="All 2 branches missed.">			if (bidder == null) {</span>
-<span class="nc" id="L177">				throw new BusinessWFOException(&quot;Employee is not a part of the auction.&quot;, Response.Status.BAD_REQUEST);</span>
+<span class="nc" id="L169">			ShiftBidder bidder = AuctionMH.getShiftBidder(auctionID, employeeID);</span>
+<span class="nc bnc" id="L170" title="All 2 branches missed.">			if (bidder == null) {</span>
+<span class="nc" id="L171">				throw new BusinessWFOException(&quot;Employee is not a part of the auction.&quot;, Response.Status.BAD_REQUEST);</span>
 			}
-<span class="nc" id="L179">			ID bidderID = bidder.getID();</span>
-<span class="nc" id="L180">			OrganizationSetting orgSettings = RequestsMH.getOrgSettingForEmployee(context, employeeID);</span>
+<span class="nc" id="L173">			ID bidderID = bidder.getID();</span>
+<span class="nc" id="L174">			OrganizationSetting orgSettings = RequestsMH.getOrgSettingForEmployee(context, employeeID);</span>
 
-<span class="nc" id="L182">			ShiftBidAuction auction = AuctionMH.getAuction(auctionID);</span>
-<span class="nc" id="L183">			boolean usesScoring = auction.getUsesScoring();</span>
+<span class="nc" id="L176">			ShiftBidAuction auction = AuctionMH.getAuction(auctionID);</span>
+<span class="nc" id="L177">			boolean usesScoring = auction.getUsesScoring();</span>
 
-<span class="nc" id="L185">			ID orgID = null;</span>
-<span class="nc bnc" id="L186" title="All 2 branches missed.">			if (auction.getBidsOnlyWithinOrg()) {</span>
-<span class="nc" id="L187">				orgID = OrganizationModelHandler.getEmployeeOrgID(context, employeeID);</span>
+<span class="nc" id="L179">			ID orgID = null;</span>
+<span class="nc bnc" id="L180" title="All 2 branches missed.">			if (auction.getBidsOnlyWithinOrg()) {</span>
+<span class="nc" id="L181">				orgID = OrganizationModelHandler.getEmployeeOrgID(context, employeeID);</span>
 			}
 
-<span class="nc" id="L190">			SchedulingPeriod schedPeriod = BidOptionsFilterUtil.getSP(context, auction);</span>
-<span class="nc" id="L191">			TimeZone timeZone = context.getViewingTimeZone();</span>
-<span class="nc" id="L192">			RmFilterChain filterChain = BaseBidOptionsPM.getFilterChain(context, auction, schedPeriod, employeeID, bidderID, timeZone);</span>
+<span class="nc" id="L184">			SchedulingPeriod schedPeriod = BidOptionsFilterUtil.getSP(context, auction);</span>
+<span class="nc" id="L185">			TimeZone timeZone = context.getViewingTimeZone();</span>
+<span class="nc" id="L186">			RmFilterChain filterChain = BaseBidOptionsPM.getFilterChain(context, auction, schedPeriod, employeeID, bidderID, timeZone);</span>
 
-<span class="nc" id="L194">			int[] sortColumns = new int[] { ShiftBidder.SORTBY_NONE };</span>
-<span class="nc" id="L195">			boolean filterByEmpType = false;</span>
+<span class="nc" id="L188">			Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L189">			BiddableSchedulesForAuctionParameter param = new BiddableSchedulesForAuctionParameter();</span>
+<span class="nc" id="L190">			param.setAuctionID(auctionID);</span>
+<span class="nc" id="L191">			param.setBidderOrganizationID(orgID);</span>
+<span class="nc" id="L192">			param.setShiftBidderID(bidderID);</span>
+<span class="nc" id="L193">			param.setFilter(filterChain);</span>
+<span class="nc" id="L194">			param.setLocalizer(localizer);</span>
+<span class="nc" id="L195">			param.setWeekRanges(AuctionUtil.getWeekRanges(schedPeriod, auction.getOptMethods().getCampaign().getTimeZone()));</span>
 <span class="nc bnc" id="L196" title="All 2 branches missed.">			if (LicenseUtil.isAdvancedRMLicense()) {</span>
-<span class="nc" id="L197">				filterByEmpType = orgSettings.getFilterBidOptionsByEmpType();</span>
+<span class="nc" id="L197">				param.setByEmployeeType(orgSettings.getFilterBidOptionsByEmpType());</span>
 			}
-<span class="nc" id="L199">			Pair biddableSchedPair = AuctionMH.getBiddableSchedulesForAuction(auctionID, orgID, bidderID, employeeID, filterByEmpType,</span>
-					sortColumns,
-					new int[] { SupportNavigation.SORT_ASCENDING },
-					Integer.MAX_VALUE,
-					filterChain,
-<span class="nc" id="L204">					AuctionUtil.getWeekRanges(schedPeriod, auction.getOptMethods().getCampaign().getTimeZone()));</span>
-<span class="nc" id="L205">			Collection&lt;BiddableSchedule&gt; listData = (Collection&lt;BiddableSchedule&gt;) biddableSchedPair.getSecond();</span>
-<span class="nc" id="L206">			loadRequestRanks(listData);</span>
 
-<span class="nc" id="L208">			RequestsMetaData metaData = new RequestsMetaData(orgSettings);</span>
-<span class="nc" id="L209">			Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L210">			Map&lt;ID, String&gt; empTemplateNameMap = AuctionUtil.getEmpTemplateNameMap(listData, context);</span>
-<span class="nc bnc" id="L211" title="All 2 branches missed.">			for (BiddableSchedule schedule : listData) {</span>
-<span class="nc" id="L212">				BiddableScheduleEntity bse = createBiddableScheduleEntity(localizer, schedule, null, usesScoring, empTemplateNameMap,</span>
+<span class="nc" id="L200">			Pair&lt;List&lt;ID&gt;, List&lt;BidOptionRow&gt;&gt; biddableSchedPair = AuctionMH.getBidOptionsForBidder(param);</span>
+<span class="nc" id="L201">			Collection&lt;BidOptionRow&gt; listData = biddableSchedPair.getSecond();</span>
+
+<span class="nc" id="L203">			RequestsMetaData metaData = new RequestsMetaData(orgSettings);</span>
+
+<span class="nc bnc" id="L205" title="All 2 branches missed.">			for (BidOptionRow schedule : listData) {</span>
+<span class="nc" id="L206">				BiddableScheduleEntity bse = createBiddableScheduleEntity(localizer, schedule, usesScoring,</span>
 						metaData);
-<span class="nc" id="L214">				schedules.add(bse);</span>
-<span class="nc" id="L215">			}</span>
+<span class="nc" id="L208">				schedules.add(bse);</span>
+<span class="nc" id="L209">			}</span>
 
-<span class="nc" id="L217">			List&lt;ActivityEntity&gt; activityEntities = list.getActivies();</span>
-<span class="nc" id="L218">			RmUtils.addActivities(context, activityEntities, metaData.getActivityIDs());</span>
+<span class="nc" id="L211">			List&lt;ActivityEntity&gt; activityEntities = list.getActivies();</span>
+<span class="nc" id="L212">			RmUtils.addActivities(context, activityEntities, metaData.getActivityIDs());</span>
 
-<span class="nc" id="L220">			return list;</span>
-<span class="nc" id="L221">		} catch (Exception ex) {</span>
-<span class="nc" id="L222">			throw RmUtils.handleFacadeException(ex, LOG);</span>
+<span class="nc" id="L214">			return list;</span>
+<span class="nc" id="L215">		} catch (Exception ex) {</span>
+<span class="nc" id="L216">			throw RmUtils.handleFacadeException(context, ex, LOG);</span>
 		}
 	}
 
@@ -230,71 +224,45 @@ public class ShiftBiddingFacadeImpl implements IShiftBiddingFacade {
 	public ShiftBidRequestResponseEntity getRequest(RequestContext context, ID requestID)
 			throws WFOException {
 		try {
-<span class="nc" id="L233">			Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L234">			ShiftBidRequestResponseEntity details = new ShiftBidRequestResponseEntity();</span>
-<span class="nc" id="L235">			details.setId(requestID.toString());</span>
-<span class="nc" id="L236">			ID employeeID = context.getUser().getEmployeeID();</span>
+<span class="nc" id="L227">			ShiftBidRequest request = AuctionMH.getRequest(requestID, true);</span>
 
-<span class="nc" id="L238">			ShiftBidRequest request = AuctionMH.getRequestWithPhantom(requestID, true);</span>
-
-			// Permission check: currently this only supports agents so make sure it is their employee ID.
-<span class="nc bnc" id="L241" title="All 2 branches missed.">			if (!request.getEmployeeID().equals(employeeID)) {</span>
-<span class="nc" id="L242">				String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.NO_PERMISSION_TO_VIEW_REQUEST);</span>
-<span class="nc" id="L243">				throw new BusinessWFOException(msg, Response.Status.FORBIDDEN);</span>
+<span class="nc" id="L229">			RmUtils.assertNotNull(context, request, requestID);</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">			if (!com.bluepumpkin.web.rm.requests.RequestUtil.isAuthToView(context, request)) {</span>
+<span class="nc" id="L231">				RmUtils.throwUnauthorizedRequest(context);</span>
 			}
-<span class="nc" id="L245">			ShiftBidAuction auction = AuctionMH.getAuction(request.getShiftBidAuctionID());</span>
-<span class="nc" id="L246">			boolean usesScoring = auction.getUsesScoring();</span>
-<span class="nc" id="L247">			OrganizationSetting orgSettings = RequestsMH.getOrgSettingForEmployee(context, request.getEmployeeID());</span>
-<span class="nc" id="L248">			RequestsMetaData metaData = new RequestsMetaData(orgSettings);</span>
-<span class="nc" id="L249">			ShiftBidRequestEntity requestEntity = createShiftBidRequestEntity(context, request, usesScoring, metaData);</span>
-<span class="nc" id="L250">			details.setRequest(requestEntity);</span>
 
-			// add auction
-<span class="nc" id="L253">			int maxPreference = AuctionMH.getEmpMaxPrefLevel(context, employeeID);</span>
-<span class="nc" id="L254">			AuctionEntity auctionEntity = new AuctionEntity(auction);</span>
-<span class="nc" id="L255">			auctionEntity.setMaxPreference(maxPreference);</span>
-<span class="nc" id="L256">			details.setAuction(auctionEntity);</span>
-
-			// add shift bidder
-<span class="nc" id="L259">			ShiftBidder bidder = request.getOptMethods().getShiftBidder();</span>
-<span class="nc" id="L260">			auctionEntity.setShiftBidder(bidder);</span>
-
-<span class="nc" id="L262">			List&lt;ActivityEntity&gt; activityEntities = details.getActivies();</span>
-<span class="nc" id="L263">			RmUtils.addActivities(context, activityEntities, metaData.getActivityIDs());</span>
-
-<span class="nc" id="L265">			return details;</span>
-<span class="nc" id="L266">		} catch (Exception ex) {</span>
-<span class="nc" id="L267">			throw RmUtils.handleFacadeException(ex, LOG);</span>
+<span class="nc" id="L234">			return getShiftBidRequestResponseEntity(context, request);</span>
+<span class="nc" id="L235">		} catch (Exception ex) {</span>
+<span class="nc" id="L236">			throw RmUtils.handleFacadeException(context, ex, LOG);</span>
 		}
 	}
 
-	@SuppressWarnings(&quot;unchecked&quot;)
 	public static ShiftBidRequestEntity createShiftBidRequestEntity(RequestContext context, ShiftBidRequest request, boolean usesScoring,
 			RequestsMetaData metaData) {
-<span class="nc" id="L274">		ShiftBidRequestEntity reqEntity = new ShiftBidRequestEntity();</span>
-<span class="nc" id="L275">		Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L242">		ShiftBidRequestEntity reqEntity = new ShiftBidRequestEntity();</span>
+<span class="nc" id="L243">		Localizer localizer = context.getLocalizer();</span>
 
-<span class="nc" id="L277">		reqEntity.setAuctionID(request.getShiftBidAuctionID().toInt());</span>
-<span class="nc" id="L278">		reqEntity.setBonusUsed(request.getIsBonusUsed());</span>
-<span class="nc" id="L279">		reqEntity.setEmployeeId(request.getEmployeeID().toInt());</span>
-<span class="nc" id="L280">		reqEntity.setExpiration(FormatUtils.dateToISO8601SecPrecisionString(request.getExpirationDate()));</span>
-<span class="nc" id="L281">		reqEntity.setId(request.getID().toString());</span>
-<span class="nc" id="L282">		reqEntity.setLastModifiedDate(FormatUtils.dateToISO8601SecPrecisionString(request.getLastModifiedAt()));</span>
-<span class="nc" id="L283">		reqEntity.setName(request.getName());</span>
-<span class="nc" id="L284">		reqEntity.setPreference(request.getPreference());</span>
-<span class="nc" id="L285">		reqEntity.setStatusCode(RmUtils.getRequestStatusCode(request.getRequestStatus()));</span>
-<span class="nc" id="L286">		reqEntity.setSubmittedOn(FormatUtils.dateToISO8601SecPrecisionString(request.getSubmittedOn()));</span>
+<span class="nc" id="L245">		reqEntity.setAuctionID(request.getShiftBidAuctionID().toInt());</span>
+<span class="nc" id="L246">		reqEntity.setBonusUsed(request.getIsBonusUsed());</span>
+<span class="nc" id="L247">		reqEntity.setEmployeeId(request.getEmployeeID().toInt());</span>
+<span class="nc" id="L248">		reqEntity.setExpiration(FormatUtils.dateToISO8601SecPrecisionString(request.getExpirationDate()));</span>
+<span class="nc" id="L249">		reqEntity.setId(request.getID().toString());</span>
+<span class="nc" id="L250">		reqEntity.setLastModifiedDate(FormatUtils.dateToISO8601SecPrecisionString(request.getLastModifiedAt()));</span>
+<span class="nc" id="L251">		reqEntity.setName(request.getName());</span>
+<span class="nc" id="L252">		reqEntity.setPreference(request.getPreference());</span>
+<span class="nc" id="L253">		reqEntity.setStatusCode(RmUtils.getRequestStatusCode(request.getRequestStatus()));</span>
+<span class="nc" id="L254">		reqEntity.setSubmittedOn(FormatUtils.dateToISO8601SecPrecisionString(request.getSubmittedOn()));</span>
 
-<span class="nc" id="L288">		RmUtils.setStatusHistory(reqEntity, request.getAuditTrail());</span>
-<span class="nc" id="L289">		RmUtils.setValidationResults(reqEntity, request.getValidationResults(true), context);</span>
+<span class="nc" id="L256">		RmUtils.setStatusHistory(reqEntity, request.getAuditTrail());</span>
+<span class="nc" id="L257">		RmUtils.setValidationResults(reqEntity, request.getValidationResults(true), context);</span>
 
-<span class="nc" id="L291">		Collection&lt;BiddableSchedule&gt; schedules = request.getOptMethods().getBiddableSchedules();</span>
-<span class="nc" id="L292">		List&lt;BiddableScheduleEntity&gt; scheduleEntities = reqEntity.getSchedules();</span>
-<span class="nc bnc" id="L293" title="All 2 branches missed.">		for (BiddableSchedule schedule : schedules) {</span>
-<span class="nc" id="L294">			scheduleEntities.add(createBiddableScheduleEntity(localizer, schedule, request, usesScoring, null, metaData));</span>
-<span class="nc" id="L295">		}</span>
+<span class="nc" id="L259">		Collection&lt;BiddableSchedule&gt; schedules = request.getOptMethods().getBiddableSchedules();</span>
+<span class="nc" id="L260">		List&lt;BiddableScheduleEntity&gt; scheduleEntities = reqEntity.getSchedules();</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">		for (BiddableSchedule schedule : schedules) {</span>
+<span class="nc" id="L262">			scheduleEntities.add(createBiddableScheduleEntity(localizer, schedule, request, usesScoring, metaData));</span>
+<span class="nc" id="L263">		}</span>
 
-<span class="nc" id="L297">		return reqEntity;</span>
+<span class="nc" id="L265">		return reqEntity;</span>
 	}
 
 	/**
@@ -304,24 +272,25 @@ public class ShiftBiddingFacadeImpl implements IShiftBiddingFacade {
 	public ShiftBidRequestResponseEntity processRequest(RequestContext context, ID requestID, int actionCode, String comment)
 			throws WFOException {
 		try {
-<span class="nc" id="L307">			ShiftBidRequest request = AuctionMH.getRequest(requestID, true);</span>
-<span class="nc" id="L308">			String type = Request.REQUESTTYPE_SHIFTBID;</span>
-<span class="nc" id="L309">			String version = request.getObjectVersionNumber();</span>
+<span class="nc" id="L275">			ShiftBidRequest request = AuctionMH.getRequest(requestID, true);</span>
+<span class="nc" id="L276">			RmUtils.assertNotNull(context, request, requestID);</span>
 
-<span class="nc bnc" id="L311" title="All 2 branches missed.">			if (ActionCode.WITHDRAW.getActionCode() == actionCode) {</span>
-<span class="nc" id="L312">				ShiftBiddingRequestsMH.withdrawApprovedSBRequest(requestID, type, version,</span>
+<span class="nc" id="L278">			String type = Request.REQUESTTYPE_SHIFTBID;</span>
+<span class="nc" id="L279">			String version = request.getObjectVersionNumber();</span>
+
+<span class="nc bnc" id="L281" title="All 2 branches missed.">			if (ActionCode.WITHDRAW.getActionCode() == actionCode) {</span>
+<span class="nc" id="L282">				ShiftBiddingRequestsMH.withdrawApprovedSBRequest(requestID, type, request,</span>
 						RequestAuditTrail.STATUS_WITHDRAWN, comment);
-<span class="nc bnc" id="L314" title="All 2 branches missed.">			} else if (ActionCode.ESCALATE.getActionCode() == actionCode) {</span>
-<span class="nc" id="L315">				RequestsMH.changeRequestStatus(requestID, type, version,</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">			} else if (ActionCode.ESCALATE.getActionCode() == actionCode) {</span>
+<span class="nc" id="L285">				RequestsMH.changeRequestStatus(requestID, type, version,</span>
 						RequestAuditTrail.STATUS_ESCALATED, comment);
 			} else {
-<span class="nc" id="L318">				throw new BusinessWFOException(&quot;ActionCode not supported&quot;, Response.Status.CONFLICT);</span>
+<span class="nc" id="L288">				throw new BusinessWFOException(&quot;ActionCode not supported&quot;, Response.Status.CONFLICT);</span>
 			}
 
-<span class="nc" id="L321">			request = AuctionMH.getRequest(requestID, true);</span>
-<span class="nc" id="L322">			return getShiftBidRequestResponseEntity(context, request);</span>
-<span class="nc" id="L323">		} catch (Exception ex) {</span>
-<span class="nc" id="L324">			throw RmUtils.handleFacadeException(ex, LOG);</span>
+<span class="nc" id="L291">			return getShiftBidRequestResponseEntity(context, request);</span>
+<span class="nc" id="L292">		} catch (Exception ex) {</span>
+<span class="nc" id="L293">			throw RmUtils.handleFacadeException(context, ex, LOG);</span>
 		}
 	}
 
@@ -332,65 +301,64 @@ public class ShiftBiddingFacadeImpl implements IShiftBiddingFacade {
 	public StatusEntity updatePreferences(RequestContext context, List&lt;ShiftBidRequest&gt; requests)
 			throws WFOException {
 		try {
-<span class="nc" id="L335">			StatusEntity result = new StatusEntity();</span>
-<span class="nc" id="L336">			Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L304">			StatusEntity result = new StatusEntity();</span>
+<span class="nc" id="L305">			Localizer localizer = context.getLocalizer();</span>
 
-<span class="nc" id="L338">			List&lt;ID&gt; requestIDs = new ArrayList&lt;ID&gt;(requests.size());</span>
-<span class="nc bnc" id="L339" title="All 2 branches missed.">			for (ShiftBidRequest request : requests) {</span>
-<span class="nc" id="L340">				requestIDs.add(request.getID());</span>
-<span class="nc" id="L341">			}</span>
-<span class="nc" id="L342">			Map&lt;ID, ShiftBidRequest&gt; requestsByID = ShiftBiddingRequestsMH.getRequestMapByIDs(requestIDs);</span>
-<span class="nc" id="L343">			Map&lt;ID, Integer&gt; employeeMaxPreferences = new HashMap&lt;ID, Integer&gt;();</span>
-<span class="nc bnc" id="L344" title="All 2 branches missed.">			for (ShiftBidRequest request : requests) {</span>
-<span class="nc bnc" id="L345" title="All 2 branches missed.">				if (!requestsByID.containsKey(request.getID())) {</span>
-<span class="nc" id="L346">					String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.FAILED_TO_LOAD_REQUEST_WITH_ID,</span>
-<span class="nc" id="L347">							request.getID());</span>
-<span class="nc" id="L348">					throw new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
+<span class="nc" id="L307">			List&lt;ID&gt; requestIDs = new ArrayList&lt;ID&gt;(requests.size());</span>
+<span class="nc bnc" id="L308" title="All 2 branches missed.">			for (ShiftBidRequest request : requests) {</span>
+<span class="nc" id="L309">				requestIDs.add(request.getID());</span>
+<span class="nc" id="L310">			}</span>
+<span class="nc" id="L311">			Map&lt;ID, ShiftBidRequest&gt; requestsByID = ShiftBiddingRequestsMH.getRequestMapByIDs(requestIDs);</span>
+<span class="nc" id="L312">			Map&lt;ID, Integer&gt; employeeMaxPreferences = new HashMap&lt;ID, Integer&gt;();</span>
+<span class="nc bnc" id="L313" title="All 2 branches missed.">			for (ShiftBidRequest request : requests) {</span>
+<span class="nc bnc" id="L314" title="All 2 branches missed.">				if (!requestsByID.containsKey(request.getID())) {</span>
+<span class="nc" id="L315">					RmUtils.throwExceptionForFailedToLoadRequestWithID(context, request.getID());</span>
 				}
-<span class="nc" id="L350">				ShiftBidRequest dbRequest = requestsByID.get(request.getID());</span>
-<span class="nc" id="L351">				ID employeeID = dbRequest.getEmployeeID();</span>
 
+<span class="nc" id="L318">				ShiftBidRequest dbRequest = requestsByID.get(request.getID());</span>
+<span class="nc" id="L319">				ID employeeID = dbRequest.getEmployeeID();</span>
 				int maxPreference;
-<span class="nc bnc" id="L354" title="All 2 branches missed.">				if (employeeMaxPreferences.containsKey(employeeID)) {</span>
-<span class="nc" id="L355">					maxPreference = employeeMaxPreferences.get(employeeID);</span>
+
+<span class="nc bnc" id="L322" title="All 2 branches missed.">				if (employeeMaxPreferences.containsKey(employeeID)) {</span>
+<span class="nc" id="L323">					maxPreference = employeeMaxPreferences.get(employeeID);</span>
 				} else {
-<span class="nc" id="L357">					maxPreference = AuctionMH.getEmpMaxPrefLevel(context, employeeID);</span>
-<span class="nc" id="L358">					employeeMaxPreferences.put(employeeID, maxPreference);</span>
+<span class="nc" id="L325">					maxPreference = AuctionMH.getEmpMaxPrefLevel(context, employeeID);</span>
+<span class="nc" id="L326">					employeeMaxPreferences.put(employeeID, maxPreference);</span>
 				}
-<span class="nc" id="L360">				assertMaxPreference(localizer, maxPreference, request.getPreference());</span>
+<span class="nc" id="L328">				assertMaxPreference(localizer, maxPreference, request.getPreference());</span>
 
-<span class="nc" id="L362">				dbRequest.setPreference(request.getPreference());</span>
-<span class="nc" id="L363">			}</span>
-<span class="nc" id="L364">			ShiftBiddingRequestsMH.updatePreferences(requestsByID.values());</span>
+<span class="nc" id="L330">				dbRequest.setPreference(request.getPreference());</span>
+<span class="nc" id="L331">			}</span>
+<span class="nc" id="L332">			ShiftBiddingRequestsMH.updatePreferences(requestsByID.values());</span>
 
-<span class="nc" id="L366">			result.setSuccess(true);</span>
-<span class="nc" id="L367">			return result;</span>
-<span class="nc" id="L368">		} catch (Exception ex) {</span>
-<span class="nc" id="L369">			throw RmUtils.handleFacadeException(ex, LOG);</span>
+<span class="nc" id="L334">			result.setSuccess(true);</span>
+<span class="nc" id="L335">			return result;</span>
+<span class="nc" id="L336">		} catch (Exception ex) {</span>
+<span class="nc" id="L337">			throw RmUtils.handleFacadeException(context, ex, LOG);</span>
 		}
 	}
 
 	private static void addShifts(BiddableScheduleEntity bse, Collection&lt;ShiftAssignment&gt; shiftAssignments, Set&lt;ID&gt; activies) {
-<span class="nc" id="L374">		List&lt;ShiftEntity&gt; shifts = bse.getShifts();</span>
-<span class="nc bnc" id="L375" title="All 2 branches missed.">		for (ShiftAssignment shiftAssignment : shiftAssignments) {</span>
-<span class="nc" id="L376">			Date saStartDate = ScheduleViewUtil.getDisplayStartTime(shiftAssignment);</span>
-<span class="nc" id="L377">			Date saEndDate = shiftAssignment.getEndTime();</span>
-<span class="nc" id="L378">			ShiftEntity shift = new ShiftEntity();</span>
-<span class="nc" id="L379">			shift.setId(shiftAssignment.getID().toString());</span>
-<span class="nc" id="L380">			shift.setStartDate(saStartDate);</span>
-<span class="nc" id="L381">			shift.setEndDate(saEndDate);</span>
-<span class="nc" id="L382">			shifts.add(shift);</span>
+<span class="nc" id="L342">		List&lt;ShiftEntity&gt; shifts = bse.getShifts();</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">		for (ShiftAssignment shiftAssignment : shiftAssignments) {</span>
+<span class="nc" id="L344">			Date saStartDate = ScheduleViewUtil.getDisplayStartTime(shiftAssignment);</span>
+<span class="nc" id="L345">			Date saEndDate = shiftAssignment.getEndTime();</span>
+<span class="nc" id="L346">			ShiftEntity shift = new ShiftEntity();</span>
+<span class="nc" id="L347">			shift.setId(shiftAssignment.getID().toString());</span>
+<span class="nc" id="L348">			shift.setStartDate(saStartDate);</span>
+<span class="nc" id="L349">			shift.setEndDate(saEndDate);</span>
+<span class="nc" id="L350">			shifts.add(shift);</span>
 
-<span class="nc" id="L384">			Collection&lt;ShiftEventAssignment&gt; shiftEventAssignments = shiftAssignment.getChildren();</span>
-<span class="nc" id="L385">			List&lt;ShiftEventEntity&gt; shiftEvents = shift.getShiftEvents();</span>
-<span class="nc bnc" id="L386" title="All 2 branches missed.">			for (ShiftEventAssignment shiftEventAssignment : shiftEventAssignments) {</span>
-<span class="nc" id="L387">				ShiftEventEntity shiftEvent = new ShiftEventEntity(shiftEventAssignment);</span>
-<span class="nc" id="L388">				ID activityID = shiftEventAssignment.getActivityID();</span>
-<span class="nc" id="L389">				activies.add(activityID);</span>
-<span class="nc" id="L390">				shiftEvents.add(shiftEvent);</span>
-<span class="nc" id="L391">			}</span>
-<span class="nc" id="L392">		}</span>
-<span class="nc" id="L393">	}</span>
+<span class="nc" id="L352">			Collection&lt;ShiftEventAssignment&gt; shiftEventAssignments = shiftAssignment.getChildren();</span>
+<span class="nc" id="L353">			List&lt;ShiftEventEntity&gt; shiftEvents = shift.getShiftEvents();</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">			for (ShiftEventAssignment shiftEventAssignment : shiftEventAssignments) {</span>
+<span class="nc" id="L355">				ShiftEventEntity shiftEvent = new ShiftEventEntity(shiftEventAssignment);</span>
+<span class="nc" id="L356">				ID activityID = shiftEventAssignment.getActivityID();</span>
+<span class="nc" id="L357">				activies.add(activityID);</span>
+<span class="nc" id="L358">				shiftEvents.add(shiftEvent);</span>
+<span class="nc" id="L359">			}</span>
+<span class="nc" id="L360">		}</span>
+<span class="nc" id="L361">	}</span>
 
 	/**
 	 * Asserts the current user is the shift bidder for the request. The downstream business logic has the full check, but it doesn't
@@ -398,115 +366,129 @@ public class ShiftBiddingFacadeImpl implements IShiftBiddingFacade {
 	 */
 	private static void assertCreateEditRequest(RequestContext context, ShiftBidRequest request)
 			throws Exception {
-<span class="nc" id="L401">		Localizer localizer = context.getLocalizer();</span>
-<span class="nc" id="L402">		ID employeeID = context.getUser().getEmployeeID();</span>
-<span class="nc" id="L403">		ShiftBidder bidder = AuctionMH.getShiftBidderByID(request.getShiftBidderID());</span>
-		// currently we only support the current user
-<span class="nc bnc" id="L405" title="All 2 branches missed.">		if (!bidder.getEmployeeID().equals(employeeID)) {</span>
-<span class="nc" id="L406">			String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.NO_PERMISSION_TO_BIDDER);</span>
-<span class="nc" id="L407">			throw new BusinessWFOException(msg, Response.Status.FORBIDDEN);</span>
+<span class="nc" id="L369">		Localizer localizer = context.getLocalizer();</span>
+<span class="nc" id="L370">		ID employeeID = context.getUser().getEmployeeID();</span>
+
+<span class="nc bnc" id="L372" title="All 2 branches missed.">		if (!com.bluepumpkin.web.rm.requests.RequestUtil.isAuthToUpdate(context, request)) {</span>
+<span class="nc" id="L373">			RmUtils.throwUnauthorizedRequest(context);</span>
 		}
 
-<span class="nc" id="L410">		int maxPreference = AuctionMH.getEmpMaxPrefLevel(context, employeeID);</span>
-<span class="nc" id="L411">		int preference = request.getPreference();</span>
-<span class="nc bnc" id="L412" title="All 4 branches missed.">		if (preference &lt; 0 || maxPreference &lt; preference) {</span>
-<span class="nc" id="L413">			String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.INVALID_PREFERENCE);</span>
-<span class="nc" id="L414">			throw new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
+<span class="nc" id="L376">		ShiftBidder bidder = AuctionMH.getShiftBidderByID(request.getShiftBidderID());</span>
+		// currently we only support the current user
+<span class="nc bnc" id="L378" title="All 2 branches missed.">		if (!bidder.getEmployeeID().equals(employeeID)) {</span>
+<span class="nc" id="L379">			String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.NO_PERMISSION_TO_BIDDER);</span>
+<span class="nc" id="L380">			throw new BusinessWFOException(msg, Response.Status.FORBIDDEN);</span>
 		}
-<span class="nc" id="L416">	}</span>
+
+<span class="nc" id="L383">		int maxPreference = AuctionMH.getEmpMaxPrefLevel(context, employeeID);</span>
+<span class="nc" id="L384">		int preference = request.getPreference();</span>
+<span class="nc bnc" id="L385" title="All 4 branches missed.">		if (preference &lt; 0 || maxPreference &lt; preference) {</span>
+<span class="nc" id="L386">			String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.INVALID_PREFERENCE);</span>
+<span class="nc" id="L387">			throw new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
+		}
+<span class="nc" id="L389">	}</span>
 
 	private void assertMaxPreference(Localizer localizer, int maxPreference, int preference)
 			throws BusinessWFOException {
-<span class="nc bnc" id="L420" title="All 4 branches missed.">		if (preference &lt; 0 || maxPreference &lt; preference) {</span>
-<span class="nc" id="L421">			String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.INVALID_PREFERENCE);</span>
-<span class="nc" id="L422">			throw new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
+<span class="nc bnc" id="L393" title="All 4 branches missed.">		if (preference &lt; 0 || maxPreference &lt; preference) {</span>
+<span class="nc" id="L394">			String msg = localizer.i18n(RmWebBundleKey.BUNDLE_NAME, RmWebBundleKey.INVALID_PREFERENCE);</span>
+<span class="nc" id="L395">			throw new BusinessWFOException(msg, Response.Status.BAD_REQUEST);</span>
 		}
-<span class="nc" id="L424">	}</span>
+<span class="nc" id="L397">	}</span>
 
-	@SuppressWarnings(&quot;unchecked&quot;)
+	private static BiddableScheduleEntity createBiddableScheduleEntity(Localizer localizer, BidOptionRow schedule,
+			boolean usesScoring, RequestsMetaData metaData) { // NOSONAR
+
+<span class="nc" id="L402">		BiddableScheduleEntity bse = new BiddableScheduleEntity(schedule);</span>
+
+<span class="nc" id="L404">		bse.setName(schedule.getTemplateName());</span>
+
+<span class="nc" id="L406">		bse.setPreference(schedule.getSubmittedPreferenceInt());</span>
+
+<span class="nc bnc" id="L408" title="All 2 branches missed.">		if (usesScoring) {</span>
+<span class="nc" id="L409">			Pair&lt;Integer, String&gt; rank = schedule.getRankPair();</span>
+<span class="nc" id="L410">			bse.setRank(rank.getFirst());</span>
+<span class="nc" id="L411">			bse.setRankDisplay(rank.getSecond());</span>
+		}
+<span class="nc" id="L413">		Set&lt;ID&gt; activies = metaData.getActivityIDs();</span>
+<span class="nc" id="L414">		OrganizationSetting orgSettings = metaData.getOrgSettings();</span>
+
+<span class="nc bnc" id="L416" title="All 4 branches missed.">		if (orgSettings != null &amp;&amp; orgSettings.getDisplayBidTemplateDes()) {</span>
+<span class="nc" id="L417">			bse.setDescription(schedule.getDescription());</span>
+		}
+
+<span class="nc" id="L420">		Collection&lt;ShiftAssignment&gt; shiftAssignments = schedule.getShiftAssignments();</span>
+<span class="nc" id="L421">		bse.setMinutes(schedule.getShiftDuration());</span>
+
+<span class="nc" id="L423">		addShifts(bse, shiftAssignments, activies);</span>
+
+<span class="nc" id="L425">		return bse;</span>
+	}
+
 	private static BiddableScheduleEntity createBiddableScheduleEntity(Localizer localizer, BiddableSchedule schedule,
-			ShiftBidRequest request, boolean usesScoring, Map&lt;ID, String&gt; empTemplateNameMap, RequestsMetaData metaData) { // NOSONAR
-<span class="nc" id="L429">		BiddableScheduleEntity bse = new BiddableScheduleEntity(schedule);</span>
-		// if empTemplateNameMap is null, it means we are loading this for a request and the template name doesn't matter
-<span class="nc bnc" id="L431" title="All 2 branches missed.">		if (empTemplateNameMap != null) {</span>
-<span class="nc" id="L432">			bse.setName(AuctionUtil.getEmployeeNameDisplay(localizer, schedule, empTemplateNameMap));</span>
+			ShiftBidRequest request, boolean usesScoring, RequestsMetaData metaData) { // NOSONAR
+<span class="nc" id="L430">		BiddableScheduleEntity bse = new BiddableScheduleEntity(schedule);</span>
+
+<span class="nc" id="L432">		bse.setName(schedule.getTemplateName());</span>
+
+<span class="nc bnc" id="L434" title="All 2 branches missed.">		if (request != null) {</span>
+<span class="nc" id="L435">			bse.setPreference(request.getPreference());</span>
 		}
 
-		// depending on how the biddable schedule was loaded the request won't exist in the OptMethods
-		// for example: loading a request will load the schedules, but won't link the parent request object up to the schedule
-<span class="nc bnc" id="L437" title="All 2 branches missed.">		if (request == null) {</span>
-<span class="nc" id="L438">			request = schedule.getOptMethods().getShiftBidRequestForShiftBidder(); // NOSONAR</span>
-		}
-<span class="nc bnc" id="L440" title="All 2 branches missed.">		if (request != null) {</span>
-<span class="nc" id="L441">			bse.setPreference(request.getPreference());</span>
+<span class="nc bnc" id="L438" title="All 2 branches missed.">		if (usesScoring) {</span>
+<span class="nc" id="L439">			Pair&lt;Integer, String&gt; rank = BaseBidOptionsPM.getRankPair(request);</span>
+<span class="nc" id="L440">			bse.setRank(rank.getFirst());</span>
+<span class="nc" id="L441">			bse.setRankDisplay(rank.getSecond());</span>
 		}
 
-<span class="nc bnc" id="L444" title="All 2 branches missed.">		if (usesScoring) {</span>
-<span class="nc" id="L445">			Pair&lt;Integer, String&gt; rank = BaseBidOptionsPM.getRankPair(request);</span>
-<span class="nc" id="L446">			bse.setRank(rank.getFirst());</span>
-<span class="nc" id="L447">			bse.setRankDisplay(rank.getSecond());</span>
+<span class="nc" id="L444">		Set&lt;ID&gt; activies = metaData.getActivityIDs();</span>
+<span class="nc" id="L445">		OrganizationSetting orgSettings = metaData.getOrgSettings();</span>
+
+<span class="nc bnc" id="L447" title="All 4 branches missed.">		if (orgSettings != null &amp;&amp; orgSettings.getDisplayBidTemplateDes()) {</span>
+<span class="nc" id="L448">			bse.setDescription(schedule.getDescription());</span>
 		}
 
-<span class="nc" id="L450">		Set&lt;ID&gt; activies = metaData.getActivityIDs();</span>
-<span class="nc" id="L451">		OrganizationSetting orgSettings = metaData.getOrgSettings();</span>
-<span class="nc bnc" id="L452" title="All 4 branches missed.">		if (orgSettings != null &amp;&amp; orgSettings.getDisplayBidTemplateDes()) {</span>
-<span class="nc" id="L453">			bse.setDescription(schedule.getDescription());</span>
-		}
+<span class="nc" id="L451">		Collection&lt;ShiftAssignment&gt; shiftAssignments = schedule.getShiftAssignments();</span>
+<span class="nc" id="L452">		bse.setMinutes(RequestUtil.computeScheduleLength(shiftAssignments));</span>
 
-<span class="nc" id="L456">		Collection&lt;ShiftAssignment&gt; shiftAssignments = schedule.getOptMethods().getShiftAssignments();</span>
-<span class="nc" id="L457">		bse.setMinutes(RequestUtil.computeScheduleLength(shiftAssignments));</span>
+<span class="nc" id="L454">		addShifts(bse, shiftAssignments, activies);</span>
 
-<span class="nc" id="L459">		addShifts(bse, shiftAssignments, activies);</span>
-
-<span class="nc" id="L461">		return bse;</span>
+<span class="nc" id="L456">		return bse;</span>
 	}
 
 	private ShiftBidRequestResponseEntity getShiftBidRequestResponseEntity(RequestContext context, ShiftBidRequest request)
 			throws RmHardValidationException, Exception {
-<span class="nc" id="L466">		ShiftBidRequestResponseEntity response = new ShiftBidRequestResponseEntity();</span>
+<span class="nc" id="L461">		ShiftBidRequestResponseEntity response = new ShiftBidRequestResponseEntity();</span>
 
-<span class="nc" id="L468">		request = AuctionMH.getRequest(request.getID(), true); // NOSONAR</span>
+<span class="nc" id="L463">		request = AuctionMH.getRequest(request.getID(), true); // NOSONAR</span>
 
-<span class="nc" id="L470">		ShiftBidAuction auction = AuctionMH.getAuction(request.getShiftBidAuctionID());</span>
-<span class="nc" id="L471">		boolean usesScoring = auction.getUsesScoring();</span>
-<span class="nc" id="L472">		OrganizationSetting orgSettings = RequestsMH.getOrgSettingForEmployee(context, request.getEmployeeID());</span>
+<span class="nc" id="L465">		ShiftBidAuction auction = AuctionMH.getAuction(request.getShiftBidAuctionID());</span>
+<span class="nc" id="L466">		boolean usesScoring = auction.getUsesScoring();</span>
+<span class="nc" id="L467">		OrganizationSetting orgSettings = RequestsMH.getOrgSettingForEmployee(context, request.getEmployeeID());</span>
 
-<span class="nc" id="L474">		RequestsMetaData metaData = new RequestsMetaData(orgSettings);</span>
-<span class="nc" id="L475">		ShiftBidRequestEntity requestEntity = createShiftBidRequestEntity(context, request, usesScoring, metaData);</span>
-<span class="nc" id="L476">		response.setRequest(requestEntity);</span>
-<span class="nc" id="L477">		RmUtils.addActivities(context, response.getActivies(), metaData.getActivityIDs());</span>
+<span class="nc" id="L469">		RequestsMetaData metaData = new RequestsMetaData(orgSettings);</span>
+<span class="nc" id="L470">		ShiftBidRequestEntity requestEntity = createShiftBidRequestEntity(context, request, usesScoring, metaData);</span>
+<span class="nc" id="L471">		response.setRequest(requestEntity);</span>
 
-<span class="nc" id="L479">		Map&lt;ID, Boolean&gt; auctionsOpenByID = new HashMap&lt;ID, Boolean&gt;();</span>
-<span class="nc" id="L480">		auctionsOpenByID.put(auction.getID(), auction.getIsAuctionOpen());</span>
-<span class="nc" id="L481">		RequestFacadeImpl.addActions(context, request, requestEntity, orgSettings, auctionsOpenByID);</span>
+		// add activities
+<span class="nc" id="L474">		RmUtils.addActivities(context, response.getActivies(), metaData.getActivityIDs());</span>
 
-<span class="nc" id="L483">		return response;</span>
+		// add auction
+<span class="nc" id="L477">		int maxPreference = AuctionMH.getEmpMaxPrefLevel(context, request.getEmployeeID());</span>
+<span class="nc" id="L478">		AuctionEntity auctionEntity = new AuctionEntity(auction);</span>
+<span class="nc" id="L479">		auctionEntity.setMaxPreference(maxPreference);</span>
+<span class="nc" id="L480">		response.setAuction(auctionEntity);</span>
+
+		// add shift bidder
+<span class="nc" id="L483">		ShiftBidder bidder = request.getOptMethods().getShiftBidder();</span>
+<span class="nc" id="L484">		auctionEntity.setShiftBidder(bidder);</span>
+
+		// add actions
+<span class="nc" id="L487">		Map&lt;ID, Boolean&gt; auctionsOpenByID = new HashMap&lt;ID, Boolean&gt;();</span>
+<span class="nc" id="L488">		auctionsOpenByID.put(auction.getID(), auction.getIsAuctionOpen());</span>
+<span class="nc" id="L489">		RequestFacadeImpl.addActions(context, request, requestEntity, orgSettings, auctionsOpenByID);</span>
+
+<span class="nc" id="L491">		return response;</span>
 	}
-
-	/**
-	 * Loads requests, computes ranks, and updates the schedules' requests rank values.
-	 * This was added because the main get biddable schedules does not load the rank.
-	 */
-	private void loadRequestRanks(Collection&lt;BiddableSchedule&gt; schedules)
-			throws RmHardValidationException, Exception {
-<span class="nc" id="L492">		Map&lt;ID, ShiftBidRequest&gt; requestsByID = new HashMap&lt;ID, ShiftBidRequest&gt;();</span>
-<span class="nc bnc" id="L493" title="All 2 branches missed.">		for (BiddableSchedule schedule : schedules) {</span>
-<span class="nc" id="L494">			ShiftBidRequest request = schedule.getOptMethods().getShiftBidRequestForShiftBidder();</span>
-<span class="nc bnc" id="L495" title="All 4 branches missed.">			if (request != null &amp;&amp; !requestsByID.containsKey(request.getID())) {</span>
-<span class="nc" id="L496">				requestsByID.put(request.getID(), request);</span>
-			}
-<span class="nc" id="L498">		}</span>
-<span class="nc" id="L499">		Collection&lt;RequestAggregate&gt; requests = AuctionMH.getRequestsByIDs(requestsByID.keySet());</span>
-<span class="nc bnc" id="L500" title="All 2 branches missed.">		for (RequestAggregate request : requests) {</span>
-<span class="nc bnc" id="L501" title="All 2 branches missed.">			if (requestsByID.containsKey(request.getID())) {</span>
-<span class="nc" id="L502">				ShiftBidRequest sbr = requestsByID.get(request.getID());</span>
-<span class="nc" id="L503">				ShiftBidRequest sbrWithRank = (ShiftBidRequest) request;</span>
-<span class="nc" id="L504">				ShiftBidRequestSetters setters = sbr.getSetters();</span>
-<span class="nc" id="L505">				ShiftBidRequestOptMethods optMethods = sbrWithRank.getOptMethods();</span>
-<span class="nc" id="L506">				setters.setRankWithBonus(optMethods.getRankWithBonus());</span>
-<span class="nc" id="L507">				setters.setRankWithoutBonus(optMethods.getRankWithoutBonus());</span>
-			}
-<span class="nc" id="L509">		}</span>
-<span class="nc" id="L510">	}</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

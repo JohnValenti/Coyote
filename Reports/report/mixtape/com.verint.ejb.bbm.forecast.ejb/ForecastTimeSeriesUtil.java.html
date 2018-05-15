@@ -3,6 +3,7 @@
  */
 package com.verint.ejb.bbm.forecast.ejb;
 
+import com.bluepumpkin.common.util.TimeZoneUtil;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
@@ -17,7 +18,6 @@ import com.bluepumpkin.ejb.bbm.timeseries.model.ForecastTimeSeriesFieldInfo;
 import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
 import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
 import com.bluepumpkin.ejb.bbm.timeseries.util.DSTConversionUtil;
-import com.bluepumpkin.common.util.TimeZoneUtil;
 
 /**
  * This class contains methods to convert between a Collection of ForecastTimeSeries and a Collection
@@ -33,8 +33,8 @@ import com.bluepumpkin.common.util.TimeZoneUtil;
 	// Only support AHT and CV for now. Later add support for the other trace types:
 	// Trace.CRATE,	Trace.RPCRATE,	Trace.RPCAHT
 <span class="fc" id="L35">	private static final Map&lt;Short, String&gt; supportedTypes = new HashMap&lt;Short, String&gt;();</span>
-	public static final int NUM_MINUTES_PER_DAY = 60;
-
+	private static final int NUM_MINUTES_PER_HOUR = 60;
+	private static final int NUM_DAILY_INTERVALS = 96;
 	static {
 <span class="fc" id="L39">		supportedTypes.put(Trace.CV, &quot;CALLVOLUME&quot;);</span>
 <span class="fc" id="L40">		supportedTypes.put(Trace.AHT, &quot;AHT&quot;);</span>
@@ -43,86 +43,80 @@ import com.bluepumpkin.common.util.TimeZoneUtil;
 <span class="fc" id="L43">		supportedTypes.put(Trace.RPCAHT, &quot;RPCAHT&quot;);</span>
 	}
 
-	public static final int NUM_DAILY_INTERVALS = 96;
-	
 	/**
 	 * This is a double array of FieldInfo indexes.
 	 * First dimension is type. Second is the interval number during the day (0-95).
 	 * 
 	 * This is used so we can set the field values using ValueObjectBase.setFieldValue(index).
 	 */
-<span class="fc" id="L54">	private static final int[][] valueIndices = new int[Trace.MAX_TYPE][NUM_DAILY_INTERVALS];</span>
+<span class="fc" id="L52">	private static final int[][] valueIndices = new int[Trace.MAX_TYPE][NUM_DAILY_INTERVALS];</span>
 	static {
-<span class="fc" id="L56">		ForecastTimeSeriesFieldInfo fi = new ForecastTimeSeriesFieldInfo();</span>
-<span class="fc bfc" id="L57" title="All 2 branches covered.">		for (short type : supportedTypes.keySet()) {</span>
-<span class="fc" id="L58">			String prefix = supportedTypes.get(type);</span>
-<span class="fc" id="L59">			valueIndices[type] = new int[NUM_DAILY_INTERVALS];</span>
-<span class="fc bfc" id="L60" title="All 2 branches covered.">			for (int i = 0; i &lt; NUM_DAILY_INTERVALS; i++) {</span>
-<span class="fc" id="L61">				valueIndices[type][i] = fi.getFieldIndexByName(prefix + (i + 1));</span>
+<span class="fc" id="L54">		ForecastTimeSeriesFieldInfo fi = new ForecastTimeSeriesFieldInfo();</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">		for (short type : supportedTypes.keySet()) {</span>
+<span class="fc" id="L56">			String prefix = supportedTypes.get(type);</span>
+<span class="fc" id="L57">			valueIndices[type] = new int[NUM_DAILY_INTERVALS];</span>
+<span class="fc bfc" id="L58" title="All 2 branches covered.">			for (int i = 0; i &lt; NUM_DAILY_INTERVALS; i++) {</span>
+<span class="fc" id="L59">				valueIndices[type][i] = fi.getFieldIndexByName(prefix + (i + 1));</span>
 			}
-<span class="fc" id="L63">		}</span>
-<span class="fc" id="L64">	}</span>
+<span class="fc" id="L61">		}</span>
+<span class="fc" id="L62">	}</span>
 	
 	/**
 	 * Constructs ForecastTimeSeries objects that contain the trace values of the given TraceCube
 	 * Only sets trace values and date. Does not set any other fields.
 	 * @param traceCube
-	 * @param timeZone
+	 * @param timeContext
 	 * @return
 	 */
 	public static Collection&lt;ForecastTimeSeries&gt; getForecastTimeSeriesCol(TraceCube traceCube, TimeContext timeContext) {
-<span class="fc" id="L74">		Date startDate = traceCube.getRawStartDate();</span>
-<span class="fc" id="L75">		Date endDate = traceCube.getRawEndDate();</span>
-<span class="fc" id="L76">		Collection&lt;ForecastTimeSeries&gt; retVal = new LinkedList&lt;ForecastTimeSeries&gt;();</span>
-<span class="fc" id="L77">		Calendar timeCursor = Calendar.getInstance(timeContext.getTimeZone());</span>
-<span class="fc" id="L78">		timeCursor.setTime(startDate);</span>
-<span class="fc" id="L79">		boolean finalHourContainsPartialDaylightTransition = false;</span>
+<span class="fc" id="L72">		Date startDate = traceCube.getRawStartDate();</span>
+<span class="fc" id="L73">		Date endDate = traceCube.getRawEndDate();</span>
+<span class="fc" id="L74">		Collection&lt;ForecastTimeSeries&gt; retVal = new LinkedList&lt;ForecastTimeSeries&gt;();</span>
+<span class="fc" id="L75">		Calendar timeCursor = Calendar.getInstance(timeContext.getTimeZone());</span>
+<span class="fc" id="L76">		timeCursor.setTime(startDate);</span>
+<span class="fc" id="L77">		boolean finalHourContainsPartialDaylightTransition = false;</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">		while (timeCursor.getTime().before(endDate)) {</span>
+<span class="fc" id="L79">			Date currentDay = timeCursor.getTime();</span>
+<span class="fc" id="L80">			ForecastTimeSeries fts = new ForecastTimeSeries();</span>
+<span class="fc" id="L81">			fts.setDateTime(timeCursor.getTime());</span>
 
-<span class="fc bfc" id="L81" title="All 2 branches covered.">		while (timeCursor.getTime().before(endDate)) {</span>
-<span class="fc" id="L82">			Date currentDay = timeCursor.getTime();</span>
-<span class="fc" id="L83">			ForecastTimeSeries fts = new ForecastTimeSeries();</span>
-<span class="fc" id="L84">			fts.setDateTime(timeCursor.getTime());</span>
-
-<span class="pc bpc" id="L86" title="1 of 2 branches missed.">			if (finalHourContainsPartialDaylightTransition) {</span>
-<span class="nc" id="L87">				int minutes = timeContext.getDayBoundary() % NUM_MINUTES_PER_DAY;</span>
-<span class="nc" id="L88">				fts.setDateTime(new Date(fts.getDateTime().getTime() + (minutes * TimeZoneUtil.MINUTE_IN_MILLISECONDS)));</span>
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">			if (finalHourContainsPartialDaylightTransition) {</span>
+<span class="nc" id="L84">				int minutes = timeContext.getDayBoundary() % NUM_MINUTES_PER_HOUR;</span>
+<span class="nc" id="L85">				fts.setDateTime(new Date(fts.getDateTime().getTime() + (minutes * TimeZoneUtil.MINUTE_IN_MILLISECONDS)));</span>
 			}
 
-<span class="fc" id="L91">			finalHourContainsPartialDaylightTransition = DSTConversionUtil.adjustCalendarForDST(timeCursor, timeContext, 1);</span>
+<span class="fc" id="L88">			finalHourContainsPartialDaylightTransition = DSTConversionUtil.adjustCalendarForDST(timeCursor, timeContext, 1);</span>
 			
 			// Subtract one millisecond, since the Trace functions are end inclusive.
-<span class="fc" id="L94">			Date nextDay = new Date(timeCursor.getTime().getTime() - 1);</span>
-
-<span class="fc bfc" id="L96" title="All 2 branches covered.">			for (short type : supportedTypes.keySet()) {</span>
-<span class="fc" id="L97">				double[] traceVals = traceCube.getTraceValueD(type, currentDay, nextDay);</span>
-<span class="fc bfc" id="L98" title="All 2 branches covered.">				if (traceVals != null) {</span>
-<span class="fc" id="L99">					double[] vals = DSTConversionUtil.convertFromDSTAwareTimeToIdealTime(</span>
-<span class="fc" id="L100">							traceCube.getTraceValueD(type, currentDay, nextDay),</span>
+<span class="fc" id="L91">			Date nextDay = new Date(timeCursor.getTime().getTime() - 1);</span>
+			
+<span class="fc bfc" id="L93" title="All 2 branches covered.">			for (short type : supportedTypes.keySet()) {</span>
+<span class="fc" id="L94">				double[] traceVals = traceCube.getTraceValueD(type, currentDay, nextDay);</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">				if (traceVals != null) {</span>
+<span class="fc" id="L96">					double[] vals = DSTConversionUtil.convertFromDSTAwareTimeToIdealTime(</span>
+<span class="fc" id="L97">							traceCube.getTraceValueD(type, currentDay, nextDay),</span>
 							Trace.TRACENA, 
 							currentDay, 
 							intervalLength, 
 							timeContext);
-<span class="pc bpc" id="L105" title="1 of 2 branches missed.">					if (vals.length == 0) {</span>
-<span class="nc" id="L106">						continue;</span>
-					}
-<span class="pc bpc" id="L108" title="1 of 2 branches missed.">					if (vals.length != NUM_DAILY_INTERVALS) {</span>
-<span class="nc" id="L109">						throw new IllegalArgumentException(&quot;TraceCube for queue &quot; + traceCube.getQueueID() +</span>
-<span class="nc" id="L110">							&quot; contains &quot; + vals.length + &quot; DST-corrected values for type &quot; + Trace.getTraceName(type) + &quot; for day &quot; +</span>
-							currentDay + &quot;. Expected 96.&quot;);
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">					if (vals.length == 0) continue;</span>
+<span class="pc bpc" id="L103" title="1 of 2 branches missed.">					if (vals.length != NUM_DAILY_INTERVALS) {</span>
+<span class="nc" id="L104">						throw new IllegalArgumentException(&quot;TraceCube for queue &quot; + traceCube.getQueueID() + &quot; &quot; +</span>
+<span class="nc" id="L105">							&quot;contains &quot; + vals.length + &quot; DST-corrected values for type &quot; + Trace.getTraceName(type) + &quot; for day &quot; + currentDay + &quot;. Expected 96.&quot;);</span>
 					}
 	
-<span class="fc bfc" id="L114" title="All 2 branches covered.">					for (int i = 0; i &lt; NUM_DAILY_INTERVALS; i++) {</span>
-<span class="fc" id="L115">						fts.setFieldValue(valueIndices[type][i % NUM_DAILY_INTERVALS], convertTraceOffToZero(vals[i]));</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">					for (int i = 0; i &lt; NUM_DAILY_INTERVALS; i++) {</span>
+<span class="fc" id="L109">						fts.setFieldValue(valueIndices[type][i % NUM_DAILY_INTERVALS], convertTraceOffToZero(vals[i]));</span>
 					}
 				}
-<span class="fc" id="L118">			}</span>
-<span class="fc" id="L119">			retVal.add(fts);</span>
-<span class="fc" id="L120">		}</span>
-<span class="fc" id="L121">		return retVal;</span>
+<span class="fc" id="L112">			}</span>
+<span class="fc" id="L113">			retVal.add(fts);</span>
+<span class="fc" id="L114">		}</span>
+<span class="fc" id="L115">		return retVal;</span>
 	}
 
 	private static double convertTraceOffToZero(double value) {
-<span class="fc bfc" id="L125" title="All 2 branches covered.">		return value == Trace.TRACEOFF ? 0.0d : value;</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">		return value == Trace.TRACEOFF ? 0.0d : value;</span>
 	}
 
 }

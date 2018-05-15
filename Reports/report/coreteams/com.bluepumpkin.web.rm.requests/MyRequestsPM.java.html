@@ -8,6 +8,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.common.util.StringUtil;
 import com.bluepumpkin.ejb.bbm.base.BbmFinderException;
 import com.bluepumpkin.ejb.rm.base.RmHardValidationException;
@@ -19,6 +20,7 @@ import com.bluepumpkin.ejb.rm.requests.swap.request.model.ShiftSwapRequest;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
 import com.bluepumpkin.ejb.rm.util.LicenseUtil;
 import com.bluepumpkin.ejb.rm.util.ThreadLocalCache;
+import com.bluepumpkin.web.rm.Log;
 import com.bluepumpkin.web.rm.keys.RmKeys;
 import com.bluepumpkin.web.rm.keys.RmPageAction;
 import com.bluepumpkin.web.rm.l10n.RmWebBundleKey;
@@ -26,11 +28,16 @@ import com.bluepumpkin.web.rm.requests.shiftswap.ShiftSwapRequestsMH;
 import com.witness.ejb.core.security.PrivilegeKeys;
 import com.witness.web.uif.base.Message;
 import com.witness.web.uif.data.wrapper.DateWrapper;
+import com.witness.web.uif.jsp.HtmlDiv;
+import com.witness.web.uif.jsp.HtmlDivWSpan;
+import com.witness.web.uif.jsp.HtmlTableCell;
 import com.witness.web.uif.keys.PageAction;
 import com.witness.web.uif.l10n.UIFWebBundleKey;
+import com.witness.web.uif.pagecomponent.BaseNodeData;
 import com.witness.web.uif.pagecomponent.DefaultMultiColumnNodeData;
 import com.witness.web.uif.pagecomponent.MultiColumnNodeData;
 import com.witness.web.uif.pagecomponent.dialog.DialogToolbarMenuPC;
+import com.witness.web.uif.pagecomponent.list.MultiColListPC;
 import com.witness.web.uif.pagecomponent.table.TableHeaderPC;
 import com.witness.web.uif.pagemodel.PageModel;
 import com.witness.web.uif.system.RequestContext;
@@ -47,30 +54,35 @@ import com.witness.web.uif.util.js.JSUtil;
  * @version      1.0
  */
 public class MyRequestsPM extends RequestsPM {
+<span class="fc" id="L57">	private static final Category LOG = Log.initCategory(MyRequestsPM.class.getName());</span>
 	private static final String VIEW_TYPE = &quot;viewRequestType&quot;;
-
-<span class="fc" id="L52">	protected Collection m_requestList = Collections.EMPTY_LIST;</span>
-<span class="fc" id="L53">	protected boolean m_isIncludeExpired = false;</span>
+	//508 As we have not empty first column in accessibility mode we should prevent setting width to 20% for first column.
+	private static final String ACCESSIBILITY_FIRST_COLUMN_SIZE = &quot;1&quot;;
+	private static final String CENTER_OPEN_TAG = &quot;&lt;center&gt;&quot;;
+	private static final String CENTER_CLOSE_TAG = &quot;&lt;/center&gt;&quot;;
+<span class="nc" id="L63">	protected Collection m_requestList = Collections.emptyList();</span>
+<span class="nc" id="L64">	protected boolean m_isIncludeExpired = false;</span>
 	protected DialogToolbarMenuPC m_newRequestMenuPC;
-<span class="fc" id="L55">	protected boolean isDateSort = false;</span>
-<span class="fc" id="L56">	protected Map&lt;ID, Boolean&gt; m_auctionMap = new HashMap&lt;ID, Boolean&gt;();</span>
+<span class="nc" id="L66">	protected boolean isDateSort = false;</span>
+<span class="nc" id="L67">	protected Map&lt;ID, Boolean&gt; m_auctionMap = new HashMap&lt;ID, Boolean&gt;();</span>
+<span class="nc" id="L68">	Map&lt;ID, Boolean&gt; timeOffBidMap = new HashMap&lt;ID, Boolean&gt;();</span>
 
 	/**
 	 * Constructor
 	 */
-	public MyRequestsPM(RequestContext context)	{
-<span class="fc" id="L62">		this(context, Request.REQUESTTYPE_ALL);</span>
-<span class="fc" id="L63">	}</span>
+	public MyRequestsPM(RequestContext context) {
+<span class="nc" id="L74">		this(context, Request.REQUESTTYPE_ALL);</span>
+<span class="nc" id="L75">	}</span>
 
 	/**
 	 * Constructor used by Subclass
 	 */
 	protected MyRequestsPM(RequestContext context, String requestType) {
-<span class="fc" id="L69">		super(context, requestType);</span>
-<span class="fc" id="L70">		RequestUtil.cacheMyRequestType(context, requestType);</span>
+<span class="nc" id="L81">		super(context, requestType);</span>
+<span class="nc" id="L82">		RequestUtil.cacheMyRequestType(context, requestType);</span>
 
-<span class="fc" id="L72">		addJSVariableAsString(RmKeys.PAGE_MODE_FN, RmKeys.RP_MODE_AGENT);</span>
-<span class="fc" id="L73">	}</span>
+<span class="nc" id="L84">		addJSVariableAsString(RmKeys.PAGE_MODE_FN, RmKeys.RP_MODE_AGENT);</span>
+<span class="nc" id="L85">	}</span>
 
 	/**
 	 * Initialize for Display
@@ -95,7 +107,83 @@ public class MyRequestsPM extends RequestsPM {
 	 * Return an instance of MyRequestsPM ready to be rendered in JSP
 	 */
 	public static PageModel getInstance(RequestContext context) throws Exception {
-<span class="fc" id="L98">		return getInstance(context, MyRequestsPM.class);</span>
+<span class="nc" id="L110">		return getInstance(context, MyRequestsPM.class);</span>
+	}
+	
+	@Override
+	protected MultiColListPC getMultiColListPC(RequestContext context) {
+<span class="nc" id="L115">		return new MultiColListPC(context) {</span>
+			@Override
+			protected HtmlDiv getNewHtmlDiv() {
+<span class="nc" id="L118">				return new HtmlDivWSpan(getPCAriaLabelID(), i18n(m_bundle, RmWebBundleKey.RM_MYREQUESTS_GRID));</span>
+			}
+			
+			@Override
+			protected boolean skipEncloseForKeyboardAccess(BaseNodeData nodeData) {
+<span class="nc bnc" id="L123" title="All 4 branches missed.">				return isDisabled() || !nodeData.isSelectable();</span>
+			}
+			
+			@Override
+			protected String addAdditionalCellText(HtmlTableCell cell) {
+<span class="nc bnc" id="L128" title="All 4 branches missed.">				if (isFirstColumn(cell) &amp;&amp; cell.getInnerHtml().toString().contains(&quot;&lt;img&quot;)) {</span>
+<span class="nc" id="L129">					String cellText = cell.getInnerHtml().toString();</span>
+<span class="nc" id="L130">					return getNotCenteredData(cellText);</span>
+				}
+<span class="nc" id="L132">				return super.addAdditionalCellText(cell);</span>
+			}
+			
+			@Override
+			protected String getCellData(HtmlTableCell cell) {
+<span class="nc bnc" id="L137" title="All 2 branches missed.">				if (isFirstColumn(cell)) {</span>
+<span class="nc" id="L138">					String cellInnerText = cell.getInnerHtml().toString();</span>
+<span class="nc bnc" id="L139" title="All 4 branches missed.">					if (cellInnerText.contains(&quot;&lt;img&quot;) &amp;&amp; !StringUtil.isEmpty(getInnerTextFromImg(cellInnerText))) {</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">						if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L141">							setFirstColumnWidth(ACCESSIBILITY_FIRST_COLUMN_SIZE);</span>
+						}
+<span class="nc" id="L143">						return HtmlUtil.makeHiddenReadableText(getInnerTextFromImg(cellInnerText)) + HtmlUtil.NBSP;</span>
+					}
+				}
+<span class="nc" id="L146">				return super.getCellData(cell);</span>
+			}
+			
+			@Override
+			protected String getCellDataWithAdditionalText(HtmlTableCell cell, String cellData) {
+<span class="nc" id="L151">				String cellDataWithAdditionalText = super.getCellDataWithAdditionalText(cell, cellData);</span>
+<span class="nc" id="L152">				String cellInnerText = cell.getInnerHtml().toString();</span>
+<span class="nc bnc" id="L153" title="All 4 branches missed.">				if (cellInnerText.contains(CENTER_OPEN_TAG) &amp;&amp; cellInnerText.contains(CENTER_CLOSE_TAG)) {</span>
+<span class="nc" id="L154">					StringBuilder builder = new StringBuilder();</span>
+<span class="nc" id="L155">					builder.append(CENTER_OPEN_TAG).append(cellDataWithAdditionalText).append(CENTER_CLOSE_TAG);</span>
+<span class="nc" id="L156">					return builder.toString();</span>
+				} else {
+<span class="nc" id="L158">					return cellDataWithAdditionalText;</span>
+				}
+			}
+		};
+	}
+	
+	private boolean isFirstColumn(HtmlTableCell cell) {
+<span class="nc" id="L165">		String firstColumnID = &quot;c0&quot;;</span>
+<span class="nc" id="L166">		String idAttr = cell.getAttribute(&quot;id&quot;);</span>
+<span class="nc bnc" id="L167" title="All 4 branches missed.">		if (!StringUtil.isEmpty(idAttr) &amp;&amp; idAttr.contains(firstColumnID)) {</span>
+<span class="nc" id="L168">			return true;</span>
+		}
+<span class="nc" id="L170">		return false;</span>
+	}
+	
+	private String getNotCenteredData(String data) {
+<span class="nc" id="L174">		String centerOpenTag = &quot;&lt;center&gt;&quot;;</span>
+<span class="nc" id="L175">		String centerCloseTag = &quot;&lt;/center&gt;&quot;;</span>
+<span class="nc bnc" id="L176" title="All 4 branches missed.">		if (data.contains(centerOpenTag) &amp;&amp; data.contains(centerCloseTag)) {</span>
+<span class="nc" id="L177">			int centerOpenTagIdx = data.indexOf(centerOpenTag);</span>
+<span class="nc" id="L178">			int centerCloseTagIdx = data.indexOf(centerCloseTag);</span>
+<span class="nc" id="L179">			StringBuilder builder = new StringBuilder();</span>
+<span class="nc" id="L180">			builder.append(data.substring(0, centerOpenTagIdx));</span>
+<span class="nc" id="L181">			String notCenteredData = data.substring(centerOpenTagIdx + centerOpenTag.length(), centerCloseTagIdx);</span>
+<span class="nc" id="L182">			builder.append(notCenteredData).append(data.substring(centerCloseTagIdx + centerCloseTag.length(), data.length()));</span>
+<span class="nc" id="L183">			return builder.toString();</span>
+		} else {
+<span class="nc" id="L185">			return data;</span>
+		}
 	}
 
 	/**
@@ -104,138 +192,164 @@ public class MyRequestsPM extends RequestsPM {
 	@Override
 	protected void loadData() throws Exception {
 
-<span class="fc" id="L107">		boolean cacheEnabled = ThreadLocalCache.enable();</span>
+<span class="nc" id="L195">		boolean cacheEnabled = ThreadLocalCache.enable();</span>
 		try {
-<span class="fc" id="L109">			loadData2();</span>
+<span class="nc" id="L197">			loadData2();</span>
 		} finally {
-<span class="pc" id="L111">			ThreadLocalCache.clear(cacheEnabled);</span>
-<span class="fc" id="L112">		}</span>
+<span class="nc" id="L199">			ThreadLocalCache.clear(cacheEnabled);</span>
+<span class="nc" id="L200">		}</span>
 
-<span class="fc" id="L114">	}</span>
+<span class="nc" id="L202">	}</span>
 
 	private void loadData2() throws Exception {
 
-<span class="pc bpc" id="L118" title="1 of 2 branches missed.">		if (m_empID!=null) {</span>
+<span class="nc bnc" id="L206" title="All 2 branches missed.">		if (m_empID != null) {</span>
 			try {
-<span class="fc" id="L120">				m_orgSetting = RequestsMH.getOrgSettingForEmployee(m_context, m_empID);</span>
-<span class="pc bpc" id="L121" title="1 of 2 branches missed.">				if (isAuthToViewAnyRqts()) {</span>
-<span class="fc" id="L122">					String requestIDStr = m_context.getRequest().getParameter(&quot;reqID&quot;);</span>
-<span class="fc" id="L123">					ID requestID = null;</span>
-<span class="pc bpc" id="L124" title="1 of 2 branches missed.">					if (!StringUtil.isEmpty(requestIDStr))</span>
-<span class="nc" id="L125">						requestID = new ID(requestIDStr);</span>
-
-<span class="fc" id="L127">					String requestTypeStr = m_context.getRequest().getParameter(&quot;requestType&quot;);</span>
-
-<span class="pc bpc" id="L129" title="1 of 2 branches missed.">					if (requestID!=null){</span>
-<span class="nc" id="L130">						ArrayList reqList = new ArrayList(1);</span>
-<span class="nc" id="L131">						RequestAggregate reqAgg = RequestsMH.getRequest(requestID, requestTypeStr);</span>
-<span class="nc bnc" id="L132" title="All 2 branches missed.">						if (reqAgg != null)</span>
-<span class="nc" id="L133">							reqList.add(RequestsMH.getRequest(requestID, requestTypeStr));</span>
-<span class="nc" id="L134">						m_requestList = reqList;</span>
-<span class="nc bnc" id="L135" title="All 4 branches missed.">						if (m_requestList == null || m_requestList.isEmpty())</span>
-<span class="nc" id="L136">							addPageMessage(Message.INFO_TYPE, RmWebBundleKey.REQUEST_NOT_FOUND_ERROR, RmWebBundleKey.BUNDLE_NAME);</span>
-						else
-<span class="nc" id="L138">							addPageMessage(Message.INFO_TYPE, RmWebBundleKey.REQUEST_FROM_DRILLTHROUGH_VIEW, RmWebBundleKey.BUNDLE_NAME);</span>
-<span class="nc" id="L139">					} else {</span>
-<span class="fc" id="L140">						String rType = Request.REQUESTTYPE_ALL;</span>
-<span class="fc" id="L141">						m_requestList = RequestsMH.getRequestsForEmp(m_empID, rType, m_isIncludeExpired);</span>
+<span class="nc" id="L208">				m_orgSetting = RequestsMH.getOrgSettingForEmployee(m_context, m_empID);</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">				if (isAuthToViewAnyRqts()) {</span>
+<span class="nc" id="L210">					String requestIDStr = m_context.getRequest().getParameter(&quot;reqID&quot;);</span>
+<span class="nc" id="L211">					ID requestID = null;</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">					if (!StringUtil.isEmpty(requestIDStr)) {</span>
+<span class="nc" id="L213">						requestID = new ID(requestIDStr);</span>
 					}
+
+<span class="nc" id="L216">					String requestTypeStr = m_context.getRequest().getParameter(&quot;requestType&quot;);</span>
+
+<span class="nc bnc" id="L218" title="All 2 branches missed.">					if (requestID != null) {</span>
+<span class="nc" id="L219">						ArrayList reqList = new ArrayList(1);</span>
+<span class="nc" id="L220">						RequestAggregate reqAgg = RequestsMH.getRequest(requestID, requestTypeStr);</span>
+<span class="nc bnc" id="L221" title="All 2 branches missed.">						if (reqAgg != null) {</span>
+<span class="nc" id="L222">							reqList.add(RequestsMH.getRequest(requestID, requestTypeStr));</span>
+						}
+<span class="nc" id="L224">						m_requestList = reqList;</span>
+<span class="nc bnc" id="L225" title="All 4 branches missed.">						if (m_requestList == null || m_requestList.isEmpty()) {</span>
+<span class="nc" id="L226">							addPageMessage(Message.INFO_TYPE, RmWebBundleKey.REQUEST_NOT_FOUND_ERROR, RmWebBundleKey.BUNDLE_NAME);</span>
+						} else {
+<span class="nc" id="L228">							addPageMessage(Message.INFO_TYPE, RmWebBundleKey.REQUEST_FROM_DRILLTHROUGH_VIEW, RmWebBundleKey.BUNDLE_NAME);</span>
+						}
+<span class="nc" id="L230">					} else {</span>
+<span class="nc" id="L231">						String rType = Request.REQUESTTYPE_ALL;</span>
+<span class="nc" id="L232">						m_requestList = RequestsMH.getRequestsForEmp(m_empID, rType, m_isIncludeExpired);</span>
+					}
+					
 				}
-<span class="nc" id="L144">			} catch (BbmFinderException ex) {</span>
-<span class="nc" id="L145">				addPageMessage(Message.ERROR_TYPE, ex.getLocalizedMessage());</span>
-<span class="nc" id="L146">			} catch (RmHardValidationException ex) {</span>
-<span class="nc" id="L147">				Message msg = handleUnableToLoadDataError(log, ex);</span>
-<span class="nc" id="L148">				msg.setAssociatedMessage(ex.getLocalizedMessage(m_localizer, m_context.getViewingTimeZone()));</span>
-<span class="pc" id="L149">			}</span>
+<span class="nc" id="L236">			} catch (BbmFinderException ex) {</span>
+<span class="nc" id="L237">				addPageMessage(Message.ERROR_TYPE, ex.getLocalizedMessage());</span>
+<span class="nc" id="L238">			} catch (RmHardValidationException ex) {</span>
+<span class="nc" id="L239">				Message msg = handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L240">				msg.setAssociatedMessage(ex.getLocalizedMessage(m_localizer, m_context.getViewingTimeZone()));</span>
+<span class="nc" id="L241">			}</span>
 		}
-<span class="fc" id="L151">	}</span>
+<span class="nc" id="L243">	}</span>
 
 	/**
 	 * Return Content Title Item Name
 	 */
 	private String getContentTitleItemName() {
-<span class="fc" id="L157">		StringBuffer sb = new StringBuffer(20);</span>
-<span class="pc bpc" id="L158" title="1 of 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(m_requestType)) {</span>
-<span class="nc" id="L159">			sb.append( i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_TIME_OFF) );</span>
-<span class="pc bpc" id="L160" title="1 of 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(m_requestType)) {</span>
-<span class="nc" id="L161">			sb.append( i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME) );</span>
-<span class="pc bpc" id="L162" title="1 of 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(m_requestType)) {</span>
-<span class="nc" id="L163">			sb.append( i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_SWAP) );</span>
-<span class="pc bpc" id="L164" title="1 of 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTBID.equals(m_requestType)) {</span>
-<span class="nc" id="L165">			sb.append( i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_BIDDING) );</span>
-<span class="pc bpc" id="L166" title="1 of 2 branches missed.">		} else if (Request.REQUESTTYPE_CUSTSHIFT.equals(m_requestType)) {</span>
-<span class="nc" id="L167">			sb.append( i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_CUSTOM_SHIFT) );</span>
+<span class="nc" id="L249">		StringBuilder sb = new StringBuilder(20);</span>
+<span class="nc" id="L250">		String additionalInfoMsg = &quot;&quot;;</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">		if (Request.REQUESTTYPE_TIMEOFF.equals(m_requestType)) {</span>
+<span class="nc" id="L252">			sb.append(i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_TIME_OFF));</span>
+<span class="nc" id="L253">			additionalInfoMsg = i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_TIME_OFF);</span>
+<span class="nc bnc" id="L254" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(m_requestType)) {</span>
+<span class="nc" id="L255">			sb.append(i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME));</span>
+<span class="nc" id="L256">			additionalInfoMsg = i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME);</span>
+<span class="nc bnc" id="L257" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(m_requestType)) {</span>
+<span class="nc" id="L258">			sb.append(i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_SWAP));</span>
+<span class="nc" id="L259">			additionalInfoMsg = i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_SWAP);</span>
+<span class="nc bnc" id="L260" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTBID.equals(m_requestType)) {</span>
+<span class="nc" id="L261">			sb.append(i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_BIDDING));</span>
+<span class="nc" id="L262">			additionalInfoMsg = i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_BIDDING);</span>
+<span class="nc bnc" id="L263" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_CUSTSHIFT.equals(m_requestType)) {</span>
+<span class="nc" id="L264">			sb.append(i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_CUSTOM_SHIFT));</span>
+<span class="nc" id="L265">			additionalInfoMsg = i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_CUSTOM_SHIFT);</span>
 		} else {
-<span class="fc" id="L169">			sb.append( i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_ALL) );</span>
+<span class="nc" id="L267">			sb.append(i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_ALL));</span>
+<span class="nc" id="L268">			additionalInfoMsg = i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_ALL);</span>
 		}
 
-<span class="fc" id="L172">		sb.append(&quot; - &quot;);</span>
-<span class="fc" id="L173">		String sLabel = i18n(m_bundle, RmWebBundleKey.INCLUDE_EXPIRED_REQUEST);</span>
-		//sb.append(sLabel);
-		//sb.append(&quot; &quot;);
-<span class="fc" id="L176">		sb.append( HtmlChoiceInput.makeChkBoxInput(&quot;isIncludeExpired&quot;, &quot;true&quot;, sLabel, m_isIncludeExpired, JSUtil.REFRESH_PAGE) ); //508</span>
+<span class="nc" id="L271">		sb.append(&quot; - &quot;);</span>
+<span class="nc" id="L272">		String sLabel = &quot;&quot;;</span>
+<span class="nc bnc" id="L273" title="All 4 branches missed.">		if (isAccessibilityComplianceMode() &amp;&amp; !StringUtil.isEmpty(additionalInfoMsg)) {</span>
+<span class="nc" id="L274">			sLabel = HtmlUtil.makeHiddenReadableText(additionalInfoMsg) + i18n(m_bundle, RmWebBundleKey.INCLUDE_EXPIRED_REQUEST);</span>
+		} else {
+<span class="nc" id="L276">			sLabel = i18n(m_bundle, RmWebBundleKey.INCLUDE_EXPIRED_REQUEST);</span>
+		}
+		
+<span class="nc" id="L279">		sb.append(HtmlChoiceInput.makeChkBoxInput(&quot;isIncludeExpired&quot;, &quot;true&quot;, sLabel, m_isIncludeExpired, JSUtil.REFRESH_PAGE)); //508</span>
 
-<span class="fc" id="L178">		return sb.toString();</span>
+<span class="nc" id="L281">		return sb.toString();</span>
 	}
 
 	/**
 	 * Initialize Content Title
 	 */
 	@Override
-	protected void initContentTitle()	{
+	protected void initContentTitle() {
 		// Initialize Content Title
-<span class="fc" id="L187">		String pageTitle = i18n(m_bundle, RmWebBundleKey.RM_MYSCHEDULE_MYREQUESTS);</span>
-<span class="fc" id="L188">		String itemName = getContentTitleItemName();</span>
-<span class="fc" id="L189">		m_contentTitlePC.setPageTitle(pageTitle);</span>
-<span class="fc" id="L190">		m_contentTitlePC.setItemName(itemName);</span>
+<span class="nc" id="L290">		String pageTitle = i18n(m_bundle, RmWebBundleKey.RM_MYSCHEDULE_MYREQUESTS);</span>
+<span class="nc" id="L291">		String itemName = getContentTitleItemName();</span>
+<span class="nc" id="L292">		m_contentTitlePC.setPageTitle(pageTitle);</span>
+<span class="nc" id="L293">		m_contentTitlePC.setItemName(itemName);</span>
+<span class="nc" id="L294">		m_contentTitlePC.setAriaRegion(true);</span>
 
 		// View Option
-<span class="pc bpc" id="L193" title="1 of 2 branches missed.">		if (isAuthToViewAnyRqts()) {</span>
-<span class="fc" id="L194">			String viewLabel = HtmlUtil.createLabel(i18n(m_common_bundle, UIFWebBundleKey.VIEW), VIEW_TYPE); //508</span>
-<span class="fc" id="L195">			m_contentTitlePC.setActiveComponent(viewLabel, makeViewDropDown() + &quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&quot;);  //ESR#4234460</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">		if (isAuthToViewAnyRqts()) {</span>
+<span class="nc" id="L298">			String viewLabel = HtmlUtil.createLabel(i18n(m_common_bundle, UIFWebBundleKey.VIEW), VIEW_TYPE); //508</span>
+<span class="nc" id="L299">			m_contentTitlePC.setActiveComponent(viewLabel, makeViewDropDown() + &quot;&amp;nbsp;&amp;nbsp;&amp;nbsp;&quot;); //ESR#4234460</span>
 		}
-<span class="fc" id="L197">	}</span>
+<span class="nc" id="L301">	}</span>
 
 	/**
 	 * Initialize Selectable items
 	 */
 	@Override
 	protected void initSelectableItems() {
+<span class="nc bnc" id="L308" title="All 2 branches missed.">		if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L309">			m_list.setUseWrapper(true);</span>
+<span class="nc" id="L310">			m_list.addTableArrowNavigation();</span>
+<span class="nc" id="L311">			m_list.setReadableRowInfoEnabled(true);</span>
+<span class="nc" id="L312">			m_list.disableRepeatHeader();</span>
+		}		
 		// Handle case where there are no requests found
-<span class="pc bpc" id="L205" title="1 of 4 branches missed.">		if (m_requestList==null || m_requestList.isEmpty()) return;</span>
+<span class="nc bnc" id="L315" title="All 4 branches missed.">		if (m_requestList == null || m_requestList.isEmpty()) {</span>
+<span class="nc" id="L316">			return;</span>
+		}
 
-<span class="fc" id="L207">		ArrayList listModel = new ArrayList();</span>
-<span class="fc bfc" id="L208" title="All 2 branches covered.">		for(Iterator it = m_requestList.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L319">		ArrayList listModel = new ArrayList();</span>
+<span class="nc bnc" id="L320" title="All 2 branches missed.">		for (Iterator it = m_requestList.iterator(); it.hasNext();) {</span>
 			// Create the row data
-<span class="fc" id="L210">			RequestAggregate request = (RequestAggregate)it.next();</span>
+<span class="nc" id="L322">			RequestAggregate request = (RequestAggregate) it.next();</span>
 			//check for shift swap enable setting
-<span class="pc bpc" id="L212" title="3 of 4 branches missed.">			if (!isShiftSwapEnabled() &amp;&amp; request.getRequestType().equals(Request.REQUESTTYPE_SHIFTSWAP))</span>
-<span class="nc" id="L213">				continue;</span>
-<span class="fc" id="L214">			MultiColumnNodeData row_data = createRowData(request);</span>
-<span class="fc" id="L215">			listModel.add(row_data);</span>
-<span class="fc" id="L216">		}</span>
+<span class="nc bnc" id="L324" title="All 4 branches missed.">			if (!isShiftSwapEnabled() &amp;&amp; request.getRequestType().equals(Request.REQUESTTYPE_SHIFTSWAP)) {</span>
+<span class="nc" id="L325">				continue;</span>
+			}
+<span class="nc" id="L327">			MultiColumnNodeData row_data = createRowData(request);</span>
+<span class="nc" id="L328">			listModel.add(row_data);</span>
+<span class="nc" id="L329">		}</span>
 
-<span class="fc" id="L218">		m_list.setListModel(listModel);</span>
-<span class="pc bpc" id="L219" title="1 of 2 branches missed.">		if (isDateSort)</span>
-<span class="nc" id="L220">			m_list.setIsAutoSortEnabled(false);</span>
-		else
-<span class="fc" id="L222">			m_list.setIsAutoSortEnabled(true);</span>
-<span class="fc" id="L223">	}</span>
+<span class="nc" id="L331">		m_list.setListModel(listModel);</span>
+<span class="nc bnc" id="L332" title="All 2 branches missed.">		if (isDateSort) {</span>
+<span class="nc" id="L333">			m_list.setIsAutoSortEnabled(false);</span>
+		} else {
+<span class="nc" id="L335">			m_list.setIsAutoSortEnabled(true);</span>
+		}
+<span class="nc" id="L337">	}</span>
 
 	/**
 	 * Initialise List Header
 	 */
 	@Override
 	protected void initHeader() {
-<span class="fc" id="L230">		TableHeaderPC header = m_list.getHeader();</span>
-<span class="fc" id="L231">		header.setPartialSortable(true);</span>
+<span class="nc" id="L344">		TableHeaderPC header = m_list.getHeader();</span>
+<span class="nc" id="L345">		header.setPartialSortable(true);</span>
 
-<span class="fc" id="L233">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.STATUS, true);</span>
-<span class="fc" id="L234">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.TYPE, true);</span>
-<span class="fc" id="L235">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.SUBMITTED, true);</span>
-<span class="fc" id="L236">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.LAST_MODIFIED, true);</span>
-<span class="fc" id="L237">		addCommonHeaderData();</span>
-<span class="fc" id="L238">	}</span>
+<span class="nc" id="L347">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.STATUS, true);</span>
+<span class="nc" id="L348">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.TYPE, true);</span>
+<span class="nc" id="L349">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.SUBMITTED, true);</span>
+<span class="nc" id="L350">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.LAST_MODIFIED, true);</span>
+<span class="nc" id="L351">		addCommonHeaderData();</span>
+<span class="nc" id="L352">	}</span>
 
 	/**
 	 * Add the following common header data
@@ -245,34 +359,34 @@ public class MyRequestsPM extends RequestsPM {
 	 * - Actions
 	 */
 	protected void addCommonHeaderData() {
-<span class="fc" id="L248">		TableHeaderPC header = m_list.getHeader();</span>
-<span class="fc" id="L249">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.EXPIRED, false);</span>
-<span class="fc" id="L250">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.COMMENTS, false);</span>
-<span class="fc" id="L251">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.ALERTS, false);</span>
-<span class="fc" id="L252">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.ACTIONS, false);</span>
-<span class="fc" id="L253">	}</span>
+<span class="nc" id="L362">		TableHeaderPC header = m_list.getHeader();</span>
+<span class="nc" id="L363">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.EXPIRED, false);</span>
+<span class="nc" id="L364">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.COMMENTS, false);</span>
+<span class="nc" id="L365">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.ALERTS, false);</span>
+<span class="nc" id="L366">		addHeaderData(header, m_common_bundle, UIFWebBundleKey.ACTIONS, false);</span>
+<span class="nc" id="L367">	}</span>
 
 	/**
 	 * Create Row Data From Request
 	 */
 	protected MultiColumnNodeData createRowData(RequestAggregate request) {
-<span class="fc" id="L259">		String rowID = request.getID().toString();</span>
-<span class="fc" id="L260">		DefaultMultiColumnNodeData row_data = new DefaultMultiColumnNodeData(rowID);</span>
+<span class="nc" id="L373">		String rowID = request.getID().toString();</span>
+<span class="nc" id="L374">		DefaultMultiColumnNodeData row_data = new DefaultMultiColumnNodeData(rowID);</span>
 
-<span class="fc" id="L262">		String status = createStatusIcon(request);</span>
-<span class="fc" id="L263">		row_data.add(status);</span>
+<span class="nc" id="L376">		String status = createStatusIcon(request);</span>
+<span class="nc" id="L377">		row_data.add(status);</span>
 
-<span class="fc" id="L265">		String rType = getLocalizedRequestType(request);</span>
-<span class="fc" id="L266">		row_data.add(rType);</span>
+<span class="nc" id="L379">		String rType = getLocalizedRequestType(request);</span>
+<span class="nc" id="L380">		row_data.add(rType);</span>
 
-<span class="fc" id="L268">		DateWrapper submittedDT = createDataWrapper(request.getSubmittedOn());</span>
-<span class="fc" id="L269">		row_data.add(submittedDT);</span>
+<span class="nc" id="L382">		DateWrapper submittedDT = createDataWrapper(request.getSubmittedOn());</span>
+<span class="nc" id="L383">		row_data.add(submittedDT);</span>
 
-<span class="fc" id="L271">		DateWrapper lastModifiedDT = createDataWrapper(request.getLastModifiedAt());</span>
-<span class="fc" id="L272">		row_data.add(lastModifiedDT);</span>
+<span class="nc" id="L385">		DateWrapper lastModifiedDT = createDataWrapper(request.getLastModifiedAt());</span>
+<span class="nc" id="L386">		row_data.add(lastModifiedDT);</span>
 
-<span class="fc" id="L274">		addCommonListData(request, row_data);</span>
-<span class="fc" id="L275">		return row_data;</span>
+<span class="nc" id="L388">		addCommonListData(request, row_data);</span>
+<span class="nc" id="L389">		return row_data;</span>
 	}
 
 	/**
@@ -286,34 +400,39 @@ public class MyRequestsPM extends RequestsPM {
 	 * @param row_data - The DefaultMultiColumnNodeData to add data to
 	 */
 	protected void addCommonListData(RequestAggregate request, DefaultMultiColumnNodeData row_data) {
-<span class="fc" id="L289">		String rowID = row_data.getID();</span>
+<span class="nc" id="L403">		String rowID = row_data.getID();</span>
 
-<span class="fc" id="L291">		String hasExpired = m_localizer.formatYesNo(request.hasExpired());</span>
-<span class="fc" id="L292">		row_data.add( hasExpired );</span>
+<span class="nc" id="L405">		String hasExpired = m_localizer.formatYesNo(request.hasExpired());</span>
+<span class="nc" id="L406">		row_data.add(hasExpired);</span>
 
-<span class="fc" id="L294">		String comments = renderComments(request);</span>
-<span class="fc" id="L295">		row_data.add(comments);</span>
+<span class="nc" id="L408">		String comments = renderComments(request);</span>
+<span class="nc" id="L409">		row_data.add(comments);</span>
 
-<span class="fc" id="L297">		String alerts=RequestUtil.createUniqueAlertIcons(request, m_localizer);</span>
-<span class="fc" id="L298">		row_data.add(alerts);</span>
-
-<span class="fc" id="L300">		String itemActions = createItemActions(request, rowID);</span>
-<span class="fc" id="L301">		row_data.add(itemActions);</span>
-<span class="fc" id="L302">	}</span>
+<span class="nc" id="L411">		String alerts = &quot;&quot;;</span>
+<span class="nc bnc" id="L412" title="All 2 branches missed.">		if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L413">			alerts = RequestUtil.createUniqueAlertIcons(request, m_localizer, true, true);</span>
+		} else {
+<span class="nc" id="L415">			alerts=RequestUtil.createUniqueAlertIcons(request, m_localizer);</span>
+		}
+		
+<span class="nc" id="L418">		row_data.add(alerts);</span>
+<span class="nc" id="L419">		String itemActions = createItemActions(request, rowID);</span>
+<span class="nc" id="L420">		row_data.add(itemActions);</span>
+<span class="nc" id="L421">	}</span>
 
 	/**
 	 * Return Request Validation Results
 	 */
 	protected Collection getValidationResults(RequestAggregate request) {
-<span class="nc" id="L308">		return request.getValidationResults(true);</span>
+<span class="nc" id="L427">		return request.getValidationResults(true);</span>
 	}
 
 	/**
 	 * Create Status Icon for Agent View
 	 */
 	protected String createStatusIcon(RequestAggregate request) {
-<span class="fc" id="L315">		boolean isForAgent=true;</span>
-<span class="fc" id="L316">		return super.createStatusIcon(request, isForAgent);</span>
+<span class="nc" id="L434">		boolean isForAgent = true;</span>
+<span class="nc" id="L435">		return super.createStatusIcon(request, isForAgent);</span>
 	}
 
 	/**
@@ -321,108 +440,110 @@ public class MyRequestsPM extends RequestsPM {
 	 */
 	@Override
 	protected void initNewRequestMenu() {
-<span class="fc" id="L324">		m_newRequestMenuPC = new DialogToolbarMenuPC(m_context, m_toolbar);</span>
-<span class="fc" id="L325">		m_newRequestMenuPC.setName(CREATE_NEW_REQUEST);</span>
-<span class="fc" id="L326">		addChildComponent(m_newRequestMenuPC);</span>
+<span class="nc" id="L443">		m_newRequestMenuPC = new DialogToolbarMenuPC(m_context, m_toolbar);</span>
+<span class="nc" id="L444">		m_newRequestMenuPC.setName(CREATE_NEW_REQUEST);</span>
+<span class="nc" id="L445">		addChildComponent(m_newRequestMenuPC);</span>
 
 		// Initialize Title
-<span class="fc" id="L329">		String title = i18n(m_bundle, RmWebBundleKey.CREATE_NEW_REQUEST);</span>
-<span class="fc" id="L330">		m_newRequestMenuPC.setHeader(title);</span>
+<span class="nc" id="L448">		String title = i18n(m_bundle, RmWebBundleKey.CREATE_NEW_REQUEST);</span>
+<span class="nc" id="L449">		m_newRequestMenuPC.setHeader(title);</span>
 
 		// Initialize Menu Buttons
-<span class="fc" id="L333">		m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_TIMEOFF_REQUEST_FORM_ACTION,</span>
-<span class="fc" id="L334">				i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_TIME_OFF), isAuthToEditTORqts());</span>
+<span class="nc" id="L452">		m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_TIMEOFF_REQUEST_FORM_ACTION,</span>
+<span class="nc" id="L453">				i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_TIME_OFF), isAuthToEditTORqts());</span>
 
 		//Check license, Show Flex if there is RM advanced license
-<span class="pc bpc" id="L337" title="1 of 2 branches missed.">		if(LicenseUtil.isAdvancedRMLicense()) {</span>
-<span class="nc" id="L338">			m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_FLEXTIME_REQUEST_FORM_ACTION,</span>
-<span class="nc" id="L339">					i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME), isAuthToEditFTRqts());</span>
+<span class="nc bnc" id="L456" title="All 2 branches missed.">		if (LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L457">			m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_FLEXTIME_REQUEST_FORM_ACTION,</span>
+<span class="nc" id="L458">					i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME), isAuthToEditFTRqts());</span>
 		}
 
-<span class="fc" id="L342">		m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_SHIFTSWAP_REQUEST_FORM_ACTION,</span>
-<span class="fc" id="L343">				i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_SWAP), isAuthToEditSSRqts());</span>
+<span class="nc" id="L461">		m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_SHIFTSWAP_REQUEST_FORM_ACTION,</span>
+<span class="nc" id="L462">				i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_SWAP), isAuthToEditSSRqts());</span>
 
-<span class="fc" id="L345">		m_newRequestMenuPC.addSubmitButton(RmPageAction.GO_TO_MY_BID_OPTION,</span>
-<span class="fc" id="L346">				i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_BIDDING), isAuthToEditSBRqts());</span>
+<span class="nc" id="L464">		m_newRequestMenuPC.addSubmitButton(RmPageAction.GO_TO_MY_BID_OPTION, i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_SHIFT_BIDDING),</span>
+<span class="nc" id="L465">				isAuthToEditSBRqts());</span>
 
-<span class="fc" id="L348">		m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_CUSTSHIFT_REQUEST_FORM_ACTION,</span>
-<span class="fc" id="L349">				i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_CUSTOM_SHIFT), isAuthToEditCSRqts());</span>
-<span class="fc" id="L350">	}</span>
+<span class="nc" id="L467">		m_newRequestMenuPC.addPopupWindowButton(RmPageAction.POPUP_CUSTSHIFT_REQUEST_FORM_ACTION,</span>
+<span class="nc" id="L468">				i18n(m_bundle, RmWebBundleKey.REQUEST_TYPE_CUSTOM_SHIFT), isAuthToEditCSRqts());</span>
+<span class="nc" id="L469">	}</span>
 
 	/**
 	 * Add Create Request Button
 	 */
 	@Override
 	protected void addCreateRequestButton() {
-<span class="fc" id="L357">		String newRequestLabel = i18n(m_bundle, RmWebBundleKey.CREATE_NEW_REQUEST);</span>
-<span class="fc" id="L358">		m_toolbar.addPopupDialogTextButton(CREATE_NEW_REQUEST,	newRequestLabel,</span>
-<span class="fc" id="L359">				isAuthToEditAnyRqts());</span>
-<span class="fc" id="L360">	}</span>
+<span class="nc" id="L476">		String newRequestLabel = i18n(m_bundle, RmWebBundleKey.CREATE_NEW_REQUEST);</span>
+<span class="nc" id="L477">		m_toolbar.addPopupDialogTextButton(CREATE_NEW_REQUEST, newRequestLabel, isAuthToEditAnyRqts());</span>
+<span class="nc" id="L478">	}</span>
 
 	/**
 	 * Initialize Toolbar
 	 */
 	@Override
 	protected void initToolbar() {
-<span class="fc" id="L367">		addCommonToolbarButtons();</span>
-<span class="fc" id="L368">	}</span>
+<span class="nc" id="L485">		addCommonToolbarButtons();</span>
+<span class="nc" id="L486">	}</span>
 
 	/**
 	 * Return Request Handler for Specified Request Type
 	 */
 	protected String getRequestHandler(String requestType) {
-<span class="pc bpc" id="L374" title="1 of 2 branches missed.">		if (Request.REQUESTTYPE_ALL.equals(requestType)) {</span>
-<span class="fc" id="L375">			return RmKeys.RH_MY_REQUEST_ALL_LIST;</span>
-<span class="nc bnc" id="L376" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_TIMEOFF.equals(requestType)) {</span>
-<span class="nc" id="L377">			return RmKeys.RH_MY_REQUEST_TIMEOFF_LIST;</span>
-<span class="nc bnc" id="L378" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(requestType)) {</span>
-<span class="nc" id="L379">			return RmKeys.RH_MY_REQUEST_FLEXTIME_LIST;</span>
-<span class="nc bnc" id="L380" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(requestType)) {</span>
-<span class="nc" id="L381">			return RmKeys.RH_MY_REQUEST_SHIFTSWAP_LIST;</span>
-<span class="nc bnc" id="L382" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTBID.equals(requestType)) {</span>
-<span class="nc" id="L383">			return RmKeys.RH_MY_REQUEST_SHIFTBIDDING_LIST;</span>
-<span class="nc bnc" id="L384" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_CUSTSHIFT.equals(requestType)) {</span>
-<span class="nc" id="L385">			return RmKeys.RH_MY_REQUEST_CUSTSHIFT_LIST;</span>
+<span class="nc bnc" id="L492" title="All 2 branches missed.">		if (Request.REQUESTTYPE_ALL.equals(requestType)) {</span>
+<span class="nc" id="L493">			return RmKeys.RH_MY_REQUEST_ALL_LIST;</span>
+<span class="nc bnc" id="L494" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_TIMEOFF.equals(requestType)) {</span>
+<span class="nc" id="L495">			return RmKeys.RH_MY_REQUEST_TIMEOFF_LIST;</span>
+<span class="nc bnc" id="L496" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_FLEXTIME.equals(requestType)) {</span>
+<span class="nc" id="L497">			return RmKeys.RH_MY_REQUEST_FLEXTIME_LIST;</span>
+<span class="nc bnc" id="L498" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTSWAP.equals(requestType)) {</span>
+<span class="nc" id="L499">			return RmKeys.RH_MY_REQUEST_SHIFTSWAP_LIST;</span>
+<span class="nc bnc" id="L500" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_SHIFTBID.equals(requestType)) {</span>
+<span class="nc" id="L501">			return RmKeys.RH_MY_REQUEST_SHIFTBIDDING_LIST;</span>
+<span class="nc bnc" id="L502" title="All 2 branches missed.">		} else if (Request.REQUESTTYPE_CUSTSHIFT.equals(requestType)) {</span>
+<span class="nc" id="L503">			return RmKeys.RH_MY_REQUEST_CUSTSHIFT_LIST;</span>
 		}
 
-<span class="nc" id="L388">		return &quot;&quot;;</span>
+<span class="nc" id="L506">		return &quot;&quot;;</span>
 	}
 
 	/**
 	 * Create HTML for Drop down for View selection
 	 */
 	private String makeViewDropDown() {
-<span class="fc" id="L395">		String onChangeJS = &quot;pageMediator.handleURLLink(this.value, true);&quot;;</span>
+<span class="nc" id="L513">		String onChangeJS = &quot;pageMediator.handleURLLink(this.value, true);&quot;;</span>
 
-<span class="fc" id="L397">		ArrayList options = new ArrayList();</span>
-<span class="fc" id="L398">		options.add(createViewOption(RmKeys.RH_MY_REQUEST_ALL_LIST,</span>
-				RmWebBundleKey.REQUEST_TYPE_ALL));
+<span class="nc" id="L515">		ArrayList options = new ArrayList();</span>
+<span class="nc" id="L516">		options.add(createViewOption(RmKeys.RH_MY_REQUEST_ALL_LIST, RmWebBundleKey.REQUEST_TYPE_ALL));</span>
 
-<span class="pc bpc" id="L401" title="1 of 2 branches missed.">		if (isAuthToViewTORqts()) {</span>
-<span class="fc" id="L402">			options.add(createViewOption(RmKeys.RH_MY_REQUEST_TIMEOFF_LIST, RmWebBundleKey.REQUEST_TYPE_TIME_OFF));</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">		if (isAuthToViewTORqts()) {</span>
+<span class="nc" id="L519">			options.add(createViewOption(RmKeys.RH_MY_REQUEST_TIMEOFF_LIST, RmWebBundleKey.REQUEST_TYPE_TIME_OFF));</span>
 		}
-<span class="pc bpc" id="L404" title="3 of 4 branches missed.">		if (LicenseUtil.isAdvancedRMLicense() &amp;&amp; isAuthToViewFTRqts()) {</span>
-<span class="nc" id="L405">				options.add(createViewOption(RmKeys.RH_MY_REQUEST_FLEXTIME_LIST, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME));</span>
+<span class="nc bnc" id="L521" title="All 4 branches missed.">		if (LicenseUtil.isAdvancedRMLicense() &amp;&amp; isAuthToViewFTRqts()) {</span>
+<span class="nc" id="L522">			options.add(createViewOption(RmKeys.RH_MY_REQUEST_FLEXTIME_LIST, RmWebBundleKey.REQUEST_TYPE_FLEX_TIME));</span>
 		}
-<span class="pc bpc" id="L407" title="1 of 2 branches missed.">		if (isAuthToViewSSRqts()) {</span>
-<span class="fc" id="L408">			options.add(createViewOption(RmKeys.RH_MY_REQUEST_SHIFTSWAP_LIST, RmWebBundleKey.REQUEST_TYPE_SHIFT_SWAP));</span>
+<span class="nc bnc" id="L524" title="All 2 branches missed.">		if (isAuthToViewSSRqts()) {</span>
+<span class="nc" id="L525">			options.add(createViewOption(RmKeys.RH_MY_REQUEST_SHIFTSWAP_LIST, RmWebBundleKey.REQUEST_TYPE_SHIFT_SWAP));</span>
 		}
-<span class="pc bpc" id="L410" title="1 of 2 branches missed.">		if (isAuthToViewSBRqts()) {</span>
-<span class="fc" id="L411">			options.add(createViewOption(RmKeys.RH_MY_REQUEST_SHIFTBIDDING_LIST, RmWebBundleKey.REQUEST_TYPE_SHIFT_BIDDING));</span>
+<span class="nc bnc" id="L527" title="All 2 branches missed.">		if (isAuthToViewSBRqts()) {</span>
+<span class="nc" id="L528">			options.add(createViewOption(RmKeys.RH_MY_REQUEST_SHIFTBIDDING_LIST, RmWebBundleKey.REQUEST_TYPE_SHIFT_BIDDING));</span>
 		}
-<span class="pc bpc" id="L413" title="1 of 2 branches missed.">		if (isAuthToViewCSRqts()) {</span>
-<span class="fc" id="L414">			options.add(createViewOption(RmKeys.RH_MY_REQUEST_CUSTSHIFT_LIST, RmWebBundleKey.REQUEST_TYPE_CUSTOM_SHIFT));</span>
+<span class="nc bnc" id="L530" title="All 2 branches missed.">		if (isAuthToViewCSRqts()) {</span>
+<span class="nc" id="L531">			options.add(createViewOption(RmKeys.RH_MY_REQUEST_CUSTSHIFT_LIST, RmWebBundleKey.REQUEST_TYPE_CUSTOM_SHIFT));</span>
 		}
 
-<span class="fc" id="L417">		String selectedOption = getRequestHandler(m_requestType);</span>
-<span class="fc" id="L418">		return HtmlUtil.makeSelectInput(VIEW_TYPE, selectedOption, onChangeJS, options, false);</span>
+<span class="nc" id="L534">		String selectedOption = getRequestHandler(m_requestType);</span>
+<span class="nc bnc" id="L535" title="All 2 branches missed.">		if (isAccessibilityComplianceMode()) {</span>
+<span class="nc" id="L536">			return HtmlUtil.makeSelectInput(VIEW_TYPE, &quot;&quot;, new String[]{selectedOption}, onChangeJS, options,</span>
+<span class="nc" id="L537">					null, false, false, true, false, null, getHtmlSelectWithDescription(VIEW_TYPE));</span>
+		}
+<span class="nc" id="L539">		return HtmlUtil.makeSelectInput(VIEW_TYPE, selectedOption, onChangeJS, options, false);</span>
 	}
 
 	/**
 	 * Return Selected View Type
 	 */
 	public static String getViewType(RequestContext context) {
-<span class="fc" id="L425">		return context.getRequest().getParameter(VIEW_TYPE);</span>
+<span class="nc" id="L546">		return context.getRequest().getParameter(VIEW_TYPE);</span>
 	}
 
 	/**
@@ -430,107 +551,54 @@ public class MyRequestsPM extends RequestsPM {
 	 */
 	@Override
 	public String getFormAction() {
-<span class="fc" id="L433">		return getRequestHandler(m_requestType);</span>
+<span class="nc" id="L554">		return getRequestHandler(m_requestType);</span>
 	}
 
 	/**
 	 * Specify whether Expired Requests are included
 	 */
 	public void setIsIncludeExpired(boolean bValue) {
-<span class="nc" id="L440">		m_isIncludeExpired = bValue;</span>
-<span class="nc" id="L441">	}</span>
+<span class="nc" id="L561">		m_isIncludeExpired = bValue;</span>
+<span class="nc" id="L562">	}</span>
 
 	/**
 	 * Return true if the Action is valid for the specified Request
 	 */
 	@Override
-	protected boolean isValidAction(String action, RequestAggregate request){
-<span class="fc" id="L448">		String status = request.getRequestStatus();</span>
-
-		//see if it withdraw for an approved shiftbidrequest after auction is closed
-<span class="pc bpc" id="L451" title="1 of 2 branches missed.">		if (request.getRequestType().equals(Request.REQUESTTYPE_SHIFTBID) &amp;&amp;</span>
-<span class="nc bnc" id="L452" title="All 2 branches missed.">				request.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED)){</span>
-<span class="nc bnc" id="L453" title="All 4 branches missed.">			if (m_auctionMap != null &amp;&amp; m_auctionMap.size() == 0){</span>
-				//get the auctionlist for approved requests to get auction
-				try {
-<span class="nc" id="L456">					m_auctionMap = RequestUtil.getAuctionmapForApprovedSBRequests(m_requestList);</span>
-<span class="nc" id="L457">				} catch (Exception ex){}</span>
-			}
-<span class="nc bnc" id="L459" title="All 2 branches missed.">			boolean isClosed = !((Boolean)m_auctionMap.get(((ShiftBidRequest)request).getShiftBidAuctionID())).booleanValue();</span>
-<span class="nc bnc" id="L460" title="All 2 branches missed.">			if (RequestAuditTrail.STATUS_APPROVED.equals(status) &amp;&amp;</span>
-<span class="nc bnc" id="L461" title="All 4 branches missed.">					PageAction.WITHDRAW.equals(action) &amp;&amp; isClosed)</span>
-<span class="nc" id="L462">					return false;</span>
+	protected boolean isValidAction(String action, RequestAggregate request) {
+<span class="nc bnc" id="L569" title="All 2 branches missed.">		if (isShiftBidWithdrawAndIsInvalid(action, request)) {</span>
+<span class="nc" id="L570">			return false;</span>
 		}
-<span class="pc bpc" id="L464" title="1 of 4 branches missed.">		return super.isValidAction(action, request) || !request.hasExpired() &amp;&amp;</span>
-			(
-<span class="fc bfc" id="L466" title="All 2 branches covered.">				(RequestAuditTrail.STATUS_DENIED.equals(status) &amp;&amp;</span>
-<span class="fc bfc" id="L467" title="All 2 branches covered.">				PageAction.ESCALATE.equals(action))</span>
 
-				||
-<span class="pc bpc" id="L470" title="2 of 4 branches missed.">				(request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest() &amp;&amp;</span>
-<span class="fc bfc" id="L471" title="All 2 branches covered.">				RmPageAction.ADD_TO_WAITLIST_ACTION.equals(action) &amp;&amp;</span>
-<span class="pc bpc" id="L472" title="1 of 2 branches missed.">				((TORequest) request).isEligibleForWaitlist() &amp;&amp;</span>
-<span class="pc bnc" id="L473" title="All 4 branches missed.">				(RequestAuditTrail.STATUS_PENDING.equals(status) || RequestAuditTrail.STATUS_DENIED.equals(status)))</span>
-
-				||
-<span class="pc bpc" id="L476" title="2 of 4 branches missed.">				(request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest()</span>
-<span class="fc bfc" id="L477" title="All 2 branches covered.">				&amp;&amp; PageAction.CANCEL_WITHDRAW_ACTION.equals(action)</span>
-<span class="pc bpc" id="L478" title="1 of 2 branches missed.">				&amp;&amp; ((TORequest) request).isEligibleForCancelWithdrawAction())</span>
-
-				||
-<span class="pc bpc" id="L481" title="2 of 4 branches missed.">				(request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest()</span>
-<span class="fc bfc" id="L482" title="All 2 branches covered.">				&amp;&amp; PageAction.WITHDRAW.equals(action)</span>
-<span class="fc bfc" id="L483" title="All 2 branches covered.">				&amp;&amp; ((TORequest) request).isEligibleForWithdraw())</span>
-
-				||
-<span class="pc bpc" id="L486" title="1 of 2 branches missed.">				(request.isShiftSwapRequest()</span>
-<span class="nc bnc" id="L487" title="All 2 branches missed.">                &amp;&amp; PageAction.REJECT_WITHDRAW_ACTION.equals(action)</span>
-<span class="pc bnc" id="L488" title="All 2 branches missed.">                &amp;&amp; ((ShiftSwapRequest) request).isEligibleForRejectWithdrawAction())</span>
-                ||
-<span class="pc bpc" id="L490" title="1 of 2 branches missed.">                (request.isShiftSwapRequest()</span>
-<span class="nc bnc" id="L491" title="All 2 branches missed.">                &amp;&amp; PageAction.ACCEPT_WITHDRAW_ACTION.equals(action)</span>
-<span class="pc bnc" id="L492" title="All 2 branches missed.">                &amp;&amp; ((ShiftSwapRequest) request).isEligibleForAcceptWithdrawAction())</span>
-                ||
-<span class="pc bpc" id="L494" title="1 of 2 branches missed.">                (request.isShiftSwapRequest()</span>
-<span class="nc bnc" id="L495" title="All 2 branches missed.">                &amp;&amp; PageAction.CANCEL_WITHDRAW_ACTION.equals(action)</span>
-<span class="pc bnc" id="L496" title="All 2 branches missed.">                &amp;&amp; ((ShiftSwapRequest) request).isEligibleForCancelWithdrawAction())</span>
-				||
-<span class="pc bpc" id="L498" title="1 of 2 branches missed.">                (request.isShiftSwapRequest()</span>
-<span class="nc bnc" id="L499" title="All 2 branches missed.">                &amp;&amp; PageAction.WITHDRAW_NEGOTIATION.equals(action)</span>
-<span class="pc bnc" id="L500" title="All 2 branches missed.">                &amp;&amp; ((ShiftSwapRequest) request).isEligibleForWithdrawNegotiation())</span>
-                ||
-<span class="pc bpc" id="L502" title="1 of 2 branches missed.">                (request.isShiftSwapRequest()</span>
-<span class="nc bnc" id="L503" title="All 2 branches missed.">                &amp;&amp; PageAction.SUBMIT_TO_MGR.equals(action)</span>
-<span class="pc bnc" id="L504" title="All 2 branches missed.">                &amp;&amp; ((ShiftSwapRequest) request).isEligibleForConfirmWithdrawAction(m_context.getUser().getEmployeeID()))</span>
-			);
+<span class="nc bnc" id="L573" title="All 2 branches missed.">		return super.isValidAction(action, request)</span>
+<span class="nc bnc" id="L574" title="All 2 branches missed.">				|| isEscalateActionValid(action, request)</span>
+<span class="nc bnc" id="L575" title="All 2 branches missed.">				|| isShiftSwapActionsValid(action, request)</span>
+<span class="nc bnc" id="L576" title="All 2 branches missed.">				|| isNormalTimeOffActionsValid(action, request)</span>
+<span class="nc bnc" id="L577" title="All 2 branches missed.">				|| isTimeOffBidActionsValid(action, request);</span>
+		
 	}
-
+	
+	
 	/**
 	 * Is the Submit to Manager action valid?
 	 * @return true if the submit to manager action is valid.
 	 */
 	@Override
-	protected boolean canSubmitToManager(String action, RequestAggregate request)
-	{
-<span class="nc" id="L515">		String rType = request.getRequestType();</span>
-<span class="nc bnc" id="L516" title="All 2 branches missed.">		if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType))</span>
-		{
-			try
-			{
-<span class="nc" id="L520">				ShiftSwapRequest ssRequest = ShiftSwapRequestsMH.getRequestByID(request.getID());</span>
-<span class="nc bnc" id="L521" title="All 2 branches missed.">				if (ssRequest == null)</span>
-				{
-<span class="nc" id="L523">					this.addPageMessage(Message.ERROR_TYPE, i18n(m_bundle, RmWebBundleKey.REQUEST_NOT_FOUND_ERROR));</span>
-<span class="nc" id="L524">					return false;</span>
+	protected boolean canSubmitToManager(String action, RequestAggregate request) {
+<span class="nc" id="L588">		String rType = request.getRequestType();</span>
+<span class="nc bnc" id="L589" title="All 2 branches missed.">		if (Request.REQUESTTYPE_SHIFTSWAP.equals(rType)) {</span>
+			try {
+<span class="nc" id="L591">				ShiftSwapRequest ssRequest = ShiftSwapRequestsMH.getRequestByID(request.getID());</span>
+<span class="nc bnc" id="L592" title="All 2 branches missed.">				if (ssRequest == null) {</span>
+<span class="nc" id="L593">					this.addPageMessage(Message.ERROR_TYPE, i18n(m_bundle, RmWebBundleKey.REQUEST_NOT_FOUND_ERROR));</span>
+<span class="nc" id="L594">					return false;</span>
 				}
-<span class="nc" id="L526">				return SwapUtil.canUserSubmitShiftSwapToManager(m_empID, ssRequest);</span>
-			}
-<span class="nc" id="L528">			catch (Exception e)</span>
-			{
-<span class="nc" id="L530">				return false;</span>
+<span class="nc" id="L596">				return SwapUtil.canUserSubmitShiftSwapToManager(m_empID, ssRequest);</span>
+<span class="nc" id="L597">			} catch (Exception e) {</span>
+<span class="nc" id="L598">				return false;</span>
 			}
 		}
-<span class="nc" id="L533">		return false;</span>
+<span class="nc" id="L601">		return false;</span>
 	}
 
 	//////////////////////////////////////////////////////////////////////////////
@@ -541,197 +609,276 @@ public class MyRequestsPM extends RequestsPM {
 	 */
 	@Override
 	protected boolean isAllowedAction(String action, RequestAggregate request) {
-<span class="fc" id="L544">		return</span>
-				(
-<span class="fc bfc" id="L546" title="All 2 branches covered.">					( (PageAction.EDIT.equals(action) ||</span>
-<span class="pc bpc" id="L547" title="1 of 2 branches missed.">					PageAction.SUBMIT_TO_MGR.equals(action) ||</span>
-<span class="fc bfc" id="L548" title="All 2 branches covered.">					PageAction.WITHDRAW.equals(action) ||</span>
-<span class="pc bpc" id="L549" title="1 of 2 branches missed.">					PageAction.WITHDRAW_NEGOTIATION.equals(action))</span>
-					&amp;&amp;
-<span class="pc bpc" id="L551" title="1 of 2 branches missed.">					isAuthToUpdateRqt(request)</span>
-					)
-
-					||
-<span class="pc bpc" id="L555" title="1 of 2 branches missed.">					( RmPageAction.ADD_TO_WAITLIST_ACTION.equals(action)</span>
-<span class="pc bnc" id="L556" title="All 4 branches missed.">					&amp;&amp; isAuthToUpdateRqt(request) &amp;&amp; isAuthToWaitlistRqt(request)</span>
-					)
-
-					||
-<span class="fc bfc" id="L560" title="All 2 branches covered.">					( PageAction.VIEW_DETAIL.equals(action)</span>
-					&amp;&amp;
-<span class="pc bpc" id="L562" title="1 of 2 branches missed.">					isAuthToViewRqt(request)</span>
-					)
-
-					||
-<span class="fc bfc" id="L566" title="All 2 branches covered.">					( PageAction.ESCALATE.equals(action)</span>
-					&amp;&amp;
-<span class="pc bpc" id="L568" title="1 of 2 branches missed.">					isAuthToEscalateRqt(request)</span>
-					)
-
-					||
-<span class="pc bpc" id="L572" title="1 of 2 branches missed.">					(PageAction.CANCEL_WITHDRAW_ACTION.equals(action) &amp;&amp;</span>
-<span class="pc bpc" id="L573" title="1 of 2 branches missed.">					isAuthToProcessCancelWithdrawRequest(request))</span>
-				);
+<span class="nc bnc" id="L612" title="All 2 branches missed.">		return isAllowedModifyAction(action,request)</span>
+<span class="nc bnc" id="L613" title="All 2 branches missed.">				|| isAllowedCopyTOBAction(action,request)</span>
+<span class="nc bnc" id="L614" title="All 2 branches missed.">				|| isAllowedAddToWaitlistAction(action,request)</span>
+<span class="nc bnc" id="L615" title="All 2 branches missed.">				|| isAllowedViewDetailAction(action,request)</span>
+<span class="nc bnc" id="L616" title="All 2 branches missed.">				|| isAllowedEscalateAction(action,request)</span>
+<span class="nc bnc" id="L617" title="All 2 branches missed.">				|| isAllowedCancelWithDrawAction(action,request);</span>
 	}
-
+	
 	public boolean isAuthToViewAllRqts() {
-<span class="nc bnc" id="L578" title="All 8 branches missed.">		return isAuthToViewTORqts() &amp;&amp; isAuthToViewFTRqts() &amp;&amp; isAuthToViewSSRqts() &amp;&amp; isAuthToViewSBRqts();</span>
+<span class="nc bnc" id="L621" title="All 8 branches missed.">		return isAuthToViewTORqts() &amp;&amp; isAuthToViewFTRqts() &amp;&amp; isAuthToViewSSRqts() &amp;&amp; isAuthToViewSBRqts();</span>
 	}
 
 	@Override
 	public boolean isAuthToViewTORqts() {
-<span class="pc bpc" id="L583" title="1 of 2 branches missed.">		return super.isAuthToViewTORqts() &amp;&amp;</span>
-<span class="pc bpc" id="L584" title="1 of 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.TOM_VIEWPERSONALREQUESTS_ID) &amp;&amp;</span>
-<span class="pc bpc" id="L585" title="1 of 2 branches missed.">				isTimeOffEnabled();</span>
+<span class="nc bnc" id="L626" title="All 6 branches missed.">		return super.isAuthToViewTORqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.TOM_VIEWPERSONALREQUESTS_ID) &amp;&amp; isTimeOffEnabled();</span>
 	}
 
 	@Override
 	public boolean isAuthToViewFTRqts() {
-<span class="nc bnc" id="L590" title="All 2 branches missed.">		return super.isAuthToViewFTRqts() &amp;&amp;</span>
-<span class="nc bnc" id="L591" title="All 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.FT_VIEWPERSONALREQUESTS_ID);</span>
+<span class="nc bnc" id="L631" title="All 4 branches missed.">		return super.isAuthToViewFTRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.FT_VIEWPERSONALREQUESTS_ID);</span>
 	}
 
 	@Override
 	public boolean isAuthToViewSSRqts() {
-<span class="pc bpc" id="L596" title="1 of 2 branches missed.">		return super.isAuthToViewSSRqts() &amp;&amp;</span>
-<span class="pc bpc" id="L597" title="1 of 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.SS_VIEWPERSONALREQUESTS_ID) &amp;&amp;</span>
-<span class="pc bpc" id="L598" title="1 of 2 branches missed.">				isShiftSwapEnabled();</span>
+<span class="nc bnc" id="L636" title="All 6 branches missed.">		return super.isAuthToViewSSRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SS_VIEWPERSONALREQUESTS_ID) &amp;&amp; isShiftSwapEnabled();</span>
 	}
 
 	@Override
 	public boolean isAuthToViewSBRqts() {
-<span class="pc bpc" id="L603" title="1 of 2 branches missed.">		return super.isAuthToViewSBRqts() &amp;&amp;</span>
-<span class="pc bpc" id="L604" title="1 of 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.SB_VIEWPERSONALBIDS_ID);</span>
+<span class="nc bnc" id="L641" title="All 4 branches missed.">		return super.isAuthToViewSBRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SB_VIEWPERSONALBIDS_ID);</span>
 	}
 
 	@Override
 	public boolean isAuthToViewCSRqts() {
-<span class="pc bpc" id="L609" title="1 of 2 branches missed.">		return super.isAuthToViewCSRqts() &amp;&amp;</span>
-<span class="pc bpc" id="L610" title="1 of 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.CS_VIEWPERSONALREQUESTS_ID) &amp;&amp;</span>
-<span class="pc bpc" id="L611" title="1 of 2 branches missed.">				isCustomShiftEnabled();</span>
+<span class="nc bnc" id="L646" title="All 6 branches missed.">		return super.isAuthToViewCSRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.CS_VIEWPERSONALREQUESTS_ID) &amp;&amp; isCustomShiftEnabled();</span>
 	}
 
 	@Override
 	public boolean isAuthToEditTORqts() {
-<span class="pc bpc" id="L616" title="1 of 2 branches missed.">		return super.isAuthToEditTORqts() &amp;&amp;</span>
-<span class="pc bpc" id="L617" title="1 of 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.TOM_MODIFYPERSONALREQUESTS_ID) &amp;&amp;</span>
-<span class="pc bpc" id="L618" title="1 of 2 branches missed.">				isTimeOffEnabled();</span>
+<span class="nc bnc" id="L651" title="All 6 branches missed.">		return super.isAuthToEditTORqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.TOM_MODIFYPERSONALREQUESTS_ID) &amp;&amp; isTimeOffEnabled();</span>
 	}
 
 	@Override
 	public boolean isAuthToEditFTRqts() {
-<span class="nc bnc" id="L623" title="All 2 branches missed.">		return super.isAuthToEditFTRqts() &amp;&amp;</span>
-<span class="nc bnc" id="L624" title="All 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.FT_MODIFYPERSONALREQUESTS_ID);</span>
+<span class="nc bnc" id="L656" title="All 4 branches missed.">		return super.isAuthToEditFTRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.FT_MODIFYPERSONALREQUESTS_ID);</span>
 	}
 
 	@Override
 	public boolean isAuthToEditSSRqts() {
-<span class="pc bpc" id="L629" title="1 of 2 branches missed.">		return super.isAuthToEditSSRqts() &amp;&amp;</span>
-<span class="pc bpc" id="L630" title="1 of 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.SS_MODIFYPERSONALREQUESTS_ID) &amp;&amp;</span>
-<span class="pc bpc" id="L631" title="1 of 2 branches missed.">				isShiftSwapEnabled();</span>
+<span class="nc bnc" id="L661" title="All 6 branches missed.">		return super.isAuthToEditSSRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SS_MODIFYPERSONALREQUESTS_ID) &amp;&amp; isShiftSwapEnabled();</span>
 	}
 
 	@Override
 	public boolean isAuthToEditSBRqts() {
-<span class="pc bpc" id="L636" title="1 of 2 branches missed.">		return super.isAuthToEditSBRqts() &amp;&amp;</span>
-<span class="pc bpc" id="L637" title="1 of 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.SB_MODIFYPERSONALBIDS_ID);</span>
+<span class="nc bnc" id="L666" title="All 4 branches missed.">		return super.isAuthToEditSBRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SB_MODIFYPERSONALBIDS_ID);</span>
 	}
 
 	@Override
 	public boolean isAuthToEditCSRqts() {
-<span class="pc bpc" id="L642" title="1 of 2 branches missed.">		return super.isAuthToEditCSRqts() &amp;&amp;</span>
-<span class="pc bpc" id="L643" title="1 of 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.CS_MODIFYPERSONALREQUESTS_ID) &amp;&amp;</span>
-<span class="pc bpc" id="L644" title="1 of 2 branches missed.">				isCustomShiftEnabled();</span>
+<span class="nc bnc" id="L671" title="All 6 branches missed.">		return super.isAuthToEditCSRqts() &amp;&amp; m_user.isAuthorized(PrivilegeKeys.CS_MODIFYPERSONALREQUESTS_ID) &amp;&amp; isCustomShiftEnabled();</span>
 	}
-
 
 	/**
 	 * Return true if Shift Swap is Enabled
 	 */
 	protected boolean isShiftSwapEnabled() {
-<span class="fc" id="L652">		boolean result=true;</span>
-<span class="pc bpc" id="L653" title="1 of 2 branches missed.">		if (m_orgSetting!=null) result=m_orgSetting.getEnableShiftSwap();</span>
-<span class="fc" id="L654">		return result;</span>
+<span class="nc" id="L678">		boolean result = true;</span>
+<span class="nc bnc" id="L679" title="All 2 branches missed.">		if (m_orgSetting != null) {</span>
+<span class="nc" id="L680">			result = m_orgSetting.getEnableShiftSwap();</span>
+		}
+<span class="nc" id="L682">		return result;</span>
 	}
 
 	/**
 	 * Return true if Time Off is Enabled
 	 */
 	protected boolean isTimeOffEnabled() {
-<span class="fc" id="L661">		boolean result=true;</span>
-<span class="pc bpc" id="L662" title="1 of 2 branches missed.">		if (m_orgSetting!=null) result=m_orgSetting.getAgentTimeOffWorkflowActive();</span>
-<span class="fc" id="L663">		return result;</span>
+<span class="nc" id="L689">		boolean result = true;</span>
+<span class="nc bnc" id="L690" title="All 2 branches missed.">		if (m_orgSetting != null) {</span>
+<span class="nc" id="L691">			result = m_orgSetting.getAgentTimeOffWorkflowActive();</span>
+		}
+<span class="nc" id="L693">		return result;</span>
 	}
 
 	/**
 	 * Return true if Custom Shift requests are enabled
 	 */
 	protected boolean isCustomShiftEnabled() {
-<span class="fc" id="L670">		boolean result=true;</span>
+<span class="nc" id="L700">		boolean result = true;</span>
 
-<span class="pc bpc" id="L672" title="1 of 2 branches missed.">		if (m_orgSetting!=null)</span>
-<span class="pc bpc" id="L673" title="3 of 4 branches missed.">			result = (m_orgSetting.getEnableCustomShiftRequests() || m_orgSetting.getAllowShiftChangeRequests());</span>
+<span class="nc bnc" id="L702" title="All 2 branches missed.">		if (m_orgSetting != null) {</span>
+<span class="nc bnc" id="L703" title="All 4 branches missed.">			result = (m_orgSetting.getEnableCustomShiftRequests() || m_orgSetting.getAllowShiftChangeRequests());</span>
+		}
 
-<span class="fc" id="L675">		return result;</span>
+<span class="nc" id="L706">		return result;</span>
+	}
+
+	/**
+	 * Return true if Allow copy TOB requests are enabled
+	 */
+	protected boolean isAllowCopyTOBRequestsEnabled() {
+<span class="nc" id="L713">		boolean result = true;</span>
+
+<span class="nc bnc" id="L715" title="All 2 branches missed.">		if (m_orgSetting != null) {</span>
+<span class="nc" id="L716">			result = m_orgSetting.getAllowCopyTimeOffBidRequest();</span>
+		}
+
+<span class="nc" id="L719">		return result;</span>
 	}
 
 	/**
 	 * Return true if User is authorized to view specified Request
 	 */
 	protected boolean isAuthToViewRqt(RequestAggregate request) {
-<span class="fc" id="L682">		String rType = request.getRequestType();</span>
+<span class="nc" id="L726">		String rType = request.getRequestType();</span>
 
-<span class="fc" id="L684">		return</span>
-<span class="pc bpc" id="L685" title="2 of 4 branches missed.">				( (Request.REQUESTTYPE_TIMEOFF.equals(rType) &amp;&amp; isAuthToViewTORqts())</span>
-				||
-<span class="nc bnc" id="L687" title="All 4 branches missed.">				(Request.REQUESTTYPE_FLEXTIME.equals(rType) &amp;&amp; isAuthToViewFTRqts())</span>
-				||
-<span class="nc bnc" id="L689" title="All 4 branches missed.">				(Request.REQUESTTYPE_SHIFTSWAP.equals(rType) &amp;&amp; isAuthToViewSSRqts())</span>
-				||
-<span class="nc bnc" id="L691" title="All 4 branches missed.">				(Request.REQUESTTYPE_SHIFTBID.equals(rType) &amp;&amp; isAuthToViewSBRqts())</span>
-				||
-<span class="pc bnc" id="L693" title="All 4 branches missed.">				(Request.REQUESTTYPE_CUSTSHIFT.equals(rType) &amp;&amp; isAuthToViewCSRqts())</span>
-				);	}
+<span class="nc bnc" id="L728" title="All 4 branches missed.">		return ((Request.REQUESTTYPE_TIMEOFF.equals(rType) &amp;&amp; isAuthToViewTORqts())</span>
+<span class="nc bnc" id="L729" title="All 4 branches missed.">				|| (Request.REQUESTTYPE_FLEXTIME.equals(rType) &amp;&amp; isAuthToViewFTRqts())</span>
+<span class="nc bnc" id="L730" title="All 4 branches missed.">				|| (Request.REQUESTTYPE_SHIFTSWAP.equals(rType) &amp;&amp; isAuthToViewSSRqts())</span>
+<span class="nc bnc" id="L731" title="All 4 branches missed.">				|| (Request.REQUESTTYPE_SHIFTBID.equals(rType) &amp;&amp; isAuthToViewSBRqts()) </span>
+<span class="nc bnc" id="L732" title="All 4 branches missed.">				|| (Request.REQUESTTYPE_CUSTSHIFT.equals(rType) &amp;&amp; isAuthToViewCSRqts()));</span>
+	}
 
 	/**
 	 * Return true if User is authorized to update specified Request
 	 */
 	@Override
 	protected boolean isAuthToUpdateRqt(RequestAggregate request) {
-<span class="fc" id="L701">		String rType = request.getRequestType();</span>
+<span class="nc" id="L740">		String rType = request.getRequestType();</span>
 
-<span class="fc" id="L703">		return</span>
-<span class="pc bpc" id="L704" title="2 of 4 branches missed.">				( (Request.REQUESTTYPE_TIMEOFF.equals(rType) &amp;&amp; isAuthToEditTORqts())</span>
-				||
-<span class="nc bnc" id="L706" title="All 4 branches missed.">				(Request.REQUESTTYPE_FLEXTIME.equals(rType) &amp;&amp; isAuthToEditFTRqts())</span>
-				||
-<span class="nc bnc" id="L708" title="All 4 branches missed.">				(Request.REQUESTTYPE_SHIFTSWAP.equals(rType) &amp;&amp; isAuthToEditSSRqts())</span>
-				||
-<span class="nc bnc" id="L710" title="All 4 branches missed.">				(Request.REQUESTTYPE_SHIFTBID.equals(rType) &amp;&amp; isAuthToEditSBRqts())</span>
-				||
-<span class="pc bnc" id="L712" title="All 4 branches missed.">				(Request.REQUESTTYPE_CUSTSHIFT.equals(rType) &amp;&amp; isAuthToEditCSRqts())</span>
-				);
+<span class="nc bnc" id="L742" title="All 4 branches missed.">		return ((Request.REQUESTTYPE_TIMEOFF.equals(rType) &amp;&amp; isAuthToEditTORqts())</span>
+<span class="nc bnc" id="L743" title="All 4 branches missed.">				|| (Request.REQUESTTYPE_FLEXTIME.equals(rType) &amp;&amp; isAuthToEditFTRqts())</span>
+<span class="nc bnc" id="L744" title="All 4 branches missed.">				|| (Request.REQUESTTYPE_SHIFTSWAP.equals(rType) &amp;&amp; isAuthToEditSSRqts())</span>
+<span class="nc bnc" id="L745" title="All 4 branches missed.">				|| (Request.REQUESTTYPE_SHIFTBID.equals(rType) &amp;&amp; isAuthToEditSBRqts()) </span>
+<span class="nc bnc" id="L746" title="All 4 branches missed.">				|| (Request.REQUESTTYPE_CUSTSHIFT.equals(rType) &amp;&amp; isAuthToEditCSRqts()));</span>
 	}
 
 	/**
 	 * Return true if User is authorized to escalate specified denied Request
 	 */
 	protected boolean isAuthToEscalateRqt(RequestAggregate request) {
-<span class="fc" id="L720">		String rType = request.getRequestType();</span>
+<span class="nc" id="L753">		String rType = request.getRequestType();</span>
 
-<span class="pc bpc" id="L722" title="2 of 4 branches missed.">		return isValidEmployee() &amp;&amp; m_orgSetting.getAllowAgentEscalations() &amp;&amp;</span>
-<span class="pc bpc" id="L723" title="1 of 2 branches missed.">				( (Request.REQUESTTYPE_TIMEOFF.equals(rType) &amp;&amp;</span>
-<span class="pc bpc" id="L724" title="1 of 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.TOM_ESCALATEDENIEDREQUESTS_ID))</span>
-				||
-<span class="nc bnc" id="L726" title="All 2 branches missed.">				(Request.REQUESTTYPE_SHIFTSWAP.equals(rType) &amp;&amp;</span>
-<span class="nc bnc" id="L727" title="All 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.SS_ESCALATEDENIEDREQUESTS_ID))</span>
-				||
-<span class="nc bnc" id="L729" title="All 2 branches missed.">				(Request.REQUESTTYPE_SHIFTBID.equals(rType) &amp;&amp;</span>
-<span class="nc bnc" id="L730" title="All 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.SB_ESCALATEDENIEDBIDS_ID))</span>
-				||
-<span class="nc bnc" id="L732" title="All 2 branches missed.">				(Request.REQUESTTYPE_CUSTSHIFT.equals(rType) &amp;&amp;</span>
-<span class="pc bnc" id="L733" title="All 2 branches missed.">				m_user.isAuthorized(PrivilegeKeys.CS_ESCALATEDENIEDREQUESTS_ID))</span>
-				);
+<span class="nc bnc" id="L755" title="All 2 branches missed.">		return isValidEmployee()</span>
+<span class="nc bnc" id="L756" title="All 2 branches missed.">				&amp;&amp; m_orgSetting.getAllowAgentEscalations()</span>
+<span class="nc bnc" id="L757" title="All 4 branches missed.">				&amp;&amp; ((Request.REQUESTTYPE_TIMEOFF.equals(rType) &amp;&amp; m_user.isAuthorized(PrivilegeKeys.TOM_ESCALATEDENIEDREQUESTS_ID))</span>
+<span class="nc bnc" id="L758" title="All 4 branches missed.">						|| (Request.REQUESTTYPE_SHIFTSWAP.equals(rType) &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SS_ESCALATEDENIEDREQUESTS_ID))</span>
+<span class="nc bnc" id="L759" title="All 4 branches missed.">						|| (Request.REQUESTTYPE_SHIFTBID.equals(rType) &amp;&amp; m_user.isAuthorized(PrivilegeKeys.SB_ESCALATEDENIEDBIDS_ID)) || (Request.REQUESTTYPE_CUSTSHIFT</span>
+<span class="nc bnc" id="L760" title="All 4 branches missed.">						.equals(rType) &amp;&amp; m_user.isAuthorized(PrivilegeKeys.CS_ESCALATEDENIEDREQUESTS_ID)));</span>
+	}
+
+	/**
+	 * Initialize Popup Window Arguments for Time Off
+	 */
+	@Override
+	protected void initTimeOffPopupWindowArgs() {
+<span class="nc" id="L768">		super.initTimeOffPopupWindowArgs();</span>
+<span class="nc" id="L769">		addPopupArgs(RmPageAction.POPUP_TIMEOFF_REQUEST_COPY_ACTION, RmKeys.RH_TIMEOFF_COPY_FORM, null, &quot;requestID&quot;, &quot;800,655,ctr,ctr&quot;,</span>
+				true, 1);
+
+<span class="nc" id="L772">	}</span>
+
+	@Override
+	public String createItemActions(RequestAggregate request, String rowID) {
+<span class="nc" id="L776">		StringBuffer sb = new StringBuffer(200);</span>
+<span class="nc" id="L777">		sb.append(super.createItemActions(request, rowID));</span>
+<span class="nc" id="L778">		sb.append(&quot;&lt;nobr&gt;&quot;);</span>
+<span class="nc" id="L779">		appendItemAction(request, PageAction.COPY, rowID, sb);</span>
+<span class="nc" id="L780">		return sb.toString();</span>
+	}
+	private boolean isAllowedModifyAction(String action, RequestAggregate request){
+<span class="nc bnc" id="L783" title="All 2 branches missed.">		return (PageAction.EDIT.equals(action) </span>
+<span class="nc bnc" id="L784" title="All 2 branches missed.">				|| PageAction.SUBMIT_TO_MGR.equals(action) </span>
+<span class="nc bnc" id="L785" title="All 2 branches missed.">				|| PageAction.WITHDRAW.equals(action) </span>
+<span class="nc bnc" id="L786" title="All 2 branches missed.">				|| PageAction.WITHDRAW_NEGOTIATION.equals(action)) </span>
+<span class="nc bnc" id="L787" title="All 2 branches missed.">				&amp;&amp; isAuthToUpdateRqt(request);</span>
+	}
+	
+	private boolean isAllowedCopyTOBAction(String action, RequestAggregate request){
+<span class="nc bnc" id="L791" title="All 4 branches missed.">		return PageAction.COPY.equals(action) &amp;&amp; isAuthToUpdateRqt(request) </span>
+<span class="nc bnc" id="L792" title="All 2 branches missed.">				&amp;&amp; isAllowCopyTOBRequestsEnabled() &amp;&amp; (</span>
+<span class="nc bnc" id="L793" title="All 4 branches missed.">						request.getRequestStatus().equals(RequestAuditTrail.STATUS_APPROVED) ||request.getRequestStatus().equals(RequestAuditTrail.STATUS_PENDING));</span>
+	}
+	private boolean isAllowedAddToWaitlistAction(String action, RequestAggregate request){
+<span class="nc bnc" id="L796" title="All 6 branches missed.">		return RmPageAction.ADD_TO_WAITLIST_ACTION.equals(action) &amp;&amp; isAuthToUpdateRqt(request) &amp;&amp; isAuthToWaitlistRqt(request);</span>
+	}
+	private boolean isAllowedViewDetailAction(String action, RequestAggregate request){
+<span class="nc bnc" id="L799" title="All 4 branches missed.">		return PageAction.VIEW_DETAIL.equals(action) &amp;&amp; isAuthToViewRqt(request);</span>
+	}
+	private boolean isAllowedEscalateAction(String action, RequestAggregate request){
+<span class="nc bnc" id="L802" title="All 4 branches missed.">		return PageAction.ESCALATE.equals(action) &amp;&amp; isAuthToEscalateRqt(request);</span>
+	}
+	private boolean isAllowedCancelWithDrawAction(String action, RequestAggregate request){
+<span class="nc bnc" id="L805" title="All 4 branches missed.">		return PageAction.CANCEL_WITHDRAW_ACTION.equals(action) &amp;&amp; isAuthToProcessCancelWithdrawRequest(request);</span>
+	}
+	
+	//Return true if we are checking the withdraw action and the request is an approved shift bid  and the auction is closed.
+	//False for all other cases. A return value of false does not mean the request is valid
+	private boolean isShiftBidWithdrawAndIsInvalid(String action, RequestAggregate request) {
+<span class="nc" id="L811">		String status = request.getRequestStatus();</span>
+
+<span class="nc bnc" id="L813" title="All 6 branches missed.">		if (request.isShiftBidRequest() &amp;&amp; status.equals(RequestAuditTrail.STATUS_APPROVED) &amp;&amp; PageAction.WITHDRAW.equals(action)) {</span>
+<span class="nc bnc" id="L814" title="All 4 branches missed.">			if (m_auctionMap != null &amp;&amp; m_auctionMap.isEmpty()) {</span>
+				//get the auctionlist for approved requests to get auction
+				try {
+<span class="nc" id="L817">					m_auctionMap = RequestUtil.getAuctionmapForApprovedSBRequests(m_requestList);</span>
+<span class="nc" id="L818">				} catch (Exception ex) {</span>
+<span class="nc" id="L819">					handleUnableToLoadDataError(LOG, ex);</span>
+<span class="nc" id="L820">				}</span>
+			}
+<span class="nc bnc" id="L822" title="All 2 branches missed.">			return !m_auctionMap.get(((ShiftBidRequest) request).getShiftBidAuctionID()).booleanValue();</span>
+		}
+<span class="nc" id="L824">		return false;</span>
+
+	}
+	private boolean isNormalTimeOffActionsValid(String action, RequestAggregate request){
+<span class="nc" id="L828">		String status = request.getRequestStatus();</span>
+<span class="nc" id="L829">		boolean result=false;</span>
+<span class="nc bnc" id="L830" title="All 4 branches missed.">		if(request.isTimeOffRequest() &amp;&amp; !request.isFlexTimeRequest()){</span>
+<span class="nc" id="L831">			TORequest toRequest=(TORequest) request;</span>
+<span class="nc bnc" id="L832" title="All 8 branches missed.">				boolean isWaitlistActionValid=RmPageAction.ADD_TO_WAITLIST_ACTION.equals(action) &amp;&amp; toRequest.isEligibleForWaitlist() &amp;&amp; (RequestAuditTrail.STATUS_PENDING.equals(status) || RequestAuditTrail.STATUS_DENIED.equals(status));</span>
+<span class="nc bnc" id="L833" title="All 4 branches missed.">				boolean isCancelActionValid=PageAction.CANCEL_WITHDRAW_ACTION.equals(action) &amp;&amp; toRequest.isEligibleForCancelWithdrawAction();</span>
+<span class="nc bnc" id="L834" title="All 4 branches missed.">				boolean isWithdrawActionValid=PageAction.WITHDRAW.equals(action) &amp;&amp; toRequest.isEligibleForWithdraw();</span>
+<span class="nc bnc" id="L835" title="All 8 branches missed.">				result=!request.hasExpired()&amp;&amp;(isWaitlistActionValid||isCancelActionValid||isWithdrawActionValid);</span>
+		}
+<span class="nc" id="L837">		return result;</span>
+	}
+	private boolean isEscalateActionValid(String action, RequestAggregate request){
+<span class="nc bnc" id="L840" title="All 6 branches missed.">		return !request.hasExpired()&amp;&amp;(RequestAuditTrail.STATUS_DENIED.equals(request.getRequestStatus()) &amp;&amp; PageAction.ESCALATE.equals(action));</span>
+	}
+	private boolean isShiftSwapActionsValid(String action, RequestAggregate request){
+<span class="nc" id="L843">		boolean result=false;</span>
+<span class="nc bnc" id="L844" title="All 2 branches missed.">		if(request.isShiftSwapRequest()){</span>
+<span class="nc" id="L845">			ShiftSwapRequest swRequest=(ShiftSwapRequest) request;</span>
+<span class="nc bnc" id="L846" title="All 4 branches missed.">			boolean isRejecWithDrawActionValid=PageAction.REJECT_WITHDRAW_ACTION.equals(action) &amp;&amp; swRequest.isEligibleForRejectWithdrawAction() ;</span>
+<span class="nc bnc" id="L847" title="All 4 branches missed.">			boolean isAceptWithDrawActionValid=PageAction.ACCEPT_WITHDRAW_ACTION.equals(action) &amp;&amp; swRequest.isEligibleForAcceptWithdrawAction();</span>
+<span class="nc bnc" id="L848" title="All 4 branches missed.">			boolean isCancelWithDrawActionValid=PageAction.CANCEL_WITHDRAW_ACTION.equals(action) &amp;&amp; swRequest.isEligibleForCancelWithdrawAction();</span>
+<span class="nc bnc" id="L849" title="All 4 branches missed.">			boolean isWithDrawNegotiationActionValid=PageAction.WITHDRAW_NEGOTIATION.equals(action) &amp;&amp; swRequest.isEligibleForWithdrawNegotiation();</span>
+<span class="nc bnc" id="L850" title="All 4 branches missed.">			boolean isSubmitToMgrActionValid=PageAction.SUBMIT_TO_MGR.equals(action) &amp;&amp; swRequest.isEligibleForConfirmWithdrawAction(m_context.getUser().getEmployeeID());</span>
+<span class="nc bnc" id="L851" title="All 12 branches missed.">			result=!request.hasExpired()&amp;&amp;(isRejecWithDrawActionValid||isAceptWithDrawActionValid||isCancelWithDrawActionValid||isWithDrawNegotiationActionValid||isSubmitToMgrActionValid);</span>
+		}
+<span class="nc" id="L853">		return result;</span>
+	}
+	private boolean isTimeOffBidActionsValid(String action, RequestAggregate request){	
+<span class="nc bnc" id="L856" title="All 8 branches missed.">			return !request.hasExpired()&amp;&amp; !request.isInvalid() &amp;&amp;isBidClosedForRequest(request) &amp;&amp; PageAction.COPY.equals(action);</span>
+	}
+	/**
+	 * Get the bid info of the TOB request from the time off bid map 
+	 */
+	private boolean isBidClosedForRequest(RequestAggregate request) {
+<span class="nc bnc" id="L862" title="All 6 branches missed.">		return request.isTimeOffRequest()&amp;&amp; getTimeOffBidMap().get(request.getID()) != null &amp;&amp; getTimeOffBidMap().get(request.getID()).equals(Boolean.TRUE);</span>
+	}
+
+	/**
+	 * The map contains list of time off bid requests and the related bid info which is closed or not 
+	 */
+	private Map&lt;ID, Boolean&gt; getTimeOffBidMap() {
+<span class="nc bnc" id="L869" title="All 4 branches missed.">		if (timeOffBidMap != null &amp;&amp; timeOffBidMap.isEmpty()) {</span>
+			try {
+				//Assign time Off bid info which is closed or not to the request if have
+<span class="nc" id="L872">				timeOffBidMap = RequestsMH.assignClosedTimeOffBidToRequests(m_empID, getRequestList());</span>
+<span class="nc" id="L873">			} catch (Exception ex) {</span>
+<span class="nc" id="L874">				handleUnableToLoadDataError(LOG, ex);</span>
+<span class="nc" id="L875">			}</span>
+		}
+<span class="nc" id="L877">		return timeOffBidMap;</span>
+	}
+	//The m_requetList is overridden at MyTimeOffRequestList 
+	protected Collection getRequestList(){
+<span class="nc" id="L881">		return m_requestList;</span>
 	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

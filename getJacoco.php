@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html>
    <body>
-      <h1>My first PHP page</h1>
+      <h1>Get JaCoCo'd</h1>
       <?php
          $teamName = $_POST['teamName'];
          
          if(empty($teamName)) 
          {
-             echo("You didn't select any apartment!.");
+             echo("You didn't select any team!.");
          } 
          else{
              // Change to switch statement when refactoring

@@ -9,19 +9,16 @@
  * @version 1.0
  */
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
 
-import java.io.Serializable;
-import java.util.*;
-
-import com.bluepumpkin.common.logging.Category;
-import com.bluepumpkin.common.util.TimeZoneUtil;
-import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.datatypes.ID;
-import com.bluepumpkin.ejb.bbm.BbmManagerFactory;
-import com.bluepumpkin.ejb.bbm.shifts.model.ShiftsUtil;
-import com.bluepumpkin.ejb.bbm.effectivity.TimePeriodUtil;
+import com.bluepumpkin.common.datatypes.TimeRange;
+import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.ejb.bbm.schedule.ejb.ScheduleAccessManager;
-import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
 import com.bluepumpkin.ejb.bbm.schedule.model.PublishingPeriod;
 import com.bluepumpkin.ejb.rm.Log;
 import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
@@ -33,52 +30,90 @@ import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
 import com.bluepumpkin.ejb.rm.util.RmUtil;
 
 /**
- * &lt;p&gt; &lt;b&gt; Hard Validation Rule: &lt;/b&gt;
+ * &lt;p&gt; &lt;b&gt; Soft Validation Rule:Request period is published &lt;/b&gt;
  */
 public class PublishedPeriodValidationRule implements Validator {
 
-<span class="nc" id="L40">	private static Category m_cat = Log.initCategory(PublishedPeriodValidationRule.class.getName());</span>
+<span class="nc" id="L37">	private static Category m_cat = Log.initCategory(PublishedPeriodValidationRule.class.getName());</span>
 
-<span class="nc" id="L42">	public PublishedPeriodValidationRule() {};</span>
+<span class="nc" id="L39">	public PublishedPeriodValidationRule() {</span>
+<span class="nc" id="L40">	};</span>
 
 	/* (non-Javadoc)
 		* @see com.bluepumpkin.ejb.rm.requests.common.validation.Validator#validate(com.bluepumpkin.ejb.rm.requests.common.validation.Validatable)
 		*/
+	@Override
 	public ValidationResult validate(Validatable validatable) throws Exception {
-<span class="nc" id="L48">		CustShiftReq csr = (CustShiftReq) validatable;</span>
-<span class="nc" id="L49">		String methodName = &quot;validate&quot;;</span>
-<span class="nc bnc" id="L50" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpEnterMethod(methodName, csr));</span>
-<span class="nc" id="L51">		ValidationResult result = null;</span>
+<span class="nc" id="L47">		CustShiftReq csr = (CustShiftReq) validatable;</span>
+<span class="nc" id="L48">		String methodName = &quot;validate&quot;;</span>
+<span class="nc bnc" id="L49" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L50">			m_cat.debug(RmUtil.dumpEnterMethod(methodName, csr));</span>
+		}
+<span class="nc" id="L52">		ValidationResult result = null;</span>
 
-<span class="nc" id="L53">		boolean pubPeriod = false;</span>
-<span class="nc" id="L54">		CustShiftValidationCache cache = (CustShiftValidationCache) csr.getCache();</span>
+<span class="nc" id="L54">		CustShiftValidationCache cache = getCustShiftValidationCache(csr);</span>
 <span class="nc" id="L55">		ID empID = csr.getEmployeeID();</span>
-		//Just check if the requeted range is published 
-<span class="nc" id="L57">		TimeRange range = new TimeRange(csr.getStartTime(),csr.getEndTime());</span>
-<span class="nc" id="L58">		Collection pubPeriodsByEmp = cache.getScheduleAccessManager().getPublishedPeriods</span>
-<span class="nc" id="L59">		        (Collections.singletonList(empID), range.getStartDate(), range.getEndDate());</span>
-
-<span class="nc" id="L61">		Collection pubPeriods = null;</span>
-<span class="nc bnc" id="L62" title="All 4 branches missed.">		if (pubPeriodsByEmp != null &amp;&amp; !pubPeriodsByEmp.isEmpty()) {</span>
-<span class="nc" id="L63">			pubPeriods = (Collection) pubPeriodsByEmp.iterator().next();</span>
-<span class="nc bnc" id="L64" title="All 2 branches missed.">			if (pubPeriods != null) {</span>
-<span class="nc bnc" id="L65" title="All 2 branches missed.">				for (Iterator i = pubPeriods.iterator(); i.hasNext();) {</span>
-<span class="nc" id="L66">					PublishingPeriod tp = (PublishingPeriod) i.next();</span>
-<span class="nc" id="L67">					TimeRange pubRange = new TimeRange(tp.getStartTime(), tp.getEndTime());</span>
-<span class="nc bnc" id="L68" title="All 4 branches missed.">					if (!tp.isPartialPublish() &amp;&amp; range.isInside(pubRange) ) {</span>
+<span class="nc" id="L56">		TimeRange range = new TimeRange(csr.getStartTime(), csr.getEndTime());</span>
+<span class="nc" id="L57">		List&lt;Collection&lt;PublishingPeriod&gt;&gt; pubPeriodsByEmp = getPublishedPeriods(cache.getScheduleAccessManager(),</span>
+<span class="nc" id="L58">				(Collections.singletonList(empID)), range.getStartDate(), range.getEndDate());</span>
+		//QC 192020:The rule works incorrectly if change start time of the request and approve it,
+		//then change start time of the request again.
+		//Before the fix, the code just compares the request range to the publishing period.
+		//After the fix, it makes sure that the start of request range and the end of request range should be a publishing period
+		//E.g: We have a published week, each day has shift from 9AM to 5PM:
+		// 		1/23 |------------------------------------| 1/30
+		//Submit a request on 1/27 to change start time from 9AM to 10PM. 
+		//The code compares the range 1/27[10AM to 6PM] to the published range.
+		//The publishing periods includes both start range(10AM) and end range(6PM) so the rule is valid
+		//After approve it, the week is still published with 3 continuous publishing periods:
+		//		[1/23 to 1/27 10AM],[ 1/27 10AM to 1/27 6PM],[1/27 6PM to 1/30] 
+		//      1/23 |-------------|--------|-------------| 1/30
+		//Submit a request on 1/27 to change start time to 10AM to 11AM
+		//The request range have the start is inside the second publishing period and the end is in the the third publishing period
+		//=&gt; the rule is  still valid. The old code compared the request range to the whole publishing period and it always returns false since
+		// now the publishing period is break in to small periods but the whole week is still published
+<span class="nc" id="L75">		boolean startRangeIsInPublishedRange = false;</span>
+<span class="nc" id="L76">		boolean endRangeIsInPublishedRange = false;</span>
+<span class="nc" id="L77">		Collection&lt;PublishingPeriod&gt; pubPeriods = null;</span>
+<span class="nc bnc" id="L78" title="All 4 branches missed.">		if (pubPeriodsByEmp != null &amp;&amp; !pubPeriodsByEmp.isEmpty()) {</span>
+<span class="nc" id="L79">			pubPeriods = (Collection&lt;PublishingPeriod&gt;) pubPeriodsByEmp.iterator().next();</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">			if (pubPeriods != null) {</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">				for (Iterator&lt;PublishingPeriod&gt; i = pubPeriods.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L82">					PublishingPeriod tp = (PublishingPeriod) i.next();</span>
+<span class="nc" id="L83">					TimeRange pubRange = new TimeRange(tp.getStartTime(), tp.getEndTime());</span>
+<span class="nc bnc" id="L84" title="All 4 branches missed.">					if (!tp.isPartialPublish() &amp;&amp; pubRange.includes(range.getStartDate())) {</span>
 						//no error Return here
-<span class="nc" id="L70">						pubPeriod = true;</span>
-<span class="nc" id="L71">						break;</span>
+<span class="nc" id="L86">						startRangeIsInPublishedRange = true;</span>
+<span class="nc" id="L87">						break;</span>
 					}
-<span class="nc" id="L73">				}</span>
+<span class="nc" id="L89">				}</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">				for (Iterator&lt;PublishingPeriod&gt; i = pubPeriods.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L91">					PublishingPeriod tp = (PublishingPeriod) i.next();</span>
+<span class="nc" id="L92">					TimeRange pubRange = new TimeRange(tp.getStartTime(), tp.getEndTime());</span>
+<span class="nc bnc" id="L93" title="All 4 branches missed.">					if (!tp.isPartialPublish() &amp;&amp; pubRange.includes(range.getEndDate())) {</span>
+						//no error Return here
+<span class="nc" id="L95">						endRangeIsInPublishedRange = true;</span>
+<span class="nc" id="L96">						break;</span>
+					}
+<span class="nc" id="L98">				}</span>
 			}
 		}
-<span class="nc bnc" id="L76" title="All 2 branches missed.">		if (!pubPeriod) {</span>
-<span class="nc" id="L77">			result = ValidationUtil.setSoftValidationResult(csr, RmEjbBundleKey.CS_PUBLISHED_PERIOD_CHECK, null, this.getClass().getName());</span>
+<span class="nc bnc" id="L101" title="All 4 branches missed.">		if (!(startRangeIsInPublishedRange &amp;&amp; endRangeIsInPublishedRange)) {</span>
+<span class="nc" id="L102">			result = ValidationUtil.setSoftValidationResult(csr, RmEjbBundleKey.CS_PUBLISHED_PERIOD_CHECK, null, this.getClass().getName());</span>
 		}
-<span class="nc bnc" id="L79" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
-<span class="nc" id="L80">		return result;</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L105">			m_cat.debug(RmUtil.dumpExitMethod(methodName));</span>
+		}
+<span class="nc" id="L107">		return result;</span>
+	}
+
+	protected CustShiftValidationCache getCustShiftValidationCache(CustShiftReq csRequest) {
+<span class="nc" id="L111">		return (CustShiftValidationCache) csRequest.getCache();</span>
+	}
+
+	public List&lt;Collection&lt;PublishingPeriod&gt;&gt; getPublishedPeriods(ScheduleAccessManager sam, Collection&lt;ID&gt; workResourceIDs, Date dtStart,
+			Date dtEnd) throws Exception {
+<span class="nc" id="L116">		return sam.getPublishedPeriods(workResourceIDs, dtStart, dtEnd);</span>
 	}
 }
-
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

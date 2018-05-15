@@ -21,41 +21,41 @@ import com.verint.wfm.ws.ServiceApplicationException;
 
 <span class="nc" id="L22">public class SyncUtil {</span>
 
-<span class="nc" id="L24">	private static final Map&lt;String, ID&gt; ORGANIZATION_NAME_ID_MAP = new HashMap&lt;String, ID&gt;();</span>
-<span class="nc" id="L25">	private static final Map&lt;String, ID&gt; ACTIVITY_NAME_ID_MAP = new HashMap&lt;String, ID&gt;();</span>
-	
-	public static MapJAXBType areSaved(Collection&lt;String&gt; externalSourceIds, String systemTypeName,
-			MapUtil.ObjectType objectType) throws ServiceApplicationException {
+	//CRITICAL: Use of these static maps are not multi-process safe and may cause issues in a load balanced environment.
+	//The coherence cache already contains the organizations in the workResourceManager cache.
+<span class="nc" id="L26">	private static final Map&lt;String, ID&gt; ORGANIZATION_NAME_ID_MAP = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L27">	private static final Map&lt;String, ID&gt; ACTIVITY_NAME_ID_MAP = new HashMap&lt;&gt;();</span>
+
+	public static MapJAXBType areSaved(Collection&lt;String&gt; externalSourceIds, String systemTypeName, MapUtil.ObjectType objectType)
+			throws ServiceApplicationException {
 
 		SystemType systemType;
 		try {
-<span class="nc" id="L32">			systemType = SystemType.valueOf(systemTypeName);</span>
-<span class="nc" id="L33">		} catch (RuntimeException e) {</span>
-<span class="nc" id="L34">			throw new ServiceApplicationException(e);</span>
-<span class="nc" id="L35">		}</span>
 
-<span class="nc" id="L37">		Map&lt;String, Boolean&gt; preResult = new HashMap&lt;String, Boolean&gt;();</span>
-<span class="nc bnc" id="L38" title="All 2 branches missed.">		if (externalSourceIds != null) {</span>
-<span class="nc bnc" id="L39" title="All 2 branches missed.">			for (String externalSourceId : externalSourceIds) {</span>
+<span class="nc" id="L35">			systemType = SystemType.valueOf(systemTypeName);</span>
+<span class="nc" id="L36">		} catch (RuntimeException e) {</span>
+<span class="nc" id="L37">			throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L38">		}</span>
+
+<span class="nc" id="L40">		Map&lt;String, Boolean&gt; preResult = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L41" title="All 2 branches missed.">		if (externalSourceIds != null) {</span>
+<span class="nc bnc" id="L42" title="All 2 branches missed.">			for (String externalSourceId : externalSourceIds) {</span>
 				ID localId;
-<span class="nc" id="L41">				ID extId = ExternalIDUtil.buildExternalID(systemType,</span>
-						externalSourceId);
+<span class="nc" id="L44">				ID extId = ExternalIDUtil.buildExternalID(systemType, externalSourceId);</span>
 				try {
-<span class="nc" id="L44">					localId = MapUtil.getExternalToWfoID(systemType,</span>
-							objectType, extId);
-<span class="nc" id="L46">				} catch (JdmoException e) {</span>
-<span class="nc" id="L47">					throw new ServiceApplicationException(e);</span>
-<span class="nc" id="L48">				}</span>
-				// There is a saved entity precisely when we find a local id
-				// that is mapped to the external id
-<span class="nc bnc" id="L51" title="All 2 branches missed.">				preResult.put(externalSourceId, (localId != null));</span>
+<span class="nc" id="L46">					localId = MapUtil.getExternalToWfoID(systemType, objectType, extId);</span>
+<span class="nc" id="L47">				} catch (JdmoException e) {</span>
+<span class="nc" id="L48">					throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L49">				}</span>
+				// There is a saved entity precisely when we find a local id that is mapped to the external id
+<span class="nc bnc" id="L51" title="All 2 branches missed.">				preResult.put(externalSourceId, localId != null);</span>
 <span class="nc" id="L52">			}</span>
 		}
 
 		// Map needs to be wrapped by a custom JAXB type
 <span class="nc" id="L56">		return new MapJAXBType(preResult);</span>
 	}
-	
+
 	public static String doTheseExist(Collection&lt;String&gt; externalSourceIds, String systemTypeName, MapUtil.ObjectType objectType)
 			throws ServiceApplicationException {
 
@@ -80,107 +80,107 @@ import com.verint.wfm.ws.ServiceApplicationException;
 <span class="nc" id="L80">		return preResult.toString();</span>
 	}
 
-	public static ID getOrganizationIDByNameCaseInsensitive(String organizationName, WorkResourceManager manager,
+	public static ID getOrganizationIDByNameCaseInsensitive(
+			String organizationName,
+			WorkResourceManager manager,
 			boolean alwaysResetCache)
-			throws ServiceApplicationException {
-
+					throws ServiceApplicationException {
 		// By construction this map is of size one :)
-<span class="nc" id="L88">		Map&lt;String, ID&gt; singletonMap = getOrganizationIDsByNamesCaseInsensitive(</span>
-<span class="nc" id="L89">				Collections.singletonList(organizationName),</span>
-				manager, alwaysResetCache);
+<span class="nc" id="L89">		Map&lt;String, ID&gt; singletonMap = getOrganizationIDsByNamesCaseInsensitive(</span>
+<span class="nc" id="L90">				Collections.singletonList(organizationName),</span>
+				manager,
+				alwaysResetCache);
 
 		// Sneaky, no? Savoir-faire is everywhere!
-<span class="nc" id="L93">		ID wfoId = singletonMap.values().iterator().next();</span>
-<span class="nc" id="L94">		return wfoId;</span>
+<span class="nc" id="L95">		return singletonMap.values().iterator().next();</span>
 	}
+
+	public Map&lt;String, ID&gt; getOrganizationIDsByNamesCaseInsensitiveFromObject(
+			List&lt;String&gt; organizationNames,
+			WorkResourceManager manager,
+			boolean alwaysResetCache)
+					throws ServiceApplicationException {
+<span class="nc" id="L103">		return SyncUtil.getOrganizationIDsByNamesCaseInsensitive(organizationNames, manager, alwaysResetCache);</span>
+	}
+
+	/**
+	 * @param alwaysResetCache this should be true if the cache could be stale
+	 */
+	public static Map&lt;String, ID&gt; getOrganizationIDsByNamesCaseInsensitive(
+			List&lt;String&gt; organizationNames,
+			WorkResourceManager manager,
+			boolean alwaysResetCache)
+					throws ServiceApplicationException {
+
+		// only populate cache if its empty, or if calling method has a reason to believe its stale
+<span class="nc" id="L116">		populateOrganizationNameUpperCaseIDCachedMap(manager, alwaysResetCache);</span>
+
+		// we only need a subset of the cached map
+<span class="nc" id="L119">		Map&lt;String, ID&gt; result = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">		for (String organizationName : organizationNames) {</span>
+<span class="nc" id="L121">			ID wfoOrgId = ORGANIZATION_NAME_ID_MAP.get(organizationName.toUpperCase());</span>
+			// Note this can be null id when org name doesn't exist
+<span class="nc" id="L123">			result.put(organizationName, wfoOrgId);</span>
+<span class="nc" id="L124">		}</span>
+<span class="nc" id="L125">		return result;</span>
+	}
+
+	private static void populateOrganizationNameUpperCaseIDCachedMap(
+			WorkResourceManager manager,
+			boolean alwaysResetCache)
+			throws ServiceApplicationException {
+<span class="nc bnc" id="L132" title="All 4 branches missed.">		if (ORGANIZATION_NAME_ID_MAP.isEmpty() || alwaysResetCache) {</span>
+<span class="nc" id="L133">			synchronized (ORGANIZATION_NAME_ID_MAP) {</span>
+<span class="nc" id="L134">				ORGANIZATION_NAME_ID_MAP.clear();</span>
+				try {
+<span class="nc" id="L136">					Collection&lt;Organization&gt; organizations = manager.getFullScopeTree();</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">					for (Organization organization : organizations) {</span>
+<span class="nc" id="L138">						ORGANIZATION_NAME_ID_MAP.put(organization.getName().toUpperCase(), organization.getID());</span>
+<span class="nc" id="L139">					}</span>
+<span class="nc" id="L140">				} catch (Exception e) {</span>
+<span class="nc" id="L141">					throw new ServiceApplicationException(e);</span>
+<span class="nc" id="L142">				}</span>
+<span class="nc" id="L143">			}</span>
+		}
+<span class="nc" id="L145">	}</span>
 
 	// TODO use generics or callbacks to unify these two methods
-	public static ID getActivityIDByNameCaseInsensitive(String activityName, ActivityManager manager,
-			boolean alwaysResetCache)
+	public static ID getActivityIDByNameCaseInsensitive(String activityName, ActivityManager manager, boolean alwaysResetCache)
 			throws ServiceApplicationException {
 
 		// By construction this map is of size one :)
-<span class="nc" id="L103">		Map&lt;String, ID&gt; singletonMap = getActivityIDsByNamesCaseInsensitive(</span>
-<span class="nc" id="L104">				Collections.singletonList(activityName),</span>
-				manager, alwaysResetCache);
+<span class="nc" id="L152">		Map&lt;String, ID&gt; singletonMap = getActivityIDsByNamesCaseInsensitive(</span>
+<span class="nc" id="L153">				Collections.singletonList(activityName),</span>
+				manager,
+				alwaysResetCache);
 
 		// Sneaky, no? Savoir-faire is everywhere!
-<span class="nc" id="L108">		ID wfoId = singletonMap.values().iterator().next();</span>
-<span class="nc" id="L109">		return wfoId;</span>
-	}
-	
-	
-	
-	/**
-	 * 
-	 * @param alwaysResetCache
-	 *            this should be true if the cache could be stale
-	 */
-	public static Map&lt;String, ID&gt; getOrganizationIDsByNamesCaseInsensitive(List&lt;String&gt; organizationNames,
-			WorkResourceManager manager, boolean alwaysResetCache)
-			throws ServiceApplicationException {
-
-		// only populate cache if its empty, or if calling method has a reason to believe its stale
-<span class="nc" id="L124">		populateOrganizationNameUpperCaseIDCachedMap(manager, alwaysResetCache);</span>
-
-		// we only need a subset of the cached map
-<span class="nc" id="L127">		Map&lt;String, ID&gt; result = new HashMap&lt;String, ID&gt;();</span>
-<span class="nc bnc" id="L128" title="All 2 branches missed.">		for (String organizationName : organizationNames) {</span>
-<span class="nc" id="L129">			ID wfoOrgId = ORGANIZATION_NAME_ID_MAP.get(organizationName.toUpperCase());</span>
-			// Note this can be null id when org name doesn't exist
-<span class="nc" id="L131">			result.put(organizationName, wfoOrgId);</span>
-<span class="nc" id="L132">		}</span>
-<span class="nc" id="L133">		return result;</span>
+<span class="nc" id="L158">		return singletonMap.values().iterator().next();</span>
 	}
 
 	/**
-	 * 
-	 * @param alwaysResetCache
-	 *            this should be true if the cache could be stale
+	 * @param alwaysResetCache this should be true if the cache could be stale
 	 */
-	public static Map&lt;String, ID&gt; getActivityIDsByNamesCaseInsensitive(List&lt;String&gt; activityNames,
-			ActivityManager manager, boolean alwaysResetCache)
-			throws ServiceApplicationException {
+	public static Map&lt;String, ID&gt; getActivityIDsByNamesCaseInsensitive(
+			List&lt;String&gt; activityNames,
+			ActivityManager manager,
+			boolean alwaysResetCache)
+					throws ServiceApplicationException {
 
 		// only populate cache if its empty, or if calling method has a reason to believe its stale
-<span class="nc" id="L146">		populateActivityNameUpperCaseIDCachedMap(manager, alwaysResetCache);</span>
+<span class="nc" id="L171">		populateActivityNameUpperCaseIDCachedMap(manager, alwaysResetCache);</span>
 
 		// we only need a subset of the cached map
-<span class="nc" id="L149">		Map&lt;String, ID&gt; result = new HashMap&lt;String, ID&gt;();</span>
-<span class="nc bnc" id="L150" title="All 2 branches missed.">		for (String activityName : activityNames) {</span>
-<span class="nc" id="L151">			ID wfoactivityId = ACTIVITY_NAME_ID_MAP.get(activityName.toUpperCase());</span>
+<span class="nc" id="L174">		Map&lt;String, ID&gt; result = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">		for (String activityName : activityNames) {</span>
+<span class="nc" id="L176">			ID wfoActivityId = ACTIVITY_NAME_ID_MAP.get(activityName.toUpperCase());</span>
 			// Note this can be null id when org name doesn't exist
-<span class="nc" id="L153">			result.put(activityName, wfoactivityId);</span>
-<span class="nc" id="L154">		}</span>
-<span class="nc" id="L155">		return result;</span>
+<span class="nc" id="L178">			result.put(activityName, wfoActivityId);</span>
+<span class="nc" id="L179">		}</span>
+<span class="nc" id="L180">		return result;</span>
 	}
-	
-	
-	private static void populateOrganizationNameUpperCaseIDCachedMap(WorkResourceManager manager,
-			boolean alwaysResetCache)
-			throws ServiceApplicationException {
-<span class="nc bnc" id="L162" title="All 4 branches missed.">		if (ORGANIZATION_NAME_ID_MAP.isEmpty() || alwaysResetCache) {</span>
-<span class="nc" id="L163">			synchronized (ORGANIZATION_NAME_ID_MAP) {</span>
-<span class="nc" id="L164">				ORGANIZATION_NAME_ID_MAP.clear();</span>
-				try {
-<span class="nc" id="L166">					Collection&lt;Organization&gt; organizations = manager.getFullScopeTree();</span>
-<span class="nc bnc" id="L167" title="All 2 branches missed.">					for (Organization organization : organizations) {</span>
-<span class="nc" id="L168">						ORGANIZATION_NAME_ID_MAP.put(organization.getName().toUpperCase(), organization.getID());</span>
-<span class="nc" id="L169">					}</span>
 
-<span class="nc" id="L171">				} catch (BbmFinderException e) {</span>
-<span class="nc" id="L172">					throw new ServiceApplicationException(e);</span>
-<span class="nc" id="L173">				} catch (RemoteException e) {</span>
-<span class="nc" id="L174">					throw new ServiceApplicationException(e);</span>
-<span class="nc" id="L175">				} catch (Exception e) {</span>
-<span class="nc" id="L176">					throw new ServiceApplicationException(e);</span>
-<span class="nc" id="L177">				}</span>
-<span class="nc" id="L178">			}</span>
-		}
-<span class="nc" id="L180">	}</span>
-
-	private static void populateActivityNameUpperCaseIDCachedMap(ActivityManager manager,
-			boolean alwaysResetCache)
+	private static void populateActivityNameUpperCaseIDCachedMap(ActivityManager manager, boolean alwaysResetCache)
 			throws ServiceApplicationException {
 <span class="nc bnc" id="L185" title="All 4 branches missed.">		if (ACTIVITY_NAME_ID_MAP.isEmpty() || alwaysResetCache) {</span>
 <span class="nc" id="L186">			synchronized (ACTIVITY_NAME_ID_MAP) {</span>
@@ -191,13 +191,11 @@ import com.verint.wfm.ws.ServiceApplicationException;
 <span class="nc bnc" id="L191" title="All 2 branches missed.">					for (Activity activity : activities) {</span>
 <span class="nc" id="L192">						ACTIVITY_NAME_ID_MAP.put(activity.getName().toUpperCase(), activity.getID());</span>
 <span class="nc" id="L193">					}</span>
-<span class="nc" id="L194">				} catch (BbmFinderException e) {</span>
+<span class="nc" id="L194">				} catch (BbmFinderException|RemoteException e) {</span>
 <span class="nc" id="L195">					throw new ServiceApplicationException(e);</span>
-<span class="nc" id="L196">				} catch (RemoteException e) {</span>
-<span class="nc" id="L197">					throw new ServiceApplicationException(e);</span>
-<span class="nc" id="L198">				}</span>
-<span class="nc" id="L199">			}</span>
+<span class="nc" id="L196">				}</span>
+<span class="nc" id="L197">			}</span>
 		}
-<span class="nc" id="L201">	}</span>
+<span class="nc" id="L199">	}</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

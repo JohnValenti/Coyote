@@ -2,10 +2,12 @@
 
 import java.util.Calendar;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.ResourceBundle;
 import java.util.TimeZone;
 
@@ -21,6 +23,7 @@ import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.EmpTOPoolAssignment;
 import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.EmpTOPoolAssignmentFieldInfo;
 import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.EmployeeReferenceScheduleAssignmentUpdateParameters;
 import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPool;
+import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPoolAssignmentsByActivityUpdateParameters;
 import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.TOPoolFieldInfo;
 import com.bluepumpkin.ejb.rm.util.LicenseUtil;
 import com.bluepumpkin.web.bbm.l10n.BbmWebBundleKey;
@@ -29,11 +32,13 @@ import com.bluepumpkin.web.bbm.people.PeopleMH;
 import com.bluepumpkin.web.bbm.people.PeoplePM;
 import com.bluepumpkin.web.bbm.people.PeopleUtil;
 import com.bluepumpkin.web.bbm.people.profile.ProfilePageModel;
+import com.bluepumpkin.web.rm.keys.RmJavaScriptFileID;
 import com.bluepumpkin.web.rm.l10n.RmWebLogBundleKey;
 import com.bluepumpkin.web.rm.requests.RequestsMH;
 import com.witness.ejb.core.security.PrivilegeKeys;
 import com.witness.ejb.core.security.model.User;
 import com.witness.web.uif.base.Message;
+import com.witness.web.uif.keys.JavaScriptFileID;
 import com.witness.web.uif.pagecomponent.picker.date.DatePickerPC;
 import com.witness.web.uif.pagecomponent.toolbar.ToolbarPC;
 import com.witness.web.uif.pagecomponent.toolbar.ToolbarUtil;
@@ -57,90 +62,99 @@ import com.witness.web.uif.util.js.JSUtil;
  * Created on Jul 15, 2003, 11:50:28 AM
  */
 public class TimeOffPM extends WorkpanePageModel implements PeoplePM, ContainersInRowsPM {
-<span class="nc" id="L60">	private Date m_viewByModDate = null;//input value for the control on Title Component (aka: AsOfDate, viewDate)</span>
-	private String m_employeeTokenStr; // contain employee info for single editing
-	private String m_editIdStr;
+	
+	private static final long serialVersionUID = -7973735547096013842L;
+	//input value for the control on Title Component (aka: AsOfDate, viewDate)
+<span class="nc" id="L68">	private Date viewByModDate = null;</span>
+	// contain employee info for single editing
+	private String employeeTokenStr; 
+	private String editIdStr;
 
-<span class="nc" id="L64">    private boolean m_initFailure = false;</span>
-<span class="nc" id="L65">	private boolean m_isMultiEdit = false;</span>
-<span class="nc" id="L66">	private boolean m_isAllViewable=false;</span>
-<span class="nc" id="L67">	private boolean m_isAllEditable=false;</span>
-<span class="nc" id="L68">	private Employee m_employee = null;</span>
-<span class="nc" id="L69">    private TOPool m_pool = null; //the selected employee's time off pool on the AsOfDate (viewDate)</span>
-<span class="nc" id="L70">    private EmpTOPoolAssignment m_empTOPoolAssignment = null;</span>
-	private final ResourceBundle m_bundle;
-
-	private final DatePickerPC m_inputDatePicker;//allow user to select &quot;view-by-date&quot;
-<span class="nc" id="L74">	private int[] m_empMonthYearStart=null;</span>
+<span class="nc" id="L73">    private boolean initFailure = false;</span>
+<span class="nc" id="L74">	private boolean isMultiEdit = false;</span>
+<span class="nc" id="L75">	private boolean isAllViewable=false;</span>
+<span class="nc" id="L76">	private boolean isAllEditable=false;</span>
+<span class="nc" id="L77">	private Employee employee = null;</span>
+	//the selected employee's time off pool on the AsOfDate (viewDate)
+<span class="nc" id="L79">    private TOPool pool = null; </span>
+<span class="nc" id="L80">    private EmpTOPoolAssignment empTOPoolAssignment = null;</span>
+	private final ResourceBundle bundle;
+	//allow user to select &quot;view-by-date&quot;
+	private final DatePickerPC inputDatePicker;
+<span class="nc" id="L84">	private int[] empMonthYearStart=null;</span>
 	private static final String SHOW_AS_DATE_FN = &quot;showAsDate&quot;;
 
 
-    private final ContainerList m_containerList;
-    private final TimeOffPC m_timeOffForm;
-    private final TimeOffPoolAssignmentPC m_toPoolAssignmentPC;
-    private ReferenceScheduleAssignmentPC m_referenceSchedulePC;
+    private final ContainerList containerList;
+    private final TimeOffPC timeOffForm;
+    private final TimeOffPoolAssignmentPC toPoolAssignmentPC;
+    private ReferenceScheduleAssignmentPC referenceSchedulePC;
+    // Map of EmployeeIDs  x List of their TOPools (may be multiple if by activity).
+    HashMap&lt;ID, List&lt;EmpTOPoolAssignment&gt;&gt; empPoolsMap;
 
 	public TimeOffPM(RequestContext context) {
-<span class="nc" id="L84">		super(context, FRAMED_MODEL);</span>
-<span class="nc" id="L85">		m_bundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L96">		super(context, FRAMED_MODEL);</span>
+<span class="nc" id="L97">		addRequiredJavaScriptFile(JavaScriptFileID.JQUERY);</span>
+<span class="nc" id="L98">		addRequiredJavaScriptFile(RmJavaScriptFileID.TIME_OFF_PM);</span>
+<span class="nc" id="L99">		bundle = m_localizer.getBundle(BbmWebBundleKey.BUNDLE_NAME);</span>
+		
+<span class="nc" id="L101">		empPoolsMap = new HashMap&lt;ID, List&lt;EmpTOPoolAssignment&gt;&gt;();</span>
 
-<span class="nc" id="L87">		m_inputDatePicker = new DatePickerPC(m_context, ProfilePageModel.SHOW_AS_DATE_FN);</span>
-<span class="nc" id="L88">		m_inputDatePicker.setOnChangeJS(JSUtil.REFRESH_PAGE);</span>
-<span class="nc" id="L89">		addChildComponent(m_inputDatePicker);//for extraction</span>
+<span class="nc" id="L103">		inputDatePicker = new DatePickerPC(context, ProfilePageModel.SHOW_AS_DATE_FN);</span>
+<span class="nc" id="L104">		inputDatePicker.setOnChangeJS(JSUtil.REFRESH_PAGE);</span>
+		//for extraction
+<span class="nc" id="L106">		addChildComponent(inputDatePicker);</span>
 
-<span class="nc" id="L91">        m_containerList = new ContainerList(this, 2);</span>
-
-
+<span class="nc" id="L108">        containerList = new ContainerList(this, 2);//NOSONAR</span>
+        
         //-- Time Off Pool Form --
-<span class="nc" id="L95">        m_toPoolAssignmentPC = new TimeOffPoolAssignmentPC(context);</span>
-<span class="nc" id="L96">        addChildComponent(m_toPoolAssignmentPC);</span>
-        //addForm(m_toPoolAssignmentPC);
-<span class="nc" id="L98">        m_containerList.add(m_toPoolAssignmentPC);</span>
+<span class="nc" id="L111">        toPoolAssignmentPC = new TimeOffPoolAssignmentPC(context);</span>
+<span class="nc" id="L112">        addChildComponent(toPoolAssignmentPC);</span>
+<span class="nc" id="L113">        containerList.add(toPoolAssignmentPC);</span>
 
         //pool effective dates
-<span class="nc" id="L101">		ToolbarPC popupToolbar = new ToolbarPC(context, getName() + &quot;_popupToolbar&quot;);</span>
-<span class="nc" id="L102">		addChildComponent(popupToolbar);</span>
-<span class="nc" id="L103">        m_pool = new TOPool();</span>
-<span class="nc" id="L104">        m_empTOPoolAssignment = new EmpTOPoolAssignment();</span>
+<span class="nc" id="L116">		ToolbarPC popupToolbar = new ToolbarPC(context, getName() + &quot;_popupToolbar&quot;);</span>
+<span class="nc" id="L117">		addChildComponent(popupToolbar);</span>
+<span class="nc" id="L118">        pool = new TOPool();</span>
+<span class="nc" id="L119">        empTOPoolAssignment = new EmpTOPoolAssignment();</span>
 
 
         //-- Time Off form --
-<span class="nc" id="L108">        m_timeOffForm = new TimeOffPC(context);</span>
-<span class="nc" id="L109">        m_timeOffForm.setIsBorderEnabled(false);</span>
-<span class="nc" id="L110">        m_timeOffForm.setUseWrapper(false);</span>
-<span class="nc" id="L111">        addChildComponent(m_timeOffForm);</span>
-        //addForm(m_timeOffForm);
-<span class="nc" id="L113">        m_containerList.add(m_timeOffForm);</span>
+<span class="nc" id="L123">        timeOffForm = new TimeOffPC(context);</span>
+<span class="nc" id="L124">        timeOffForm.setIsBorderEnabled(false);</span>
+<span class="nc" id="L125">        timeOffForm.setUseWrapper(false);</span>
+<span class="nc" id="L126">        addChildComponent(timeOffForm);</span>
+<span class="nc" id="L127">        containerList.add(timeOffForm);</span>
 
         //Reference schedule form
-<span class="nc" id="L116">        createReferenceSchedulePC(context);</span>
+<span class="nc" id="L130">        createReferenceSchedulePC(context);</span>
         
         
         
 		// People filter: V11 SP1 HFR1, V11.1 for Drop 4: Removing employee filter box from expanded work-pane to improve performance for Verizon.
 
-<span class="nc" id="L122">		m_employee = new Employee();</span>
-<span class="nc" id="L123">		m_employee.setPerson(new Person());</span>
-<span class="nc" id="L124">	}</span>
+<span class="nc" id="L136">		employee = new Employee();</span>
+<span class="nc" id="L137">		employee.setPerson(new Person());</span>
+<span class="nc" id="L138">	}</span>
 
 	private void createReferenceSchedulePC(RequestContext context) {
-<span class="nc bnc" id="L127" title="All 2 branches missed.">		if (LicenseUtil.isAdvancedRMLicense()) {</span>
-<span class="nc" id="L128">			m_referenceSchedulePC = new ReferenceScheduleAssignmentPC(context);</span>
-<span class="nc" id="L129">			addChildComponent(m_referenceSchedulePC);</span>
-<span class="nc" id="L130">			m_containerList.add(m_referenceSchedulePC);</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">		if (LicenseUtil.isAdvancedRMLicense()) {</span>
+<span class="nc" id="L142">			referenceSchedulePC = new ReferenceScheduleAssignmentPC(context);</span>
+<span class="nc" id="L143">			addChildComponent(referenceSchedulePC);</span>
+<span class="nc" id="L144">			containerList.add(referenceSchedulePC);</span>
 		}
-<span class="nc" id="L132">	}</span>
+<span class="nc" id="L146">	}</span>
 
 	/**
 	 * Return instance of Model which is ready to be rendered
 	 */
 	public static PageModel getInstance(RequestContext context) throws Exception {
-<span class="nc" id="L138">		return getInstance(context, TimeOffPM.class);</span>
+<span class="nc" id="L152">		return getInstance(context, TimeOffPM.class);</span>
 	}
 
 	@Override
 	public Collection getContainers() {
-<span class="nc" id="L143">        return m_containerList;</span>
+<span class="nc" id="L157">        return containerList;</span>
     }
 
 	/**
@@ -148,30 +162,34 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
 	 */
 	@Override
 	public void initForDisplay() {
-<span class="nc bnc" id="L151" title="All 2 branches missed.">		if (m_isInitializedForDisplay) return;</span>
-		else {
-<span class="nc" id="L153">			super.initForDisplay();</span>
-<span class="nc" id="L154">			PeopleUtil.initForDisplay(this);</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">		if (m_isInitializedForDisplay) {</span>
+<span class="nc" id="L166">			return;</span>
 		}
-<span class="nc" id="L156">	}</span>
+
+<span class="nc" id="L169">		super.initForDisplay();</span>
+<span class="nc bnc" id="L170" title="All 2 branches missed.">		if (!initFailure) {</span>
+<span class="nc" id="L171">			PeopleUtil.initForDisplay(this);</span>
+		}
+
+<span class="nc" id="L174">	}</span>
 
 	/**
 	 * Initialize Model with Data
 	 */
 	@Override
 	protected void initializeModel() {
-<span class="nc bnc" id="L163" title="All 2 branches missed.">		if (m_isInitialized) return; else m_isInitialized = true;</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">		if (m_isInitialized) return; else m_isInitialized = true;</span>
 		try {
-<span class="nc" id="L165">			loadData();</span>
-<span class="nc" id="L166">		} catch (Exception ex) {</span>
-<span class="nc" id="L167">			handleUnableToLoadDataError(log, ex);</span>
-<span class="nc" id="L168">			m_initFailure = true;</span>
+<span class="nc" id="L183">			loadData();</span>
+<span class="nc" id="L184">		} catch (Exception ex) {</span>
+<span class="nc" id="L185">			handleUnableToLoadDataError(log, ex);</span>
+<span class="nc" id="L186">			initFailure = true;</span>
 		} finally {
-<span class="nc" id="L170">			initForm();</span>
-<span class="nc" id="L171">			initContentTitle();</span>
-<span class="nc" id="L172">			initToolbar();</span>
-<span class="nc" id="L173">		}</span>
-<span class="nc" id="L174">	}</span>
+<span class="nc" id="L188">			initForm();</span>
+<span class="nc" id="L189">			initContentTitle();</span>
+<span class="nc" id="L190">			initToolbar();</span>
+<span class="nc" id="L191">		}</span>
+<span class="nc" id="L192">	}</span>
 
     /**
      * Initialize JavaScript Variables. Overridden to set helpURL
@@ -179,123 +197,137 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
      * the old help file (pre-7.8.4) rather than the new one.
      */
 	@Override
-	protected void initJSVariables()
-    {
-<span class="nc" id="L184">        super.initJSVariables();</span>
-<span class="nc" id="L185">    }</span>
+	protected void initJSVariables() {
+<span class="nc" id="L201">		super.initJSVariables();</span>
+<span class="nc" id="L202">	}</span>
 
+	@SuppressWarnings(&quot;unchecked&quot;)
 	@Override
-	protected void loadData() throws Exception
-	{
-<span class="nc" id="L190">		User user = m_context.getUser();</span>
-<span class="nc" id="L191">		Collection&lt;ID&gt; empIDs = getSelectedIDsAsCollection();</span>
-<span class="nc" id="L192">		m_isAllViewable = PeopleMH.isAuthToOrgForAll(m_context, user, empIDs, PrivilegeKeys.TOM_VIEWAVAILABLETIMEOFF_ID);</span>
-<span class="nc bnc" id="L193" title="All 2 branches missed.">		if (!m_isAllViewable) return;</span>
-
-<span class="nc" id="L195">		m_isAllEditable = PeopleMH.isAuthToOrgForAll(m_context, user, empIDs, PrivilegeKeys.TOM_EDITAVAILABLETIMEOFF_ID);</span>
-
-<span class="nc" id="L197">		m_inputDatePicker.setDate((Date)m_context.getAttribute(RequestContext.SESSION_SCOPE, SHOW_AS_DATE_FN));</span>
-<span class="nc" id="L198">		m_viewByModDate = m_inputDatePicker.getDate();</span>
-<span class="nc bnc" id="L199" title="All 2 branches missed.">        if (m_viewByModDate == null)</span>
-<span class="nc" id="L200">            m_viewByModDate = new Date();</span>
-
-<span class="nc" id="L202">		HashMap profileData = null;</span>
-<span class="nc bnc" id="L203" title="All 2 branches missed.">		if (empIDs.size()&gt;1)</span>
-		{
-<span class="nc" id="L205">			profileData = PeopleMH.getProfileDataMultiEdit(empIDs, m_viewByModDate, m_context.getLocaleContext(), m_context.isInWhatIfMode());</span>
-		}
-		else
-		{
-<span class="nc" id="L209">			ID userID = m_context.getUser().getID();</span>
-<span class="nc" id="L210">			profileData = PeopleMH.getProfileData(m_employee.getID(), userID, m_viewByModDate, false, m_context.getLocaleContext(), m_context.isInWhatIfMode());</span>
+	protected void loadData() throws Exception {
+<span class="nc" id="L207">		User user = m_context.getUser();</span>
+<span class="nc" id="L208">		Collection&lt;ID&gt; empIDs = getSelectedIDsAsCollection();</span>
+<span class="nc" id="L209">		isAllViewable = PeopleMH.isAuthToOrgForAll(m_context, user, empIDs, PrivilegeKeys.TOM_VIEWAVAILABLETIMEOFF_ID);</span>
+<span class="nc bnc" id="L210" title="All 2 branches missed.">		if (!isAllViewable){</span>
+<span class="nc" id="L211">			return;</span>
 		}
 
-<span class="nc" id="L213">		m_employee = (Employee)profileData.get(PeopleDataKey.EMPLOYEE);</span>
-<span class="nc" id="L214">		m_editIdStr = m_employee.getMultiEditIDsInString();</span>
-<span class="nc" id="L215">		m_employeeTokenStr = m_employee.getIDInString();</span>
+<span class="nc" id="L214">		isAllEditable = PeopleMH.isAuthToOrgForAll(m_context, user, empIDs, PrivilegeKeys.TOM_EDITAVAILABLETIMEOFF_ID);</span>
 
-<span class="nc" id="L217">		m_timeOffForm.init(empIDs, m_employee, false, m_isAllEditable, m_isMultiEdit, m_viewByModDate, this);</span>
+<span class="nc" id="L216">		inputDatePicker.setDate((Date)m_context.getAttribute(RequestContext.SESSION_SCOPE, SHOW_AS_DATE_FN));</span>
+<span class="nc" id="L217">		viewByModDate = inputDatePicker.getDate();</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">        if (viewByModDate == null){</span>
+<span class="nc" id="L219">            viewByModDate = new Date();</span>
+        }
+
+<span class="nc" id="L222">		HashMap profileData = null;</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">		if (empIDs.size()&gt;1) {</span>
+<span class="nc" id="L224">			profileData = PeopleMH.getProfileDataMultiEdit(empIDs, viewByModDate, m_context.getLocaleContext(), m_context.isInWhatIfMode());</span>
+		}
+		else {
+<span class="nc" id="L227">			ID userID = m_context.getUser().getID();</span>
+<span class="nc" id="L228">			profileData = PeopleMH.getProfileData(employee.getID(), userID, viewByModDate, false, m_context.getLocaleContext(), m_context.isInWhatIfMode());</span>
+		}
+
+<span class="nc" id="L231">		employee = (Employee)profileData.get(PeopleDataKey.EMPLOYEE);</span>
+<span class="nc" id="L232">		editIdStr = employee.getMultiEditIDsInString();</span>
+<span class="nc" id="L233">		employeeTokenStr = employee.getIDInString();</span>
+
+<span class="nc" id="L235">		timeOffForm.init(empIDs, employee, false, isAllEditable, isMultiEdit, viewByModDate, this);</span>
 		
-<span class="nc bnc" id="L219" title="All 2 branches missed.">		if(m_referenceSchedulePC != null) {</span>
-<span class="nc" id="L220">			m_referenceSchedulePC.initialize(m_employee, empIDs, getAsOfDate(), m_isAllEditable);</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">		if(referenceSchedulePC != null) {</span>
+<span class="nc" id="L238">			referenceSchedulePC.initialize(employee, empIDs, getAsOfDate(), isAllEditable);</span>
 		}
 		
-
-<span class="nc" id="L224">		boolean noPoolAssignmentsFound = false;</span>
-<span class="nc bnc" id="L225" title="All 4 branches missed.">		if (empIDs != null &amp;&amp; empIDs.size() &gt; 0) {</span>
-<span class="nc" id="L226">			HashMap empPoolsMap = PeopleMH.getTOPoolsForWorkResources(empIDs, m_viewByModDate, m_viewByModDate);</span>
-<span class="nc bnc" id="L227" title="All 4 branches missed.">			if (empPoolsMap != null &amp;&amp; empPoolsMap.size() &gt; 0) {</span>
-<span class="nc" id="L228">				prepareTOPAssignments(empIDs, empPoolsMap);</span>
+		
+<span class="nc" id="L242">		boolean noPoolAssignmentsFound = false;</span>
+		
+<span class="nc bnc" id="L244" title="All 2 branches missed.">		if (!empIDs.isEmpty()) {</span>
+<span class="nc" id="L245">			empPoolsMap = PeopleMH.getTOPoolsForWorkResources(empIDs, viewByModDate, viewByModDate);</span>
+<span class="nc" id="L246">			int defaultCount = getDefaultPoolCount();</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">			if (defaultCount &gt; 0){</span>
+<span class="nc" id="L248">				prepareDefaultTOPAssignments(empIDs);</span>
 			} else {
-<span class="nc" id="L230">				noPoolAssignmentsFound = true;</span>
+<span class="nc" id="L250">				noPoolAssignmentsFound = true;</span>
 			}
 		}
-<span class="nc" id="L233">		m_toPoolAssignmentPC.init(m_employee, empIDs, m_pool, m_empTOPoolAssignment, m_isAllEditable, m_isMultiEdit, m_viewByModDate,</span>
+		
+<span class="nc" id="L254">		toPoolAssignmentPC.init(employee, empIDs, pool, empTOPoolAssignment, isAllEditable, isMultiEdit, viewByModDate,</span>
 				noPoolAssignmentsFound);
 
 		// Show Time Off Year Range if Single Employee is Selected
-<span class="nc bnc" id="L237" title="All 4 branches missed.">		if (empIDs != null &amp;&amp; empIDs.size() == 1) {</span>
-<span class="nc" id="L238">			ID empID = getSelectedIDObject();</span>
-<span class="nc" id="L239">			ID orgID = OrganizationModelHandler.getEmployeeOrgID(m_context, empID);</span>
-<span class="nc bnc" id="L240" title="All 2 branches missed.">			if (orgID == null) {</span>
+<span class="nc bnc" id="L258" title="All 2 branches missed.">		if (empIDs.size() == 1) {</span>
+<span class="nc" id="L259">			ID empID = getSelectedIDObject();</span>
+<span class="nc" id="L260">			ID orgID = OrganizationModelHandler.getEmployeeOrgID(m_context, empID);</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">			if (orgID == null) {</span>
 				// add page message
-<span class="nc" id="L242">				this.addPageMessage(Message.WARNING_TYPE, BbmWebBundleKey.EMP_NO_ORG, BbmWebBundleKey.BUNDLE_NAME);</span>
-<span class="nc" id="L243">				return;</span>
+<span class="nc" id="L263">				this.addPageMessage(Message.WARNING_TYPE, BbmWebBundleKey.EMP_NO_ORG, BbmWebBundleKey.BUNDLE_NAME);</span>
+<span class="nc" id="L264">				return;</span>
 			}
-<span class="nc" id="L245">			m_empMonthYearStart = RequestsMH.getEmployeeTimeOffYearStart(m_context, empID, orgID);</span>
+<span class="nc" id="L266">			empMonthYearStart = RequestsMH.getEmployeeTimeOffYearStart(m_context, empID, orgID);</span>
 		}
-<span class="nc" id="L247">	}</span>
+<span class="nc" id="L268">	}</span>
 	
+	
+
+
 	/**
-	 * Prepares the m_pool, m_empTOPoolAssignment objects for use by the m_toPoolAssignmentPC.
-	 *
+	 * Prepares the pool, empTOPoolAssignment objects for use by the toPoolAssignmentPC.
+	 * 
 	 * @param empIDs
 	 * @return
 	 * @throws Exception
 	 */
-	private void prepareTOPAssignments(Collection&lt;ID&gt; empIDs, HashMap empPoolsMap) {
-<span class="nc bnc" id="L257" title="All 2 branches missed.">		if (empPoolsMap.size() &lt; empIDs.size()) {</span>
+	void prepareDefaultTOPAssignments(Collection&lt;ID&gt; empIDs) {
+<span class="nc bnc" id="L281" title="All 2 branches missed.">		if (this.getDefaultPoolCount() &lt; empIDs.size()) {</span>
 			// Some of the selected employees have no pool assignment on the AsOfDate, so we set it to multi-value.
-<span class="nc" id="L259">			m_pool.setFieldMultiValue(TOPoolFieldInfo.TOPOOL_ID);</span>
-<span class="nc" id="L260">			m_pool.setFieldMultiValue(TOPoolFieldInfo.TOPOOL_NAME);</span>
-<span class="nc" id="L261">			m_empTOPoolAssignment.setFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_STARTTIME);</span>
-<span class="nc" id="L262">			m_empTOPoolAssignment.setFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_ENDTIME);</span>
+<span class="nc" id="L283">			pool.setFieldMultiValue(TOPoolFieldInfo.TOPOOL_ID);</span>
+<span class="nc" id="L284">			pool.setFieldMultiValue(TOPoolFieldInfo.TOPOOL_NAME);</span>
+<span class="nc" id="L285">			empTOPoolAssignment.setFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_STARTTIME);</span>
+<span class="nc" id="L286">			empTOPoolAssignment.setFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_ENDTIME);</span>
 		} else {
 			// All of the selected employees have pool assignments on the AsOfDate. See if all of the assignments are the same or not.
-<span class="nc bnc" id="L265" title="All 2 branches missed.">			for (Iterator it = empPoolsMap.keySet().iterator(); it.hasNext();) {</span>
-<span class="nc" id="L266">				ID empID = (ID) it.next();</span>
-<span class="nc" id="L267">				Collection assignments = (Collection) empPoolsMap.get(empID);</span>
-<span class="nc bnc" id="L268" title="All 2 branches missed.">				for (Iterator assIt = assignments.iterator(); assIt.hasNext();) {</span>
-<span class="nc" id="L269">					EmpTOPoolAssignment curAssignment = (EmpTOPoolAssignment) assIt.next();</span>
-<span class="nc" id="L270">					ID poolID = curAssignment.getTOPoolID();</span>
-<span class="nc" id="L271">					String poolName = curAssignment.getTOPoolName();</span>
+<span class="nc bnc" id="L289" title="All 2 branches missed.">			for(Entry&lt;ID, List&lt;EmpTOPoolAssignment&gt;&gt; set : empPoolsMap.entrySet()){</span>
+				
+<span class="nc" id="L291">				List&lt;EmpTOPoolAssignment&gt; assignments = set.getValue();</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">				for(EmpTOPoolAssignment curAssignment : assignments){</span>
+					// For the default pool assignment, the activity must be null
+					// Otherwise it applies to a specific time-off activity 
+<span class="nc bnc" id="L295" title="All 2 branches missed.">					if(curAssignment.getActivityID() != null){</span>
+<span class="nc" id="L296">						continue;</span>
+					}
+<span class="nc" id="L298">					ID poolID = curAssignment.getTOPoolID();</span>
+<span class="nc" id="L299">					String poolName = curAssignment.getTOPoolName();</span>
 
-<span class="nc bnc" id="L273" title="All 4 branches missed.">					if (m_pool.getID() == null &amp;&amp; !m_pool.isFieldMultiValue(TOPoolFieldInfo.TOPOOL_ID)) {</span>
+<span class="nc bnc" id="L301" title="All 4 branches missed.">					if (pool.getID() == null &amp;&amp; !pool.isFieldMultiValue(TOPoolFieldInfo.TOPOOL_ID)) {</span>
 						// we will only use a single pool object and a single assignment object
-<span class="nc" id="L275">						m_pool.setID(poolID);</span>
-<span class="nc" id="L276">						m_pool.setName(poolName);</span>
-<span class="nc" id="L277">						m_empTOPoolAssignment = curAssignment;</span>
+<span class="nc" id="L303">						pool.setID(poolID);</span>
+<span class="nc" id="L304">						pool.setName(poolName);</span>
+<span class="nc" id="L305">						empTOPoolAssignment = curAssignment;</span>
 					} else {
 						// Check if any of the pool properties are different for this employee than for any other
 						// employee. If so, we will set those properties to multi-value properties, so that the
 						// UI will show the &quot;*&quot; instead of the mixed values.
-<span class="nc bnc" id="L282" title="All 2 branches missed.">						if (!poolID.equals(m_pool.getID()))</span>
-<span class="nc" id="L283">							m_pool.setFieldMultiValue(TOPoolFieldInfo.TOPOOL_ID);</span>
+<span class="nc bnc" id="L310" title="All 2 branches missed.">						if (!poolID.equals(pool.getID())){</span>
+<span class="nc" id="L311">							pool.setFieldMultiValue(TOPoolFieldInfo.TOPOOL_ID);</span>
+						}
 
-<span class="nc bnc" id="L285" title="All 2 branches missed.">						if (!poolName.equals(m_pool.getName()))</span>
-<span class="nc" id="L286">							m_pool.setFieldMultiValue(TOPoolFieldInfo.TOPOOL_NAME);</span>
+<span class="nc bnc" id="L314" title="All 2 branches missed.">						if (!poolName.equals(pool.getName())){</span>
+<span class="nc" id="L315">							pool.setFieldMultiValue(TOPoolFieldInfo.TOPOOL_NAME);</span>
+						}
 
-<span class="nc bnc" id="L288" title="All 2 branches missed.">						if (!isSameValue(curAssignment.getStartTime(), m_empTOPoolAssignment.getStartTime()))</span>
-<span class="nc" id="L289">							m_empTOPoolAssignment.setFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_STARTTIME);</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">						if (!isSameValue(curAssignment.getStartTime(), empTOPoolAssignment.getStartTime())){</span>
+<span class="nc" id="L319">							empTOPoolAssignment.setFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_STARTTIME);</span>
+						}
 
-<span class="nc bnc" id="L291" title="All 2 branches missed.">						if (!isSameValue(curAssignment.getEndTime(), m_empTOPoolAssignment.getEndTime()))</span>
-<span class="nc" id="L292">							m_empTOPoolAssignment.setFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_ENDTIME);</span>
+<span class="nc bnc" id="L322" title="All 2 branches missed.">						if (!isSameValue(curAssignment.getEndTime(), empTOPoolAssignment.getEndTime())){</span>
+<span class="nc" id="L323">							empTOPoolAssignment.setFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_ENDTIME);</span>
+						}
 					}
-					break; // there should be only one assignment per employee since we queried for a single instant
+					break; // there should be only one assignment per employee since we queried for a single instance
 				}
-<span class="nc" id="L296">			}</span>
-		}
-<span class="nc" id="L298">	}</span>
+<span class="nc" id="L328">			}//entry set</span>
+		}//else
+<span class="nc" id="L330">	}</span>
 
     /**
      * Determines if two Object are equal.
@@ -305,25 +337,25 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
      */
     private boolean isSameValue(Object val1, Object val2)
     {
-<span class="nc" id="L308">        boolean areSame = false;</span>
-<span class="nc bnc" id="L309" title="All 4 branches missed.">        if (val1==null &amp;&amp; val2==null)</span>
+<span class="nc" id="L340">        boolean areSame = false;</span>
+<span class="nc bnc" id="L341" title="All 4 branches missed.">        if (val1==null &amp;&amp; val2==null)</span>
         {
-<span class="nc" id="L311">            areSame = true;</span>
+<span class="nc" id="L343">            areSame = true;</span>
         }
-<span class="nc bnc" id="L313" title="All 4 branches missed.">        else if (val1==null || val2==null)</span>
+<span class="nc bnc" id="L345" title="All 4 branches missed.">        else if (val1==null || val2==null)</span>
         {
-<span class="nc" id="L315">            areSame = false;</span>
+<span class="nc" id="L347">            areSame = false;</span>
         }
-<span class="nc bnc" id="L317" title="All 2 branches missed.">        else if (val1.equals(val2))</span>
+<span class="nc bnc" id="L349" title="All 2 branches missed.">        else if (val1.equals(val2))</span>
         {
-<span class="nc" id="L319">            areSame = true;</span>
+<span class="nc" id="L351">            areSame = true;</span>
         }
-<span class="nc" id="L321">        return areSame;</span>
+<span class="nc" id="L353">        return areSame;</span>
     }
 
 	public void updateData() throws Exception {
-<span class="nc" id="L325">		m_timeOffForm.updateData();</span>
-<span class="nc" id="L326">	}</span>
+<span class="nc" id="L357">		timeOffForm.updateData();</span>
+<span class="nc" id="L358">	}</span>
 
 	/**
 	 * Return the content title
@@ -331,153 +363,164 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
 
 	@Override
 	protected void initContentTitle() {
-<span class="nc" id="L334">	m_contentTitlePC.setPageTitle(i18n(m_bundle, BbmWebBundleKey.BBM_PEOPLE_TIMEOFF));</span>
+<span class="nc" id="L366">		m_contentTitlePC.setPageTitle(i18n(bundle, BbmWebBundleKey.BBM_PEOPLE_TIMEOFF));</span>
 
-<span class="nc" id="L336">	String itemName = &quot;&quot;;</span>
+<span class="nc" id="L368">		String itemName = &quot;&quot;;</span>
 
-<span class="nc bnc" id="L338" title="All 2 branches missed.">	if (getSelectedIDSize() &gt; 0) {</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">		if (getSelectedIDSize() &gt; 0) {</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">			if (getSelectedIDSize() &gt; 1) {</span>
+<span class="nc" id="L372">				itemName = m_localizer.i18n(bundle, BbmWebBundleKey.PEOPLE_SUMMARY_TITLE_PEOPLE, getSelectedIDSize());</span>
+<span class="nc bnc" id="L373" title="All 2 branches missed.">			} else if (employee != null) {</span>
+<span class="nc" id="L374">				itemName = m_localizer.formatName(employee.getPerson());</span>
+			}
+		}
 
-<span class="nc bnc" id="L340" title="All 2 branches missed.">	    if (getSelectedIDSize() &gt; 1) {</span>
-<span class="nc" id="L341">		itemName = m_localizer.i18n(m_bundle, BbmWebBundleKey.PEOPLE_SUMMARY_TITLE_PEOPLE, getSelectedIDSize());</span>
-<span class="nc bnc" id="L342" title="All 2 branches missed.">	    } else if (m_employee != null) {</span>
-<span class="nc" id="L343">		itemName = m_localizer.formatName(m_employee.getPerson());</span>
-	    }
-	}
+<span class="nc bnc" id="L378" title="All 2 branches missed.">		if (empMonthYearStart != null) {</span>
+<span class="nc" id="L379">			TimeZone tz = m_context.getViewingTimeZone();</span>
+<span class="nc" id="L380">			Calendar cal = Calendar.getInstance(tz);</span>
+<span class="nc" id="L381">			cal.set(Calendar.MONTH, empMonthYearStart[0]);</span>
+<span class="nc" id="L382">			cal.set(Calendar.DAY_OF_MONTH, empMonthYearStart[1]);</span>
+<span class="nc" id="L383">			String dateDisplay = m_localizer.formatDate(cal.getTime(), tz, RegionalFormatBundleKey.DATE_NOYEAR_FORMAT);</span>
 
-<span class="nc bnc" id="L347" title="All 2 branches missed.">	if (m_empMonthYearStart != null) {</span>
-<span class="nc" id="L348">	    TimeZone tz = m_context.getViewingTimeZone();</span>
-<span class="nc" id="L349">	    Calendar cal = Calendar.getInstance(tz);</span>
-<span class="nc" id="L350">	    cal.set(Calendar.MONTH, m_empMonthYearStart[0]);</span>
-<span class="nc" id="L351">	    cal.set(Calendar.DAY_OF_MONTH, m_empMonthYearStart[1]);</span>
-<span class="nc" id="L352">	    String dateDisplay = m_localizer.formatDate(cal.getTime(), tz, RegionalFormatBundleKey.DATE_NOYEAR_FORMAT);</span>
+<span class="nc" id="L385">			itemName += &quot; (&quot; + m_localizer.i18n(bundle, BbmWebBundleKey.EMP_TIMEOFF_YEAR_START_MF, new Object[] { dateDisplay }) + &quot;)&quot;;</span>
 
-<span class="nc" id="L354">	    itemName += &quot; (&quot; + m_localizer.i18n(m_bundle, BbmWebBundleKey.EMP_TIMEOFF_YEAR_START_MF, new Object[] { dateDisplay }) + &quot;)&quot;;</span>
+		}
 
-	}
+<span class="nc" id="L389">		m_contentTitlePC.setItemName(itemName);</span>
 
-<span class="nc" id="L358">	m_contentTitlePC.setItemName(itemName);</span>
-
-<span class="nc" id="L360">	m_contentTitlePC.setActiveComponent(m_inputDatePicker);</span>
-<span class="nc" id="L361">    }</span>
+<span class="nc" id="L391">		m_contentTitlePC.setActiveComponent(inputDatePicker);</span>
+<span class="nc" id="L392">	}</span>
 
 	/**
 	 * Initialize the field validators
 	 */
-<span class="nc" id="L366">	protected void initFieldValidators() {}</span>
+	protected void initFieldValidators() {
+		//empty
+<span class="nc" id="L399">	}</span>
 
 	/**
 	 * Initialize Form Display
 	 */
 	protected void initForm()
 	{
-<span class="nc" id="L373">		initContextDateFieldNames(m_inputDatePicker);</span>
+<span class="nc" id="L406">		initContextDateFieldNames(inputDatePicker);</span>
 		
-<span class="nc bnc" id="L375" title="All 2 branches missed.">		if (!m_isAllViewable)</span>
+<span class="nc bnc" id="L408" title="All 2 branches missed.">		if (!isAllViewable)</span>
 		{
-<span class="nc" id="L377">			addPageMessage(Message.WARNING_TYPE,</span>
+<span class="nc" id="L410">			addPageMessage(Message.WARNING_TYPE,</span>
 					BbmWebBundleKey.BBM_PEOPLE_TIMEOFF_NOT_ALL_VIEWABLE, BbmWebBundleKey.BUNDLE_NAME);
 		}
-<span class="nc bnc" id="L380" title="All 2 branches missed.">		else if (!m_isAllEditable)</span>
+<span class="nc bnc" id="L413" title="All 2 branches missed.">		else if (!isAllEditable)</span>
 		{
-<span class="nc" id="L382">			addPageMessage(Message.WARNING_TYPE,</span>
+<span class="nc" id="L415">			addPageMessage(Message.WARNING_TYPE,</span>
 					BbmWebBundleKey.BBM_PEOPLE_TIMEOFF_NOT_ALL_EDITABLE, BbmWebBundleKey.BUNDLE_NAME);
 		}
-<span class="nc" id="L385">	}</span>
+<span class="nc" id="L418">	}</span>
 
 	/**
 	 * Initialize Toolbar
 	 */
 	@Override
 	protected void initToolbar() {
-<span class="nc bnc" id="L392" title="All 2 branches missed.">		boolean isBtnEnabled = !m_initFailure &amp;&amp;</span>
-<span class="nc bnc" id="L393" title="All 4 branches missed.">                hasSelectedID() &amp;&amp; m_isAllViewable;</span>
-<span class="nc bnc" id="L394" title="All 4 branches missed.">		boolean isSaveEnabled = isBtnEnabled &amp;&amp; m_isAllEditable;</span>
-<span class="nc" id="L395">		ToolbarUtil.addValidateSaveBtn(m_toolbar, isSaveEnabled);</span>
-<span class="nc" id="L396">		ToolbarUtil.addResetBtn(m_toolbar, isBtnEnabled);</span>
-<span class="nc" id="L397">	}</span>
+<span class="nc bnc" id="L425" title="All 2 branches missed.">		boolean isBtnEnabled = !initFailure &amp;&amp;</span>
+<span class="nc bnc" id="L426" title="All 4 branches missed.">                hasSelectedID() &amp;&amp; isAllViewable;</span>
+<span class="nc bnc" id="L427" title="All 4 branches missed.">		boolean isSaveEnabled = isBtnEnabled &amp;&amp; isAllEditable;</span>
+<span class="nc" id="L428">		ToolbarUtil.addValidateSaveBtn(m_toolbar, isSaveEnabled);</span>
+<span class="nc" id="L429">		ToolbarUtil.addResetBtn(m_toolbar, isBtnEnabled);</span>
+<span class="nc" id="L430">	}</span>
 
 	/**
 	 * Return the form title
 	 */
-<span class="nc" id="L402">	public String getFormTitle() { return null; }</span>
-
-	/**
-	 * Set editIdStr
-	 */
-	public void setEmpTokenStr(String empTokenStr) {
-<span class="nc" id="L408">		m_employeeTokenStr = empTokenStr;</span>
-<span class="nc" id="L409">	}</span>
-
-	/**
-	 * Return editIdStr
-	 */
-	public String getEmpTokenStr() {
-<span class="nc" id="L415">		return m_employeeTokenStr;</span>
+	public String getFormTitle() {
+<span class="nc" id="L436">		return null;</span>
 	}
 
 	/**
 	 * Set editIdStr
 	 */
-	public void setEditIdStr(String editIdStr) {
-<span class="nc" id="L422">		m_editIdStr = editIdStr;</span>
-<span class="nc" id="L423">	}</span>
+	public void setEmpTokenStr(String empTokenStr) {
+<span class="nc" id="L443">		employeeTokenStr = empTokenStr;</span>
+<span class="nc" id="L444">	}</span>
+
+	/**
+	 * Return editIdStr
+	 */
+	public String getEmpTokenStr() {
+<span class="nc" id="L450">		return employeeTokenStr;</span>
+	}
+
+	/**
+	 * Set editIdStr
+	 */
+	public void setEditIdStr(String aEditIdStr) {
+<span class="nc" id="L457">		editIdStr = aEditIdStr;</span>
+<span class="nc" id="L458">	}</span>
 
 	/**
 	 * Return editIdStr
 	 */
 	public String getEditIdStr() {
-<span class="nc" id="L429">		return m_editIdStr;</span>
+<span class="nc" id="L464">		return editIdStr;</span>
 	}
 
 	/**
 	 * Return true if People is Selectable
 	 */
 	@Override
-<span class="nc" id="L436">	public boolean isPeopleSelectable() {	return false;	}</span>
+	public boolean isPeopleSelectable() {
+<span class="nc" id="L472">		return false;</span>
+	}
 
 	/**
 	 * Return true if Page is in create mode
 	 */
 	@Override
-<span class="nc" id="L442">	public boolean isCreateMode() { return false;	}</span>
+	public boolean isCreateMode() {
+<span class="nc" id="L480">		return false;</span>
+	}
 
 	/**
 	 * Return true if Multi Edit mode
 	 */
 	@Override
-<span class="nc" id="L448">	public boolean isMultiEdit() { return m_isMultiEdit; }</span>
+	public boolean isMultiEdit() {
+<span class="nc" id="L488">		return isMultiEdit;</span>
+	}
 
 	/**
 	 * Specify whether to Common Message is Enabled
 	 */
 	@Override
-<span class="nc" id="L454">	public boolean isCommonMsgEnabled() { return true; }</span>
+	public boolean isCommonMsgEnabled() {
+<span class="nc" id="L496">		return true;</span>
+	}
 
 	/**
-	 * Set the IDs of the selected employees from the selection pane, and set m_empID and m_employee accordingly.
+	 * Set the IDs of the selected employees from the selection pane, and set empID and employee accordingly.
 	 * @param ids Comma delimited IDs
 	 */
 	@Override
 	public void setSelectedID(String ids) {
-<span class="nc" id="L462">		super.setSelectedID(ids);</span>
-<span class="nc" id="L463">		int empCount = getSelectedIDSize();</span>
+<span class="nc" id="L505">		super.setSelectedID(ids);</span>
+<span class="nc" id="L506">		int empCount = getSelectedIDSize();</span>
 
 		// we must do this when coming to the profile page because the employeeid isn't set
 		// from the people summary list.  we assume the first listed employee (if any) is the
 		// first employee to view.
-<span class="nc bnc" id="L468" title="All 2 branches missed.">		if (empCount &gt; 0) {</span>
-<span class="nc" id="L469">			ID empID = getSelectedIDObject();</span>
-<span class="nc" id="L470">			m_employee.setID(empID);</span>
+<span class="nc bnc" id="L511" title="All 2 branches missed.">		if (empCount &gt; 0) {</span>
+<span class="nc" id="L512">			ID empID = getSelectedIDObject();</span>
+<span class="nc" id="L513">			employee.setID(empID);</span>
 		}
 
-<span class="nc bnc" id="L473" title="All 2 branches missed.">		if (empCount &gt; 1){</span>
-<span class="nc" id="L474">			m_isMultiEdit = true;</span>
-<span class="nc" id="L475">			setIsMultiObjEditEnabled(true);</span>
+<span class="nc bnc" id="L516" title="All 2 branches missed.">		if (empCount &gt; 1){</span>
+<span class="nc" id="L517">			isMultiEdit = true;</span>
+<span class="nc" id="L518">			setIsMultiObjEditEnabled(true);</span>
 		}
-<span class="nc" id="L477">	}</span>
+<span class="nc" id="L520">	}</span>
 
 	/**
-	 * Set the IDs of the selected employees from the selection pane, and set m_empID and m_employee accordingly.
+	 * Set the IDs of the selected employees from the selection pane, and set empID and employee accordingly.
 	 * This is called from extractParameters() because we have a hidden WorkpaneFieldNames.PERFORM_ACTION_ON_ID_FN
 	 * field in the TimeOffPoolAssignmentPC. It's needed because our request handler doesn't have access to the
 	 * selected IDs otherwise.
@@ -486,41 +529,41 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
 	@Override
 	public void setPerformActionOnID(String aVal)
 	{
-<span class="nc" id="L489">		setSelectedID(aVal);</span>
-<span class="nc" id="L490">	}</span>
+<span class="nc" id="L532">		setSelectedID(aVal);</span>
+<span class="nc" id="L533">	}</span>
 
 	/**
 	 * Return Associated Employee
 	 */
 	public Employee getEmployee() {
-<span class="nc" id="L496">		Collection&lt;ID&gt; empIDs = getSelectedIDsAsCollection();</span>
+<span class="nc" id="L539">		Collection&lt;ID&gt; empIDs = getSelectedIDsAsCollection();</span>
 
-<span class="nc" id="L498">		m_viewByModDate = m_inputDatePicker.getDate();</span>
-<span class="nc bnc" id="L499" title="All 2 branches missed.">		if (m_viewByModDate == null) {</span>
-<span class="nc" id="L500">			m_viewByModDate = new Date();</span>
+<span class="nc" id="L541">		viewByModDate = inputDatePicker.getDate();</span>
+<span class="nc bnc" id="L542" title="All 2 branches missed.">		if (viewByModDate == null) {</span>
+<span class="nc" id="L543">			viewByModDate = new Date();</span>
 		}
 
-<span class="nc" id="L503">		Map profileData = null;</span>
+<span class="nc" id="L546">		Map profileData = null;</span>
 		try {
-<span class="nc bnc" id="L505" title="All 2 branches missed.">			if (empIDs.size() &gt; 1) {</span>
-<span class="nc" id="L506">				profileData = PeopleMH.getProfileDataMultiEdit(empIDs, m_viewByModDate, m_context.getLocaleContext(), m_context.isInWhatIfMode());</span>
+<span class="nc bnc" id="L548" title="All 2 branches missed.">			if (empIDs.size() &gt; 1) {</span>
+<span class="nc" id="L549">				profileData = PeopleMH.getProfileDataMultiEdit(empIDs, viewByModDate, m_context.getLocaleContext(), m_context.isInWhatIfMode());</span>
 			} else {
-<span class="nc" id="L508">				ID userID = m_context.getUser().getID();</span>
-<span class="nc" id="L509">				profileData = PeopleMH.getProfileData(m_employee.getID(), userID, m_viewByModDate, false, m_context.getLocaleContext(),</span>
-<span class="nc" id="L510">						m_context.isInWhatIfMode());</span>
+<span class="nc" id="L551">				ID userID = m_context.getUser().getID();</span>
+<span class="nc" id="L552">				profileData = PeopleMH.getProfileData(employee.getID(), userID, viewByModDate, false, m_context.getLocaleContext(),</span>
+<span class="nc" id="L553">						m_context.isInWhatIfMode());</span>
 			}
-<span class="nc" id="L512">			Employee temp = (Employee) profileData.get(PeopleDataKey.EMPLOYEE);</span>
-<span class="nc" id="L513">			m_employee.setPerson(temp.getPerson());</span>
-<span class="nc" id="L514">		} catch (Exception e) {</span>
-<span class="nc" id="L515">			log.error(this.i18n(this.m_bundle, RmWebLogBundleKey.UNABLE_TO_LOAD_PERSON_INFO_FOR_EMPLOYEE), e);</span>
-<span class="nc" id="L516">		}</span>
+<span class="nc" id="L555">			Employee temp = (Employee) profileData.get(PeopleDataKey.EMPLOYEE);</span>
+<span class="nc" id="L556">			employee.setPerson(temp.getPerson());</span>
+<span class="nc" id="L557">		} catch (Exception e) {</span>
+<span class="nc" id="L558">			log.error(this.i18n(this.bundle, RmWebLogBundleKey.UNABLE_TO_LOAD_PERSON_INFO_FOR_EMPLOYEE), e);</span>
+<span class="nc" id="L559">		}</span>
 
-<span class="nc bnc" id="L518" title="All 2 branches missed.">		if (!m_isMultiEdit) {</span>
-<span class="nc" id="L519">			m_employee.setIDInString(m_employeeTokenStr);</span>
+<span class="nc bnc" id="L561" title="All 2 branches missed.">		if (!isMultiEdit) {</span>
+<span class="nc" id="L562">			employee.setIDInString(employeeTokenStr);</span>
 		} else {
-<span class="nc" id="L521">			m_employee.setMultiEditIDsInString(m_editIdStr);</span>
+<span class="nc" id="L564">			employee.setMultiEditIDsInString(editIdStr);</span>
 		}
-<span class="nc" id="L523">		return m_employee;</span>
+<span class="nc" id="L566">		return employee;</span>
 	}
 
 	// override extract parameters to init employee object
@@ -528,24 +571,25 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
 	public boolean extractParameters(HttpServletRequest request)
 	{
 		//Note: super.extractParameters() will call setPerformActionOnID(), but we need it to be done
-		//before m_timeOffForm.initData(), so I'll call it manually. We cannot move extractParameters()
+		//before timeOffForm.initData(), so I'll call it manually. We cannot move extractParameters()
 		//first because it doesn't work properly for some unknown reason.
-<span class="nc" id="L533">		String performActionOnID = request.getParameter(WorkpaneFieldNames.PERFORM_ACTION_ON_ID_FN);</span>
-<span class="nc bnc" id="L534" title="All 4 branches missed.">		if (performActionOnID != null &amp;&amp; performActionOnID.length() &gt; 0) {</span>
-<span class="nc" id="L535">			setPerformActionOnID(performActionOnID);</span>
+<span class="nc" id="L576">		String performActionOnID = request.getParameter(WorkpaneFieldNames.PERFORM_ACTION_ON_ID_FN);</span>
+<span class="nc bnc" id="L577" title="All 4 branches missed.">		if (performActionOnID != null &amp;&amp; performActionOnID.length() &gt; 0) {</span>
+<span class="nc" id="L578">			setPerformActionOnID(performActionOnID);</span>
 		}
 
-<span class="nc" id="L538">		m_timeOffForm.initData(m_employee, false, m_isMultiEdit);</span>
-<span class="nc" id="L539">		m_timeOffForm.setIsEditable(true);//Currently only Editable TimeOffPC will extract data to m_employee</span>
+<span class="nc" id="L581">		timeOffForm.initData(employee, false, isMultiEdit);</span>
+		//Currently only Editable TimeOffPC will extract data to employee
+<span class="nc" id="L583">		timeOffForm.setIsEditable(true);</span>
 
-<span class="nc" id="L541">		boolean success = super.extractParameters(request); //result;</span>
+<span class="nc" id="L585">		boolean success = super.extractParameters(request); </span>
 
-<span class="nc" id="L543">		Date date = m_inputDatePicker.getDate();</span>
-<span class="nc bnc" id="L544" title="All 2 branches missed.">		if (date != null) {</span>
-<span class="nc" id="L545">			m_context.setAttribute(RequestContext.SESSION_SCOPE, SHOW_AS_DATE_FN, date);</span>
+<span class="nc" id="L587">		Date date = inputDatePicker.getDate();</span>
+<span class="nc bnc" id="L588" title="All 2 branches missed.">		if (date != null) {</span>
+<span class="nc" id="L589">			m_context.setAttribute(RequestContext.SESSION_SCOPE, SHOW_AS_DATE_FN, date);</span>
 		}
 
-<span class="nc" id="L548">		return success;</span>
+<span class="nc" id="L592">		return success;</span>
 	}
 
 	/**
@@ -553,7 +597,7 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
 	 */
 	@Override
 	public String getCustomJavaScript() {
-<span class="nc" id="L556">		return super.getCustomJavaScript() + m_timeOffForm.getCustomValidateFormJS();</span>
+<span class="nc" id="L600">		return super.getCustomJavaScript() + timeOffForm.getCustomValidateFormJS();</span>
 	}
 
 	/**
@@ -561,10 +605,10 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
 	 */
 	@Override
 	public String getRequiredHTML() {
-<span class="nc" id="L564">		return super.getRequiredHTML() +</span>
-<span class="nc" id="L565">				HtmlUtil.makeHiddenInput(SELECTED_ID_FN, getSelectedID()) +</span>
-<span class="nc" id="L566">				HtmlUtil.makeHiddenInput(&quot;editIdStr&quot;, getEditIdStr()) +</span>
-<span class="nc" id="L567">				HtmlUtil.makeHiddenInput(&quot;empTokenStr&quot;, getEmpTokenStr());</span>
+<span class="nc" id="L608">		return super.getRequiredHTML() +</span>
+<span class="nc" id="L609">				HtmlUtil.makeHiddenInput(SELECTED_ID_FN, getSelectedID()) +</span>
+<span class="nc" id="L610">				HtmlUtil.makeHiddenInput(&quot;editIdStr&quot;, getEditIdStr()) +</span>
+<span class="nc" id="L611">				HtmlUtil.makeHiddenInput(&quot;empTokenStr&quot;, getEmpTokenStr());</span>
 	}
 
 	/**
@@ -572,12 +616,16 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
 	 */
 	@Override
 	public String getFormAction() {
-<span class="nc" id="L575">		return &quot;people_timeoff&quot;;</span>
+<span class="nc" id="L619">		return &quot;people_timeoff&quot;;</span>
 	}
 	
 	
 	public EmployeeReferenceScheduleAssignmentUpdateParameters getUpdateAssignment() {
-<span class="nc bnc" id="L580" title="All 2 branches missed.">		return  m_referenceSchedulePC == null? null : m_referenceSchedulePC.getUpdateAssignment();</span>
+<span class="nc bnc" id="L624" title="All 2 branches missed.">		return  referenceSchedulePC == null? null : referenceSchedulePC.getUpdateAssignment();</span>
+	}
+
+	public List&lt;TOPoolAssignmentsByActivityUpdateParameters&gt; getModifiedPoolAssignmentsByActivity() {
+<span class="nc bnc" id="L628" title="All 2 branches missed.">		return timeOffForm == null ? Collections.emptyList() : timeOffForm.getModifiedPoolAssignmentsByActivity();</span>
 	}
 
 	/**
@@ -585,38 +633,38 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
 	 */
 	public ID getPoolID()
 	{
-<span class="nc" id="L588">		return m_toPoolAssignmentPC.getPoolId();</span>
+<span class="nc" id="L636">		return toPoolAssignmentPC.getPoolId();</span>
 	}
 		
 
 	public Object getTOPoolEffStartDate()
 	{
-<span class="nc bnc" id="L594" title="All 4 branches missed.">        boolean isMultiSDate = m_empTOPoolAssignment!=null &amp;&amp; m_empTOPoolAssignment.isFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_STARTTIME);</span>
+<span class="nc bnc" id="L642" title="All 4 branches missed.">        boolean isMultiSDate = empTOPoolAssignment!=null &amp;&amp; empTOPoolAssignment.isFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_STARTTIME);</span>
 
-<span class="nc" id="L596">        Object date = m_toPoolAssignmentPC.getTOPoolEffStartDate();</span>
-<span class="nc bnc" id="L597" title="All 2 branches missed.">        if (isMultiSDate)</span>
-<span class="nc" id="L598">        	date = null; //null indicates NO CHANGE to the date from what is already in the database</span>
-<span class="nc bnc" id="L599" title="All 2 branches missed.">        else if (date == null)</span>
-<span class="nc" id="L600">        	date = new NullObject(); //NullObject SHOULD set the date to null in the db (this should never happen)</span>
+<span class="nc" id="L644">        Object date = toPoolAssignmentPC.getTOPoolEffStartDate();</span>
+<span class="nc bnc" id="L645" title="All 2 branches missed.">        if (isMultiSDate)</span>
+<span class="nc" id="L646">        	date = null; //null indicates NO CHANGE to the date from what is already in the database</span>
+<span class="nc bnc" id="L647" title="All 2 branches missed.">        else if (date == null)</span>
+<span class="nc" id="L648">        	date = new NullObject(); //NullObject SHOULD set the date to null in the db (this should never happen)</span>
 
-<span class="nc" id="L602">		return date;</span>
+<span class="nc" id="L650">		return date;</span>
 	}
 
 	public Object getTOPoolEffEndDate()
 	{
-<span class="nc bnc" id="L607" title="All 4 branches missed.">        boolean isMultiEDate = m_empTOPoolAssignment!=null &amp;&amp; m_empTOPoolAssignment.isFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_ENDTIME);</span>
+<span class="nc bnc" id="L655" title="All 4 branches missed.">        boolean isMultiEDate = empTOPoolAssignment!=null &amp;&amp; empTOPoolAssignment.isFieldMultiValue(EmpTOPoolAssignmentFieldInfo.EMPTOPOOL_ENDTIME);</span>
 
-<span class="nc" id="L609">        Object date = m_toPoolAssignmentPC.getTOPoolEffEndDate();</span>
-<span class="nc bnc" id="L610" title="All 2 branches missed.">        if (isMultiEDate)</span>
-<span class="nc" id="L611">        	date = null; //null indicates NO CHANGE to the date from what is already in the database</span>
-<span class="nc bnc" id="L612" title="All 2 branches missed.">        else if (date == null)</span>
-<span class="nc" id="L613">        	date = new NullObject(); //NullObject SHOULD set the date to null in the db (this means &quot;no end date&quot;)</span>
+<span class="nc" id="L657">        Object date = toPoolAssignmentPC.getTOPoolEffEndDate();</span>
+<span class="nc bnc" id="L658" title="All 2 branches missed.">        if (isMultiEDate)</span>
+<span class="nc" id="L659">        	date = null; //null indicates NO CHANGE to the date from what is already in the database</span>
+<span class="nc bnc" id="L660" title="All 2 branches missed.">        else if (date == null)</span>
+<span class="nc" id="L661">        	date = new NullObject(); //NullObject SHOULD set the date to null in the db (this means &quot;no end date&quot;)</span>
 
-<span class="nc" id="L615">		return date;</span>
+<span class="nc" id="L663">		return date;</span>
 	}
 	
 	public boolean referenceScheduleNeedsUpdate() {
-<span class="nc bnc" id="L619" title="All 2 branches missed.">		return m_referenceSchedulePC==null? false : m_referenceSchedulePC.needsUpdate();</span>
+<span class="nc bnc" id="L667" title="All 2 branches missed.">		return referenceSchedulePC==null? false : referenceSchedulePC.needsUpdate();</span>
 	}
 	
 
@@ -625,21 +673,113 @@ public class TimeOffPM extends WorkpanePageModel implements PeoplePM, Containers
      * Note: This is not the same as the updateMode, which is the popup radio button setting.
      * @return - one of MODE_VIEW_POOL, MODE_SAVE_POOL
      */
-    public String getMode()
-    {
-<span class="nc" id="L630">    	return m_toPoolAssignmentPC.getMode();</span>
+    public String getMode() {
+<span class="nc" id="L677">    	return toPoolAssignmentPC.getMode();</span>
     }
 
     /**
      * Get the view date, also known as the &quot;As of date&quot; that the user chose in the date picker.
      * @return the view date.
      */
-    public Date getAsOfDate()
-    {
-<span class="nc bnc" id="L639" title="All 2 branches missed.">    	if (m_viewByModDate == null)</span>
-<span class="nc" id="L640">    		return m_inputDatePicker.getDate();</span>
+    public Date getAsOfDate() {
+<span class="nc bnc" id="L685" title="All 2 branches missed.">    	if (viewByModDate == null)</span>
+<span class="nc" id="L686">    		return inputDatePicker.getDate();</span>
 
-<span class="nc" id="L642">    	return m_viewByModDate;</span>
+<span class="nc" id="L688">    	return viewByModDate;</span>
     }
+    
+    
+    
+    
+    
+    //
+    // Emp Timeoff Pool Assignment Helpers
+    //
+    
+    
+    /*
+     * Returns a list of all TOPool assignments for an employee
+     * An empty list means there are none for the employee.
+     */
+    
+    List&lt;EmpTOPoolAssignment&gt; getEmpTOPoolAssignments(ID employeeID){
+<span class="nc bnc" id="L706" title="All 4 branches missed.">    	if (empPoolsMap == null || empPoolsMap.isEmpty()) {</span>
+<span class="nc" id="L707">			return Collections.emptyList();</span>
+		}
+    	
+<span class="nc" id="L710">    	List&lt;EmpTOPoolAssignment&gt; assignments = empPoolsMap.get(employeeID);</span>
+<span class="nc bnc" id="L711" title="All 2 branches missed.">    	if(assignments!=null){</span>
+<span class="nc" id="L712">    		return assignments;</span>
+    	}
+<span class="nc" id="L714">    	return Collections.emptyList();</span>
+    }
+    
+    /*
+     * Get the Employee TO Pool Assignment by employee and activity
+     * If we return null, there is no assignment for that activity.
+     */
+    
+    EmpTOPoolAssignment getEmpTOPoolAssignment(ID employeeID, ID activity){
+<span class="nc bnc" id="L723" title="All 4 branches missed.">    	if (empPoolsMap == null || empPoolsMap.isEmpty()) {</span>
+<span class="nc" id="L724">			return null;</span>
+		}
+    	
+<span class="nc" id="L727">    	List&lt;EmpTOPoolAssignment&gt; assignments = empPoolsMap.get(employeeID);</span>
+<span class="nc bnc" id="L728" title="All 2 branches missed.">    	if(assignments==null){</span>
+<span class="nc" id="L729">    		return null;</span>
+    	}
+    	
+<span class="nc bnc" id="L732" title="All 2 branches missed.">    	for (EmpTOPoolAssignment assignment : assignments) {</span>
+<span class="nc bnc" id="L733" title="All 2 branches missed.">			if (assignment.getActivityID().toInt() == activity.toInt()) {</span>
+<span class="nc" id="L734">				return assignment;</span>
+			}
+<span class="nc" id="L736">		}</span>
+    	
+<span class="nc" id="L738">    	return null;</span>
+    }
+ 
+    /*
+     * Get the default Employee TO Pool Assignment by employee.
+     * Defaults are defined as having a null activity.
+     * If we return null, there is no default for the employee
+     */
+    
+    EmpTOPoolAssignment getEmpDefaultTOPoolAssignment(ID employeeID){
+<span class="nc bnc" id="L748" title="All 4 branches missed.">    	if (empPoolsMap == null || empPoolsMap.isEmpty()) {</span>
+<span class="nc" id="L749">			return null;</span>
+		}
+    	
+<span class="nc" id="L752">    	List&lt;EmpTOPoolAssignment&gt; assignments = empPoolsMap.get(employeeID);</span>
+<span class="nc bnc" id="L753" title="All 2 branches missed.">    	if(assignments==null){</span>
+<span class="nc" id="L754">    		return null;</span>
+    	}
+    	
+<span class="nc bnc" id="L757" title="All 2 branches missed.">    	for (EmpTOPoolAssignment assignment : assignments) {</span>
+<span class="nc bnc" id="L758" title="All 2 branches missed.">			if (assignment.getActivityID() == null) {</span>
+<span class="nc" id="L759">				return assignment;</span>
+			}
+<span class="nc" id="L761">		}</span>
+    	
+<span class="nc" id="L763">    	return null;</span>
+    }
+    
+    int getDefaultPoolCount() {
+<span class="nc" id="L767">		int count = 0;</span>
+<span class="nc bnc" id="L768" title="All 4 branches missed.">		if (empPoolsMap == null || empPoolsMap.isEmpty()) {</span>
+<span class="nc" id="L769">			return 0;</span>
+		}
+		//Default pools have null activities
+<span class="nc bnc" id="L772" title="All 2 branches missed.">		for (Entry&lt;ID, List&lt;EmpTOPoolAssignment&gt;&gt; set : empPoolsMap.entrySet()) {</span>
+<span class="nc" id="L773">			List&lt;EmpTOPoolAssignment&gt; assignments = set.getValue();</span>
+<span class="nc bnc" id="L774" title="All 2 branches missed.">			for (EmpTOPoolAssignment curAssignment : assignments) {</span>
+				// For the default pool assignment, the activity must be null
+				// Otherwise it applies to a specific time-off activity 
+<span class="nc bnc" id="L777" title="All 2 branches missed.">				if (curAssignment.getActivityID() == null) {</span>
+<span class="nc" id="L778">					count++;</span>
+				}
+<span class="nc" id="L780">			}</span>
+<span class="nc" id="L781">		}</span>
+<span class="nc" id="L782">		return count;</span>
+	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

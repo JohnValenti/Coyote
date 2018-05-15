@@ -1,17 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ShiftListPopupPM.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.verint.web.fs.workrules</a> &gt; <span class="el_source">ShiftListPopupPM.java</span></div><h1>ShiftListPopupPM.java</h1><pre class="source lang-java linenums">package com.verint.web.fs.workrules;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-
 import com.bluepumpkin.common.datatypes.ID;
 import com.bluepumpkin.common.datatypes.PaginationPair;
 import com.bluepumpkin.common.util.StringUtil;
 import com.bluepumpkin.ejb.bbm.activity.model.Activity;
+import com.bluepumpkin.ejb.bbm.base.BbmException;
 import com.bluepumpkin.ejb.bbm.campaign.model.Campaign;
 import com.bluepumpkin.ejb.bbm.campaign.model.SchedulingPeriod;
 import com.bluepumpkin.ejb.bbm.vo.ValueObjectIDListComparator;
@@ -26,6 +19,11 @@ import com.bluepumpkin.web.fs.l10n.FsWebBundleKey;
 import com.verint.web.fs.widgets.FindToolbarPageComponent;
 import com.witness.web.uif.pagecomponent.toolbar.ToolbarTextButton;
 import com.witness.web.uif.system.RequestContext;
+
+import java.rmi.RemoteException;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class ShiftListPopupPM extends WorkRulesSelectionPopupPM {
 	private static final long serialVersionUID = 1L;
@@ -46,199 +44,194 @@ public class ShiftListPopupPM extends WorkRulesSelectionPopupPM {
 	// these are intended
 	// to be filtered out from the list of new items to add in the popup window.
 	public static final String ARG_SELECTED_IDS = &quot;selectedIDs&quot;;
-	public static String POPUP_ARGS;
-	static {
-<span class="fc" id="L51">		POPUP_ARGS = StringUtil.createDelimitedString(</span>
-				new String[] { ARG_OT_EXT_ID, ARG_IS_BY_ORG, ARG_IS_SELECTION_POPUP, ARG_OWNER_ID, ARG_SHIFT_IDS,
-						ARG_TIME_ZONE, ARG_TIME_ZONE_DATE, ARG_SHIFT_PATTERN_PERIOD, ARG_SELECTED_IDS }, &quot;,&quot;);
-<span class="fc" id="L54">	}</span>
+	public static final String POPUP_ARGS;
 
-	private ArrayList&lt;Shift&gt; shifts;
+	static {
+<span class="nc" id="L50">		POPUP_ARGS = StringUtil.createDelimitedString(</span>
+				new String[]{ARG_OT_EXT_ID, ARG_IS_BY_ORG, ARG_IS_SELECTION_POPUP, ARG_OWNER_ID, ARG_SHIFT_IDS,
+						ARG_TIME_ZONE, ARG_TIME_ZONE_DATE, ARG_SHIFT_PATTERN_PERIOD, ARG_SELECTED_IDS}, &quot;,&quot;);
+<span class="nc" id="L53">	}</span>
+
+	private List&lt;Shift&gt; shifts;
 	private boolean isByOrg;
 	private String shiftIDStr;
 	private ID ownerID;
-<span class="fc" id="L60">	private boolean isSelectionPopup = false;</span>
-<span class="fc" id="L61">	private HashSet&lt;ID&gt; selectedIDs = new HashSet&lt;ID&gt;();</span>
-	private SchedulingPeriod selectedSchedulingPeriod;
+<span class="nc" id="L59">	private boolean isSelectionPopup = false;</span>
+<span class="nc" id="L60">	private HashSet&lt;ID&gt; selectedIDs = new HashSet&lt;&gt;();</span>
+	SchedulingPeriod selectedSchedulingPeriod;
 	private ShiftPatternPeriod shiftPatternPeriod;
 
-<span class="fc" id="L65">	private Map&lt;ID, Organization&gt; orgMap = new HashMap&lt;ID, Organization&gt;();</span>
-<span class="fc" id="L66">	private Map&lt;ID, Campaign&gt; campaignMap = new HashMap&lt;ID, Campaign&gt;();</span>
-<span class="fc" id="L67">	private Map&lt;ID, Activity&gt; activityMap = new HashMap&lt;ID, Activity&gt;();</span>
+<span class="nc" id="L64">	private Map&lt;ID, Organization&gt; orgMap = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L65">	private Map&lt;ID, Campaign&gt; campaignMap = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L66">	private Map&lt;ID, Activity&gt; activityMap = new HashMap&lt;&gt;();</span>
 
 	public ShiftListPopupPM(RequestContext context) {
-<span class="fc" id="L70">		super(context);</span>
-
-<span class="fc" id="L72">	}</span>
+<span class="nc" id="L69">		super(context);</span>
+<span class="nc" id="L70">	}</span>
 
 	public static ShiftListPopupPM getInstance(RequestContext context) {
-<span class="fc" id="L75">		return (ShiftListPopupPM) getInstance(context, ShiftListPopupPM.class);</span>
+<span class="nc" id="L73">		return (ShiftListPopupPM) getInstance(context, ShiftListPopupPM.class);</span>
 	}
 
 	@Override
 	protected void initToolbar() {
-<span class="pc bpc" id="L80" title="1 of 2 branches missed.">		if (isSelectionPopup) {</span>
-<span class="fc" id="L81">			FindToolbarPageComponent findToolBar = new FindToolbarPageComponent(m_context, getToolbar(), FIND_ITEM_FN,</span>
-<span class="fc" id="L82">					WorkRulesSelectionPopupRH.FIND_ACTION, getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME,</span>
-							FsWebBundleKey.FS_FIND_SHIFTS_PROMPT));
-<span class="fc" id="L84">			getToolbar().addToolbarComponent(findToolBar);</span>
-<span class="fc" id="L85">			getToolbar().addDivider();</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">		if (isSelectionPopup) {</span>
+<span class="nc" id="L79">			FindToolbarPageComponent findToolBar = new FindToolbarPageComponent(m_context, getToolbar(), FIND_ITEM_FN,</span>
+<span class="nc" id="L80">					WorkRulesSelectionPopupRH.FIND_ACTION, getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME,</span>
+					FsWebBundleKey.FS_FIND_SHIFTS_PROMPT));
+<span class="nc" id="L82">			getToolbar().addToolbarComponent(findToolBar);</span>
+<span class="nc" id="L83">			getToolbar().addDivider();</span>
 
 			// &quot;Add&quot; button
-<span class="fc" id="L88">			ToolbarTextButton addButton = m_toolbar.createCloseWindowButton(&quot;addShifts&quot;,</span>
-<span class="fc" id="L89">					m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_ADD_SHIFTS), true);</span>
-<span class="fc" id="L90">			StringBuffer addButtonJS = new StringBuffer();</span>
+<span class="nc" id="L86">			ToolbarTextButton addButton = m_toolbar.createCloseWindowButton(&quot;addShifts&quot;,</span>
+<span class="nc" id="L87">					m_localizer.i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_ADD_SHIFTS), true);</span>
+<span class="nc" id="L88">			StringBuilder addButtonJS = new StringBuilder();</span>
 
 			// Adding new shifts is disabled if the selected campaign is
 			// distributed
-<span class="pc bpc" id="L94" title="1 of 2 branches missed.">			if (selectedSchedulingPeriod != null</span>
-<span class="nc bnc" id="L95" title="All 2 branches missed.">					&amp;&amp; (campaignMap.containsKey(selectedSchedulingPeriod.getCampaignID()) &amp;&amp; campaignMap.get(</span>
-<span class="nc bnc" id="L96" title="All 2 branches missed.">							selectedSchedulingPeriod.getCampaignID()).getIsDistributed())) {</span>
-<span class="nc" id="L97">				addButtonJS.append(m_toolbar.getName());</span>
-<span class="nc" id="L98">				addButtonJS.append(&quot;.disableButton('addShifts'); &quot;);</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">			if (selectedSchedulingPeriod != null</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">					&amp;&amp; (campaignMap.containsKey(selectedSchedulingPeriod.getCampaignID()) &amp;&amp; campaignMap.get(</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">					selectedSchedulingPeriod.getCampaignID()).getIsDistributed())) {</span>
+<span class="nc" id="L95">				addButtonJS.append(m_toolbar.getName());</span>
+<span class="nc" id="L96">				addButtonJS.append(&quot;.disableButton('addShifts'); &quot;);</span>
 			}
 
-<span class="fc" id="L101">			addButtonJS</span>
-<span class="fc" id="L102">					.append(&quot;RowInsertionUtil.addNewDynamicRow('shift', eval('window.opener.shiftPatternWorkDaysTable'), &quot;)</span>
-<span class="fc" id="L103">					.append(&quot;'&quot; + InlineEditComponentRH.URL + &quot;', &quot;)</span>
-<span class="fc" id="L104">					.append(&quot;'&quot; + InlineEditComponentRH.PARAM_TYPE + &quot;=&quot; + InlineEditComponentRH.SHIFT_TYPE + &quot;&amp;&quot;)</span>
-<span class="fc" id="L105">					.append(InlineEditComponentRH.PARAM_TIME_ZONE_ID + &quot;=&quot; + optimizationTargetTimeZone.getID() + &quot;&amp;&quot;)</span>
-<span class="fc" id="L106">					.append(InlineEditComponentRH.PARAM_SHIFT_PATTERN_PERIOD + &quot;=&quot; + shiftPatternPeriod.toString() + &quot;&amp;&quot;);</span>
-<span class="pc bpc" id="L107" title="1 of 2 branches missed.">			if (isByOrg) {</span>
-<span class="fc" id="L108">				addButtonJS.append(InlineEditComponentRH.PARAM_ORG_ID + &quot;=&quot; + ownerID + &quot;');&quot;);</span>
+<span class="nc" id="L99">			addButtonJS</span>
+<span class="nc" id="L100">					.append(&quot;RowInsertionUtil.addNewDynamicRow('shift', eval('window.opener.shiftPatternWorkDaysTable'), &quot;)</span>
+<span class="nc" id="L101">					.append(&quot;'&quot; + InlineEditComponentRH.URL + &quot;', &quot;)</span>
+<span class="nc" id="L102">					.append(&quot;'&quot; + InlineEditComponentRH.PARAM_TYPE + &quot;=&quot; + InlineEditComponentRH.SHIFT_TYPE + &quot;&amp;&quot;)</span>
+<span class="nc" id="L103">					.append(InlineEditComponentRH.PARAM_TIME_ZONE_ID).append(&quot;=&quot;).append(optimizationTargetTimeZone.getID()).append(&quot;&amp;&quot;)</span>
+<span class="nc" id="L104">					.append(InlineEditComponentRH.PARAM_SHIFT_PATTERN_PERIOD).append(&quot;=&quot;).append(shiftPatternPeriod.toString()).append(&quot;&amp;&quot;);</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">			if (isByOrg) {</span>
+<span class="nc" id="L106">				addButtonJS.append(InlineEditComponentRH.PARAM_ORG_ID).append(&quot;=&quot;).append(ownerID).append(&quot;');&quot;);</span>
 			} else {
-<span class="nc" id="L110">				addButtonJS.append(InlineEditComponentRH.PARAM_CAMPAIGN_ID + &quot;=&quot; + selectedSchedulingPeriod.getCampaignID()</span>
-						+ &quot;');&quot;);
+<span class="nc" id="L108">				addButtonJS.append(InlineEditComponentRH.PARAM_CAMPAIGN_ID).append(&quot;=&quot;).append(selectedSchedulingPeriod.getCampaignID()).append(&quot;');&quot;);</span>
 			}
-<span class="fc" id="L113">			addButton.setCustomJS(addButtonJS.toString());</span>
-<span class="fc" id="L114">			m_toolbar.addToolbarElement(addButton);</span>
+<span class="nc" id="L110">			addButton.setCustomJS(addButtonJS.toString());</span>
+<span class="nc" id="L111">			m_toolbar.addToolbarElement(addButton);</span>
 
 			// Cancel button
-<span class="fc" id="L117">			m_toolbar.addCloseWindowTextButton(&quot;cancel&quot;,</span>
-<span class="fc" id="L118">					m_localizer.i18n(CoreWebBundleKey.BUNDLE_NAME, CoreWebBundleKey.TOOLBAR_CANCEL), true);</span>
+<span class="nc" id="L114">			m_toolbar.addCloseWindowTextButton(&quot;cancel&quot;,</span>
+<span class="nc" id="L115">					m_localizer.i18n(CoreWebBundleKey.BUNDLE_NAME, CoreWebBundleKey.TOOLBAR_CANCEL), true);</span>
 		}
 
-<span class="fc" id="L121">		super.initToolbar();</span>
-<span class="fc" id="L122">	}</span>
+<span class="nc" id="L118">		super.initToolbar();</span>
+<span class="nc" id="L119">	}</span>
 
 	@Override
 	protected void initUtilityPane() {
-<span class="fc" id="L126">		getUtilityPane().setIsHelpEnabled(false);</span>
-<span class="fc" id="L127">	}</span>
+<span class="nc" id="L123">		getUtilityPane().setIsHelpEnabled(false);</span>
+<span class="nc" id="L124">	}</span>
 
 	@Override
 	protected void initContentTitle() {
-<span class="fc" id="L131">		super.initContentTitle();</span>
-<span class="fc" id="L132">		m_contentTitlePC.setPageTitle(getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_SHIFT_DETAILS));</span>
-<span class="fc" id="L133">	}</span>
+<span class="nc" id="L128">		super.initContentTitle();</span>
+<span class="nc" id="L129">		m_contentTitlePC.setPageTitle(getLocalizer().i18n(FsWebBundleKey.BUNDLE_NAME, FsWebBundleKey.FS_SHIFT_DETAILS));</span>
+<span class="nc" id="L130">	}</span>
 
 	@Override
 	protected void loadData() throws Exception {
-<span class="pc bpc" id="L137" title="1 of 2 branches missed.">		if (ownerID != null) {</span>
-<span class="pc bpc" id="L138" title="1 of 2 branches missed.">			if (isByOrg) {</span>
-<span class="pc bpc" id="L139" title="1 of 2 branches missed.">				if (isPaginationNavPressed()) {</span>
-<span class="nc" id="L140">					shifts = new ArrayList&lt;Shift&gt;(WorkRulesModelHandler.getShiftsByIDs(m_context, getPageIDs()));</span>
+<span class="nc" id="L134">		shifts = loadShifts();</span>
+
+<span class="nc" id="L136">		orgMap = WorkRulesModelHandler.getOrgs(m_context, collectOrgIDs(shifts));</span>
+<span class="nc" id="L137">		campaignMap = WorkRulesModelHandler.getCampaigns(m_context, collectCampaignIDs(shifts));</span>
+<span class="nc" id="L138">		activityMap = WorkRulesModelHandler.getActivities(m_context, collectActivityIDs(shifts));</span>
+<span class="nc" id="L139">	}</span>
+
+	List&lt;Shift&gt; loadShifts() throws RemoteException, BbmException {
+		List&lt;Shift&gt; loadedShifts;
+<span class="nc bnc" id="L143" title="All 2 branches missed.">		if (ownerID != null) {</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">			if (isByOrg) {</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">				if (isPaginationNavPressed()) {</span>
+<span class="nc" id="L146">					loadedShifts = new ArrayList&lt;&gt;(WorkRulesModelHandler.getShiftsByIDs(m_context, getPageIDs()));</span>
 				} else {
-<span class="fc" id="L142">					PaginationPair&lt;Shift&gt; shiftData = WorkRulesModelHandler.getShiftListByOrg(m_context, ownerID, m_list</span>
-<span class="fc" id="L143">							.getHeader().isAscending(), getPageIDSize(), getPagePaginationIndex(), m_list</span>
-<span class="fc" id="L144">							.getSortComparators(), selectedIDs, getTextToFind(itemToFind));</span>
-<span class="fc" id="L145">					shifts = new ArrayList&lt;Shift&gt;(shiftData.getValues());</span>
-<span class="fc" id="L146">					initPaginationIDs(shiftData.getIDs());</span>
-<span class="fc" id="L147">				}</span>
+<span class="nc" id="L148">					PaginationPair&lt;Shift&gt; shiftData = WorkRulesModelHandler.getShiftListByOrg(m_context, ownerID, m_list</span>
+<span class="nc" id="L149">							.getHeader().isAscending(), getPageIDSize(), getPagePaginationIndex(), m_list</span>
+<span class="nc" id="L150">							.getSortComparators(), selectedIDs, getTextToFind(itemToFind));</span>
+<span class="nc" id="L151">					loadedShifts = new ArrayList&lt;&gt;(shiftData.getValues());</span>
+<span class="nc" id="L152">					initPaginationIDs(shiftData.getIDs());</span>
+<span class="nc" id="L153">				}</span>
 			} else {
-<span class="nc" id="L149">				selectedSchedulingPeriod = CampaignModelHandler.getSchedulingPeriodByID(m_context, ownerID);</span>
-<span class="nc bnc" id="L150" title="All 2 branches missed.">				if (isPaginationNavPressed()) {</span>
-<span class="nc" id="L151">					shifts = new ArrayList&lt;Shift&gt;(WorkRulesModelHandler.getShiftsByIDs(m_context, getPageIDs()));</span>
+<span class="nc" id="L155">				selectedSchedulingPeriod = CampaignModelHandler.getSchedulingPeriodByID(m_context, ownerID);</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">				if (isPaginationNavPressed()) {</span>
+<span class="nc" id="L157">					loadedShifts = new ArrayList&lt;&gt;(WorkRulesModelHandler.getShiftsByIDs(m_context, getPageIDs()));</span>
 				} else {
-<span class="nc" id="L153">					PaginationPair&lt;Shift&gt; shiftData = WorkRulesModelHandler.getShiftListBySchedulingPeriod(m_context,</span>
-<span class="nc" id="L154">							selectedSchedulingPeriod, m_list.getHeader().isAscending(), getPageIDSize(),</span>
-<span class="nc" id="L155">							getPagePaginationIndex(), m_list.getSortComparators(), selectedIDs, getTextToFind(itemToFind));</span>
-<span class="nc" id="L156">					shifts = new ArrayList&lt;Shift&gt;(shiftData.getValues());</span>
-<span class="nc" id="L157">					initPaginationIDs(shiftData.getIDs());</span>
-<span class="nc" id="L158">				}</span>
+<span class="nc" id="L159">					PaginationPair&lt;Shift&gt; shiftData = WorkRulesModelHandler.getShiftListBySchedulingPeriod(m_context,</span>
+<span class="nc" id="L160">							selectedSchedulingPeriod, m_list.getHeader().isAscending(), getPageIDSize(),</span>
+<span class="nc" id="L161">							getPagePaginationIndex(), m_list.getSortComparators(), selectedIDs, getTextToFind(itemToFind));</span>
+<span class="nc" id="L162">					loadedShifts = new ArrayList&lt;&gt;(shiftData.getValues());</span>
+<span class="nc" id="L163">					initPaginationIDs(shiftData.getIDs());</span>
+<span class="nc" id="L164">				}</span>
 			}
 		} else {
-<span class="nc" id="L161">			shifts = new ArrayList&lt;Shift&gt;(WorkRulesModelHandler.getShiftsByIDs(m_context,</span>
-<span class="nc" id="L162">					StringUtil.parseIDStringToCollection(shiftIDStr)));</span>
+<span class="nc" id="L167">			loadedShifts = new ArrayList&lt;&gt;(WorkRulesModelHandler.getShiftsByIDs(m_context,</span>
+<span class="nc" id="L168">					StringUtil.parseIDStringToCollection(shiftIDStr)));</span>
 		}
 
-		// We don't want to show the possible days off shift.
-<span class="fc" id="L166">		Iterator&lt;Shift&gt; shiftsIter = shifts.iterator();</span>
-<span class="fc bfc" id="L167" title="All 2 branches covered.">		while (shiftsIter.hasNext()) {</span>
-<span class="fc" id="L168">			Shift shift = shiftsIter.next();</span>
-<span class="pc bpc" id="L169" title="1 of 2 branches missed.">			if (shift.getID().toInt() == ShiftFieldInfo.POSSIBLE_DAYS_OFF_SHIFT_ID) {</span>
-<span class="nc" id="L170">				shiftsIter.remove();</span>
-			}
-<span class="fc" id="L172">		}</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">		loadedShifts.removeIf(shift -&gt; shift.getID().toInt() == ShiftFieldInfo.POSSIBLE_DAYS_OFF_SHIFT_ID);</span>
+<span class="nc" id="L172">		loadedShifts.sort(new ValueObjectIDListComparator(new ArrayList&lt;&gt;(getPageIDs())));</span>
 
-<span class="fc" id="L174">		Collections.sort(shifts, new ValueObjectIDListComparator(new ArrayList&lt;ID&gt;(getPageIDs())));</span>
-
-		// Collections of IDs of objects we will need for display
-<span class="fc" id="L177">		Collection&lt;ID&gt; orgIDs = new HashSet&lt;ID&gt;();</span>
-<span class="fc" id="L178">		Collection&lt;ID&gt; campaignIDs = new HashSet&lt;ID&gt;();</span>
-<span class="fc" id="L179">		Collection&lt;ID&gt; activityIDs = new HashSet&lt;ID&gt;();</span>
-<span class="fc bfc" id="L180" title="All 2 branches covered.">		for (Shift shift : shifts) {</span>
-<span class="pc bpc" id="L181" title="1 of 2 branches missed.">			if (shift.getOrganizationID() != null) {</span>
-<span class="fc" id="L182">				orgIDs.add(shift.getOrganizationID());</span>
-			}
-<span class="pc bpc" id="L184" title="1 of 2 branches missed.">			if (shift.getCampaignID() != null) {</span>
-<span class="nc" id="L185">				campaignIDs.add(shift.getCampaignID());</span>
-			}
-<span class="pc bpc" id="L187" title="1 of 2 branches missed.">			if (shift.getActivityID() != null) {</span>
-<span class="fc" id="L188">				activityIDs.add(shift.getActivityID());</span>
-			}
-<span class="fc bfc" id="L190" title="All 2 branches covered.">			for (ShiftEvent se : shift.getShiftEvents()) {</span>
-<span class="pc bpc" id="L191" title="1 of 2 branches missed.">				if (se.getOrganizationID() != null) {</span>
-<span class="fc" id="L192">					orgIDs.add(se.getOrganizationID());</span>
-				}
-<span class="pc bpc" id="L194" title="1 of 2 branches missed.">				if (se.getCampaignID() != null) {</span>
-<span class="nc" id="L195">					campaignIDs.add(se.getCampaignID());</span>
-				}
-<span class="pc bpc" id="L197" title="1 of 2 branches missed.">				if (se.getActivityID() != null) {</span>
-<span class="fc" id="L198">					activityIDs.add(se.getActivityID());</span>
-				}
-<span class="fc" id="L200">			}</span>
-<span class="fc" id="L201">		}</span>
-
-<span class="fc" id="L203">		orgMap = WorkRulesModelHandler.getOrgs(m_context, orgIDs);</span>
-<span class="pc bpc" id="L204" title="3 of 4 branches missed.">		if (!isByOrg &amp;&amp; ownerID != null) {</span>
-			// Ensure that the currently selected campaign ID is in campaignMap
-			// since we
-			// need to check if it's distributed to disable the add button
-<span class="nc" id="L208">			campaignIDs.add(selectedSchedulingPeriod.getCampaignID());</span>
-<span class="nc" id="L209">			campaignMap = WorkRulesModelHandler.getCampaigns(m_context, campaignIDs);</span>
-		}
-<span class="fc" id="L211">		activityMap = WorkRulesModelHandler.getActivities(m_context, activityIDs);</span>
-<span class="fc" id="L212">	}</span>
+<span class="nc" id="L174">		return loadedShifts;</span>
+	}
 
 	public void setShiftIDs(String shiftIDs) {
-<span class="nc" id="L215">		shiftIDStr = shiftIDs;</span>
-<span class="nc" id="L216">	}</span>
+<span class="nc" id="L178">		shiftIDStr = shiftIDs;</span>
+<span class="nc" id="L179">	}</span>
 
 	public void setIsByOrg(boolean isByOrg) {
-<span class="fc" id="L219">		this.isByOrg = isByOrg;</span>
-<span class="fc" id="L220">	}</span>
+<span class="nc" id="L182">		this.isByOrg = isByOrg;</span>
+<span class="nc" id="L183">	}</span>
 
 	public void setIsSelectionPopup(boolean isSelectionPopup) {
-<span class="fc" id="L223">		this.isSelectionPopup = isSelectionPopup;</span>
-<span class="fc" id="L224">	}</span>
+<span class="nc" id="L186">		this.isSelectionPopup = isSelectionPopup;</span>
+<span class="nc" id="L187">	}</span>
 
 	public void setOwnerID(String ownerID) {
-<span class="fc" id="L227">		this.ownerID = ID.fromInt(Integer.parseInt(ownerID));</span>
-<span class="fc" id="L228">	}</span>
+<span class="nc" id="L190">		this.ownerID = ID.fromInt(Integer.parseInt(ownerID));</span>
+<span class="nc" id="L191">	}</span>
 
 	public void setSelectedIDs(String selectedIDs) {
-<span class="fc" id="L231">		this.selectedIDs = new HashSet&lt;ID&gt;(StringUtil.parseIDStringToCollection(selectedIDs));</span>
-<span class="fc" id="L232">	}</span>
+<span class="nc" id="L194">		this.selectedIDs = new HashSet&lt;&gt;(StringUtil.parseIDStringToCollection(selectedIDs));</span>
+<span class="nc" id="L195">	}</span>
 
 	@Override
 	protected ShiftListPC initList() {
-<span class="fc" id="L236">		return new ShiftListPC(getRequestContext(), &quot;shiftTable&quot;, shifts, optimizationTargetTimeZone, timeZoneEffectiveDate,</span>
+<span class="nc" id="L199">		return new ShiftListPC(getRequestContext(), &quot;shiftTable&quot;, shifts, optimizationTargetTimeZone, timeZoneEffectiveDate,</span>
 				orgMap, campaignMap, activityMap);
 	}
 
 	public void setShiftPatternPeriod(String shiftPatternPeriod) {
-<span class="fc" id="L241">		this.shiftPatternPeriod = ShiftPatternPeriod.fromString(shiftPatternPeriod);</span>
-<span class="fc" id="L242">	}</span>
+<span class="nc" id="L204">		this.shiftPatternPeriod = ShiftPatternPeriod.fromString(shiftPatternPeriod);</span>
+<span class="nc" id="L205">	}</span>
+
+	Set&lt;ID&gt; collectOrgIDs(Collection&lt;Shift&gt; shifts) {
+<span class="nc" id="L208">		return collectIDs(shifts, Shift::getOrganizationID, ShiftEvent::getOrganizationID);</span>
+	}
+
+	Set&lt;ID&gt; collectCampaignIDs(Collection&lt;Shift&gt; shifts) {
+<span class="nc" id="L212">		Set&lt;ID&gt; campaignIDs = collectIDs(shifts, Shift::getCampaignID, ShiftEvent::getCampaignID);</span>
+<span class="nc bnc" id="L213" title="All 2 branches missed.">		if (selectedSchedulingPeriod != null) {</span>
+<span class="nc" id="L214">			campaignIDs.add(selectedSchedulingPeriod.getCampaignID());</span>
+		}
+<span class="nc" id="L216">		return campaignIDs;</span>
+	}
+
+	Set&lt;ID&gt; collectActivityIDs(Collection&lt;Shift&gt; shifts) {
+<span class="nc" id="L220">		return collectIDs(shifts, Shift::getActivityID, ShiftEvent::getActivityID);</span>
+	}
+
+	private Set&lt;ID&gt; collectIDs(Collection&lt;Shift&gt; shifts, Function&lt;Shift, ID&gt; shiftIDMapper, Function&lt;ShiftEvent, ID&gt; shiftEventIDMapper) {
+<span class="nc" id="L224">		Function&lt;Shift, Set&lt;ID&gt;&gt; shiftEventIDCollector = shift -&gt; shift.getShiftEvents().stream()</span>
+<span class="nc" id="L225">			.map(shiftEventIDMapper::apply).collect(Collectors.toSet());</span>
+
+<span class="nc" id="L227">		Function&lt;Shift, Set&lt;ID&gt;&gt; idCollector = shift -&gt; {</span>
+<span class="nc" id="L228">			Set&lt;ID&gt; ids = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L229">			ids.add(shiftIDMapper.apply(shift));</span>
+<span class="nc" id="L230">			ids.addAll(shiftEventIDCollector.apply(shift));</span>
+<span class="nc" id="L231">			return ids;</span>
+		};
+
+<span class="nc" id="L234">		return shifts.stream().flatMap(shift -&gt; idCollector.apply(shift).stream()).collect(Collectors.toSet());</span>
+	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -42,11 +42,12 @@ import com.bluepumpkin.ejb.bbm.schedule.util.ScheduleUtil;
 import com.bluepumpkin.ejb.bbm.schedule.util.optimizeBreaks.Optimizer;
 import com.bluepumpkin.ejb.bbm.schedule.util.optimizeBreaks.Optimizer.NetStaffing;
 import com.bluepumpkin.ejb.bbm.skill.model.SkillAssignment;
-import com.bluepumpkin.ejb.bbm.timeoffcalculator.TimeMap;
 import com.bluepumpkin.ejb.bbm.timeseries.ejb.TimeSeriesManager;
 import com.bluepumpkin.ejb.bbm.timeseries.model.NetStaffingCube;
 import com.bluepumpkin.ejb.bbm.timeseries.model.PredictTraceCube;
+import com.bluepumpkin.ejb.bbm.timeseries.model.RequireTraceCube;
 import com.bluepumpkin.ejb.bbm.timeseries.model.Trace;
+import com.bluepumpkin.ejb.bbm.timeseries.model.TraceCube;
 import com.bluepumpkin.ejb.bbm.vo.ValueObjectUtil;
 import com.bluepumpkin.ejb.bbm.workload.model.Queue;
 import com.bluepumpkin.ejb.bbm.workresource.ejb.WorkResourceManager;
@@ -60,12 +61,16 @@ import com.bluepumpkin.ejb.bbm.workrules.model.ShiftOTExtension;
 import com.bluepumpkin.ejb.bbm.workrules.model.ShiftPattern;
 import com.bluepumpkin.ejb.bbm.workrules.model.ShiftPatternShiftAttributes;
 import com.bluepumpkin.ejb.rm.Log;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.l10n.RmEjbLogBundleKey;
 import com.bluepumpkin.ejb.rm.requests.common.ejb.RequestUtil;
 import com.bluepumpkin.ejb.rm.requests.common.validation.FilingRuleChecker;
 import com.bluepumpkin.ejb.rm.requests.common.validation.FilingRuleCheckerHelper;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
 import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReq;
+import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReqFieldInfo;
+import com.bluepumpkin.ejb.rm.requests.custshift.model.CustShiftReqGap;
 import com.bluepumpkin.ejb.rm.setup.settings.model.OrganizationSetting;
 import com.bluepumpkin.ejb.rm.util.RmUtil;
 import com.verint.ejb.wfm.WfmManagerFactory;
@@ -86,10 +91,11 @@ public class CustShiftValidationCache extends ValidationCache {
     private static final String SHIFT_FOR_REQ = &quot;SHIFT_FOR_REQ&quot;; //holds main shift (if any) for the request
     private static final String ACTIVITY_FOR_REQ = &quot;ACTIVITY_FOR_REQ&quot;; //holds main shift activity (if any), as well as extension before/after activities (if any) for the request
     private static final String EXTBEFORE_FOR_REQ = &quot;EXTBEFORE_FOR_REQ&quot;; //holds extBefore (if any) for the request
+    private static final String EXTINGAPS_FOR_REQ = &quot;EXTINGAPS_FOR_REQ&quot;; //holds ext In Gaps (if any) for the request
     private static final String EXTAFTER_FOR_REQ = &quot;EXTAFTER_FOR_REQ&quot;; //holds extAfter (if any) for the request
     private static final String EXTBEFOREACT_FOR_REQ = &quot;EXTBEFOREACT_FOR_REQ&quot;; //holds the extBefore's activity (if any) for the request
+    private static final String EXTINGAPSACT_FOR_REQ = &quot;EXTINGAPSACT_FOR_REQ&quot;; //holds the ext In Gap's activity (if any) for the request
     private static final String EXTAFTERACT_FOR_REQ = &quot;EXTAFTERACT_FOR_REQ&quot;; //holds the extAfter's activity (if any) for the request
-    private static final String IS_PUBLISHED_SHIFT_IN_SYNC = &quot;IS_PUBLISHED_SHIFT_IN_SYNC&quot;;
     private static final String EXTENDED_DATERANGE = &quot;EXTENDED_DATERANGE&quot;;
 	private static final String MINIMUM_DATERANGE = &quot;MINIMUM_DATERANGE&quot;;
     private static final String PUB_EVENTS_DURING_PERIOD_FROMDB = &quot;PUB_EVENTS_DURING_PERIOD_FROMDB&quot;;
@@ -103,7 +109,7 @@ public class CustShiftValidationCache extends ValidationCache {
      */
     public static final String MANAGER_CUSTSHIFT_WORKFLOWACTIVE = &quot;MANAGER_CUSTSHIFT_WORKFLOWACTIVE&quot;;
 
-<span class="nc" id="L106">    private static final Category m_cat = Log.initCategory(CustShiftValidationCache.class.getName());</span>
+<span class="nc" id="L112">    private static final Category m_cat = Log.initCategory(CustShiftValidationCache.class.getName());</span>
 
     private final CustShiftReq m_csr;
 
@@ -111,10 +117,10 @@ public class CustShiftValidationCache extends ValidationCache {
      * Create a new validation cache for a custom shift request.
      */
     public CustShiftValidationCache(CustShiftReq csr) {
-<span class="nc" id="L114">        super(csr);</span>
-<span class="nc" id="L115">        m_csr = csr;</span>
-<span class="nc" id="L116">        m_cat.debug(&quot;Created CustShiftValidationCache: &quot; + csr);</span>
-<span class="nc" id="L117">    }</span>
+<span class="nc" id="L120">        super(csr);</span>
+<span class="nc" id="L121">        m_csr = csr;</span>
+<span class="nc" id="L122">        m_cat.debug(&quot;Created CustShiftValidationCache: &quot; + csr);</span>
+<span class="nc" id="L123">    }</span>
 
     /**
      * return  orgID for agent associated with this request.
@@ -123,21 +129,21 @@ public class CustShiftValidationCache extends ValidationCache {
      */
     @Override
 	public Map getEmpIDToOrgIDMap() throws Exception {
-<span class="nc" id="L126">        Map empIDToOrgIDMap = (Map) get(EMPID_TO_ORGID_MAP_FOR_PERIOD);</span>
-<span class="nc bnc" id="L127" title="All 2 branches missed.">        if (empIDToOrgIDMap != null) {</span>
-<span class="nc" id="L128">			return empIDToOrgIDMap;</span>
+<span class="nc" id="L132">        Map empIDToOrgIDMap = (Map) get(EMPID_TO_ORGID_MAP_FOR_PERIOD);</span>
+<span class="nc bnc" id="L133" title="All 2 branches missed.">        if (empIDToOrgIDMap != null) {</span>
+<span class="nc" id="L134">			return empIDToOrgIDMap;</span>
 		}
-<span class="nc" id="L130">        empIDToOrgIDMap = new HashMap();</span>
-<span class="nc" id="L131">        ID empID = m_csr.getEmployeeID();</span>
-<span class="nc" id="L132">        ID orgID = ValidationUtil.getOrgIDForEmployeeDuringPeriod(empID, m_csr.getStartTime(), m_csr.getEndTime());</span>
-<span class="nc bnc" id="L133" title="All 2 branches missed.">        if (!empIDToOrgIDMap.containsKey(empID)) {</span>
-<span class="nc" id="L134">            empIDToOrgIDMap.put(empID, orgID);</span>
+<span class="nc" id="L136">        empIDToOrgIDMap = new HashMap();</span>
+<span class="nc" id="L137">        ID empID = m_csr.getEmployeeID();</span>
+<span class="nc" id="L138">        ID orgID = ValidationUtil.getOrgIDForEmployeeDuringPeriod(empID, m_csr.getStartTime(), m_csr.getEndTime());</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">        if (!empIDToOrgIDMap.containsKey(empID)) {</span>
+<span class="nc" id="L140">            empIDToOrgIDMap.put(empID, orgID);</span>
         }
-<span class="nc" id="L136">        put(EMPID_TO_ORGID_MAP_FOR_PERIOD, empIDToOrgIDMap);</span>
-<span class="nc bnc" id="L137" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L138">			m_cat.debug(&quot;getEmpIDToOrgIDMap: &quot; + RmUtil.dumpMap(empIDToOrgIDMap));</span>
+<span class="nc" id="L142">        put(EMPID_TO_ORGID_MAP_FOR_PERIOD, empIDToOrgIDMap);</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L144">			m_cat.debug(&quot;getEmpIDToOrgIDMap: &quot; + RmUtil.dumpMap(empIDToOrgIDMap));</span>
 		}
-<span class="nc" id="L140">        return empIDToOrgIDMap;</span>
+<span class="nc" id="L146">        return empIDToOrgIDMap;</span>
     }
 
     /**
@@ -151,19 +157,19 @@ public class CustShiftValidationCache extends ValidationCache {
      */
     public Collection getSkillsForEmployeeDuringPeriod(ID empID, Date start, Date end)
 			throws Exception {
-<span class="nc" id="L154">        String key = RequestUtil.makeCacheKey(EMP_TO_SKILLS, empID, start, end);</span>
+<span class="nc" id="L160">        String key = RequestUtil.makeCacheKey(EMP_TO_SKILLS, empID, start, end);</span>
 
-<span class="nc" id="L156">        Collection cSkills = (Collection) get(key);</span>
+<span class="nc" id="L162">        Collection cSkills = (Collection) get(key);</span>
 
-<span class="nc bnc" id="L158" title="All 2 branches missed.">        if (cSkills == null) {</span>
-<span class="nc" id="L159">            cSkills = ValidationUtil.getSkillsForEmployeeDuringPeriod(empID, start, end);</span>
-<span class="nc" id="L160">            put(key, cSkills);</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">        if (cSkills == null) {</span>
+<span class="nc" id="L165">            cSkills = ValidationUtil.getSkillsForEmployeeDuringPeriod(empID, start, end);</span>
+<span class="nc" id="L166">            put(key, cSkills);</span>
         }
 
-<span class="nc bnc" id="L163" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L164">			m_cat.debug(&quot;getSkillsForEmployeeDuringPeriod(&quot; + empID + ',' + start + ',' + end + &quot;): &quot; + RmUtil.dumpCollection(cSkills));</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L170">			m_cat.debug(&quot;getSkillsForEmployeeDuringPeriod(&quot; + empID + ',' + start + ',' + end + &quot;): &quot; + RmUtil.dumpCollection(cSkills));</span>
 		}
-<span class="nc" id="L166">        return cSkills;</span>
+<span class="nc" id="L172">        return cSkills;</span>
     }
 
 
@@ -172,24 +178,24 @@ public class CustShiftValidationCache extends ValidationCache {
     @Override
 	public Collection&lt;String&gt; getValidators() throws Exception {
         // get the organization ids for this request
-<span class="nc" id="L175">        Collection orgIDs = getOrgIDs();</span>
+<span class="nc" id="L181">		Collection&lt;ID&gt; orgIDs = getOrgIDs();</span>
 
         // because there may be more than one organization, we don't want duplicates
-<span class="nc" id="L178">        Set uniqueValidators = new HashSet(11);</span>
+<span class="nc" id="L184">        Set uniqueValidators = new HashSet(11);</span>
 
-<span class="nc bnc" id="L180" title="All 2 branches missed.">        for (Iterator itr = orgIDs.iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L181">            ID orgID = (ID) itr.next();</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">		for (Iterator&lt;ID&gt; itr = orgIDs.iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L187">            ID orgID = itr.next();</span>
 
-<span class="nc" id="L183">            Collection orgValidators = super.getValidators(orgID, m_csr.getRequestType());</span>
+<span class="nc" id="L189">            Collection orgValidators = super.getValidators(orgID, m_csr.getRequestType());</span>
 
             // add all new validators for this organization to the Set
-<span class="nc" id="L186">            uniqueValidators.addAll(orgValidators);</span>
-<span class="nc" id="L187">        }</span>
+<span class="nc" id="L192">            uniqueValidators.addAll(orgValidators);</span>
+<span class="nc" id="L193">        }</span>
 
-<span class="nc bnc" id="L189" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
-<span class="nc" id="L190">			m_cat.debug(&quot;getValidators: &quot; + RmUtil.dumpCollection(uniqueValidators));</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">        if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L196">			m_cat.debug(&quot;getValidators: &quot; + RmUtil.dumpCollection(uniqueValidators));</span>
 		}
-<span class="nc" id="L192">        return uniqueValidators;</span>
+<span class="nc" id="L198">        return uniqueValidators;</span>
     }
 
     /**
@@ -198,112 +204,120 @@ public class CustShiftValidationCache extends ValidationCache {
     @Override
 	public FilingRuleChecker getFilingRuleChecker(Object obj) throws Exception {
 
-<span class="nc" id="L201">        CustShiftReq csr = (CustShiftReq) obj;</span>
+<span class="nc" id="L207">        CustShiftReq csr = (CustShiftReq) obj;</span>
         // use empID for cache key since CustShiftReq.ID will be null for Reqs being created.
-<span class="nc" id="L203">        String key = RequestUtil.makeCacheKey(FILING_RULE_CHECKER, csr.getEmployeeID());</span>
+<span class="nc" id="L209">        String key = RequestUtil.makeCacheKey(FILING_RULE_CHECKER, csr.getEmployeeID());</span>
         // Check to see if the checker is already in the cache
-<span class="nc" id="L205">        FilingRuleChecker result = (FilingRuleChecker) get(key);</span>
+<span class="nc" id="L211">        FilingRuleChecker result = (FilingRuleChecker) get(key);</span>
 
         // If map was in the cache, use it
-<span class="nc bnc" id="L208" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L209">            m_cat.debug(&quot;getFilingRuleChecker(&quot; + csr + &quot;): &quot; + result);</span>
-<span class="nc" id="L210">            return result;</span>
+<span class="nc bnc" id="L214" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L215">            m_cat.debug(&quot;getFilingRuleChecker(&quot; + csr + &quot;): &quot; + result);</span>
+<span class="nc" id="L216">            return result;</span>
         }
-<span class="nc" id="L212">        Organization org = csr.getCache().getOrg();</span>
-<span class="nc" id="L213">        TimeRange itemRange = new TimeRange(csr.getStartTime(), csr.getEndTime());</span>
-<span class="nc" id="L214">        result = FilingRuleCheckerHelper.getChecker(org, csr.getRequestType(), csr.getSubType(), itemRange);</span>
+<span class="nc" id="L218">        Organization org = csr.getCache().getOrg();</span>
+<span class="nc" id="L219">        TimeRange itemRange = new TimeRange(csr.getStartTime(), csr.getEndTime());</span>
+<span class="nc" id="L220">        result = FilingRuleCheckerHelper.getChecker(org, csr.getRequestType(), csr.getSubType(), itemRange);</span>
         // Save in cache
-<span class="nc" id="L216">        put(key, result);</span>
+<span class="nc" id="L222">        put(key, result);</span>
 
-<span class="nc" id="L218">        m_cat.debug(&quot;getFilingRuleChecker(&quot; + csr + &quot;): &quot; + result);</span>
-<span class="nc" id="L219">        return result;</span>
+<span class="nc" id="L224">        m_cat.debug(&quot;getFilingRuleChecker(&quot; + csr + &quot;): &quot; + result);</span>
+<span class="nc" id="L225">        return result;</span>
     }
 
     public Collection getCalEventAssignsForCustShift(CustShiftReq csr, int eventType, boolean published,
 													 ScheduleAccessManager sam) throws Exception {
         // use empID for cache key since CustShiftReq.ID will be null for Reqs being created.
-<span class="nc" id="L225">        String key = RequestUtil.makeCacheKey(CALEVENT_ASSIGNS_FOR_ITEM,</span>
-<span class="nc" id="L226">				csr.getEmployeeID(), new Integer(eventType), new Boolean(published));</span>
+<span class="nc" id="L231">        String key = RequestUtil.makeCacheKey(CALEVENT_ASSIGNS_FOR_ITEM,</span>
+<span class="nc" id="L232">				csr.getEmployeeID(), new Integer(eventType), new Boolean(published));</span>
 
-<span class="nc" id="L228">        Collection events = null;</span>
-<span class="nc bnc" id="L229" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L230">            events = RequestUtil.getEventsDuringPeriod(csr.getEmployeeID(), eventType, published,</span>
-<span class="nc" id="L231">					csr.getStartTime(), csr.getEndTime(), sam);</span>
-<span class="nc" id="L232">            put(key, events);</span>
+<span class="nc" id="L234">        Collection events = null;</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L236">            events = RequestUtil.getEventsDuringPeriod(csr.getEmployeeID(), eventType, published,</span>
+<span class="nc" id="L237">					csr.getStartTime(), csr.getEndTime(), sam);</span>
+<span class="nc" id="L238">            put(key, events);</span>
         } else {
-<span class="nc" id="L234">            events = (Collection) get(key);</span>
-<span class="nc" id="L235">            RmUtil.dumpExitMethod(&quot;getCalEventAssignsForItem&quot;, events);</span>
+<span class="nc" id="L240">            events = (Collection) get(key);</span>
+<span class="nc" id="L241">            RmUtil.dumpExitMethod(&quot;getCalEventAssignsForItem&quot;, events);</span>
         }
 
-<span class="nc" id="L238">        return events;</span>
+<span class="nc" id="L244">        return events;</span>
     }
 
     public ShiftAssignment getNewShiftAssignToBeCreated(CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L242">        return  getNewShiftAssignToBeCreated(csr, sam, true);</span>
+<span class="nc" id="L248">        return  getNewShiftAssignToBeCreated(csr, sam, true);</span>
     }
 
     public ShiftAssignment getNewShiftAssignToBeCreated(CustShiftReq csr, ScheduleAccessManager sam, boolean isGetIfNotInCache) throws Exception {
-<span class="nc" id="L246">        String key = RequestUtil.makeCacheKey(SHIFT_TO_CREATE, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L247" title="All 4 branches missed.">        if (!containsKey(key) &amp;&amp; isGetIfNotInCache) {</span>
-<span class="nc" id="L248">            put(key, getNewShiftAssign(csr, sam));</span>
-        }
-<span class="nc" id="L250">        return (ShiftAssignment) get(key);</span>
+<span class="nc" id="L252">       return getNewShiftAssignToBeCreated(false,csr,sam,isGetIfNotInCache);</span>
+    }
+    public ShiftAssignment getNewShiftAssignToBeCreated(boolean forFlexMakeup, CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
+<span class="nc" id="L255">    	 return getNewShiftAssignToBeCreated(forFlexMakeup,csr,sam,true);</span>
     }
 
-    public ShiftAssignment getNewShiftAssign(CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L254">        boolean isShiftDefinitionChanged = true; //for both of the case of : create new shift and update shift with diff shift id.</span>
-<span class="nc" id="L255">        ShiftAssignment oldShift = getExistingShiftAssignToBeDeleted(csr, sam);</span>
-<span class="nc" id="L256">        csr = (CustShiftReq) csr.clone();</span>
+	public ShiftAssignment getNewShiftAssignToBeCreated(boolean forFlexMakeup, CustShiftReq csr, ScheduleAccessManager sam,
+			boolean isGetIfNotInCache) throws Exception {
+<span class="nc" id="L260">		String key = RequestUtil.makeCacheKey(SHIFT_TO_CREATE, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L261" title="All 4 branches missed.">		if (!containsKey(key) &amp;&amp; isGetIfNotInCache) {</span>
+<span class="nc" id="L262">			put(key, getNewShiftAssign(forFlexMakeup, csr, sam));</span>
+		}
+<span class="nc" id="L264">		return (ShiftAssignment) get(key);</span>
+	}
 
-<span class="nc bnc" id="L258" title="All 2 branches missed.">        if (csr.getRequestSubType().equals(CustShiftReq.REQUEST_SUB_TYPE_REG_SHIFT_CHANGE) ||</span>
-<span class="nc bnc" id="L259" title="All 2 branches missed.">				csr.getRequestSubType().equals(CustShiftReq.REQUEST_SUB_TYPE_OT_SHIFT_CHANGE)) {</span>
+	public ShiftAssignment getNewShiftAssign(boolean forFlexMakeup, CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
+<span class="nc" id="L268">        boolean isShiftDefinitionChanged = true; //for both of the case of : create new shift and update shift with diff shift id.</span>
+<span class="nc" id="L269">        ShiftAssignment oldShift = getExistingShiftAssignToBeDeleted(csr, sam);</span>
+<span class="nc" id="L270">        csr = (CustShiftReq) csr.clone();</span>
+
+<span class="nc bnc" id="L272" title="All 2 branches missed.">        if (csr.getRequestSubType().equals(CustShiftReq.REQUEST_SUB_TYPE_REG_SHIFT_CHANGE) ||</span>
+<span class="nc bnc" id="L273" title="All 2 branches missed.">				csr.getRequestSubType().equals(CustShiftReq.REQUEST_SUB_TYPE_OT_SHIFT_CHANGE)) {</span>
             //recreate, fill missing details in csr
-<span class="nc bnc" id="L261" title="All 6 branches missed.">            if ((csr.getShiftID() == null) || (csr.getShiftID() != null &amp;&amp; csr.getShiftID().equals(oldShift.getShiftID()))) {</span>
-<span class="nc" id="L262">				isShiftDefinitionChanged = false;</span>
+<span class="nc bnc" id="L275" title="All 6 branches missed.">            if ((csr.getShiftID() == null) || (csr.getShiftID() != null &amp;&amp; csr.getShiftID().equals(oldShift.getShiftID()))) {</span>
+<span class="nc" id="L276">				isShiftDefinitionChanged = false;</span>
 			}
 
-<span class="nc bnc" id="L265" title="All 2 branches missed.">            if (csr.getSPID() == null) {</span>
-<span class="nc" id="L266">				csr.setSPID(oldShift.getCampaignID());</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">            if (csr.getSPID() == null) {</span>
+<span class="nc" id="L280">				csr.setSPID(oldShift.getCampaignID());</span>
 			}
 
-<span class="nc bnc" id="L269" title="All 2 branches missed.">            if (csr.getShiftID() == null) {</span>
-<span class="nc" id="L270">				csr.setShiftID(oldShift.getShiftID());</span>
+<span class="nc bnc" id="L283" title="All 2 branches missed.">            if (csr.getShiftID() == null) {</span>
+<span class="nc" id="L284">				csr.setShiftID(oldShift.getShiftID());</span>
 			}
 
-<span class="nc bnc" id="L273" title="All 2 branches missed.">            if (csr.getActivityID() == null) {</span>
-<span class="nc" id="L274">				csr.setActivityID(oldShift.getActivityID());</span>
+<span class="nc bnc" id="L287" title="All 2 branches missed.">            if (csr.getActivityID() == null) {</span>
+<span class="nc" id="L288">				csr.setActivityID(oldShift.getActivityID());</span>
 			}
 
-<span class="nc bnc" id="L277" title="All 2 branches missed.">            if (csr.getEmployeeID() == null) {</span>
-<span class="nc" id="L278">				csr.setEmployeeID(oldShift.getWorkResourceIDs().iterator().next());</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">            if (csr.getEmployeeID() == null) {</span>
+<span class="nc" id="L292">				csr.setEmployeeID(oldShift.getWorkResourceIDs().iterator().next());</span>
 			}
 
-<span class="nc bnc" id="L281" title="All 2 branches missed.">            if (csr.getShiftStartTime() == null) {</span>
-<span class="nc" id="L282">				csr.setShiftStartTime(oldShift.getStartTime());</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">            if (csr.getShiftStartTime() == null) {</span>
+<span class="nc" id="L296">				csr.setShiftStartTime(oldShift.getStartTime());</span>
 			}
 
-<span class="nc bnc" id="L285" title="All 2 branches missed.">            if (csr.getShiftEndTime() == null) {</span>
-<span class="nc" id="L286">				csr.setShiftEndTime(oldShift.getEndTime());</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">            if (csr.getShiftEndTime() == null) {</span>
+<span class="nc" id="L300">				csr.setShiftEndTime(oldShift.getEndTime());</span>
 			}
 
-<span class="nc bnc" id="L289" title="All 4 branches missed.">            if (csr.getExtBeforeID() == null &amp;&amp; csr.getExtBeforeActivityID() == null) {</span>
+<span class="nc bnc" id="L303" title="All 4 branches missed.">            if (csr.getExtBeforeID() == null &amp;&amp; csr.getExtBeforeActivityID() == null) {</span>
                 //not set ot on custshiftreq, have to bring ot before setting from old shift
-<span class="nc bnc" id="L291" title="All 4 branches missed.">				if (oldShift.getOTExtensionBeforeID() != null || oldShift.getOTExtensionBeforeActivityID() != null) {</span>
-<span class="nc" id="L292">					csr.setExtBeforeActivityID(oldShift.getOTExtensionBeforeActivityID());</span>
-<span class="nc" id="L293">					csr.setExtBeforeDuration(oldShift.getExtensionBefore());</span>
-<span class="nc" id="L294">					csr.setExtBeforeGap(ScheduleUtil.getOTGapMinutes(oldShift, 1));</span>
-<span class="nc" id="L295">					csr.setExtBeforeID(oldShift.getOTExtensionBeforeID());</span>
-<span class="nc" id="L296">					csr.setExtBeforeIsOT(true);</span>
+<span class="nc bnc" id="L305" title="All 4 branches missed.">				if (oldShift.getOTExtensionBeforeID() != null || oldShift.getOTExtensionBeforeActivityID() != null) {</span>
+<span class="nc" id="L306">					csr.setExtBeforeActivityID(oldShift.getOTExtensionBeforeActivityID());</span>
+<span class="nc" id="L307">					csr.setExtBeforeDuration(oldShift.getExtensionBefore());</span>
+<span class="nc" id="L308">					csr.setExtBeforeGap(ScheduleUtil.getOTGapMinutes(oldShift, 1));</span>
+<span class="nc" id="L309">					csr.setExtBeforeID(oldShift.getOTExtensionBeforeID());</span>
+<span class="nc" id="L310">					csr.setExtBeforeIsOT(true);</span>
 				}
             }
-<span class="nc bnc" id="L299" title="All 4 branches missed.">            if (csr.getExtAfterID() == null &amp;&amp; csr.getExtAfterActivityID() == null) {</span>
+<span class="nc bnc" id="L313" title="All 4 branches missed.">            if (csr.getExtAfterID() == null &amp;&amp; csr.getExtAfterActivityID() == null) {</span>
                 //not set ot before this time, may bring ot before setting from old shift
-<span class="nc bnc" id="L301" title="All 4 branches missed.">				if (oldShift.getOTExtensionAfterID() != null || oldShift.getOTExtensionAfterActivityID() != null) {</span>
-<span class="nc" id="L302">					csr.setExtAfterActivityID(oldShift.getOTExtensionAfterActivityID());</span>
-<span class="nc" id="L303">					csr.setExtAfterDuration(oldShift.getExtensionAfter());</span>
-<span class="nc" id="L304">					csr.setExtAfterGap(ScheduleUtil.getOTGapMinutes(oldShift, 2));</span>
-<span class="nc" id="L305">					csr.setExtAfterID(oldShift.getOTExtensionAfterID());</span>
-<span class="nc" id="L306">					csr.setExtAfterIsOT(true);</span>
+<span class="nc bnc" id="L315" title="All 4 branches missed.">				if (oldShift.getOTExtensionAfterID() != null || oldShift.getOTExtensionAfterActivityID() != null) {</span>
+<span class="nc" id="L316">					csr.setExtAfterActivityID(oldShift.getOTExtensionAfterActivityID());</span>
+<span class="nc" id="L317">					csr.setExtAfterDuration(oldShift.getExtensionAfter());</span>
+<span class="nc" id="L318">					csr.setExtAfterGap(ScheduleUtil.getOTGapMinutes(oldShift, 2));</span>
+<span class="nc" id="L319">					csr.setExtAfterID(oldShift.getOTExtensionAfterID());</span>
+<span class="nc" id="L320">					csr.setExtAfterIsOT(true);</span>
 				}
             }
 			/*QC 143684: The value for key SHIFT_TO_DELETE_&lt;csr.getEmployeeID&gt; added at the method getExistingShiftAssignToBeDeleted above line 155 was based on the crs.
@@ -311,40 +325,40 @@ public class CustShiftValidationCache extends ValidationCache {
 			 *the value for key SHIFT_TO_DELETE_&lt;csr.getEmployeeID&gt; added at the method getExistingShiftAssignToBeDeleted is changed accordingly too, for example startime and endtime of its shift events
 			 *Therefore, removing that key out of the cache so that it will be added later on instead of get the wrong value
 			 */
-<span class="nc" id="L314">            String key = RequestUtil.makeCacheKey(SHIFT_TO_DELETE, csr.getEmployeeID());</span>
-<span class="nc" id="L315">            remove(key);</span>
+<span class="nc" id="L328">            String key = RequestUtil.makeCacheKey(SHIFT_TO_DELETE, csr.getEmployeeID());</span>
+<span class="nc" id="L329">            remove(key);</span>
         }
-<span class="nc" id="L317">        WorkRuleManager wr = WfmManagerFactory.getWorkRuleManager();</span>
-<span class="nc" id="L318">        ShiftAssignment shiftAssn = convertToShiftAssignment(wr, csr, oldShift, isShiftDefinitionChanged);</span>
-<span class="nc" id="L319">        shiftAssn.setLocked(true);</span>
-<span class="nc" id="L320">        return shiftAssn;</span>
+<span class="nc" id="L331">        WorkRuleManager wr = WfmManagerFactory.getWorkRuleManager();</span>
+<span class="nc" id="L332">        ShiftAssignment shiftAssn = convertToShiftAssignment(forFlexMakeup, wr, csr, oldShift, isShiftDefinitionChanged);</span>
+<span class="nc" id="L333">        shiftAssn.setLocked(true);</span>
+<span class="nc" id="L334">        return shiftAssn;</span>
     }
 
     public ShiftAssignment getExistingShiftAssignToBeDeleted(CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L324">        String key = RequestUtil.makeCacheKey(SHIFT_TO_DELETE, csr.getEmployeeID());</span>
-<span class="nc" id="L325">        ShiftAssignment oldShift = null;</span>
-<span class="nc" id="L326">        Collection list = null;</span>
-<span class="nc bnc" id="L327" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L328">            list = new ArrayList();</span>
-<span class="nc" id="L329">            put(key, list);</span>
-<span class="nc bnc" id="L330" title="All 2 branches missed.">            if (csr.getShiftAssignmentID() != null) {</span>
-<span class="nc bnc" id="L331" title="All 2 branches missed.">                if (sam == null) {</span>
-<span class="nc" id="L332">					sam = getScheduleAccessManager();</span>
+<span class="nc" id="L338">        String key = RequestUtil.makeCacheKey(SHIFT_TO_DELETE, csr.getEmployeeID());</span>
+<span class="nc" id="L339">        ShiftAssignment oldShift = null;</span>
+<span class="nc" id="L340">        Collection list = null;</span>
+<span class="nc bnc" id="L341" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L342">            list = new ArrayList();</span>
+<span class="nc" id="L343">            put(key, list);</span>
+<span class="nc bnc" id="L344" title="All 2 branches missed.">            if (csr.getShiftAssignmentID() != null) {</span>
+<span class="nc bnc" id="L345" title="All 2 branches missed.">                if (sam == null) {</span>
+<span class="nc" id="L346">					sam = getScheduleAccessManager();</span>
 				}
                 try {
-<span class="nc" id="L335">                    oldShift = sam.getShiftAssignmentByID(csr.getShiftAssignmentID());</span>
-<span class="nc" id="L336">                } catch (Exception e) {</span>
-<span class="nc" id="L337">                    m_cat.info(&quot;Rxisting Shift assignment is not found;ID=&quot; + csr.getShiftAssignmentID() + &quot; :\t CSR=&quot; + csr);</span>
-<span class="nc" id="L338">                }</span>
+<span class="nc" id="L349">                    oldShift = sam.getShiftAssignmentByID(csr.getShiftAssignmentID());</span>
+<span class="nc" id="L350">                } catch (Exception e) {</span>
+<span class="nc" id="L351">                    m_cat.info(&quot;Rxisting Shift assignment is not found;ID=&quot; + csr.getShiftAssignmentID() + &quot; :\t CSR=&quot; + csr);</span>
+<span class="nc" id="L352">                }</span>
             }
-<span class="nc bnc" id="L340" title="All 2 branches missed.">            if (oldShift != null) {</span>
-<span class="nc" id="L341">                list.add(oldShift);</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">            if (oldShift != null) {</span>
+<span class="nc" id="L355">                list.add(oldShift);</span>
             }
         } else {
-<span class="nc" id="L344">            list = (Collection) get(key);</span>
-<span class="nc bnc" id="L345" title="All 2 branches missed.">            oldShift = !list.isEmpty() ? (ShiftAssignment) list.iterator().next() : null;</span>
+<span class="nc" id="L358">            list = (Collection) get(key);</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">            oldShift = !list.isEmpty() ? (ShiftAssignment) list.iterator().next() : null;</span>
         }
-<span class="nc" id="L347">        return oldShift;</span>
+<span class="nc" id="L361">        return oldShift;</span>
     }
 
     /* (non-Javadoc)
@@ -352,153 +366,192 @@ public class CustShiftValidationCache extends ValidationCache {
       */
     @Override
 	public ID getEmployeeID() {
-<span class="nc" id="L355">        return m_csr.getEmployeeID();</span>
+<span class="nc" id="L369">        return m_csr.getEmployeeID();</span>
     }
 
     /* (non-Javadoc)
       * @see com.bluepumpkin.ejb.rm.requests.common.validation.ValidationCache#getDateRange()
       */
     @Override
-	public TimeRange getDateRange() throws Exception {
-<span class="nc" id="L363">        return new TimeRange(m_csr.getStartTime(), m_csr.getEndTime());</span>
+	public TimeRange getDateRange() {
+<span class="nc" id="L377">        return new TimeRange(m_csr.getStartTime(), m_csr.getEndTime());</span>
     }
 
     public static CampaignManager getCampaignManager() throws BbmException {
-<span class="nc" id="L367">        return WfmManagerFactory.getCampaignManager(false);</span>
+<span class="nc" id="L381">        return WfmManagerFactory.getCampaignManager(false);</span>
     }
 
     public static WorkRuleManager getWorkRuleManager() throws BbmException {
-<span class="nc" id="L371">        return WfmManagerFactory.getWorkRuleManager(false);</span>
+<span class="nc" id="L385">        return WfmManagerFactory.getWorkRuleManager(false);</span>
     }
 
     public static ActivityManager getActivityManager() throws BbmException {
-<span class="nc" id="L375">        return WfmManagerFactory.getActivityManager(false);</span>
+<span class="nc" id="L389">        return WfmManagerFactory.getActivityManager(false);</span>
     }
 
-    public Campaign getCampaign() throws Exception {
-<span class="nc" id="L379">        Campaign camp = (Campaign) get(CAMPAIGN_FOR_REQ);</span>
-<span class="nc bnc" id="L380" title="All 2 branches missed.">        if (camp == null) {</span>
-<span class="nc" id="L381">            ID spID = m_csr.getSPID();</span>
-<span class="nc bnc" id="L382" title="All 2 branches missed.">            if (spID != null) {</span>
-<span class="nc" id="L383">                CampaignManager cm = getCampaignManager();</span>
-<span class="nc" id="L384">                SchedulingPeriod sp = cm.getSchedulingPeriodByID(spID);</span>
-<span class="nc bnc" id="L385" title="All 2 branches missed.">                if (sp != null) {</span>
-<span class="nc" id="L386">                    ID campID = sp.getCampaignID();</span>
-<span class="nc bnc" id="L387" title="All 2 branches missed.">                    if (campID != null) {</span>
-<span class="nc" id="L388">                        camp = cm.getCampaignByID(campID);</span>
-<span class="nc bnc" id="L389" title="All 2 branches missed.">                        if (camp != null) {</span>
-<span class="nc" id="L390">							put(CAMPAIGN_FOR_REQ, camp);</span>
+	public Campaign getCampaign() throws Exception {
+<span class="nc" id="L393">		Campaign camp = (Campaign) get(CAMPAIGN_FOR_REQ);</span>
+<span class="nc bnc" id="L394" title="All 2 branches missed.">		if (camp == null) {</span>
+<span class="nc" id="L395">			ID spID = m_csr.getSPID();</span>
+<span class="nc bnc" id="L396" title="All 2 branches missed.">			if (spID != null) {</span>
+<span class="nc" id="L397">				CampaignManager cm = getCampaignManager();</span>
+<span class="nc" id="L398">				SchedulingPeriod sp = cm.getSchedulingPeriodByID(spID);</span>
+<span class="nc bnc" id="L399" title="All 2 branches missed.">				if (sp != null) {</span>
+<span class="nc" id="L400">					ID campID = sp.getCampaignID();</span>
+<span class="nc bnc" id="L401" title="All 2 branches missed.">					if (campID != null) {</span>
+<span class="nc" id="L402">						camp = cm.getCampaignByID(campID);</span>
+<span class="nc bnc" id="L403" title="All 2 branches missed.">						if (camp != null) {</span>
+<span class="nc" id="L404">							put(CAMPAIGN_FOR_REQ, camp);</span>
 						}
-                    }
-                }
-            }
-        }
-<span class="nc" id="L396">        return camp;</span>
-    }
-
-    public SchedulingPeriod getSchedulingPeriod() throws Exception {
-<span class="nc" id="L400">        SchedulingPeriod sp = (SchedulingPeriod) get(SP_FOR_REQ);</span>
-<span class="nc bnc" id="L401" title="All 2 branches missed.">        if (sp == null) {</span>
-<span class="nc" id="L402">            ID spID = m_csr.getSPID();</span>
-<span class="nc bnc" id="L403" title="All 2 branches missed.">            if (spID != null) {</span>
-<span class="nc" id="L404">                CampaignManager cm = getCampaignManager();</span>
-<span class="nc" id="L405">                sp = cm.getSchedulingPeriodByID(spID);</span>
-<span class="nc bnc" id="L406" title="All 2 branches missed.">                if (sp != null) {</span>
-<span class="nc" id="L407">                    put(SP_FOR_REQ, sp);</span>
-                }
-            }
-        }
-<span class="nc" id="L411">        return sp;</span>
-    }
-
-    public Shift getShift() throws Exception {
-<span class="nc" id="L415">        Shift shift = (Shift) get(SHIFT_FOR_REQ);</span>
-<span class="nc bnc" id="L416" title="All 2 branches missed.">        if (shift == null) {</span>
-<span class="nc" id="L417">            ID id = m_csr.getShiftID();</span>
-<span class="nc bnc" id="L418" title="All 2 branches missed.">            if (id != null) {</span>
-<span class="nc" id="L419">                shift = getWorkRuleManager().getShift(id);</span>
-<span class="nc bnc" id="L420" title="All 2 branches missed.">                if (shift != null) {</span>
-<span class="nc" id="L421">					put(SHIFT_FOR_REQ, shift);</span>
+					}
 				}
-            }
-        }
-<span class="nc" id="L425">        return shift;</span>
-    }
+			}
+		}
+<span class="nc" id="L410">		return camp;</span>
+	}
 
-    public Activity getActivity() throws Exception {
-<span class="nc" id="L429">        Activity activity = (Activity) get(ACTIVITY_FOR_REQ);</span>
-<span class="nc bnc" id="L430" title="All 4 branches missed.">        if (activity == null &amp;&amp; hasShift(m_csr)) {</span>
-<span class="nc" id="L431">            ID id = m_csr.getActivityID();</span>
-<span class="nc bnc" id="L432" title="All 2 branches missed.">            if (id != null) {</span>
-<span class="nc" id="L433">                activity = getActivityManager().findActivityById(id);</span>
-<span class="nc bnc" id="L434" title="All 2 branches missed.">                if (activity != null) {</span>
-<span class="nc" id="L435">					put(ACTIVITY_FOR_REQ, activity);</span>
+	public SchedulingPeriod getSchedulingPeriod() throws Exception {
+<span class="nc" id="L414">		SchedulingPeriod sp = (SchedulingPeriod) get(SP_FOR_REQ);</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">		if (sp == null) {</span>
+<span class="nc" id="L416">			ID spID = m_csr.getSPID();</span>
+<span class="nc bnc" id="L417" title="All 2 branches missed.">			if (spID != null) {</span>
+<span class="nc" id="L418">				CampaignManager cm = getCampaignManager();</span>
+<span class="nc" id="L419">				sp = cm.getSchedulingPeriodByID(spID);</span>
+<span class="nc bnc" id="L420" title="All 2 branches missed.">				if (sp != null) {</span>
+<span class="nc" id="L421">					put(SP_FOR_REQ, sp);</span>
 				}
-            }
-        }
-<span class="nc" id="L439">        return activity;</span>
-    }
+			}
+		}
+<span class="nc" id="L425">		return sp;</span>
+	}
 
-    public ShiftOTExtension getExtensionBefore() throws Exception {
-<span class="nc" id="L443">        ShiftOTExtension ext = (ShiftOTExtension) get(EXTBEFORE_FOR_REQ);</span>
-<span class="nc bnc" id="L444" title="All 2 branches missed.">        if (ext == null) {</span>
-<span class="nc" id="L445">            ID id = m_csr.getExtBeforeID();</span>
-<span class="nc bnc" id="L446" title="All 2 branches missed.">            if (id != null) {</span>
-<span class="nc" id="L447">                Collection&lt;ShiftOTExtension&gt; exts = getWorkRuleManager().getShiftOTExtensionsByIDs(Collections.singletonList(id));</span>
-<span class="nc bnc" id="L448" title="All 4 branches missed.">                if (exts != null &amp;&amp; exts.size() &gt; 0) {</span>
-<span class="nc bnc" id="L449" title="All 2 branches missed.">                    for (ShiftOTExtension curExt : exts) {</span>
-<span class="nc" id="L450">                        ext = curExt;</span>
-<span class="nc" id="L451">                        put(EXTBEFORE_FOR_REQ, ext);</span>
-<span class="nc" id="L452">                    }</span>
-                }
-            }
-        }
-<span class="nc" id="L456">        return ext;</span>
-    }
+	public Shift getShift() throws Exception {
+<span class="nc" id="L429">		Shift shift = (Shift) get(SHIFT_FOR_REQ);</span>
+<span class="nc bnc" id="L430" title="All 2 branches missed.">		if (shift == null) {</span>
+<span class="nc" id="L431">			ID id = m_csr.getShiftID();</span>
+<span class="nc bnc" id="L432" title="All 2 branches missed.">			if (id != null) {</span>
+<span class="nc" id="L433">				shift = getWorkRuleManager().getShift(id);</span>
+<span class="nc bnc" id="L434" title="All 2 branches missed.">				if (shift != null) {</span>
+<span class="nc" id="L435">					put(SHIFT_FOR_REQ, shift);</span>
+				}
+			}
+		}
+<span class="nc" id="L439">		return shift;</span>
+	}
 
-    public ShiftOTExtension getExtensionAfter() throws Exception {
-<span class="nc" id="L460">        ShiftOTExtension ext = (ShiftOTExtension) get(EXTAFTER_FOR_REQ);</span>
-<span class="nc bnc" id="L461" title="All 2 branches missed.">        if (ext == null) {</span>
-<span class="nc" id="L462">            ID id = m_csr.getExtAfterID();</span>
-<span class="nc bnc" id="L463" title="All 2 branches missed.">            if (id != null) {</span>
-<span class="nc" id="L464">                Collection&lt;ShiftOTExtension&gt; exts = getWorkRuleManager().getShiftOTExtensionsByIDs(Collections.singletonList(id));</span>
-<span class="nc bnc" id="L465" title="All 4 branches missed.">                if (exts != null &amp;&amp; exts.size() &gt; 0) {</span>
-<span class="nc bnc" id="L466" title="All 2 branches missed.">                    for (ShiftOTExtension curExt : exts) {</span>
-<span class="nc" id="L467">                        ext = curExt;</span>
-<span class="nc" id="L468">                        put(EXTAFTER_FOR_REQ, ext);</span>
-<span class="nc" id="L469">                    }</span>
-                }
-            }
-        }
-<span class="nc" id="L473">        return ext;</span>
-    }
+	public Activity getActivity() throws Exception {
+<span class="nc" id="L443">		Activity activity = (Activity) get(ACTIVITY_FOR_REQ);</span>
+<span class="nc bnc" id="L444" title="All 4 branches missed.">		if (activity == null &amp;&amp; hasShift(m_csr)) {</span>
+<span class="nc" id="L445">			ID id = m_csr.getActivityID();</span>
+<span class="nc bnc" id="L446" title="All 2 branches missed.">			if (id != null) {</span>
+<span class="nc" id="L447">				activity = getActivityManager().findActivityById(id);</span>
+<span class="nc bnc" id="L448" title="All 2 branches missed.">				if (activity != null) {</span>
+<span class="nc" id="L449">					put(ACTIVITY_FOR_REQ, activity);</span>
+				}
+			}
+		}
+<span class="nc" id="L453">		return activity;</span>
+	}
+
+	public ShiftOTExtension getExtensionBefore() throws Exception {
+<span class="nc" id="L457">		ShiftOTExtension ext = (ShiftOTExtension) get(EXTBEFORE_FOR_REQ);</span>
+<span class="nc bnc" id="L458" title="All 2 branches missed.">		if (ext == null) {</span>
+<span class="nc" id="L459">			ID id = m_csr.getExtBeforeID();</span>
+<span class="nc bnc" id="L460" title="All 2 branches missed.">			if (id != null) {</span>
+<span class="nc" id="L461">				Collection&lt;ShiftOTExtension&gt; exts = getWorkRuleManager().getShiftOTExtensionsByIDs(Collections.singletonList(id));</span>
+<span class="nc bnc" id="L462" title="All 4 branches missed.">				if (exts != null &amp;&amp; !exts.isEmpty()) {</span>
+<span class="nc bnc" id="L463" title="All 2 branches missed.">					for (ShiftOTExtension curExt : exts) {</span>
+<span class="nc" id="L464">						ext = curExt;</span>
+<span class="nc" id="L465">						put(EXTBEFORE_FOR_REQ, ext);</span>
+<span class="nc" id="L466">					}</span>
+				}
+			}
+		}
+<span class="nc" id="L470">		return ext;</span>
+	}
+
+	public ShiftOTExtension getExtensionInGaps() throws Exception {
+<span class="nc" id="L474">		ShiftOTExtension ext = (ShiftOTExtension) get(EXTINGAPS_FOR_REQ);</span>
+<span class="nc bnc" id="L475" title="All 2 branches missed.">		if (ext == null) {</span>
+<span class="nc" id="L476">			Collection&lt;CustShiftReqGap&gt; gaps = m_csr.getChildObjects(CustShiftReqFieldInfo.CUSTREQGAP_CHILD_TYPE);</span>
+<span class="nc bnc" id="L477" title="All 4 branches missed.">			if (gaps != null &amp;&amp; !gaps.isEmpty()) {</span>
+<span class="nc" id="L478">				CustShiftReqGap gap = gaps.iterator().next();</span>
+<span class="nc bnc" id="L479" title="All 2 branches missed.">				if (gap.getShiftOTGapID() != null) {</span>
+<span class="nc" id="L480">					Collection&lt;ShiftOTExtension&gt; exts = getWorkRuleManager().getShiftOTExtensionsByIDs(</span>
+<span class="nc" id="L481">							Collections.singletonList(gap.getShiftOTGapID()));</span>
+<span class="nc bnc" id="L482" title="All 4 branches missed.">					if (exts != null &amp;&amp; !exts.isEmpty()) {</span>
+<span class="nc bnc" id="L483" title="All 2 branches missed.">						for (ShiftOTExtension curExt : exts) {</span>
+<span class="nc" id="L484">							ext = curExt;</span>
+<span class="nc" id="L485">							put(EXTINGAPS_FOR_REQ, ext);</span>
+<span class="nc" id="L486">						}</span>
+					}
+				}
+			}
+		}
+<span class="nc" id="L491">		return ext;</span>
+	}
+
+	public ShiftOTExtension getExtensionAfter() throws Exception {
+<span class="nc" id="L495">		ShiftOTExtension ext = (ShiftOTExtension) get(EXTAFTER_FOR_REQ);</span>
+<span class="nc bnc" id="L496" title="All 2 branches missed.">		if (ext == null) {</span>
+<span class="nc" id="L497">			ID id = m_csr.getExtAfterID();</span>
+<span class="nc bnc" id="L498" title="All 2 branches missed.">			if (id != null) {</span>
+<span class="nc" id="L499">				Collection&lt;ShiftOTExtension&gt; exts = getWorkRuleManager().getShiftOTExtensionsByIDs(Collections.singletonList(id));</span>
+<span class="nc bnc" id="L500" title="All 4 branches missed.">				if (exts != null &amp;&amp; !exts.isEmpty()) {</span>
+<span class="nc bnc" id="L501" title="All 2 branches missed.">					for (ShiftOTExtension curExt : exts) {</span>
+<span class="nc" id="L502">						ext = curExt;</span>
+<span class="nc" id="L503">						put(EXTAFTER_FOR_REQ, ext);</span>
+<span class="nc" id="L504">					}</span>
+				}
+			}
+		}
+<span class="nc" id="L508">		return ext;</span>
+	}
 
     public Activity getExtensionBeforeActivity() throws Exception {
-<span class="nc" id="L477">        Activity activity = (Activity) get(EXTBEFOREACT_FOR_REQ);</span>
-<span class="nc bnc" id="L478" title="All 4 branches missed.">        if (activity == null &amp;&amp; hasExtBefore(m_csr)) {</span>
-<span class="nc" id="L479">            ID id = m_csr.getExtBeforeActivityID();</span>
-<span class="nc bnc" id="L480" title="All 2 branches missed.">            if (id != null) {</span>
-<span class="nc" id="L481">                activity = getActivityManager().findActivityById(id);</span>
-<span class="nc bnc" id="L482" title="All 2 branches missed.">                if (activity != null) {</span>
-<span class="nc" id="L483">					put(EXTBEFOREACT_FOR_REQ, activity);</span>
+<span class="nc" id="L512">        Activity activity = (Activity) get(EXTBEFOREACT_FOR_REQ);</span>
+<span class="nc bnc" id="L513" title="All 4 branches missed.">        if (activity == null &amp;&amp; hasExtBefore(m_csr)) {</span>
+<span class="nc" id="L514">            ID id = m_csr.getExtBeforeActivityID();</span>
+<span class="nc bnc" id="L515" title="All 2 branches missed.">            if (id != null) {</span>
+<span class="nc" id="L516">                activity = getActivityManager().findActivityById(id);</span>
+<span class="nc bnc" id="L517" title="All 2 branches missed.">                if (activity != null) {</span>
+<span class="nc" id="L518">					put(EXTBEFOREACT_FOR_REQ, activity);</span>
 				}
             }
         }
-<span class="nc" id="L487">        return activity;</span>
+<span class="nc" id="L522">        return activity;</span>
+    }
+
+    public Activity getExtensionInGapsActivity() throws Exception {
+<span class="nc" id="L526">        Activity activity = (Activity) get(EXTINGAPSACT_FOR_REQ);</span>
+<span class="nc" id="L527">        Collection&lt;CustShiftReqGap&gt; gaps = m_csr.getChildObjects(CustShiftReqFieldInfo.CUSTREQGAP_CHILD_TYPE);</span>
+<span class="nc bnc" id="L528" title="All 4 branches missed.">		if(gaps!=null &amp;&amp; !gaps.isEmpty()){</span>
+<span class="nc" id="L529">			CustShiftReqGap gap = gaps.iterator().next();</span>
+<span class="nc bnc" id="L530" title="All 2 branches missed.">			if(gap.getExtGapActivityID()!=null){</span>
+<span class="nc" id="L531">				ID activityID=gap.getExtGapActivityID();</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">	            if (activityID != null) {</span>
+<span class="nc" id="L533">	                activity = getActivityManager().findActivityById(activityID);</span>
+<span class="nc bnc" id="L534" title="All 2 branches missed.">	                if (activity != null) {</span>
+<span class="nc" id="L535">						put(EXTINGAPSACT_FOR_REQ, activity);</span>
+					}
+	            }
+			}
+        }
+<span class="nc" id="L540">        return activity;</span>
     }
 
     public Activity getExtensionAfterActivity() throws Exception {
-<span class="nc" id="L491">        Activity activity = (Activity) get(EXTAFTERACT_FOR_REQ);</span>
-<span class="nc bnc" id="L492" title="All 4 branches missed.">        if (activity == null &amp;&amp; hasExtAfter(m_csr)) {</span>
-<span class="nc" id="L493">            ID id = m_csr.getExtAfterActivityID();</span>
-<span class="nc bnc" id="L494" title="All 2 branches missed.">            if (id != null) {</span>
-<span class="nc" id="L495">                activity = getActivityManager().findActivityById(id);</span>
-<span class="nc bnc" id="L496" title="All 2 branches missed.">                if (activity != null) {</span>
-<span class="nc" id="L497">					put(EXTAFTERACT_FOR_REQ, activity);</span>
+<span class="nc" id="L544">        Activity activity = (Activity) get(EXTAFTERACT_FOR_REQ);</span>
+<span class="nc bnc" id="L545" title="All 4 branches missed.">        if (activity == null &amp;&amp; hasExtAfter(m_csr)) {</span>
+<span class="nc" id="L546">            ID id = m_csr.getExtAfterActivityID();</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">            if (id != null) {</span>
+<span class="nc" id="L548">                activity = getActivityManager().findActivityById(id);</span>
+<span class="nc bnc" id="L549" title="All 2 branches missed.">                if (activity != null) {</span>
+<span class="nc" id="L550">					put(EXTAFTERACT_FOR_REQ, activity);</span>
 				}
             }
         }
-<span class="nc" id="L501">        return activity;</span>
+<span class="nc" id="L554">        return activity;</span>
     }
 
     /**
@@ -506,12 +559,12 @@ public class CustShiftValidationCache extends ValidationCache {
      * and a non-null Activity.
      */
     public static boolean hasExtBefore(CustShiftReq csr) {
-<span class="nc bnc" id="L509" title="All 2 branches missed.">        if (csr.getExtBeforeDuration() == 0 ||</span>
-<span class="nc bnc" id="L510" title="All 2 branches missed.">				csr.getExtBeforeActivityID() == null) {</span>
-<span class="nc" id="L511">			return false;</span>
+<span class="nc bnc" id="L562" title="All 2 branches missed.">        if (csr.getExtBeforeDuration() == 0 ||</span>
+<span class="nc bnc" id="L563" title="All 2 branches missed.">				csr.getExtBeforeActivityID() == null) {</span>
+<span class="nc" id="L564">			return false;</span>
 		}
 
-<span class="nc" id="L514">        return true;</span>
+<span class="nc" id="L567">        return true;</span>
     }
 
     /**
@@ -519,12 +572,12 @@ public class CustShiftValidationCache extends ValidationCache {
      * and a non-null Activity.
      */
     public static boolean hasExtAfter(CustShiftReq csr) {
-<span class="nc bnc" id="L522" title="All 2 branches missed.">        if (csr.getExtAfterDuration() == 0 ||</span>
-<span class="nc bnc" id="L523" title="All 2 branches missed.">				csr.getExtAfterActivityID() == null) {</span>
-<span class="nc" id="L524">			return false;</span>
+<span class="nc bnc" id="L575" title="All 2 branches missed.">        if (csr.getExtAfterDuration() == 0 ||</span>
+<span class="nc bnc" id="L576" title="All 2 branches missed.">				csr.getExtAfterActivityID() == null) {</span>
+<span class="nc" id="L577">			return false;</span>
 		}
 
-<span class="nc" id="L527">        return true;</span>
+<span class="nc" id="L580">        return true;</span>
     }
 
     /**
@@ -532,12 +585,12 @@ public class CustShiftValidationCache extends ValidationCache {
      * and a non-null Activity.
      */
     public static boolean hasShift(CustShiftReq csr) {
-<span class="nc bnc" id="L535" title="All 2 branches missed.">        if (csr.getShiftDurationinMinutes() == 0 ||</span>
-<span class="nc bnc" id="L536" title="All 2 branches missed.">				csr.getActivityID() == null) {</span>
-<span class="nc" id="L537">			return false;</span>
+<span class="nc bnc" id="L588" title="All 2 branches missed.">        if (csr.getShiftDurationinMinutes() == 0 ||</span>
+<span class="nc bnc" id="L589" title="All 2 branches missed.">				csr.getActivityID() == null) {</span>
+<span class="nc" id="L590">			return false;</span>
 		}
 
-<span class="nc" id="L540">        return true;</span>
+<span class="nc" id="L593">        return true;</span>
     }
 
     /**
@@ -547,7 +600,7 @@ public class CustShiftValidationCache extends ValidationCache {
      * @return
      */
     private ID getOrgID() throws Exception {
-<span class="nc" id="L550">        return (ID) getOrgIDs().iterator().next();</span>
+<span class="nc" id="L603">		return getOrgIDs().iterator().next();</span>
     }
 
     /**
@@ -562,23 +615,23 @@ public class CustShiftValidationCache extends ValidationCache {
      * @throws Exception
      */
     public boolean getManagerCustShiftWorkflowActive() throws Exception {
-<span class="nc" id="L565">        String methodName = &quot;getManagerCustShiftWorkflowActive: &quot;;</span>
+<span class="nc" id="L618">        String methodName = &quot;getManagerCustShiftWorkflowActive: &quot;;</span>
 
-<span class="nc" id="L567">        Boolean workflowActive = (Boolean) get(MANAGER_CUSTSHIFT_WORKFLOWACTIVE);</span>
-<span class="nc bnc" id="L568" title="All 2 branches missed.">        if (workflowActive != null) {</span>
-<span class="nc" id="L569">            m_cat.debug(methodName + workflowActive);</span>
-<span class="nc" id="L570">            return workflowActive.booleanValue();</span>
+<span class="nc" id="L620">        Boolean workflowActive = (Boolean) get(MANAGER_CUSTSHIFT_WORKFLOWACTIVE);</span>
+<span class="nc bnc" id="L621" title="All 2 branches missed.">        if (workflowActive != null) {</span>
+<span class="nc" id="L622">            m_cat.debug(methodName + workflowActive);</span>
+<span class="nc" id="L623">            return workflowActive.booleanValue();</span>
         }
 
-<span class="nc" id="L573">        OrganizationSetting orgSetting = RequestUtil.getOrgSetting(getOrgID(), null);</span>
-<span class="nc" id="L574">        boolean allowNewShifts = orgSetting.getEnableCustomShiftRequests();   //allow new shift requests</span>
-<span class="nc" id="L575">        boolean allowShiftChanges = orgSetting.getAllowShiftChangeRequests(); //allow shift change requests</span>
-<span class="nc bnc" id="L576" title="All 4 branches missed.">        workflowActive = new Boolean(allowNewShifts || allowShiftChanges);</span>
-<span class="nc" id="L577">        m_cat.debug(methodName + workflowActive);</span>
+<span class="nc" id="L626">        OrganizationSetting orgSetting = RequestUtil.getOrgSetting(getOrgID(), null);</span>
+<span class="nc" id="L627">        boolean allowNewShifts = orgSetting.getEnableCustomShiftRequests();   //allow new shift requests</span>
+<span class="nc" id="L628">        boolean allowShiftChanges = orgSetting.getAllowShiftChangeRequests(); //allow shift change requests</span>
+<span class="nc bnc" id="L629" title="All 4 branches missed.">        workflowActive = new Boolean(allowNewShifts || allowShiftChanges);</span>
+<span class="nc" id="L630">        m_cat.debug(methodName + workflowActive);</span>
 
-<span class="nc" id="L579">        put(MANAGER_CUSTSHIFT_WORKFLOWACTIVE, workflowActive);</span>
+<span class="nc" id="L632">        put(MANAGER_CUSTSHIFT_WORKFLOWACTIVE, workflowActive);</span>
 
-<span class="nc" id="L581">        return workflowActive.booleanValue();</span>
+<span class="nc" id="L634">        return workflowActive.booleanValue();</span>
     }
 
     /**
@@ -590,141 +643,281 @@ public class CustShiftValidationCache extends ValidationCache {
      * @return
      * @throws Exception
      */
-    public ShiftAssignment convertToShiftAssignment(WorkRuleManager wr, CustShiftReq csr, ShiftAssignment oldShiftAssign, boolean isShiftDefinitionChanged) throws Exception {
-<span class="nc" id="L594">        ShiftAssignment newShiftAssign = new ShiftAssignment();</span>
-<span class="nc" id="L595">        newShiftAssign.setCampaignID(csr.getSPID());</span>
-<span class="nc" id="L596">        newShiftAssign.setShiftID(csr.getShiftID());</span>
+	public ShiftAssignment convertToShiftAssignment(boolean forFlexMakeup, WorkRuleManager wr, CustShiftReq csr,
+			ShiftAssignment oldShiftAssign, boolean isShiftDefinitionChanged) throws Exception {
+<span class="nc" id="L648">        ShiftAssignment newShiftAssign = new ShiftAssignment();</span>
+<span class="nc" id="L649">        newShiftAssign.setCampaignID(csr.getSPID());</span>
+<span class="nc" id="L650">        newShiftAssign.setShiftID(csr.getShiftID());</span>
         //newShiftAssign.setWorkPatternID(getShiftPatternID());
-<span class="nc" id="L598">        newShiftAssign.setActivityID(csr.getActivityID());</span>
-<span class="nc" id="L599">        newShiftAssign.setStartTime(csr.getShiftStartTime());</span>
-<span class="nc" id="L600">        newShiftAssign.setDuration(csr.getShiftDurationinMinutes());</span>
-<span class="nc" id="L601">        newShiftAssign.addWorkResourceID(this.getEmployeeID());</span>
+<span class="nc" id="L652">        newShiftAssign.setActivityID(csr.getActivityID());</span>
+<span class="nc" id="L653">        newShiftAssign.setStartTime(csr.getShiftStartTime());</span>
+<span class="nc" id="L654">        newShiftAssign.setDuration(csr.getShiftDurationinMinutes());</span>
+<span class="nc" id="L655">        newShiftAssign.addWorkResourceID(this.getEmployeeID());</span>
 
-<span class="nc" id="L603">        Shift shift = null; //When not null, we will optimize shift events for the shift</span>
-<span class="nc" id="L604">        ShiftOTExtension otBefore = null;  //When not null, we will optimize shift events for this extension before the shift</span>
-<span class="nc" id="L605">        ShiftOTExtension otAfter = null;  //When not null, we will optimize shift events for this extension after the shift</span>
-<span class="nc" id="L606">        Shift mainShift = null;</span>
+<span class="nc" id="L657">        Shift shift = null; //When not null, we will optimize shift events for the shift</span>
+<span class="nc" id="L658">        ShiftOTExtension otBefore = null;  //When not null, we will optimize shift events for this extension before the shift</span>
+<span class="nc" id="L659">        ShiftOTExtension otAfter = null;  //When not null, we will optimize shift events for this extension after the shift</span>
+<span class="nc" id="L660">        Shift mainShift = null;</span>
 
-<span class="nc" id="L608">        boolean oldShiftHasExtBefore = false;</span>
-<span class="nc" id="L609">        boolean oldShiftHasExtAfter = false;</span>
-<span class="nc bnc" id="L610" title="All 2 branches missed.">        if (oldShiftAssign != null)</span>
-        {
-<span class="nc bnc" id="L612" title="All 4 branches missed.">            oldShiftHasExtBefore = (oldShiftAssign.getOTExtensionBeforeActivityID() != null &amp;&amp; oldShiftAssign.getExtensionBefore() &gt; 0);</span>
-<span class="nc bnc" id="L613" title="All 4 branches missed.">            oldShiftHasExtAfter = (oldShiftAssign.getOTExtensionAfterActivityID() != null &amp;&amp; oldShiftAssign.getExtensionAfter() &gt; 0);</span>
+<span class="nc" id="L662">        boolean oldShiftHasExtBefore = false;</span>
+<span class="nc" id="L663">        boolean oldShiftHasExtAfter = false;</span>
+
+<span class="nc bnc" id="L665" title="All 2 branches missed.">		if (oldShiftAssign != null) {</span>
+<span class="nc bnc" id="L666" title="All 4 branches missed.">			oldShiftHasExtBefore = (oldShiftAssign.getOTExtensionBeforeActivityID() != null &amp;&amp; oldShiftAssign.getExtensionBefore() &gt; 0);</span>
+<span class="nc bnc" id="L667" title="All 4 branches missed.">			oldShiftHasExtAfter = (oldShiftAssign.getOTExtensionAfterActivityID() != null &amp;&amp; oldShiftAssign.getExtensionAfter() &gt; 0);</span>
+		}
+
+<span class="nc" id="L670">        Map&lt;Date,CustShiftReqGap&gt; startTimeMap = new HashMap&lt;Date, CustShiftReqGap&gt;();</span>
+<span class="nc" id="L671">        Collection&lt;CustShiftReqGap&gt; gaps = csr.getChildObjects(CustShiftReqFieldInfo.CUSTREQGAP_CHILD_TYPE);</span>
+<span class="nc bnc" id="L672" title="All 4 branches missed.">        if(gaps!=null &amp;&amp; !gaps.isEmpty()){</span>
+<span class="nc bnc" id="L673" title="All 2 branches missed.">        	for(CustShiftReqGap g: gaps){</span>
+<span class="nc" id="L674">        		startTimeMap.put(g.getExtGapStartTime(),g);</span>
+<span class="nc" id="L675">        	}</span>
         }
 
-<span class="nc bnc" id="L616" title="All 2 branches missed.">        if (isShiftDefinitionChanged) {</span>
-<span class="nc bnc" id="L617" title="All 2 branches missed.">        	if(csr.getShiftID()!=null)</span>
-			 {
-<span class="nc" id="L619">				shift = wr.getShift(csr.getShiftID());</span>
-            //ScheduleUtil.createShiftEvents(newShiftAssign, newShiftAssign.getStartTime(), newShiftAssign.getDuration(), shift.getShiftEvents(), shift.getMinSpacing(), getOrg().getTimeZone());
+<span class="nc bnc" id="L678" title="All 2 branches missed.">        if (isShiftDefinitionChanged) {</span>
+<span class="nc bnc" id="L679" title="All 2 branches missed.">        	if(csr.getShiftID()!=null) {</span>
+<span class="nc" id="L680">				shift = wr.getShift(csr.getShiftID());</span>
 			}
         } else {
-<span class="nc" id="L623">            Iterator iEvents = oldShiftAssign.getChildren().iterator();</span>
-<span class="nc bnc" id="L624" title="All 2 branches missed.">            long oldShiftStartTime = oldShiftAssign.getStartTime().getTime() + (oldShiftHasExtBefore ? (oldShiftAssign.getExtensionBefore()*TimeZoneUtil.MINUTE_IN_MILLISECONDS)  : 0);</span>
-<span class="nc" id="L625">            int startTimeOffsetMins = (int) ((oldShiftStartTime - csr.getShiftStartTime().getTime()) / TimeZoneUtil.MINUTE_IN_MILLISECONDS);</span>
-<span class="nc" id="L626">            ShiftEventAssignment shiftEvent = null;</span>
-<span class="nc" id="L627">            Calendar cal = Calendar.getInstance();</span>
-<span class="nc bnc" id="L628" title="All 2 branches missed.">            while (iEvents.hasNext()) {</span>
-<span class="nc" id="L629">                shiftEvent = (ShiftEventAssignment) iEvents.next();</span>
-<span class="nc" id="L630">                cal.setTime(shiftEvent.getStartTime());</span>
-<span class="nc" id="L631">                cal.add(Calendar.MINUTE, -startTimeOffsetMins);</span>
-<span class="nc" id="L632">                shiftEvent.setStartTime(cal.getTime());</span>
-<span class="nc" id="L633">                newShiftAssign.addShiftEventAssignment(shiftEvent);</span>
-            }
+<span class="nc" id="L683">            Iterator iEvents = oldShiftAssign.getChildren().iterator();</span>
+<span class="nc bnc" id="L684" title="All 2 branches missed.">			long oldShiftStartTime = oldShiftAssign.getStartTime().getTime()</span>
+<span class="nc" id="L685">					+ (oldShiftHasExtBefore ? (oldShiftAssign.getExtensionBefore() * TimeZoneUtil.MINUTE_IN_MILLISECONDS) : 0);</span>
+<span class="nc" id="L686">			int startTimeOffsetMins = (int) ((oldShiftStartTime - csr.getShiftStartTime().getTime()) / TimeZoneUtil.MINUTE_IN_MILLISECONDS);</span>
+<span class="nc" id="L687">            ShiftEventAssignment shiftEventAssignment = null;</span>
+<span class="nc" id="L688">            Calendar cal = Calendar.getInstance();</span>
+<span class="nc" id="L689">			Map&lt;ID, ShiftEvent&gt; shiftEventsMap = getShiftEvents(wr, oldShiftAssign);</span>
+
+<span class="nc bnc" id="L691" title="All 2 branches missed.">            while (iEvents.hasNext()) {</span>
+<span class="nc" id="L692">				shiftEventAssignment = (ShiftEventAssignment) iEvents.next();</span>
+                //If the starttime of the event exists in the map, it is an event to be inserted into a gap
+<span class="nc" id="L694">                CustShiftReqGap shiftRequestIntoGap = startTimeMap.get(shiftEventAssignment.getStartTime());</span>
+<span class="nc" id="L695">                cal.setTime(shiftEventAssignment.getStartTime());</span>
+<span class="nc bnc" id="L696" title="All 2 branches missed.">				if (shiftRequestIntoGap != null</span>
+<span class="nc bnc" id="L697" title="All 2 branches missed.">						&amp;&amp; shiftEventAssignment.getActivityID().compareTo(Activity.ACTIVITY_SHIFT_OVERTIME_GAP) == 0) {</span>
+                	//Change the existing gap event to the inserted activity requested
+<span class="nc" id="L699">                	shiftEventAssignment.setActivityID(shiftRequestIntoGap.getExtGapActivityID());</span>
+<span class="nc" id="L700">                	cal.add(Calendar.MINUTE, shiftRequestIntoGap.getExtGapGap());</span>
+<span class="nc" id="L701">                	handleGapRequest(oldShiftAssign, shiftEventAssignment, newShiftAssign, shiftRequestIntoGap, startTimeOffsetMins);</span>
+<span class="nc" id="L702">                	shiftEventAssignment.setDuration(shiftRequestIntoGap.getExtGapDuration());</span>
+<span class="nc" id="L703">                	shiftEventAssignment.setPaid(true);</span>
+                }
+
+                // Adjuct Event time if not absolute
+<span class="nc" id="L707">				ShiftEvent shiftEvent = shiftEventsMap.get(shiftEventAssignment.getShiftEventID());</span>
+<span class="nc bnc" id="L708" title="All 4 branches missed.">				if (shiftEvent == null || !shiftEvent.isCafeteria()) {</span>
+<span class="nc" id="L709">					cal.add(Calendar.MINUTE, -startTimeOffsetMins);</span>
+<span class="nc" id="L710">					shiftEventAssignment.setStartTime(cal.getTime());</span>
+				}
+<span class="nc" id="L712">                newShiftAssign.addShiftEventAssignment(shiftEventAssignment);</span>
+<span class="nc" id="L713">            }</span>
         }
 
         //set the mainShift, even if we are only adding an extension
-<span class="nc bnc" id="L638" title="All 2 branches missed.">        if (shift != null) {</span>
-<span class="nc" id="L639">			mainShift = shift;</span>
-<span class="nc bnc" id="L640" title="All 2 branches missed.">		} else if (csr.getShiftID()!=null) {</span>
-<span class="nc" id="L641">			mainShift = wr.getShift(csr.getShiftID());</span>
+<span class="nc bnc" id="L717" title="All 2 branches missed.">        if (shift != null) {</span>
+<span class="nc" id="L718">			mainShift = shift;</span>
+<span class="nc bnc" id="L719" title="All 2 branches missed.">		} else if (csr.getShiftID()!=null) {</span>
+<span class="nc" id="L720">			mainShift = wr.getShift(csr.getShiftID());</span>
 		}
 
-<span class="nc bnc" id="L644" title="All 6 branches missed.">        if ((csr.getExtBeforeID() != null || csr.getExtBeforeActivityID() != null) &amp;&amp; csr.getExtBeforeIsOT()) {</span>
-<span class="nc bnc" id="L645" title="All 6 branches missed.">            if (oldShiftAssign != null &amp;&amp; !isShiftDefinitionChanged &amp;&amp; oldShiftHasExtBefore) {</span>
+<span class="nc bnc" id="L723" title="All 6 branches missed.">        if ((csr.getExtBeforeID() != null || csr.getExtBeforeActivityID() != null) &amp;&amp; csr.getExtBeforeIsOT()) {</span>
+<span class="nc bnc" id="L724" title="All 6 branches missed.">            if (oldShiftAssign != null &amp;&amp; !isShiftDefinitionChanged &amp;&amp; oldShiftHasExtBefore) {</span>
                 //can not override, just take ot before setting from old shift, gap has been copied as shift event
-<span class="nc" id="L647">                newShiftAssign.setExtensionBefore(oldShiftAssign.getExtensionBefore());</span>
-<span class="nc" id="L648">                newShiftAssign.setOTExtensionBeforeActivityID(oldShiftAssign.getOTExtensionBeforeActivityID());</span>
-<span class="nc" id="L649">                newShiftAssign.setOTExtensionBeforeID(oldShiftAssign.getOTExtensionBeforeID());</span>
+<span class="nc" id="L726">                newShiftAssign.setExtensionBefore(oldShiftAssign.getExtensionBefore());</span>
+<span class="nc" id="L727">                newShiftAssign.setOTExtensionBeforeActivityID(oldShiftAssign.getOTExtensionBeforeActivityID());</span>
+<span class="nc" id="L728">                newShiftAssign.setOTExtensionBeforeID(oldShiftAssign.getOTExtensionBeforeID());</span>
 
                 //since the old shift has OT Before, all we can be doing is adding an OT After to it
-<span class="nc" id="L652">                newShiftAssign.setStartTime(oldShiftAssign.getStartTime());</span>
-<span class="nc" id="L653">                newShiftAssign.setDuration(newShiftAssign.getDuration() + oldShiftAssign.getExtensionBefore());</span>
+<span class="nc" id="L731">                newShiftAssign.setStartTime(oldShiftAssign.getStartTime());</span>
+<span class="nc" id="L732">                newShiftAssign.setDuration(newShiftAssign.getDuration() + oldShiftAssign.getExtensionBefore());</span>
             } else {
                 //We are adding a new OT Before extension
-<span class="nc" id="L656">                otBefore = getOTE(wr, csr, true);</span>
-<span class="nc" id="L657">                ScheduleUtil.addOTE(newShiftAssign, otBefore, true, true, false, false);</span>
+<span class="nc" id="L735">                otBefore = getOTE(wr, csr, true);</span>
+                //QC 210872:Have to maintain the gap for custom shift (csr.getShiftID() == null)
+<span class="nc bnc" id="L737" title="All 4 branches missed.">                boolean createGap = csr.getShiftID() == null &amp;&amp; csr.getExtBeforeGap() &gt; 0;</span>
+<span class="nc" id="L738">                ScheduleUtil.addOTE(newShiftAssign, otBefore, true, true, false, createGap);</span>
             }
         }
 
-<span class="nc bnc" id="L661" title="All 6 branches missed.">        if ((csr.getExtAfterID() != null || csr.getExtAfterActivityID() != null) &amp;&amp; csr.getExtAfterIsOT()) {</span>
-<span class="nc bnc" id="L662" title="All 6 branches missed.">            if (oldShiftAssign != null &amp;&amp; !isShiftDefinitionChanged &amp;&amp; oldShiftHasExtAfter) {</span>
+<span class="nc bnc" id="L742" title="All 6 branches missed.">        if ((csr.getExtAfterID() != null || csr.getExtAfterActivityID() != null) &amp;&amp; csr.getExtAfterIsOT()) {</span>
+<span class="nc bnc" id="L743" title="All 6 branches missed.">            if (oldShiftAssign != null &amp;&amp; !isShiftDefinitionChanged &amp;&amp; oldShiftHasExtAfter) {</span>
                 //can not override, just take ot After setting from old shift, gap has been copied as shift event
-<span class="nc" id="L664">                newShiftAssign.setExtensionAfter(oldShiftAssign.getExtensionAfter());</span>
-<span class="nc" id="L665">                newShiftAssign.setOTExtensionAfterActivityID(oldShiftAssign.getOTExtensionAfterActivityID());</span>
-<span class="nc" id="L666">                newShiftAssign.setOTExtensionAfterID(oldShiftAssign.getOTExtensionAfterID());</span>
+<span class="nc" id="L745">                newShiftAssign.setExtensionAfter(oldShiftAssign.getExtensionAfter());</span>
+<span class="nc" id="L746">                newShiftAssign.setOTExtensionAfterActivityID(oldShiftAssign.getOTExtensionAfterActivityID());</span>
+<span class="nc" id="L747">                newShiftAssign.setOTExtensionAfterID(oldShiftAssign.getOTExtensionAfterID());</span>
 
                 //since the old shift has OT After, all we can be doing is adding an OT Before to it
-<span class="nc" id="L669">                newShiftAssign.setDuration(newShiftAssign.getDuration() + oldShiftAssign.getExtensionAfter());</span>
+<span class="nc" id="L750">                newShiftAssign.setDuration(newShiftAssign.getDuration() + oldShiftAssign.getExtensionAfter());</span>
             } else {
                 //We are adding a new OT After extension
-<span class="nc" id="L672">                otAfter = getOTE(wr, csr, false);</span>
-<span class="nc" id="L673">                ScheduleUtil.addOTE(newShiftAssign, otAfter, false, true, false, false);</span>
+<span class="nc" id="L753">                otAfter = getOTE(wr, csr, false);</span>
+                //QC 210872:Have to maintain the gap for custom shift (csr.getShiftID() == null)
+<span class="nc bnc" id="L755" title="All 4 branches missed.">                boolean createGap = csr.getShiftID() == null &amp;&amp; csr.getExtAfterGap() &gt; 0;</span>
+<span class="nc" id="L756">                ScheduleUtil.addOTE(newShiftAssign, otAfter, false, true, false, createGap);</span>
             }
         }
 
-<span class="nc" id="L677">        boolean isConvertOTBefore = false;</span>
-<span class="nc bnc" id="L678" title="All 6 branches missed.">        if ((csr.getExtBeforeID() != null || csr.getExtBeforeActivityID() != null) &amp;&amp; !csr.getExtBeforeIsOT()) {</span>
+<span class="nc" id="L760">        boolean isConvertOTBefore = false;</span>
+
+
+<span class="nc bnc" id="L763" title="All 6 branches missed.">        if ((csr.getExtBeforeID() != null || csr.getExtBeforeActivityID() != null) &amp;&amp; !csr.getExtBeforeIsOT()) {</span>
             //add a non-OT extension: We first add a real OT extension, then we'll convert it to a non-OT extension after optimizing breaks.
-<span class="nc" id="L680">            otBefore = getOTE(wr, csr, true);</span>
-<span class="nc" id="L681">            ScheduleUtil.addOTE(newShiftAssign, otBefore, true, true, false, false);</span>
-<span class="nc" id="L682">            isConvertOTBefore = true;</span>
+<span class="nc" id="L765">            otBefore = getOTE(wr, csr, true);</span>
+            //QC 210872:Have to maintain the gap for custom shift (csr.getShiftID() == null)
+            //For normal shift, we had optimizeShiftEvents in next lines.
+
+            //QC 211094: The gap should be maintained as QC210872 for flex makeup request
+<span class="nc bnc" id="L770" title="All 6 branches missed.">			boolean createGap = (csr.getShiftID() == null || forFlexMakeup) &amp;&amp; csr.getExtBeforeGap() &gt; 0;</span>
+<span class="nc" id="L771">			ScheduleUtil.addOTE(newShiftAssign, otBefore, true, true, false, createGap);</span>
+<span class="nc" id="L772">            isConvertOTBefore = true;</span>
         }
 
-<span class="nc" id="L685">        boolean isConvertOTAfter = false;</span>
-<span class="nc bnc" id="L686" title="All 6 branches missed.">        if ((csr.getExtAfterID() != null || csr.getExtAfterActivityID() != null) &amp;&amp; !csr.getExtAfterIsOT()) {</span>
+<span class="nc" id="L775">        boolean isConvertOTAfter = false;</span>
+<span class="nc bnc" id="L776" title="All 6 branches missed.">        if ((csr.getExtAfterID() != null || csr.getExtAfterActivityID() != null) &amp;&amp; !csr.getExtAfterIsOT()) {</span>
             //add a non-OT extension: We first add a real OT extension, then we'll convert it to a non-OT extension after optimizing breaks.
-<span class="nc" id="L688">            otAfter = getOTE(wr, csr, false);</span>
-<span class="nc" id="L689">            ScheduleUtil.addOTE(newShiftAssign, otAfter, false, true, false, false);</span>
-<span class="nc" id="L690">            isConvertOTAfter = true;</span>
+<span class="nc" id="L778">            otAfter = getOTE(wr, csr, false);</span>
+            //QC 210872: Have to maintain the gap for custom shift (csr.getShiftID() == null).
+            //For normal shift, we had optimizeShiftEvents in next lines.
+            //QC 211094: The gap should be maintained as QC210872 for flex makeup request too
+<span class="nc bnc" id="L782" title="All 6 branches missed.">			boolean createGap = (csr.getShiftID() == null || forFlexMakeup) &amp;&amp; csr.getExtAfterGap() &gt; 0;</span>
+<span class="nc" id="L783">            ScheduleUtil.addOTE(newShiftAssign, otAfter, false, true, false, createGap);</span>
+<span class="nc" id="L784">            isConvertOTAfter = true;</span>
         }
 
-        //*** optimally place the shift events for the shift, extBefore, and extAfter ***
-<span class="nc bnc" id="L694" title="All 2 branches missed.">        if(mainShift!=null) {</span>
-<span class="nc" id="L695">			optimizeShiftEvents(wr, csr, newShiftAssign, shift, otBefore, otAfter, mainShift);</span>
+		//*** optimally place the shift events for the shift, extBefore, and extAfter ***
+<span class="nc bnc" id="L788" title="All 2 branches missed.">		if (mainShift != null) {</span>
+<span class="nc" id="L789">			optimizeShiftEvents(wr, csr, newShiftAssign, shift, otBefore, otAfter, mainShift);</span>
 		}
 
         //convert the shift to an OT shift if necessary
-<span class="nc bnc" id="L699" title="All 2 branches missed.">        if (csr.isOT()) {</span>
-<span class="nc" id="L700">			newShiftAssign = ScheduleUtil.convertToOTShift(newShiftAssign);</span>
+<span class="nc bnc" id="L793" title="All 2 branches missed.">        if (csr.isOT()) {</span>
+<span class="nc" id="L794">			newShiftAssign = ScheduleUtil.convertToOTShift(newShiftAssign);</span>
 		}
 
         //set event precedences if they are not set yet
-<span class="nc bnc" id="L704" title="All 2 branches missed.">        if (newShiftAssign.getOverlayPrecedence() == 0) {</span>
-<span class="nc" id="L705">            newShiftAssign.setOverlayPrecedence(EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_ASSIGNMENT);</span>
-<span class="nc" id="L706">            Collection events = newShiftAssign.getChildObjects(ShiftAssignmentFields.CHILD_SHIFT_EVENT);</span>
-<span class="nc bnc" id="L707" title="All 2 branches missed.">            if (events != null) {</span>
-<span class="nc" id="L708">                ShiftEventAssignment event = null;</span>
-<span class="nc bnc" id="L709" title="All 2 branches missed.">                for (Iterator i = events.iterator(); i.hasNext();) {</span>
-<span class="nc" id="L710">                    event = (ShiftEventAssignment) i.next();</span>
-<span class="nc" id="L711">                    Activity activity = getActivityManager().findActivityById(event.getActivityID());</span>
-<span class="nc bnc" id="L712" title="All 2 branches missed.">                    if (activity.isUsedInShift()) {</span>
-<span class="nc" id="L713">						event.setOverlayPrecedence(EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_EVENT_ASSIGNMENT_USEDINSHIFT);</span>
+<span class="nc bnc" id="L798" title="All 2 branches missed.">        if (newShiftAssign.getOverlayPrecedence() == 0) {</span>
+<span class="nc" id="L799">            newShiftAssign.setOverlayPrecedence(EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_ASSIGNMENT);</span>
+<span class="nc" id="L800">            Collection events = newShiftAssign.getChildObjects(ShiftAssignmentFields.CHILD_SHIFT_EVENT);</span>
+<span class="nc bnc" id="L801" title="All 2 branches missed.">            if (events != null) {</span>
+<span class="nc" id="L802">                ShiftEventAssignment event = null;</span>
+<span class="nc bnc" id="L803" title="All 2 branches missed.">                for (Iterator i = events.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L804">                    event = (ShiftEventAssignment) i.next();</span>
+<span class="nc" id="L805">                    Activity activity = getActivityManager().findActivityById(event.getActivityID());</span>
+<span class="nc bnc" id="L806" title="All 2 branches missed.">                    if (activity.isUsedInShift()) {</span>
+<span class="nc" id="L807">						event.setOverlayPrecedence(EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_EVENT_ASSIGNMENT_USEDINSHIFT);</span>
 					} else {
-<span class="nc" id="L715">						event.setOverlayPrecedence(EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_EVENT_ASSIGNMENT_NOTUSEDINSHIFT);</span>
+<span class="nc" id="L809">						event.setOverlayPrecedence(EventPrecedenceRule.PRECEDENCE_TYPE_SHIFT_EVENT_ASSIGNMENT_NOTUSEDINSHIFT);</span>
 					}
-<span class="nc" id="L717">                }</span>
+<span class="nc" id="L811">                }</span>
             }
         }
 
         //convert OT extensions to non-OT extensions if necessary. This should be done after setting event precedences
-<span class="nc bnc" id="L722" title="All 4 branches missed.">        if (isConvertOTBefore || isConvertOTAfter) {</span>
-<span class="nc" id="L723">			newShiftAssign = ScheduleUtil.convertOTExtToNonOTExt(newShiftAssign, otBefore, otAfter, isConvertOTBefore, isConvertOTAfter);</span>
+<span class="nc bnc" id="L816" title="All 4 branches missed.">        if (isConvertOTBefore || isConvertOTAfter) {</span>
+<span class="nc" id="L817">			newShiftAssign = ScheduleUtil.convertOTExtToNonOTExt(newShiftAssign, otBefore, otAfter, isConvertOTBefore, isConvertOTAfter);</span>
 		}
 
-<span class="nc" id="L726">        return newShiftAssign;</span>
+<span class="nc" id="L820">        return newShiftAssign;</span>
     }
+
+    /**
+     * Process a flex or custom request event to be inserted into a gap. The gap can be a regular gap or an
+     *  overtime gap. The requested shift event will be inserted into the gap and new gaps will be created before or
+     *  after the new shift event to fill any remaining spaces left from the original gap.
+     *  In case of an overtime gap (either before or after), the gap will be replaced as specified above and the
+     *  shift assignment overtime settings will be updated to remove the shift event inserted and any gap that was filled
+     *  outside of the new overtime being created.
+     *
+     * @param oldShiftAssign
+     * @param shiftEvent - Shift event that is the current gap that is being modified
+     * @param newShiftAssign - new shift assignment
+     * @param shiftRequestIntoGap - the shift event request to be inserted into a gap
+     * @param startTimeOffsetMins - offset to be applied to starttimes due to existing before overtime
+     */
+    public void handleGapRequest(ShiftAssignment oldShiftAssign,ShiftEventAssignment shiftEvent,  ShiftAssignment newShiftAssign,
+    		 CustShiftReqGap shiftRequestIntoGap,int startTimeOffsetMins) throws Exception{
+
+<span class="nc" id="L840">    	int afterDuration = shiftEvent.getDuration() - (shiftRequestIntoGap.getExtGapDuration()+shiftRequestIntoGap.getExtGapGap());</span>
+
+<span class="nc bnc" id="L842" title="All 2 branches missed.">    	if (afterDuration&lt;0){</span>
+    		//Should not happen. Validation rules should invalidate the request before this happens.
+<span class="nc" id="L844">    		throw RequestUtil.createAndLogRmHardValidationException(RmEjbBundleKey.FLEX_REQ_MAKEUP_TIME_OVERLAP_SHIFT_ASSIGNMENT,</span>
+                    RmEjbLogBundleKey.INVALID_TIME_RANGE_FOR_FLEX,
+<span class="nc" id="L846">                    new Object[]{shiftRequestIntoGap.getExtGapEndTime(),</span>
+<span class="nc" id="L847">                    		new Date(shiftRequestIntoGap.getExtGapEndTime().getTime()+(afterDuration*-1*TimeZoneUtil.MINUTE_IN_MILLISECONDS))},</span>
+                    m_cat);
+    	}
+
+<span class="nc bnc" id="L851" title="All 2 branches missed.">    	if(shiftRequestIntoGap.getExtGapGap()&gt;0){</span>
+    		//If a gap is requested in the gap being modified, create a new gap activity before the inserted shift event
+<span class="nc" id="L853">            Calendar gapCal = Calendar.getInstance();</span>
+<span class="nc" id="L854">    		gapCal.setTime(shiftEvent.getStartTime());</span>
+<span class="nc" id="L855">    		gapCal.add(Calendar.MINUTE, -startTimeOffsetMins);</span>
+<span class="nc" id="L856">    		ShiftEventAssignment gapGapShiftEvent=RequestUtil.createSEAFromParams(gapCal.getTime(), Activity.ACTIVITY_SHIFT_OVERTIME_GAP,</span>
+<span class="nc" id="L857">					shiftRequestIntoGap.getExtGapGap(), oldShiftAssign.getWorkResourceID());</span>
+
+<span class="nc bnc" id="L859" title="All 2 branches missed.">    		if(shiftEvent.getOverTimeGapType()==1){</span>
+    			//If the gap being inserted is before overtime, set the new inserted gap to before overtime
+<span class="nc" id="L861">    			gapGapShiftEvent.setOverTimeGapType(shiftEvent.getOverTimeGapType());</span>
+    		}
+<span class="nc" id="L863">    		newShiftAssign.addShiftEventAssignment(gapGapShiftEvent);</span>
+    	}
+
+<span class="nc bnc" id="L866" title="All 2 branches missed.">    	if(afterDuration&gt;0){</span>
+    		//The gap and activity leaves a slot to fill with a gap. Create a gap activity after the inserted shift
+<span class="nc" id="L868">            Calendar gapCal = Calendar.getInstance();</span>
+<span class="nc" id="L869">    		gapCal.setTime(shiftEvent.getStartTime());</span>
+<span class="nc" id="L870">    		gapCal.add(Calendar.MINUTE, -startTimeOffsetMins+shiftRequestIntoGap.getExtGapDuration()+shiftRequestIntoGap.getExtGapGap());</span>
+<span class="nc" id="L871">    		ShiftEventAssignment gapGapShiftEvent = RequestUtil.createSEAFromParams(gapCal.getTime(), Activity.ACTIVITY_SHIFT_OVERTIME_GAP,</span>
+<span class="nc" id="L872">    				afterDuration, oldShiftAssign.getWorkResourceID());</span>
+<span class="nc bnc" id="L873" title="All 2 branches missed.">    		if(shiftEvent.getOverTimeGapType()==2){</span>
+    			//If the gap being inserted is after overtime, set the new inserted gap to after overtime
+<span class="nc" id="L875">    			gapGapShiftEvent.setOverTimeGapType(shiftEvent.getOverTimeGapType());</span>
+    		}
+<span class="nc" id="L877">    		newShiftAssign.addShiftEventAssignment(gapGapShiftEvent);</span>
+    	}
+
+<span class="nc bnc" id="L880" title="All 2 branches missed.">    	if (shiftEvent.getOverTimeGapType()!=0){</span>
+    		//Update the duration of the shift assignment before and after overtimes
+<span class="nc bnc" id="L882" title="All 2 branches missed.">    		if (shiftEvent.getOverTimeGapType()==1){</span>
+    			//Set the before overtime duration to the overtime activity and the GapGap that follows the overtime activity
+<span class="nc" id="L884">    			oldShiftAssign.setExtensionBefore(oldShiftAssign.getExtensionBefore()-(shiftEvent.getDuration()-shiftRequestIntoGap.getExtGapGap()));</span>
+<span class="nc" id="L885">    			newShiftAssign.setDuration(newShiftAssign.getDuration()+(shiftEvent.getDuration()-shiftRequestIntoGap.getExtGapGap()));</span>
+    		} else {
+    			//Set the after overtime duration to the overtime activity and the previous gap that was inserted
+<span class="nc" id="L888">    			oldShiftAssign.setExtensionAfter(oldShiftAssign.getExtensionAfter()-</span>
+<span class="nc" id="L889">    					(shiftRequestIntoGap.getExtGapGap()+shiftRequestIntoGap.getExtGapDuration()));</span>
+<span class="nc" id="L890">    			newShiftAssign.setDuration(newShiftAssign.getDuration()+(shiftRequestIntoGap.getExtGapGap()+shiftRequestIntoGap.getExtGapDuration()));</span>
+    		}
+<span class="nc" id="L892">    		shiftEvent.setOverTimeGapType((short)0);</span>
+    	}
+<span class="nc" id="L894">    }</span>
+
+	/**
+	 * Gets a Map of the ShiftEvents with by SID.
+	 *
+	 * @param wr WorkRuleManager use to query the DB for ShiftEvents
+	 * @param shiftAssign Shift Assignment that contains Shift Event Assignments linked to Shift Events
+	 * @return Map of ShiftEvents with the Event's SID as the key
+	 * @throws Exception Any exceptions will be thrown to the caller.
+	 */
+	private Map&lt;ID, ShiftEvent&gt; getShiftEvents(WorkRuleManager wr, ShiftAssignment shiftAssign) throws Exception {
+<span class="nc" id="L905">		Map&lt;ID, ShiftEvent&gt; seMap = new HashMap&lt;ID, ShiftEvent&gt;();</span>
+<span class="nc" id="L906">		Collection &lt;ID&gt; seIDs = new ArrayList&lt;ID&gt;();</span>
+
+		// Get ShiftEvent IDs of the ShiftEventAssignments
+<span class="nc bnc" id="L909" title="All 2 branches missed.">		for (ShiftEventAssignment iEvent : shiftAssign.getChildren()) {</span>
+<span class="nc" id="L910">			seIDs.add(iEvent.getShiftEventID());</span>
+<span class="nc" id="L911">		}</span>
+
+		// Creates a map of ShiftEventID to ShiftEvent
+<span class="nc" id="L914">		Collection&lt;ShiftEvent&gt; shiftEvents = wr.getShiftEventsBySIDs(seIDs);</span>
+<span class="nc bnc" id="L915" title="All 2 branches missed.">		for (ShiftEvent event : shiftEvents) {</span>
+<span class="nc" id="L916">			seMap.put(event.getSID(), event);</span>
+<span class="nc" id="L917">		}</span>
+
+<span class="nc" id="L919">		return seMap;</span>
+	}
 
     /**
      * Get a PersonData object for the given ID, where only the following fields need to be populated:
@@ -736,14 +929,13 @@ public class CustShiftValidationCache extends ValidationCache {
      * @param empID
      * @return an PersonData object for the given ID.
      */
-    private PersonData getPersonData(ID empID, Employee employee)
-    {
-<span class="nc" id="L741">        PersonData person = new PersonData();</span>
-<span class="nc" id="L742">        person.setID(empID);</span>
-<span class="nc" id="L743">        person.setEmployeeDBID(empID);</span>
-<span class="nc" id="L744">        person.setProficiency(employee.getProficiency()); //m_cache.getEmployeeProficiency(empID));</span>
-<span class="nc" id="L745">        person.setOrganization(employee.getOrganizationID().toString()); //m_cache.getEmployeeOrganization(empID).getID().toString());</span>
-<span class="nc" id="L746">        return person;</span>
+    private PersonData getPersonData(ID empID, Employee employee) {
+<span class="nc" id="L933">        PersonData person = new PersonData();</span>
+<span class="nc" id="L934">        person.setID(empID);</span>
+<span class="nc" id="L935">        person.setEmployeeDBID(empID);</span>
+<span class="nc" id="L936">        person.setProficiency(employee.getProficiency()); //m_cache.getEmployeeProficiency(empID));</span>
+<span class="nc" id="L937">        person.setOrganization(employee.getOrganizationID().toString()); //m_cache.getEmployeeOrganization(empID).getID().toString());</span>
+<span class="nc" id="L938">        return person;</span>
     }
 
     /** GQ
@@ -759,163 +951,144 @@ public class CustShiftValidationCache extends ValidationCache {
      * @throws Exception
      */
     private void optimizeShiftEvents(WorkRuleManager wr, CustShiftReq csr, ShiftAssignment shiftAssn, Shift shift,
-                                     ShiftOTExtension otBefore, ShiftOTExtension otAfter, Shift mainShift) throws Exception
-    {
-<span class="nc bnc" id="L764" title="All 4 branches missed.">        if (shiftAssn==null || csr==null) {</span>
-<span class="nc" id="L765">			return;</span>
+                                     ShiftOTExtension otBefore, ShiftOTExtension otAfter, Shift mainShift) throws Exception {
+<span class="nc bnc" id="L955" title="All 4 branches missed.">        if (shiftAssn==null || csr==null) {</span>
+<span class="nc" id="L956">			return;</span>
 		}
 
-<span class="nc" id="L768">        HashMap&lt;ID, ShiftEvent&gt; hmShiftEvents = new HashMap&lt;ID, ShiftEvent&gt;(); //all the ShiftEvent's that might be referenced by any loaded shifteventassignment, shift, or OTExtension</span>
-<span class="nc" id="L769">        HashMap&lt;ID, Activity&gt; hmActivities = new HashMap&lt;ID, Activity&gt;(); //All the Activities that might be referenced by any loaded shiftAssignment (i.e. hmWeekSchedule), shifteventassignments, shifts, or OTExtensions]</span>
+<span class="nc" id="L959">        HashMap&lt;ID, ShiftEvent&gt; hmShiftEvents = new HashMap&lt;ID, ShiftEvent&gt;(); //all the ShiftEvent's that might be referenced by any loaded shifteventassignment, shift, or OTExtension</span>
+<span class="nc" id="L960">        HashMap&lt;ID, Activity&gt; hmActivities = new HashMap&lt;ID, Activity&gt;(); //All the Activities that might be referenced by any loaded shiftAssignment (i.e. hmWeekSchedule), shifteventassignments, shifts, or OTExtensions]</span>
 
         //Get the employee
-<span class="nc" id="L772">        ID empID = this.getEmployeeID();</span>
-<span class="nc" id="L773">        WorkResourceManager wrm = BbmManagerFactory.getWorkResourceManager();</span>
-<span class="nc" id="L774">        Employee employee = wrm.getEmployeeByID(empID, shiftAssn.getStartTime(), Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY);</span>
-<span class="nc" id="L775">        PersonData person = getPersonData(empID, employee);</span>
+<span class="nc" id="L963">        ID empID = this.getEmployeeID();</span>
+<span class="nc" id="L964">        WorkResourceManager wrm = BbmManagerFactory.getWorkResourceManager();</span>
+<span class="nc" id="L965">        Employee employee = wrm.getEmployeeByID(empID, shiftAssn.getStartTime(), Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY);</span>
+<span class="nc" id="L966">        PersonData person = getPersonData(empID, employee);</span>
 
         //Get the employee's skill assignments
-<span class="nc" id="L778">        HashMap&lt;ID, com.bluepumpkin.ejb.bbm.skill.model.SkillAssignment&gt; hmSkillAssignments = new HashMap&lt;ID, com.bluepumpkin.ejb.bbm.skill.model.SkillAssignment&gt;();</span>
-<span class="nc" id="L779">        Collection skillAssignments = getSkillsForEmployeeDuringPeriod(empID, shiftAssn.getStartTime(), shiftAssn.getEndTime());</span>
-<span class="nc bnc" id="L780" title="All 2 branches missed.">        if (skillAssignments!=null)</span>
-        {
-<span class="nc bnc" id="L782" title="All 2 branches missed.">            for (Iterator skillIt=skillAssignments.iterator(); skillIt.hasNext();)</span>
-            {
-<span class="nc" id="L784">                SkillAssignment skillAssignment = (SkillAssignment)skillIt.next();</span>
-<span class="nc" id="L785">                hmSkillAssignments.put(skillAssignment.getSkillID(), skillAssignment);</span>
-<span class="nc" id="L786">            }</span>
+<span class="nc" id="L969">        HashMap&lt;ID, com.bluepumpkin.ejb.bbm.skill.model.SkillAssignment&gt; hmSkillAssignments = new HashMap&lt;ID, com.bluepumpkin.ejb.bbm.skill.model.SkillAssignment&gt;();</span>
+<span class="nc" id="L970">        Collection skillAssignments = getSkillsForEmployeeDuringPeriod(empID, shiftAssn.getStartTime(), shiftAssn.getEndTime());</span>
+<span class="nc bnc" id="L971" title="All 2 branches missed.">        if (skillAssignments != null) {</span>
+<span class="nc bnc" id="L972" title="All 2 branches missed.">            for (Iterator skillIt = skillAssignments.iterator(); skillIt.hasNext();) {</span>
+<span class="nc" id="L973">                SkillAssignment skillAssignment = (SkillAssignment)skillIt.next();</span>
+<span class="nc" id="L974">                hmSkillAssignments.put(skillAssignment.getSkillID(), skillAssignment);</span>
+<span class="nc" id="L975">            }</span>
         }
 
         //Get all the employee's scheduled ShiftAssignments during the SP (we get all weeks, but for now, the Optimizer API only checks single-week rules)
-<span class="nc" id="L790">        HashMap&lt;ID, ShiftAssignment&gt; hmWeekSchedule = new HashMap&lt;ID, ShiftAssignment&gt;();</span>
-<span class="nc" id="L791">        SchedulingPeriod sp = getSchedulingPeriod();</span>
-<span class="nc bnc" id="L792" title="All 2 branches missed.">        if (sp != null)</span>
-        {
-<span class="nc" id="L794">            Collection weekShiftAssignments = getEventsDuringPeriod(empID, sp.getStartTime(), sp.getEndTime(), Event.EVENT_TYPE_SHIFT_ASSIGNMENT, false);</span>
-<span class="nc bnc" id="L795" title="All 2 branches missed.">            for (Iterator saIt=weekShiftAssignments.iterator(); saIt.hasNext();)</span>
-            {
-<span class="nc" id="L797">                ShiftAssignment curShiftAssn = (ShiftAssignment)saIt.next();</span>
-<span class="nc" id="L798">                hmWeekSchedule.put(curShiftAssn.getID(), curShiftAssn);</span>
+<span class="nc" id="L979">        HashMap&lt;ID, ShiftAssignment&gt; hmWeekSchedule = new HashMap&lt;ID, ShiftAssignment&gt;();</span>
+<span class="nc" id="L980">        SchedulingPeriod sp = getSchedulingPeriod();</span>
+<span class="nc bnc" id="L981" title="All 2 branches missed.">        if (sp != null) {</span>
+<span class="nc" id="L982">            Collection weekShiftAssignments = getEventsDuringPeriod(empID, sp.getStartTime(), sp.getEndTime(), Event.EVENT_TYPE_SHIFT_ASSIGNMENT, false);</span>
+<span class="nc bnc" id="L983" title="All 2 branches missed.">            for (Iterator saIt = weekShiftAssignments.iterator(); saIt.hasNext();) {</span>
+<span class="nc" id="L984">                ShiftAssignment curShiftAssn = (ShiftAssignment)saIt.next();</span>
+<span class="nc" id="L985">                hmWeekSchedule.put(curShiftAssn.getID(), curShiftAssn);</span>
 
                 //get the scheduled ShiftEvents and Activities
-<span class="nc" id="L801">                putShiftEventsAndActivities(curShiftAssn, hmShiftEvents, hmActivities, wr);</span>
-<span class="nc" id="L802">            }</span>
+<span class="nc" id="L988">                putShiftEventsAndActivities(curShiftAssn, hmShiftEvents, hmActivities, wr);</span>
+<span class="nc" id="L989">            }</span>
         }
 
         //Get the employee's shift patterns (and their attributes)
-<span class="nc" id="L806">        ID shiftPatternID = shiftAssn.getWorkPatternID();</span>
-<span class="nc" id="L807">        HashMap&lt;ID, ShiftPatternShiftAttributes&gt; hmShiftPatternShiftAttributes = null;</span>
-<span class="nc" id="L808">        HashMap hmShiftPatterns = null;</span>
-<span class="nc" id="L809">        ShiftPattern shiftPattern = null;</span>
-<span class="nc bnc" id="L810" title="All 2 branches missed.">        if (shiftPatternID != null)</span>
-        {
+<span class="nc" id="L993">        ID shiftPatternID = shiftAssn.getWorkPatternID();</span>
+<span class="nc" id="L994">        HashMap&lt;ID, ShiftPatternShiftAttributes&gt; hmShiftPatternShiftAttributes = null;</span>
+<span class="nc" id="L995">        HashMap hmShiftPatterns = null;</span>
+<span class="nc" id="L996">        ShiftPattern shiftPattern = null;</span>
+<span class="nc bnc" id="L997" title="All 2 branches missed.">        if (shiftPatternID != null) {</span>
             //I don't think we will ever have this since the request can be a mix-and-match of various shift patterns (ex: shift/activity/day of week/etc).
             //wr.getShiftPatternsByIDs(Collections.singletonList(shiftPatternID));
-        }
-        else
-        {
-<span class="nc" id="L817">            EmpWorkRuleManager empWorkRuleManager = WfmManagerFactory.getEmpWorkRuleManager();</span>
-<span class="nc" id="L818">            hmShiftPatterns = ValidationUtil.getEmpWorkPatterns(empWorkRuleManager, wr, empID, csr.getStartTime(), csr.getEndTime());</span>
+        } else {
+<span class="nc" id="L1001">            EmpWorkRuleManager empWorkRuleManager = WfmManagerFactory.getEmpWorkRuleManager();</span>
+<span class="nc" id="L1002">            hmShiftPatterns = ValidationUtil.getEmpWorkPatterns(empWorkRuleManager, wr, empID, csr.getStartTime(), csr.getEndTime());</span>
             //tbd: pass this collection to the optimizer once Ed changes the API to accept a collection.
         }
 
-<span class="nc bnc" id="L822" title="All 2 branches missed.">        if (hmShiftPatterns != null)</span>
-        {
-<span class="nc" id="L824">            hmShiftPatternShiftAttributes = new HashMap&lt;ID, ShiftPatternShiftAttributes&gt;();</span>
-<span class="nc bnc" id="L825" title="All 2 branches missed.">            for (Iterator it=hmShiftPatterns.keySet().iterator(); it.hasNext();)</span>
-            {
-<span class="nc" id="L827">                ID curShiftPatternID = (ID)it.next();</span>
-<span class="nc" id="L828">                ShiftPattern curShiftPattern = (ShiftPattern)hmShiftPatterns.get(curShiftPatternID);</span>
+<span class="nc bnc" id="L1006" title="All 2 branches missed.">        if (hmShiftPatterns != null) {</span>
+<span class="nc" id="L1007">            hmShiftPatternShiftAttributes = new HashMap&lt;ID, ShiftPatternShiftAttributes&gt;();</span>
+<span class="nc bnc" id="L1008" title="All 2 branches missed.">            for (Iterator it = hmShiftPatterns.keySet().iterator(); it.hasNext();) {</span>
+<span class="nc" id="L1009">                ID curShiftPatternID = (ID)it.next();</span>
+<span class="nc" id="L1010">                ShiftPattern curShiftPattern = (ShiftPattern)hmShiftPatterns.get(curShiftPatternID);</span>
 
                 //get the shift pattern's attributes
-<span class="nc" id="L831">                HashMap&lt;Shift, ShiftPatternShiftAttributes&gt; curShiftPatternShiftAttributes = curShiftPattern.getShiftPatternShiftAttributes();</span>
-<span class="nc bnc" id="L832" title="All 2 branches missed.">                for (Iterator ShiftPatternShiftAttributesIt=curShiftPatternShiftAttributes.keySet().iterator(); ShiftPatternShiftAttributesIt.hasNext();)</span>
-                {
-<span class="nc" id="L834">                    Shift curShift = (Shift)ShiftPatternShiftAttributesIt.next();</span>
-<span class="nc" id="L835">                    ShiftPatternShiftAttributes curShiftPatternShiftAttribute = curShiftPatternShiftAttributes.get(curShift);</span>
-<span class="nc" id="L836">                    hmShiftPatternShiftAttributes.put(curShift.getID(), curShiftPatternShiftAttribute);</span>
+<span class="nc" id="L1013">                HashMap&lt;Shift, ShiftPatternShiftAttributes&gt; curShiftPatternShiftAttributes = curShiftPattern.getShiftPatternShiftAttributes();</span>
+<span class="nc bnc" id="L1014" title="All 2 branches missed.">                for (Iterator ShiftPatternShiftAttributesIt=curShiftPatternShiftAttributes.keySet().iterator(); ShiftPatternShiftAttributesIt.hasNext();) {</span>
+<span class="nc" id="L1015">                    Shift curShift = (Shift)ShiftPatternShiftAttributesIt.next();</span>
+<span class="nc" id="L1016">                    ShiftPatternShiftAttributes curShiftPatternShiftAttribute = curShiftPatternShiftAttributes.get(curShift);</span>
+<span class="nc" id="L1017">                    hmShiftPatternShiftAttributes.put(curShift.getID(), curShiftPatternShiftAttribute);</span>
 
                     //get the shift's shiftEvents
-<span class="nc" id="L839">                    putShiftEventsAndActivities(curShift.getShiftEvents(), hmShiftEvents, hmActivities);</span>
-<span class="nc" id="L840">                }</span>
+<span class="nc" id="L1020">                    putShiftEventsAndActivities(curShift.getShiftEvents(), hmShiftEvents, hmActivities);</span>
+<span class="nc" id="L1021">                }</span>
 
                 //GQ TBD: this just uses the last shiftPattern found. We need to pass the collection
                 //shiftPattern = curShiftPattern;
-<span class="nc" id="L844">            }</span>
+<span class="nc" id="L1025">            }</span>
         }
 
         //Get the ShiftEvents and Activities for the Shift and extensions being requested
-<span class="nc bnc" id="L848" title="All 2 branches missed.">        if (shift != null)</span>
-        {
-<span class="nc" id="L850">            putShiftEventsAndActivities(shift.getShiftEvents(), hmShiftEvents, hmActivities);</span>
-<span class="nc" id="L851">            addActivityToMap(shift.getActivityID(), hmActivities);</span>
+<span class="nc bnc" id="L1029" title="All 2 branches missed.">        if (shift != null) {</span>
+<span class="nc" id="L1030">            putShiftEventsAndActivities(shift.getShiftEvents(), hmShiftEvents, hmActivities);</span>
+<span class="nc" id="L1031">            addActivityToMap(shift.getActivityID(), hmActivities);</span>
         }
-<span class="nc bnc" id="L853" title="All 2 branches missed.">        if (otBefore != null)</span>
-        {
-<span class="nc" id="L855">            putShiftEventsAndActivities(otBefore.getShiftEvents(), hmShiftEvents, hmActivities);</span>
-<span class="nc" id="L856">            addActivityToMap(otBefore.getActivityID(), hmActivities);</span>
+<span class="nc bnc" id="L1033" title="All 2 branches missed.">        if (otBefore != null) {</span>
+<span class="nc" id="L1034">            putShiftEventsAndActivities(otBefore.getShiftEvents(), hmShiftEvents, hmActivities);</span>
+<span class="nc" id="L1035">            addActivityToMap(otBefore.getActivityID(), hmActivities);</span>
         }
-<span class="nc bnc" id="L858" title="All 2 branches missed.">        if (otAfter != null)</span>
-        {
-<span class="nc" id="L860">            putShiftEventsAndActivities(otAfter.getShiftEvents(), hmShiftEvents, hmActivities);</span>
-<span class="nc" id="L861">            addActivityToMap(otAfter.getActivityID(), hmActivities);</span>
+<span class="nc bnc" id="L1037" title="All 2 branches missed.">        if (otAfter != null) {</span>
+<span class="nc" id="L1038">            putShiftEventsAndActivities(otAfter.getShiftEvents(), hmShiftEvents, hmActivities);</span>
+<span class="nc" id="L1039">            addActivityToMap(otAfter.getActivityID(), hmActivities);</span>
         }
-
+        
         //Get the ShiftEvents and Activities for the ShiftAssignment being modified (is this needed?)
-<span class="nc" id="L865">        putShiftEventsAndActivities(shiftAssn, hmShiftEvents, hmActivities, wr);</span>
-
+<span class="nc" id="L1043">        putShiftEventsAndActivities(shiftAssn, hmShiftEvents, hmActivities, wr);</span>
+        
         //add the main activity for the request
-<span class="nc" id="L868">        Activity activity = getActivity();</span>
-<span class="nc bnc" id="L869" title="All 2 branches missed.">        if (activity != null)</span>
-        {
-<span class="nc" id="L871">            ID activityID = activity.getID();</span>
-<span class="nc bnc" id="L872" title="All 2 branches missed.">            if (!hmActivities.containsKey(activityID)) {</span>
-<span class="nc" id="L873">				hmActivities.put(activityID, activity);</span>
+<span class="nc" id="L1046">        Activity activity = getActivity();</span>
+<span class="nc bnc" id="L1047" title="All 2 branches missed.">        if (activity != null) {</span>
+<span class="nc" id="L1048">            ID activityID = activity.getID();</span>
+<span class="nc bnc" id="L1049" title="All 2 branches missed.">            if (!hmActivities.containsKey(activityID)) {</span>
+<span class="nc" id="L1050">				hmActivities.put(activityID, activity);</span>
 			}
         }
 
         //Get the ActivityMedia's and ActivityQueue's for each activity
-<span class="nc" id="L878">        HashMap&lt;ID, Collection&lt;ID&gt;&gt; hmActivityMedias = (HashMap&lt;ID, Collection&lt;ID&gt;&gt;) getActivityManager().findMediaForActivities(hmActivities.keySet());</span>
-<span class="nc" id="L879">        HashMap&lt;ID, Collection&lt;ID&gt;&gt; hmActivityQueues = (HashMap&lt;ID, Collection&lt;ID&gt;&gt;) getActivityManager().findQueueForActivities(hmActivities.keySet());</span>
+<span class="nc" id="L1055">        HashMap&lt;ID, Collection&lt;ID&gt;&gt; hmActivityMedias = (HashMap&lt;ID, Collection&lt;ID&gt;&gt;) getActivityManager().findMediaForActivities(hmActivities.keySet());</span>
+<span class="nc" id="L1056">        HashMap&lt;ID, Collection&lt;ID&gt;&gt; hmActivityQueues = (HashMap&lt;ID, Collection&lt;ID&gt;&gt;) getActivityManager().findQueueForActivities(hmActivities.keySet());</span>
 
         //Get the net staffing. TBD GQ: Test in non-skilled SP!!!
-<span class="nc" id="L882">        HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; hmQueueNetStaffing = null;</span>
-<span class="nc" id="L883">        boolean staffingExists = WfmManagerFactory.getTimeSeriesManager().doesStaffingExistForPeriod(csr.getEmployeeID(), csr.getStartTime(), csr.getEndTime()); //doesStaffingExistForPeriod(csr);</span>
-<span class="nc bnc" id="L884" title="All 2 branches missed.">        if (staffingExists) {    // get the trace cubes only if staffingExists is true for the given period</span>
-<span class="nc" id="L885">            NetStaffingCube nsCube = nsCube = getPreCSApprovalNetStaffingCube(csr);</span>
-<span class="nc" id="L886">            hmQueueNetStaffing = convertNSCubeToNSOMap(nsCube);</span>
-<span class="nc" id="L887">        }</span>
-		else {
-<span class="nc" id="L889">			hmQueueNetStaffing = new HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt;();</span>
+<span class="nc" id="L1059">        HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; hmQueueNetStaffing = null;</span>
+<span class="nc" id="L1060">        boolean staffingExists = WfmManagerFactory.getTimeSeriesManager().doesStaffingExistForPeriod(csr.getEmployeeID(), csr.getStartTime(), csr.getEndTime()); //doesStaffingExistForPeriod(csr);</span>
+<span class="nc bnc" id="L1061" title="All 2 branches missed.">        if (staffingExists) {    // get the trace cubes only if staffingExists is true for the given period</span>
+<span class="nc" id="L1062">            NetStaffingCube nsCube = getPreCSApprovalNetStaffingCube(csr);</span>
+<span class="nc" id="L1063">            hmQueueNetStaffing = convertNSCubeToNSOMap(nsCube);</span>
+<span class="nc" id="L1064">        } else {</span>
+<span class="nc" id="L1065">			hmQueueNetStaffing = new HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt;();</span>
 		}
 
         //Get all relevant queues
-<span class="nc" id="L893">        HashMap&lt;ID, Queue&gt; hmQueues = getQueuesMap(hmActivityQueues, hmQueueNetStaffing);</span>
+<span class="nc" id="L1069">        HashMap&lt;ID, Queue&gt; hmQueues = getQueuesMap(hmActivityQueues, hmQueueNetStaffing);</span>
 
         //Get all Queue Skills for the SP
-<span class="nc" id="L896">        HashMap&lt;ID, Collection&lt;ID&gt;&gt; hmQueueSkills = new HashMap&lt;ID, Collection&lt;ID&gt;&gt;(); //(HashMap&lt;ID, Collection&lt;ID&gt;&gt;) BbmManagerFactory.getWorkloadManager().getLinkedSkillIDsForQueues(hmQueues.keySet());</span>
-<span class="nc bnc" id="L897" title="All 4 branches missed.">        if (sp != null &amp;&amp; sp.getID() != null)</span>
-        {
-<span class="nc" id="L899">            HashMap&lt;ID, ID&gt; queueToSkillMap =  getCampaignManager().getQueueIDToSkillMap(sp.getID());</span>
-<span class="nc bnc" id="L900" title="All 2 branches missed.">            for (ID queueID : queueToSkillMap.keySet())</span>
-            {
-<span class="nc" id="L902">                ID skillID = queueToSkillMap.get(queueID);</span>
-<span class="nc" id="L903">                hmQueueSkills.put(queueID, Collections.singletonList(skillID));</span>
-<span class="nc" id="L904">            }</span>
+<span class="nc" id="L1072">        HashMap&lt;ID, Collection&lt;ID&gt;&gt; hmQueueSkills = new HashMap&lt;ID, Collection&lt;ID&gt;&gt;(); //(HashMap&lt;ID, Collection&lt;ID&gt;&gt;) BbmManagerFactory.getWorkloadManager().getLinkedSkillIDsForQueues(hmQueues.keySet());</span>
+<span class="nc bnc" id="L1073" title="All 4 branches missed.">        if (sp != null &amp;&amp; sp.getID() != null) {</span>
+<span class="nc" id="L1074">            HashMap&lt;ID, ID&gt; queueToSkillMap =  getCampaignManager().getQueueIDToSkillMap(sp.getID());</span>
+<span class="nc bnc" id="L1075" title="All 2 branches missed.">            for (ID queueID : queueToSkillMap.keySet()) {</span>
+<span class="nc" id="L1076">                ID skillID = queueToSkillMap.get(queueID);</span>
+<span class="nc" id="L1077">                hmQueueSkills.put(queueID, Collections.singletonList(skillID));</span>
+<span class="nc" id="L1078">            }</span>
         }
 
         //get the org... TBD GQ: I think we need all the orgs in the SP!!!
-<span class="nc" id="L908">        HashMap&lt;ID, Organization&gt; hmOrganizations = new HashMap&lt;ID, Organization&gt;();</span>
-<span class="nc" id="L909">        hmOrganizations.put(getOrgID(), getOrg());</span>
+<span class="nc" id="L1082">        HashMap&lt;ID, Organization&gt; hmOrganizations = new HashMap&lt;ID, Organization&gt;();</span>
+<span class="nc" id="L1083">        hmOrganizations.put(getOrgID(), getOrg());</span>
 
-<span class="nc bnc" id="L911" title="All 2 branches missed.">		TimeZone orgTimeZone = getOrg()==null ? null : getOrg().getTimeZone();</span>
-<span class="nc bnc" id="L912" title="All 2 branches missed.">		Calendar orgCal = orgTimeZone==null ? Calendar.getInstance() : Calendar.getInstance(orgTimeZone);</span>
+<span class="nc bnc" id="L1085" title="All 2 branches missed.">		TimeZone orgTimeZone = getOrg()==null ? null : getOrg().getTimeZone();</span>
+<span class="nc bnc" id="L1086" title="All 2 branches missed.">		Calendar orgCal = orgTimeZone==null ? Calendar.getInstance() : Calendar.getInstance(orgTimeZone);</span>
 
-<span class="nc" id="L914">		Optimizer optimizer = new Optimizer(person, hmSkillAssignments, shiftAssn, hmWeekSchedule, shiftPattern, hmShiftPatternShiftAttributes, shift, otBefore, otAfter,</span>
+<span class="nc" id="L1088">		Optimizer optimizer = new Optimizer(person, hmSkillAssignments, shiftAssn, hmWeekSchedule, shiftPattern, hmShiftPatternShiftAttributes, shift, otBefore, otAfter,</span>
                 hmShiftEvents, hmActivities, hmActivityMedias, hmActivityQueues, hmQueues, hmQueueSkills, hmQueueNetStaffing, hmOrganizations, mainShift, orgCal);
-<span class="nc" id="L916">        optimizer.Run();</span>
-
-<span class="nc" id="L918">    }</span>
+<span class="nc" id="L1090">        optimizer.Run();        </span>
+<span class="nc" id="L1091">    }</span>
 
     /**
      * Get the queues specified in the parameters and return a map containing them.
@@ -924,268 +1097,238 @@ public class CustShiftValidationCache extends ValidationCache {
      * @return A map of queueID to Queue, for each queue referenced from the given parameters.
      * @throws Exception
      */
-    private HashMap&lt;ID, Queue&gt; getQueuesMap(HashMap&lt;ID, Collection&lt;ID&gt;&gt; hmActivityQueues, HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; hmQueueNetStaffing)
-            throws Exception
-    {
-<span class="nc" id="L930">		HashMap&lt;ID, Queue&gt; hmQueues = new HashMap&lt;ID, Queue&gt;();</span>
-<span class="nc bnc" id="L931" title="All 4 branches missed.">		if (hmActivityQueues != null &amp;&amp; hmQueueNetStaffing!= null)</span>
-		{
-<span class="nc" id="L933">			HashSet&lt;ID&gt; queueIDs = new HashSet&lt;ID&gt;();</span>
-<span class="nc" id="L934">			queueIDs.addAll(hmQueueNetStaffing.keySet());</span>
+	private HashMap&lt;ID, Queue&gt; getQueuesMap(HashMap&lt;ID, Collection&lt;ID&gt;&gt; hmActivityQueues,
+			HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; hmQueueNetStaffing) throws Exception {
+<span class="nc" id="L1102">		HashMap&lt;ID, Queue&gt; hmQueues = new HashMap&lt;ID, Queue&gt;();</span>
+<span class="nc bnc" id="L1103" title="All 4 branches missed.">		if (hmActivityQueues != null &amp;&amp; hmQueueNetStaffing != null) {</span>
+<span class="nc" id="L1104">			HashSet&lt;ID&gt; queueIDs = new HashSet&lt;ID&gt;();</span>
+<span class="nc" id="L1105">			queueIDs.addAll(hmQueueNetStaffing.keySet());</span>
 
-<span class="nc bnc" id="L936" title="All 2 branches missed.">			for (ID activityID : hmActivityQueues.keySet())</span>
-			{
-<span class="nc" id="L938">				queueIDs.addAll(hmActivityQueues.get(activityID));</span>
-<span class="nc" id="L939">			}</span>
+<span class="nc bnc" id="L1107" title="All 2 branches missed.">			for (ID activityID : hmActivityQueues.keySet()) {</span>
+<span class="nc" id="L1108">				queueIDs.addAll(hmActivityQueues.get(activityID));</span>
+<span class="nc" id="L1109">			}</span>
 
-<span class="nc bnc" id="L941" title="All 2 branches missed.">			if (queueIDs.size() &gt; 0)</span>
-			{
-<span class="nc" id="L943">				Collection&lt;Queue&gt; queues = WfmManagerFactory.getWorkloadManager().getQueuesByIDs(queueIDs);</span>
-<span class="nc bnc" id="L944" title="All 4 branches missed.">				if (queues != null &amp;&amp; queues.size() &gt; 0)</span>
-				{
-<span class="nc bnc" id="L946" title="All 2 branches missed.">					for (Queue queue : queues)</span>
-					{
-<span class="nc" id="L948">						hmQueues.put(queue.getID(), queue);</span>
-<span class="nc" id="L949">					}</span>
+<span class="nc bnc" id="L1111" title="All 2 branches missed.">			if (!queueIDs.isEmpty()) {</span>
+<span class="nc" id="L1112">				Collection&lt;Queue&gt; queues = WfmManagerFactory.getWorkloadManager().getQueuesByIDs(queueIDs);</span>
+<span class="nc bnc" id="L1113" title="All 4 branches missed.">				if (queues != null &amp;&amp; !queues.isEmpty()) {</span>
+<span class="nc bnc" id="L1114" title="All 2 branches missed.">					for (Queue queue : queues) {</span>
+<span class="nc" id="L1115">						hmQueues.put(queue.getID(), queue);</span>
+<span class="nc" id="L1116">					}</span>
 				}
 			}
 		}
-<span class="nc" id="L953">        return hmQueues;</span>
-    }
+<span class="nc" id="L1120">		return hmQueues;</span>
+	}
 
-    /**
-     * Add the given ShiftEvents (and their Activities) to the provided HashMaps.
-     */
-    private void putShiftEventsAndActivities(Collection&lt;ShiftEvent&gt; shiftEvents, HashMap&lt;ID, ShiftEvent&gt; hmShiftEvents,
-                                             HashMap&lt;ID, Activity&gt; hmActivities) throws Exception
-    {
-<span class="nc bnc" id="L962" title="All 2 branches missed.">        for (Iterator seIt = shiftEvents.iterator(); seIt.hasNext(); )</span>
-        {
-<span class="nc" id="L964">            ShiftEvent shiftEvent = (ShiftEvent)seIt.next();</span>
-<span class="nc bnc" id="L965" title="All 2 branches missed.">            if (!hmShiftEvents.containsKey(shiftEvent.getID()))</span>
-            {
-<span class="nc" id="L967">                hmShiftEvents.put(shiftEvent.getID(),shiftEvent);</span>
-<span class="nc" id="L968">                hmActivities.put(shiftEvent.getActivityID(), shiftEvent.getActivity());</span>
-                
-<span class="nc" id="L970">                putAdditionalActivities(shiftEvent, hmActivities);</span>
-            }
-<span class="nc" id="L972">        }</span>
-<span class="nc" id="L973">    }</span>
+	/**
+	 * Add the given ShiftEvents (and their Activities) to the provided HashMaps.
+	 */
+	private void putShiftEventsAndActivities(Collection&lt;ShiftEvent&gt; shiftEvents, HashMap&lt;ID, ShiftEvent&gt; hmShiftEvents,
+			HashMap&lt;ID, Activity&gt; hmActivities) throws Exception {
+<span class="nc bnc" id="L1128" title="All 2 branches missed.">		for (Iterator seIt = shiftEvents.iterator(); seIt.hasNext();) {</span>
+<span class="nc" id="L1129">			ShiftEvent shiftEvent = (ShiftEvent) seIt.next();</span>
+<span class="nc bnc" id="L1130" title="All 2 branches missed.">			if (!hmShiftEvents.containsKey(shiftEvent.getID())) {</span>
+<span class="nc" id="L1131">				hmShiftEvents.put(shiftEvent.getID(), shiftEvent);</span>
+<span class="nc" id="L1132">				hmActivities.put(shiftEvent.getActivityID(), shiftEvent.getActivity());</span>
+<span class="nc" id="L1133">				putAdditionalActivities(shiftEvent, hmActivities);</span>
+			}
+<span class="nc" id="L1135">		}</span>
+<span class="nc" id="L1136">	}</span>
 
-    /**
-     * Get the ShiftEvents and Activities from a ShiftAssignment, and add them to the provided HashMaps.
-     */
-    private void putShiftEventsAndActivities(ShiftAssignment curShiftAssn, HashMap&lt;ID, ShiftEvent&gt; hmShiftEvents,
-                                             HashMap&lt;ID, Activity&gt; hmActivities, WorkRuleManager wr) throws Exception
-    {
-<span class="nc bnc" id="L981" title="All 8 branches missed.">        if (curShiftAssn != null &amp;&amp; hmShiftEvents != null &amp;&amp; hmActivities != null &amp;&amp; wr != null)</span>
-        {
-<span class="nc bnc" id="L983" title="All 2 branches missed.">            for (Iterator seIt = curShiftAssn.getChildren().iterator(); seIt.hasNext(); )</span>
-            {
-<span class="nc" id="L985">                ShiftEventAssignment shiftEventAsg = (ShiftEventAssignment)seIt.next();</span>
-<span class="nc" id="L986">                ID shiftEventID = shiftEventAsg.getShiftEventID();</span>
-<span class="nc bnc" id="L987" title="All 2 branches missed.">                if (!hmShiftEvents.containsKey(shiftEventID))</span>
-                {
-<span class="nc bnc" id="L989" title="All 2 branches missed.">                    if (shiftEventID != null)</span>
-                    {
-<span class="nc" id="L991">                        ShiftEvent shiftEvent = wr.getShiftEvent(shiftEventID);</span>
-<span class="nc" id="L992">                        hmShiftEvents.put(shiftEventID, shiftEvent);</span>
-<span class="nc" id="L993">                        hmActivities.put(shiftEvent.getActivityID(), shiftEvent.getActivity());</span>
-                        
-<span class="nc" id="L995">                        putAdditionalActivities(shiftEvent, hmActivities);</span>
-                    }
-                }
-<span class="nc" id="L998">            }</span>
+	/**
+	 * Get the ShiftEvents and Activities from a ShiftAssignment, and add them to the provided HashMaps.
+	 */
+	private void putShiftEventsAndActivities(ShiftAssignment curShiftAssn, HashMap&lt;ID, ShiftEvent&gt; hmShiftEvents,
+			HashMap&lt;ID, Activity&gt; hmActivities, WorkRuleManager wr) throws Exception {
+<span class="nc bnc" id="L1143" title="All 8 branches missed.">		if (curShiftAssn != null &amp;&amp; hmShiftEvents != null &amp;&amp; hmActivities != null &amp;&amp; wr != null) {</span>
+<span class="nc bnc" id="L1144" title="All 2 branches missed.">			for (Iterator seIt = curShiftAssn.getChildren().iterator(); seIt.hasNext();) {</span>
+<span class="nc" id="L1145">				ShiftEventAssignment shiftEventAsg = (ShiftEventAssignment) seIt.next();</span>
+<span class="nc" id="L1146">				ID shiftEventID = shiftEventAsg.getShiftEventID();</span>
+<span class="nc bnc" id="L1147" title="All 2 branches missed.">				if (!hmShiftEvents.containsKey(shiftEventID)) {</span>
+<span class="nc bnc" id="L1148" title="All 2 branches missed.">					if (shiftEventID != null) {</span>
+<span class="nc" id="L1149">						ShiftEvent shiftEvent = wr.getShiftEvent(shiftEventID);</span>
+<span class="nc" id="L1150">						hmShiftEvents.put(shiftEventID, shiftEvent);</span>
+<span class="nc" id="L1151">						hmActivities.put(shiftEvent.getActivityID(), shiftEvent.getActivity());</span>
+<span class="nc" id="L1152">						putAdditionalActivities(shiftEvent, hmActivities);</span>
+					}
+				}
+<span class="nc" id="L1155">			}</span>
 
-            //add the main activity for the ShiftAssignment
-<span class="nc" id="L1001">            addActivityToMap(curShiftAssn.getActivityID(), hmActivities);</span>
-        }
-<span class="nc" id="L1003">    }</span>
-    
-    /**
-     * Get the Additional Activities from a ShiftEvent, and add them to the provided HashMap.
-     */
-    private void putAdditionalActivities(ShiftEvent shiftEvent, HashMap&lt;ID, Activity&gt; hmActivities) throws Exception {
-<span class="nc" id="L1009">    	Collection&lt;Activity&gt; additionalActivities = shiftEvent.getAdditionalActivities();</span>
-<span class="nc bnc" id="L1010" title="All 2 branches missed.">    	if (additionalActivities != null) {</span>
-<span class="nc bnc" id="L1011" title="All 2 branches missed.">	    	for (Activity activity : additionalActivities) {</span>
-<span class="nc" id="L1012">	    		hmActivities.put(activity.getID(), activity);</span>
-<span class="nc" id="L1013">	    	}</span>
-    	}
-<span class="nc" id="L1015">	}</span>
+			//add the main activity for the ShiftAssignment
+<span class="nc" id="L1158">			addActivityToMap(curShiftAssn.getActivityID(), hmActivities);</span>
+		}
+<span class="nc" id="L1160">	}</span>
 
-    private void addActivityToMap(ID activityID, HashMap&lt;ID, Activity&gt; hmActivities) throws Exception
-    {
-<span class="nc bnc" id="L1019" title="All 2 branches missed.">        if (!hmActivities.containsKey(activityID))</span>
-        {
-<span class="nc" id="L1021">            Activity activity = getActivityManager().findActivityById(activityID);</span>
-<span class="nc" id="L1022">            hmActivities.put(activityID, activity);</span>
-        }
-<span class="nc" id="L1024">    }</span>
+	/**
+	 * Get the Additional Activities from a ShiftEvent, and add them to the provided HashMap.
+	 */
+	private void putAdditionalActivities(ShiftEvent shiftEvent, HashMap&lt;ID, Activity&gt; hmActivities) throws Exception {
+<span class="nc" id="L1166">		Collection&lt;Activity&gt; additionalActivities = shiftEvent.getAdditionalActivities();</span>
+<span class="nc bnc" id="L1167" title="All 2 branches missed.">		if (additionalActivities != null) {</span>
+<span class="nc bnc" id="L1168" title="All 2 branches missed.">			for (Activity activity : additionalActivities) {</span>
+<span class="nc" id="L1169">				hmActivities.put(activity.getID(), activity);</span>
+<span class="nc" id="L1170">			}</span>
+		}
+<span class="nc" id="L1172">	}</span>
 
-    /** GQ
-     * Convert a NetStaffingCube into the net staffing data required by the shift event Optimizer API.
-     * Basically, the API requires a per-SP Collection of &quot;consecutively equal&quot; net staffing values.
-     * @param nsCube
-     * @return The net staffing data required by the shift event Optimizer API.
-     */
-    private HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; convertNSCubeToNSOMap(NetStaffingCube nsCube)
-    {
-<span class="nc" id="L1034">        HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; hmQueueNetStaffing = new HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt;();</span>
+	private void addActivityToMap(ID activityID, HashMap&lt;ID, Activity&gt; hmActivities) throws Exception {
+<span class="nc bnc" id="L1175" title="All 2 branches missed.">		if (!hmActivities.containsKey(activityID)) {</span>
+<span class="nc" id="L1176">			Activity activity = getActivityManager().findActivityById(activityID);</span>
+<span class="nc" id="L1177">			hmActivities.put(activityID, activity);</span>
+		}
+<span class="nc" id="L1179">	}</span>
 
-<span class="nc bnc" id="L1036" title="All 2 branches missed.">        if (nsCube != null)</span>
-        {
-<span class="nc" id="L1038">            HashMap&lt;ID, PredictTraceCube&gt; predictTraceCubeMap = nsCube.getPredictTraceCubeMap();</span>
-<span class="nc bnc" id="L1039" title="All 4 branches missed.">            if (predictTraceCubeMap != null &amp;&amp; predictTraceCubeMap.size()&gt;0)</span>
-            {
-<span class="nc bnc" id="L1041" title="All 2 branches missed.">                for (Iterator&lt;ID&gt; iterator = predictTraceCubeMap.keySet().iterator(); iterator.hasNext();)</span>
-                {
-<span class="nc" id="L1043">                    ID spQID = iterator.next();</span>
-<span class="nc" id="L1044">                    PredictTraceCube pCube = predictTraceCubeMap.get(spQID);</span>
-<span class="nc bnc" id="L1045" title="All 2 branches missed.">                    if (pCube != null)</span>
-                    {
-<span class="nc" id="L1047">                        ID queueID = pCube.getQueueID();</span>
-<span class="nc" id="L1048">                        Collection&lt;NetStaffing&gt; nsSpans = new ArrayList&lt;NetStaffing&gt;();</span>
-                        Date spanStart, spanEnd; //The start and end of a span of equal net staffing values within pCube.
+	/** GQ
+	 * Convert a NetStaffingCube into the net staffing data required by the shift event Optimizer API.
+	 * Basically, the API requires a per-SP Collection of &quot;consecutively equal&quot; net staffing values.
+	 * @param nsCube
+	 * @return The net staffing data required by the shift event Optimizer API.
+	 */
+	private HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; convertNSCubeToNSOMap(NetStaffingCube nsCube) {
+<span class="nc" id="L1188">		HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt; hmQueueNetStaffing = new HashMap&lt;ID, Collection&lt;NetStaffing&gt;&gt;();</span>
 
-                        //Iterate over all values in the cube, and aggregate equal consecutive values together into a NetStaffing span.
-<span class="nc" id="L1052">                        Calendar cal = Calendar.getInstance(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
-<span class="nc" id="L1053">                        Date firstDate = pCube.getRawStartDate();</span>
-<span class="nc" id="L1054">                        Date curDate = firstDate;</span>
-<span class="nc" id="L1055">                        Date lastDate = firstDate;</span>
-<span class="nc" id="L1056">                        Date nextDate = null;</span>
-<span class="nc" id="L1057">                        cal.setTime(firstDate);</span>
-<span class="nc" id="L1058">                        int numIntervalsInSpan = 0;</span>
-<span class="nc" id="L1059">                        double firstVal = pCube.getTraceValueD(Trace.NETSTAFFING, firstDate);</span>
-<span class="nc bnc" id="L1060" title="All 2 branches missed.">                        if (!pCube.isTraceValueValid(firstVal)) {</span>
-<span class="nc" id="L1061">							firstVal = 0.0d;</span>
+<span class="nc bnc" id="L1190" title="All 2 branches missed.">		if (nsCube != null) {</span>
+<span class="nc" id="L1191">			HashMap&lt;ID, PredictTraceCube&gt; predictTraceCubeMap = nsCube.getPredictTraceCubeMap();</span>
+<span class="nc bnc" id="L1192" title="All 4 branches missed.">			if (predictTraceCubeMap != null &amp;&amp; !predictTraceCubeMap.isEmpty()) {</span>
+<span class="nc bnc" id="L1193" title="All 2 branches missed.">				for (Iterator&lt;ID&gt; iterator = predictTraceCubeMap.keySet().iterator(); iterator.hasNext();) {</span>
+<span class="nc" id="L1194">					ID spQID = iterator.next();</span>
+<span class="nc" id="L1195">					PredictTraceCube pCube = predictTraceCubeMap.get(spQID);</span>
+<span class="nc bnc" id="L1196" title="All 2 branches missed.">					if (pCube != null) {</span>
+<span class="nc" id="L1197">						ID queueID = pCube.getQueueID();</span>
+<span class="nc" id="L1198">						Collection&lt;NetStaffing&gt; nsSpans = new ArrayList&lt;NetStaffing&gt;();</span>
+
+						//Iterate over all values in the cube, and aggregate equal consecutive values together into a NetStaffing span.
+<span class="nc" id="L1201">						Calendar cal = Calendar.getInstance(TimeZone.getTimeZone(&quot;GMT&quot;));</span>
+<span class="nc" id="L1202">						Date firstDate = pCube.getRawStartDate();</span>
+<span class="nc" id="L1203">						Date curDate = firstDate;</span>
+<span class="nc" id="L1204">						Date lastDate = firstDate;</span>
+<span class="nc" id="L1205">						Date nextDate = null;</span>
+<span class="nc" id="L1206">						cal.setTime(firstDate);</span>
+<span class="nc" id="L1207">						int numIntervalsInSpan = 0;</span>
+<span class="nc" id="L1208">						double firstVal = pCube.getTraceValueD(Trace.NETSTAFFING, firstDate);</span>
+<span class="nc bnc" id="L1209" title="All 2 branches missed.">						if (!pCube.isTraceValueValid(firstVal)) {</span>
+<span class="nc" id="L1210">							firstVal = 0.0d;</span>
 						}
 
-<span class="nc bnc" id="L1064" title="All 2 branches missed.">                        while (!curDate.after(pCube.getRawEndDate()))</span>
-                        {
-<span class="nc" id="L1066">                            double curVal = pCube.getTraceValueD(Trace.NETSTAFFING, curDate);</span>
-<span class="nc bnc" id="L1067" title="All 2 branches missed.">                            if (!pCube.isTraceValueValid(curVal)) {</span>
-<span class="nc" id="L1068">								curVal = 0.0d;</span>
+<span class="nc bnc" id="L1213" title="All 2 branches missed.">						while (!curDate.after(pCube.getRawEndDate())) {</span>
+<span class="nc" id="L1214">							double curVal = pCube.getTraceValueD(Trace.NETSTAFFING, curDate);</span>
+<span class="nc bnc" id="L1215" title="All 2 branches missed.">							if (!pCube.isTraceValueValid(curVal)) {</span>
+<span class="nc" id="L1216">								curVal = 0.0d;</span>
 							}
 
-<span class="nc" id="L1071">                            cal.add(Calendar.MINUTE, 15);</span>
-<span class="nc" id="L1072">                            nextDate = cal.getTime();</span>
-<span class="nc" id="L1073">                            lastDate = curDate;</span>
+<span class="nc" id="L1219">							cal.add(Calendar.MINUTE, 15);</span>
+<span class="nc" id="L1220">							nextDate = cal.getTime();</span>
+<span class="nc" id="L1221">							lastDate = curDate;</span>
 
-<span class="nc bnc" id="L1075" title="All 4 branches missed.">                            if ((curVal != firstVal) || (nextDate.after(pCube.getRawEndDate())))</span>
-                            {
-<span class="nc" id="L1077">                                nsSpans.add(new NetStaffing(firstDate, lastDate, (int)((numIntervalsInSpan * firstVal) * 15)));</span>
-<span class="nc" id="L1078">                                firstDate = curDate;</span>
-<span class="nc" id="L1079">                                firstVal = curVal;</span>
-<span class="nc" id="L1080">                                numIntervalsInSpan = 1;</span>
-                            }
-                            else
-                            {
-<span class="nc" id="L1084">                                numIntervalsInSpan++;</span>
-                            }
+<span class="nc bnc" id="L1223" title="All 4 branches missed.">							if ((curVal != firstVal) || (nextDate.after(pCube.getRawEndDate()))) {</span>
+<span class="nc" id="L1224">								nsSpans.add(new NetStaffing(firstDate, lastDate, (int) ((numIntervalsInSpan * firstVal) * 15)));</span>
+<span class="nc" id="L1225">								firstDate = curDate;</span>
+<span class="nc" id="L1226">								firstVal = curVal;</span>
+<span class="nc" id="L1227">								numIntervalsInSpan = 1;</span>
+							} else {
+<span class="nc" id="L1229">								numIntervalsInSpan++;</span>
+							}
 
-<span class="nc" id="L1087">                            curDate = nextDate;</span>
-<span class="nc" id="L1088">                        }</span>
+<span class="nc" id="L1232">							curDate = nextDate;</span>
+<span class="nc" id="L1233">						}</span>
 
-<span class="nc" id="L1090">                        hmQueueNetStaffing.put(queueID, nsSpans);</span>
-                    }
-<span class="nc" id="L1092">                }</span>
-            }
-        }
-
-<span class="nc" id="L1096">        return hmQueueNetStaffing;</span>
-    }
-
-
-    //get ote definition and apply the customize on top of it.
-    public ShiftOTExtension getOTE(WorkRuleManager wr, CustShiftReq csr, boolean isBefore) throws Exception {
-<span class="nc bnc" id="L1102" title="All 2 branches missed.">        if (isBefore) {</span>
-        	ShiftOTExtension ote;
-<span class="nc bnc" id="L1104" title="All 2 branches missed.">        	if (csr.getExtBeforeID() != null) {</span>
-<span class="nc" id="L1105">	            ote = wr.getShiftOTExtensionByID(csr.getExtBeforeID());</span>
-<span class="nc" id="L1106">	            ote.setID(csr.getExtBeforeID());</span>
-        	} else {
-<span class="nc" id="L1108">        		ote = new ShiftOTExtension();</span>
-        	}
-<span class="nc" id="L1110">            ote.setActivityID(csr.getExtBeforeActivityID());</span>
-<span class="nc" id="L1111">            ote.setDuration(csr.getExtBeforeDuration());</span>
-<span class="nc" id="L1112">            ote.setMinGap(csr.getExtBeforeGap());</span>
-<span class="nc" id="L1113">            return ote;</span>
-        } else {
-        	ShiftOTExtension ote;
-<span class="nc bnc" id="L1116" title="All 2 branches missed.">        	if (csr.getExtAfterID() != null) {</span>
-<span class="nc" id="L1117">	            ote = wr.getShiftOTExtensionByID(csr.getExtAfterID());</span>
-<span class="nc" id="L1118">	            ote.setID(csr.getExtAfterID());</span>
-        	} else {
-<span class="nc" id="L1120">        		ote = new ShiftOTExtension();</span>
-        	}
-<span class="nc" id="L1122">            ote.setID(csr.getExtAfterID());</span>
-<span class="nc" id="L1123">            ote.setActivityID(csr.getExtAfterActivityID());</span>
-<span class="nc" id="L1124">            ote.setDuration(csr.getExtAfterDuration());</span>
-<span class="nc" id="L1125">            ote.setMinGap(csr.getExtAfterGap());</span>
-<span class="nc" id="L1126">            return ote;</span>
-        }
-    }
-
-
-
-    public ShiftAssignment getPublishedShiftAssn(CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L1133">        ID empID = csr.getEmployeeID();</span>
-<span class="nc bnc" id="L1134" title="All 2 branches missed.">        if (sam == null) {</span>
-<span class="nc" id="L1135">			sam = getScheduleAccessManager();</span>
+<span class="nc" id="L1235">						hmQueueNetStaffing.put(queueID, nsSpans);</span>
+					}
+<span class="nc" id="L1237">				}</span>
+			}
 		}
 
-        // search in the published schedule.
-<span class="nc" id="L1139">        Collection shiftAssignments = sam.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT, empID, csr.getStartTime(), csr.getEndTime());</span>
+<span class="nc" id="L1241">		return hmQueueNetStaffing;</span>
+	}
 
-        // if none found, return null
-<span class="nc bnc" id="L1142" title="All 2 branches missed.">        if (shiftAssignments.isEmpty()) {</span>
-<span class="nc" id="L1143">            return null;</span>
-        }
+	//get ote definition and apply the customize on top of it.
+	public ShiftOTExtension getOTE(WorkRuleManager wr, CustShiftReq csr, boolean isBefore) throws Exception {
+<span class="nc bnc" id="L1246" title="All 2 branches missed.">		if (isBefore) {</span>
+			ShiftOTExtension ote;
+<span class="nc bnc" id="L1248" title="All 2 branches missed.">			if (csr.getExtBeforeID() != null) {</span>
+<span class="nc" id="L1249">				ote = wr.getShiftOTExtensionByID(csr.getExtBeforeID());</span>
+<span class="nc" id="L1250">				ote.setID(csr.getExtBeforeID());</span>
+			} else {
+<span class="nc" id="L1252">				ote = new ShiftOTExtension();</span>
+			}
+<span class="nc" id="L1254">			ote.setActivityID(csr.getExtBeforeActivityID());</span>
+<span class="nc" id="L1255">			ote.setDuration(csr.getExtBeforeDuration());</span>
+<span class="nc" id="L1256">			ote.setMinGap(csr.getExtBeforeGap());</span>
+<span class="nc" id="L1257">			return ote;</span>
+		} else {
+			ShiftOTExtension ote;
+<span class="nc bnc" id="L1260" title="All 2 branches missed.">			if (csr.getExtAfterID() != null) {</span>
+<span class="nc" id="L1261">				ote = wr.getShiftOTExtensionByID(csr.getExtAfterID());</span>
+<span class="nc" id="L1262">				ote.setID(csr.getExtAfterID());</span>
+			} else {
+<span class="nc" id="L1264">				ote = new ShiftOTExtension();</span>
+			}
+<span class="nc" id="L1266">			ote.setID(csr.getExtAfterID());</span>
+<span class="nc" id="L1267">			ote.setActivityID(csr.getExtAfterActivityID());</span>
+<span class="nc" id="L1268">			ote.setDuration(csr.getExtAfterDuration());</span>
+<span class="nc" id="L1269">			ote.setMinGap(csr.getExtAfterGap());</span>
+<span class="nc" id="L1270">			return ote;</span>
+		}
+	}
 
+	public ShiftAssignment getPublishedShiftAssn(CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
+<span class="nc" id="L1275">		ID empID = csr.getEmployeeID();</span>
+<span class="nc bnc" id="L1276" title="All 2 branches missed.">		if (sam == null) {</span>
+<span class="nc" id="L1277">			sam = getScheduleAccessManager();</span>
+		}
 
-        // if none found, return null
-<span class="nc bnc" id="L1148" title="All 2 branches missed.">        if (shiftAssignments.isEmpty()) {</span>
-<span class="nc" id="L1149">            return null;</span>
-        }
+		// search in the published schedule.
+<span class="nc" id="L1281">		Collection shiftAssignments = sam.getPublishedEventsForWorkResourceByType(Event.EVENT_TYPE_SHIFT_ASSIGNMENT, empID,</span>
+<span class="nc" id="L1282">				csr.getStartTime(), csr.getEndTime());</span>
 
-        // retrieve first shift assignment from collection
-<span class="nc" id="L1153">		return (ShiftAssignment) shiftAssignments.iterator().next();</span>
-    }
+		// if none found, return null
+<span class="nc bnc" id="L1285" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
+<span class="nc" id="L1286">			return null;</span>
+		}
 
-<span class="nc" id="L1156">    private final HashMap spQsMap = new HashMap();</span>
+		// if none found, return null
+<span class="nc bnc" id="L1290" title="All 2 branches missed.">		if (shiftAssignments.isEmpty()) {</span>
+<span class="nc" id="L1291">			return null;</span>
+		}
+
+		// retrieve first shift assignment from collection
+<span class="nc" id="L1295">		return (ShiftAssignment) shiftAssignments.iterator().next();</span>
+	}
+
+<span class="nc" id="L1298">    private final HashMap spQsMap = new HashMap();</span>
 
     public HashMap getSPQMap(CampaignManager cm, ID spID) throws Exception {
-<span class="nc" id="L1159">        HashMap Qs = (HashMap) spQsMap.get(spID);</span>
-<span class="nc bnc" id="L1160" title="All 2 branches missed.">        if (Qs == null) {</span>
-<span class="nc" id="L1161">            Collection spQs = cm.getSPQueuesBySPID(spID);</span>
-<span class="nc" id="L1162">            Qs = ValueObjectUtil.getIDObjectMap(spQs);</span>
-<span class="nc" id="L1163">            spQsMap.put(spID, Qs);</span>
+<span class="nc" id="L1301">        HashMap Qs = (HashMap) spQsMap.get(spID);</span>
+<span class="nc bnc" id="L1302" title="All 2 branches missed.">        if (Qs == null) {</span>
+<span class="nc" id="L1303">            Collection spQs = cm.getSPQueuesBySPID(spID);</span>
+<span class="nc" id="L1304">            Qs = ValueObjectUtil.getIDObjectMap(spQs);</span>
+<span class="nc" id="L1305">            spQsMap.put(spID, Qs);</span>
         }
-<span class="nc" id="L1165">        return Qs;</span>
+<span class="nc" id="L1307">        return Qs;</span>
     }
 
-    public HashMap getPostCustShiftReqTraceCube(CustShiftReq csr, ScheduleAccessManager sam, TimeSeriesManager tsm, TimeRange tmRange) throws Exception {
-<span class="nc" id="L1169">        String key = RequestUtil.makeCacheKey(RECALC_TRACECUBE, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L1170" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+	public Map getPostCustShiftReqTraceCube(CustShiftReq csr, ScheduleAccessManager sam, TimeSeriesManager tsm, TimeRange tmRange)
+			throws Exception {
+<span class="nc" id="L1312">        String key = RequestUtil.makeCacheKey(RECALC_TRACECUBE, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L1313" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
             //figure out the impact time range and expand it to cover the whole impact days
             //later we have to update time series in full day one after another.
-<span class="nc" id="L1173">            ShiftAssignment shifttoDelete = getExistingShiftAssignToBeDeleted(csr, sam);</span>
-<span class="nc" id="L1174">            ShiftAssignment shiftAssn = getNewShiftAssignToBeCreated(csr, sam);</span>
-<span class="nc" id="L1175">            HashMap recalcAfterDelete = null;</span>
-<span class="nc bnc" id="L1176" title="All 2 branches missed.">            if (tsm == null) {</span>
-<span class="nc" id="L1177">				tsm = WfmManagerFactory.getTimeSeriesManager();</span>
+<span class="nc" id="L1316">            ShiftAssignment shifttoDelete = getExistingShiftAssignToBeDeleted(csr, sam);</span>
+<span class="nc" id="L1317">            ShiftAssignment shiftAssn = getNewShiftAssignToBeCreated(csr, sam);</span>
+<span class="nc" id="L1318">			Map recalcAfterDelete = null;</span>
+<span class="nc bnc" id="L1319" title="All 2 branches missed.">            if (tsm == null) {</span>
+<span class="nc" id="L1320">				tsm = WfmManagerFactory.getTimeSeriesManager();</span>
 			}
-<span class="nc bnc" id="L1179" title="All 2 branches missed.">            if (shifttoDelete != null) {</span>
-<span class="nc" id="L1180">                List events = getEventsDuringPeriodFromDB(csr, sam);</span>
+<span class="nc bnc" id="L1322" title="All 2 branches missed.">            if (shifttoDelete != null) {</span>
+<span class="nc" id="L1323">                List events = getEventsDuringPeriodFromDB(csr, sam);</span>
                 //the  newEventsList has the evnt that needs to be created. it should not be part of this collection  because it is not created a yet.
-<span class="nc" id="L1182">                recalcAfterDelete = tsm.reCalcAdjustedFTEAndStaffing(null, tmRange, events, shifttoDelete, true);</span>
+<span class="nc" id="L1325">                recalcAfterDelete = tsm.reCalcAdjustedFTEAndStaffing(null, tmRange, events, shifttoDelete, true);</span>
             }
-<span class="nc" id="L1184">            List events = getPossibleEventsDuringPeriodAfterCSApproval(csr, sam);</span>
-<span class="nc" id="L1185">            HashMap recalAfterCreate = tsm.reCalcAdjustedFTEAndStaffing(recalcAfterDelete, tmRange, events, shiftAssn, false);</span>
-<span class="nc" id="L1186">            put(key, recalAfterCreate);</span>
+<span class="nc" id="L1327">            List events = getPossibleEventsDuringPeriodAfterCSApproval(csr, sam);</span>
+<span class="nc" id="L1328">			Map recalAfterCreate = tsm.reCalcAdjustedFTEAndStaffing(recalcAfterDelete, tmRange, events, shiftAssn, false);</span>
+<span class="nc" id="L1329">            put(key, recalAfterCreate);</span>
         }
-<span class="nc" id="L1188">        return (HashMap) get(key);</span>
+<span class="nc" id="L1331">		return (Map) get(key);</span>
     }
 
     /**
@@ -1200,145 +1343,141 @@ public class CustShiftValidationCache extends ValidationCache {
      * @return the TraceCube's that would exist after deleting any shift that needs to be deleted
      * @throws Exception
      */
-    public HashMap getPreCustShiftReqTraceCube(CustShiftReq csr, ScheduleAccessManager sam, TimeSeriesManager tsm, TimeRange tmRange) throws Exception {
-<span class="nc" id="L1204">        String key = RequestUtil.makeCacheKey(PRE_CS_APPROVAL_RECALC_TRACECUBE, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L1205" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+	public Map getPreCustShiftReqTraceCube(CustShiftReq csr, ScheduleAccessManager sam, TimeSeriesManager tsm, TimeRange tmRange)
+			throws Exception {
+<span class="nc" id="L1348">        String key = RequestUtil.makeCacheKey(PRE_CS_APPROVAL_RECALC_TRACECUBE, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L1349" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
             //figure out the impact time range and expand it to cover the whole impact days
             //later we have to update time series in full day one after another.
-<span class="nc" id="L1208">            ShiftAssignment shifttoDelete = getExistingShiftAssignToBeDeleted(csr, sam);</span>
+<span class="nc" id="L1352">            ShiftAssignment shifttoDelete = getExistingShiftAssignToBeDeleted(csr, sam);</span>
 
-<span class="nc bnc" id="L1210" title="All 2 branches missed.">            if (tsm == null) {</span>
-<span class="nc" id="L1211">				tsm = WfmManagerFactory.getTimeSeriesManager();</span>
+<span class="nc bnc" id="L1354" title="All 2 branches missed.">            if (tsm == null) {</span>
+<span class="nc" id="L1355">				tsm = WfmManagerFactory.getTimeSeriesManager();</span>
 			}
 
-<span class="nc" id="L1214">            HashMap recalcAfterDelete = null;</span>
-<span class="nc bnc" id="L1215" title="All 2 branches missed.">            if (shifttoDelete != null) {</span>
-<span class="nc" id="L1216">                List events = getEventsDuringPeriodFromDB(csr, sam);</span>
+<span class="nc" id="L1358">			Map recalcAfterDelete = null;</span>
+<span class="nc bnc" id="L1359" title="All 2 branches missed.">            if (shifttoDelete != null) {</span>
+<span class="nc" id="L1360">                List events = getEventsDuringPeriodFromDB(csr, sam);</span>
                 //the  newEventsList has the evnt that needs to be created. it should not be part of this collection  because it is not created a yet.
-<span class="nc" id="L1218">                recalcAfterDelete = tsm.reCalcAdjustedFTEAndStaffing(null, tmRange, events, shifttoDelete, true);</span>
-<span class="nc" id="L1219">            }</span>
-            else
-            {
+<span class="nc" id="L1362">                recalcAfterDelete = tsm.reCalcAdjustedFTEAndStaffing(null, tmRange, events, shifttoDelete, true);</span>
+<span class="nc" id="L1363">            } else {</span>
                 //There is nothing to delete, so we return null to indicate that there should be no change to the net staffing.
-<span class="nc" id="L1223">                return null;</span>
+<span class="nc" id="L1365">                return null;</span>
             }
 
-<span class="nc" id="L1226">            put(key, recalcAfterDelete);</span>
+<span class="nc" id="L1368">            put(key, recalcAfterDelete);</span>
         }
-<span class="nc" id="L1228">        return (HashMap) get(key);</span>
+<span class="nc" id="L1370">		return (Map) get(key);</span>
     }
 
     public List getPossibleEventsDuringPeriodAfterCSApproval(CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L1232">        String key = RequestUtil.makeCacheKey(PUB_EVENTS_DURING_PERIOD_POSSIBLEP_AFTER_CS_APPROVAL, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L1233" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L1234">            List newEventsList = null;</span>
-            if (true) {
-<span class="nc" id="L1236">                List events = getEventsDuringPeriodFromDB(csr, sam);</span>
-<span class="nc" id="L1237">                newEventsList = new ArrayList(events);</span>
-<span class="nc" id="L1238">                Collections.copy(newEventsList, events);</span>
-            }
-<span class="nc" id="L1240">            ShiftAssignment shifttoDelete = getExistingShiftAssignToBeDeleted(csr, sam);</span>
-<span class="nc" id="L1241">            ShiftAssignment shiftAssn = getNewShiftAssignToBeCreated(csr, sam);</span>
-<span class="nc bnc" id="L1242" title="All 2 branches missed.">            if (shifttoDelete != null) {</span>
-<span class="nc bnc" id="L1243" title="All 2 branches missed.">                for (Iterator it = newEventsList.iterator(); it.hasNext();) {</span>
-<span class="nc" id="L1244">                    Event ev = (Event) it.next();</span>
+<span class="nc" id="L1374">        String key = RequestUtil.makeCacheKey(PUB_EVENTS_DURING_PERIOD_POSSIBLEP_AFTER_CS_APPROVAL, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L1375" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L1376">            List newEventsList = null;            </span>
+<span class="nc" id="L1377">            List events = getEventsDuringPeriodFromDB(csr, sam);</span>
+<span class="nc" id="L1378">            newEventsList = new ArrayList(events);</span>
+<span class="nc" id="L1379">            Collections.copy(newEventsList, events);</span>
+                
+<span class="nc" id="L1381">            ShiftAssignment shifttoDelete = getExistingShiftAssignToBeDeleted(csr, sam);</span>
+<span class="nc" id="L1382">            ShiftAssignment shiftAssn = getNewShiftAssignToBeCreated(csr, sam);</span>
+<span class="nc bnc" id="L1383" title="All 2 branches missed.">            if (shifttoDelete != null) {</span>
+<span class="nc bnc" id="L1384" title="All 2 branches missed.">                for (Iterator it = newEventsList.iterator(); it.hasNext();) {</span>
+<span class="nc" id="L1385">                    Event ev = (Event) it.next();</span>
                     // shiftToDelete is the shift in unpublish world. and newEventsList only has published events.
                     // here we can find the old events by comparing starttime since the validation rule will make
                     // sure the published shift and unpublished shift are exactly same. QC 89990
-<span class="nc bnc" id="L1248" title="All 4 branches missed.">                    if (ev.getEventType() == Event.EVENT_TYPE_SHIFT_ASSIGNMENT &amp;&amp; ev.getStartTime().equals(shifttoDelete.getStartTime())) {</span>
-<span class="nc" id="L1249">                        it.remove();</span>
-<span class="nc" id="L1250">                        break;</span>
+<span class="nc bnc" id="L1389" title="All 4 branches missed.">                    if (ev.getEventType() == Event.EVENT_TYPE_SHIFT_ASSIGNMENT &amp;&amp; ev.getStartTime().equals(shifttoDelete.getStartTime())) {</span>
+<span class="nc" id="L1390">                        it.remove();</span>
+<span class="nc" id="L1391">                        break;</span>
                     }
-<span class="nc" id="L1252">                }</span>
+<span class="nc" id="L1393">                }</span>
             }
             //delete unavailability
-<span class="nc bnc" id="L1255" title="All 2 branches missed.">            for (Iterator i = newEventsList.iterator(); i.hasNext();) {</span>
-<span class="nc" id="L1256">                Event event = (Event) i.next();</span>
-<span class="nc bnc" id="L1257" title="All 2 branches missed.">                if (event.getEventType() == Event.EVENT_TYPE_UNAVAILABILITY</span>
-<span class="nc bnc" id="L1258" title="All 4 branches missed.">						&amp;&amp; shiftAssn.getStartTime().before(event.getEndTime()) &amp;&amp; shiftAssn.getEndTime().after(event.getStartTime())) {</span>
-<span class="nc" id="L1259">                    i.remove();</span>
+<span class="nc bnc" id="L1396" title="All 2 branches missed.">            for (Iterator i = newEventsList.iterator(); i.hasNext();) {</span>
+<span class="nc" id="L1397">                Event event = (Event) i.next();</span>
+<span class="nc bnc" id="L1398" title="All 2 branches missed.">                if (event.getEventType() == Event.EVENT_TYPE_UNAVAILABILITY</span>
+<span class="nc bnc" id="L1399" title="All 4 branches missed.">						&amp;&amp; shiftAssn.getStartTime().before(event.getEndTime()) &amp;&amp; shiftAssn.getEndTime().after(event.getStartTime())) {</span>
+<span class="nc" id="L1400">                    i.remove();</span>
                 }
-<span class="nc" id="L1261">            }</span>
-<span class="nc bnc" id="L1262" title="All 2 branches missed.">            if (shiftAssn != null) {</span>
-<span class="nc" id="L1263">				newEventsList.add(shiftAssn);</span>
+<span class="nc" id="L1402">            }</span>
+<span class="nc bnc" id="L1403" title="All 2 branches missed.">            if (shiftAssn != null) {</span>
+<span class="nc" id="L1404">				newEventsList.add(shiftAssn);</span>
 			}
-<span class="nc" id="L1265">            put(key, newEventsList);</span>
+<span class="nc" id="L1406">            put(key, newEventsList);</span>
         }
-<span class="nc" id="L1267">        return (List) get(key);</span>
+<span class="nc" id="L1408">        return (List) get(key);</span>
     }
 
     public List getEventsDuringPeriodFromDB(CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L1271">        String key = RequestUtil.makeCacheKey(PUB_EVENTS_DURING_PERIOD_FROMDB, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L1272" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc bnc" id="L1273" title="All 2 branches missed.">            if (sam == null) {</span>
-<span class="nc" id="L1274">				sam = getScheduleAccessManager();</span>
+<span class="nc" id="L1412">        String key = RequestUtil.makeCacheKey(PUB_EVENTS_DURING_PERIOD_FROMDB, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L1413" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc bnc" id="L1414" title="All 2 branches missed.">            if (sam == null) {</span>
+<span class="nc" id="L1415">				sam = getScheduleAccessManager();</span>
 			}
-<span class="nc" id="L1276">            TimeRange tmRange = getDateRange(csr, sam);</span>
-<span class="nc" id="L1277">            Collection events = sam.getPublishedEventsForWorkResource(csr.getEmployeeID(), tmRange.getStartDate(), tmRange.getEndDate());</span>
-<span class="nc" id="L1278">            put(key, events);</span>
+<span class="nc" id="L1417">            TimeRange tmRange = getDateRange(csr, sam);</span>
+<span class="nc" id="L1418">            Collection events = sam.getPublishedEventsForWorkResource(csr.getEmployeeID(), tmRange.getStartDate(), tmRange.getEndDate());</span>
+<span class="nc" id="L1419">            put(key, events);</span>
         }
-<span class="nc" id="L1280">        return (List) get(key);</span>
+<span class="nc" id="L1421">        return (List) get(key);</span>
     }
 
     public TimeRange getDateRange(CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L1284">        String key = RequestUtil.makeCacheKey(EXTENDED_DATERANGE, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L1285" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L1286">            Calendar cal = Calendar.getInstance(getCampaign().getTimeZone());</span>
+<span class="nc" id="L1425">        String key = RequestUtil.makeCacheKey(EXTENDED_DATERANGE, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L1426" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L1427">            Calendar cal = Calendar.getInstance(getCampaign().getTimeZone());</span>
 
-<span class="nc" id="L1288">			TimeRange minDateRange = getMinDateRange(csr, sam);</span>
-<span class="nc" id="L1289">			Date timeSeriesRangeStart = minDateRange.getStartDate();</span>
-<span class="nc" id="L1290">			Date expandedTimeSeriesRangeStart = TimeZoneUtil.getMidNightDate(timeSeriesRangeStart, getCampaign().getTimeZone());</span>
+<span class="nc" id="L1429">			TimeRange minDateRange = getMinDateRange(csr, sam);</span>
+<span class="nc" id="L1430">			Date timeSeriesRangeStart = minDateRange.getStartDate();</span>
+<span class="nc" id="L1431">			Date expandedTimeSeriesRangeStart = TimeZoneUtil.getMidNightDate(timeSeriesRangeStart, getCampaign().getTimeZone());</span>
 
 			//apply day boundary
-<span class="nc" id="L1293">            int dayBoundaryOffset = getCampaign().getDayBoundaryOffset();</span>
-<span class="nc bnc" id="L1294" title="All 2 branches missed.">            if (dayBoundaryOffset &gt; 0) {</span>
-<span class="nc" id="L1295">                cal.setTime(expandedTimeSeriesRangeStart);</span>
-<span class="nc" id="L1296">                cal.add(Calendar.MINUTE, dayBoundaryOffset);</span>
-<span class="nc" id="L1297">				expandedTimeSeriesRangeStart = cal.getTime();</span>
+<span class="nc" id="L1434">            int dayBoundaryOffset = getCampaign().getDayBoundaryOffset();</span>
+<span class="nc bnc" id="L1435" title="All 2 branches missed.">            if (dayBoundaryOffset &gt; 0) {</span>
+<span class="nc" id="L1436">                cal.setTime(expandedTimeSeriesRangeStart);</span>
+<span class="nc" id="L1437">                cal.add(Calendar.MINUTE, dayBoundaryOffset);</span>
+<span class="nc" id="L1438">				expandedTimeSeriesRangeStart = cal.getTime();</span>
 
-<span class="nc bnc" id="L1299" title="All 2 branches missed.">				if (expandedTimeSeriesRangeStart.after(timeSeriesRangeStart))</span>
-				{
-<span class="nc" id="L1301">					cal.add(Calendar.DATE, -1); //QC#100649: Net Staffing validation rule works incorrectly for Org with Day Boundary not 12AM and LTI is Days.</span>
-<span class="nc" id="L1302">					expandedTimeSeriesRangeStart = cal.getTime();</span>
+<span class="nc bnc" id="L1440" title="All 2 branches missed.">				if (expandedTimeSeriesRangeStart.after(timeSeriesRangeStart)) {</span>
+<span class="nc" id="L1441">					cal.add(Calendar.DATE, -1); //QC#100649: Net Staffing validation rule works incorrectly for Org with Day Boundary not 12AM and LTI is Days.</span>
+<span class="nc" id="L1442">					expandedTimeSeriesRangeStart = cal.getTime();</span>
 				}
 			}
 
-<span class="nc" id="L1306">			Date timeSeriesRangeEnd = minDateRange.getEndDate();</span>
-<span class="nc" id="L1307">			Date expandedTimeSeriesRangeEnd = TimeZoneUtil.getEndDate(timeSeriesRangeEnd, getCampaign().getTimeZone());</span>
+<span class="nc" id="L1446">			Date timeSeriesRangeEnd = minDateRange.getEndDate();</span>
+<span class="nc" id="L1447">			Date expandedTimeSeriesRangeEnd = TimeZoneUtil.getEndDate(timeSeriesRangeEnd, getCampaign().getTimeZone());</span>
 
-<span class="nc bnc" id="L1309" title="All 2 branches missed.">			if (dayBoundaryOffset &gt; 0) {</span>
-<span class="nc" id="L1310">                cal.setTime(expandedTimeSeriesRangeEnd);</span>
-<span class="nc" id="L1311">                cal.add(Calendar.MINUTE, dayBoundaryOffset);</span>
-<span class="nc" id="L1312">				expandedTimeSeriesRangeEnd = cal.getTime();</span>
+<span class="nc bnc" id="L1449" title="All 2 branches missed.">			if (dayBoundaryOffset &gt; 0) {</span>
+<span class="nc" id="L1450">                cal.setTime(expandedTimeSeriesRangeEnd);</span>
+<span class="nc" id="L1451">                cal.add(Calendar.MINUTE, dayBoundaryOffset);</span>
+<span class="nc" id="L1452">				expandedTimeSeriesRangeEnd = cal.getTime();</span>
             }
-<span class="nc" id="L1314">            put(key, new TimeRange(expandedTimeSeriesRangeStart, expandedTimeSeriesRangeEnd));</span>
+<span class="nc" id="L1454">            put(key, new TimeRange(expandedTimeSeriesRangeStart, expandedTimeSeriesRangeEnd));</span>
         }
-<span class="nc" id="L1316">        return (TimeRange) get(key);</span>
+<span class="nc" id="L1456">        return (TimeRange) get(key);</span>
     }
 
 	public TimeRange getMinDateRange(CustShiftReq csr, ScheduleAccessManager sam) throws Exception {
-<span class="nc" id="L1320">		String key = RequestUtil.makeCacheKey(MINIMUM_DATERANGE, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L1321" title="All 2 branches missed.">		if (!containsKey(key)) {</span>
-<span class="nc" id="L1322">			ShiftAssignment shifttoDelete = getExistingShiftAssignToBeDeleted(csr, sam);</span>
-<span class="nc" id="L1323">			TimeRange range = new TimeRange(csr.getStartTime(), csr.getEndTime());</span>
-<span class="nc" id="L1324">			ShiftAssignment shiftAssn = getNewShiftAssignToBeCreated(csr, sam, false);</span>
-<span class="nc bnc" id="L1325" title="All 2 branches missed.">			if (shiftAssn != null)</span>
-			{
-<span class="nc" id="L1327">				range.setStartDate(shiftAssn.getStartTime());</span>
-<span class="nc" id="L1328">				range.setEndDate(shiftAssn.getEndTime());</span>
+<span class="nc" id="L1460">		String key = RequestUtil.makeCacheKey(MINIMUM_DATERANGE, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L1461" title="All 2 branches missed.">		if (!containsKey(key)) {</span>
+<span class="nc" id="L1462">			ShiftAssignment shifttoDelete = getExistingShiftAssignToBeDeleted(csr, sam);</span>
+<span class="nc" id="L1463">			TimeRange range = new TimeRange(csr.getStartTime(), csr.getEndTime());</span>
+<span class="nc" id="L1464">			ShiftAssignment shiftAssn = getNewShiftAssignToBeCreated(csr, sam, false);</span>
+<span class="nc bnc" id="L1465" title="All 2 branches missed.">			if (shiftAssn != null) {</span>
+<span class="nc" id="L1466">				range.setStartDate(shiftAssn.getStartTime());</span>
+<span class="nc" id="L1467">				range.setEndDate(shiftAssn.getEndTime());</span>
 			}
 
 			//figure out the impact time range and expend it to cover the whole impact days
 			//later we have to update time series in full day one after another.
-<span class="nc" id="L1333">			Calendar cal = Calendar.getInstance(getCampaign().getTimeZone());</span>
-<span class="nc bnc" id="L1334" title="All 4 branches missed.">			Date rangeStart = shifttoDelete != null &amp;&amp; shifttoDelete.getStartTime().before(range.getStartDate())</span>
-<span class="nc" id="L1335">					? shifttoDelete.getStartTime() : range.getStartDate();</span>
+<span class="nc" id="L1472">			Calendar cal = Calendar.getInstance(getCampaign().getTimeZone());</span>
+<span class="nc bnc" id="L1473" title="All 4 branches missed.">			Date rangeStart = shifttoDelete != null &amp;&amp; shifttoDelete.getStartTime().before(range.getStartDate())</span>
+<span class="nc" id="L1474">					? shifttoDelete.getStartTime() : range.getStartDate();</span>
 
-<span class="nc bnc" id="L1337" title="All 4 branches missed.">			Date rangeEnd = shifttoDelete != null &amp;&amp; shifttoDelete.getEndTime().after(range.getEndDate()) ? shifttoDelete.getEndTime() : range.getEndDate();</span>
+<span class="nc bnc" id="L1476" title="All 4 branches missed.">			Date rangeEnd = shifttoDelete != null &amp;&amp; shifttoDelete.getEndTime().after(range.getEndDate()) ? shifttoDelete.getEndTime() : range.getEndDate();</span>
 
-<span class="nc" id="L1339">			put(key, new TimeRange(rangeStart, rangeEnd));</span>
+<span class="nc" id="L1478">			put(key, new TimeRange(rangeStart, rangeEnd));</span>
 		}
-<span class="nc" id="L1341">		return (TimeRange) get(key);</span>
+<span class="nc" id="L1480">		return (TimeRange) get(key);</span>
 	}
 
     /**
@@ -1347,26 +1486,26 @@ public class CustShiftValidationCache extends ValidationCache {
      IMP*** The Netsaffing cube is not a reflection of what is in the DB
      */
     public NetStaffingCube getPostCSApprovalNetStaffingCube(CustShiftReq csr) throws Exception {
-<span class="nc" id="L1350">        String key = RequestUtil.makeCacheKey(POST_CS_APPROVAL_NETSTAFFING_CUBE, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L1351" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L1352">            TimeRange range = getDateRange(csr, null);</span>
-<span class="nc" id="L1353">            ID empID = csr.getEmployeeID();</span>
-<span class="nc" id="L1354">            NetStaffingCube nsCube = getTimeSeriesManager().getNetStaffing(empID, range.getStartDate(), range.getEndDate());</span>
-<span class="nc bnc" id="L1355" title="All 2 branches missed.">            if (nsCube == null) {</span>
-<span class="nc" id="L1356">                m_cat.error(&quot;No Queues Found that match the skill set of EMP: range=&quot; + range + &quot;\tnsCube=&quot; + nsCube );</span>
-<span class="nc" id="L1357">                return null;</span>
+<span class="nc" id="L1489">        String key = RequestUtil.makeCacheKey(POST_CS_APPROVAL_NETSTAFFING_CUBE, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L1490" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L1491">            TimeRange range = getDateRange(csr, null);</span>
+<span class="nc" id="L1492">            ID empID = csr.getEmployeeID();</span>
+<span class="nc" id="L1493">			NetStaffingCube nsCube = getNetStaffing(empID, range.getStartDate(), range.getEndDate());</span>
+<span class="nc bnc" id="L1494" title="All 2 branches missed.">            if (nsCube == null) {</span>
+<span class="nc" id="L1495">                m_cat.error(&quot;No Queues Found that match the skill set of EMP: range=&quot; + range + &quot;\tnsCube=&quot; + nsCube );</span>
+<span class="nc" id="L1496">                return null;</span>
             }
-<span class="nc bnc" id="L1359" title="All 2 branches missed.">            TimeRange netStaffingRange = nsCube.getMaxLeastTimeInterval()==SPQueue.LEAST_TIME_INTERVAL_WEEKLY?nsCube.getTimeRange():range;</span>
-<span class="nc" id="L1360">            HashMap traceCubesMap = getPostCustShiftReqTraceCube(csr, null, null, netStaffingRange);</span>
-<span class="nc" id="L1361">            getAdjustedNetStaffingCube( traceCubesMap, nsCube);</span>
-<span class="nc bnc" id="L1362" title="All 4 branches missed.">            if (nsCube == null || traceCubesMap == null) {</span>
-<span class="nc bnc" id="L1363" title="All 2 branches missed.">                m_cat.error(&quot;No Queues Found that match the skill set of EMP: CSR=&quot; + csr</span>
+<span class="nc bnc" id="L1498" title="All 2 branches missed.">            TimeRange netStaffingRange = nsCube.getMaxLeastTimeInterval()==SPQueue.LEAST_TIME_INTERVAL_WEEKLY?nsCube.getTimeRange():range;</span>
+<span class="nc" id="L1499">			Map traceCubesMap = getPostCustShiftReqTraceCube(csr, null, null, netStaffingRange);</span>
+<span class="nc" id="L1500">            getAdjustedNetStaffingCube( traceCubesMap, nsCube);</span>
+<span class="nc bnc" id="L1501" title="All 4 branches missed.">            if (nsCube == null || traceCubesMap == null) {</span>
+<span class="nc bnc" id="L1502" title="All 2 branches missed.">                m_cat.error(&quot;No Queues Found that match the skill set of EMP: CSR=&quot; + csr</span>
                         + &quot;\tnsCube=&quot; + nsCube + &quot;\ttraceCubesMap=&quot; +
-<span class="nc" id="L1365">                        traceCubesMap != null ? &quot;&quot; + traceCubesMap.size() : &quot; null &quot;);</span>
+<span class="nc" id="L1504">                        traceCubesMap != null ? &quot;&quot; + traceCubesMap.size() : &quot; null &quot;);</span>
             }
-<span class="nc" id="L1367">            put(key, nsCube);</span>
+<span class="nc" id="L1506">            put(key, nsCube);</span>
         }
-<span class="nc" id="L1369">        return (NetStaffingCube) get(key);</span>
+<span class="nc" id="L1508">        return (NetStaffingCube) get(key);</span>
     }
 
     /**
@@ -1377,14 +1516,14 @@ public class CustShiftValidationCache extends ValidationCache {
      * @throws Exception
      */
     public boolean doesStaffingExistForPeriod(CustShiftReq csr) throws Exception {
-<span class="nc" id="L1380">        String key = RequestUtil.makeCacheKey(IS_STAFFING_DATA_AVAILABLE, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L1381" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
-<span class="nc" id="L1382">            TimeSeriesManager tsm = WfmManagerFactory.getTimeSeriesManager();</span>
-<span class="nc" id="L1383">            TimeRange range = getMinDateRange(csr, null);</span>
-<span class="nc" id="L1384">            boolean stafingExists = tsm.doesStaffingExistForPeriod(csr.getEmployeeID(), range.getStartDate(), range.getEndDate());</span>
-<span class="nc" id="L1385">            put(key, stafingExists);</span>
+<span class="nc" id="L1519">        String key = RequestUtil.makeCacheKey(IS_STAFFING_DATA_AVAILABLE, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L1520" title="All 2 branches missed.">        if (!containsKey(key)) {</span>
+<span class="nc" id="L1521">            TimeSeriesManager tsm = WfmManagerFactory.getTimeSeriesManager();</span>
+<span class="nc" id="L1522">            TimeRange range = getMinDateRange(csr, null);</span>
+<span class="nc" id="L1523">            boolean stafingExists = tsm.doesStaffingExistForPeriod(csr.getEmployeeID(), range.getStartDate(), range.getEndDate());</span>
+<span class="nc" id="L1524">            put(key, stafingExists);</span>
         }
-<span class="nc" id="L1387">        return ((Boolean) get(key)).booleanValue();</span>
+<span class="nc" id="L1526">        return ((Boolean) get(key)).booleanValue();</span>
     }
 
 	private static final String PRE_CS_APPROVAL_RECALC_TRACECUBE = &quot;PRE_CS_APPROVAL_RECALC_TRACECUBE&quot;;
@@ -1396,35 +1535,96 @@ public class CustShiftValidationCache extends ValidationCache {
 	 *                            shift is not really removed fromthe db. It's just for the purposes of calculating net staffing.
 	 */
 	public NetStaffingCube getPreCSApprovalNetStaffingCube(CustShiftReq csr, boolean deleteExistingShift) throws Exception {
-<span class="nc" id="L1399">		String key = RequestUtil.makeCacheKey(PRE_CS_APPROVAL_NETSTAFFING_CUBE, csr.getEmployeeID());</span>
-<span class="nc bnc" id="L1400" title="All 2 branches missed.">		if (!containsKey(key)) {</span>
-<span class="nc" id="L1401">			TimeRange range = getDateRange(csr, null); //new TimeRange(csr.getStartTime(), csr.getEndTime()); //GQ</span>
-<span class="nc" id="L1402">			ID empID = csr.getEmployeeID();</span>
-<span class="nc" id="L1403">			NetStaffingCube nsCube = getTimeSeriesManager().getNetStaffing(empID, range.getStartDate(), range.getEndDate());</span>
-<span class="nc bnc" id="L1404" title="All 2 branches missed.">			if (nsCube == null) {</span>
-<span class="nc" id="L1405">				m_cat.error(&quot;No Queues Found that match the skill set of EMP: range=&quot; + range + &quot;\tnsCube=&quot; + nsCube );</span>
-<span class="nc" id="L1406">				return null;</span>
+<span class="nc" id="L1538">		String key = RequestUtil.makeCacheKey(PRE_CS_APPROVAL_NETSTAFFING_CUBE, csr.getEmployeeID());</span>
+<span class="nc bnc" id="L1539" title="All 2 branches missed.">		if (!containsKey(key)) {</span>
+<span class="nc" id="L1540">			TimeRange range = getDateRange(csr, null); //new TimeRange(csr.getStartTime(), csr.getEndTime()); //GQ</span>
+<span class="nc" id="L1541">			ID empID = csr.getEmployeeID();</span>
+<span class="nc" id="L1542">			NetStaffingCube nsCube = getNetStaffing(empID, range.getStartDate(), range.getEndDate());</span>
+<span class="nc bnc" id="L1543" title="All 2 branches missed.">			if (nsCube == null) {</span>
+<span class="nc" id="L1544">				m_cat.error(&quot;No Queues Found that match the skill set of EMP: range=&quot; + range + &quot;\tnsCube=&quot; + nsCube );</span>
+<span class="nc" id="L1545">				return null;</span>
 			}
 
-<span class="nc bnc" id="L1409" title="All 2 branches missed.">			TimeRange netStaffingRange = nsCube.getMaxLeastTimeInterval()==SPQueue.LEAST_TIME_INTERVAL_WEEKLY?nsCube.getTimeRange():range;</span>
-<span class="nc" id="L1410">			HashMap traceCubesMap = null;</span>
-<span class="nc bnc" id="L1411" title="All 2 branches missed.">			if (deleteExistingShift)</span>
+<span class="nc bnc" id="L1548" title="All 2 branches missed.">			TimeRange netStaffingRange = nsCube.getMaxLeastTimeInterval()==SPQueue.LEAST_TIME_INTERVAL_WEEKLY?nsCube.getTimeRange():range;</span>
+<span class="nc" id="L1549">			Map traceCubesMap = null;</span>
+<span class="nc bnc" id="L1550" title="All 2 branches missed.">			if (deleteExistingShift)</span>
 			{
-<span class="nc" id="L1413">				traceCubesMap = getPreCustShiftReqTraceCube(csr, null, null, netStaffingRange);</span>
-<span class="nc bnc" id="L1414" title="All 2 branches missed.">				if (traceCubesMap != null)</span>
+<span class="nc" id="L1552">				traceCubesMap = getPreCustShiftReqTraceCube(csr, null, null, netStaffingRange);</span>
+<span class="nc bnc" id="L1553" title="All 2 branches missed.">				if (traceCubesMap != null)</span>
 				 {
-<span class="nc" id="L1416">					getAdjustedNetStaffingCube(traceCubesMap, nsCube, true); //we must recompute the net staffing given the updated Adjusted Staffing and Adjusted FTE</span>
+<span class="nc" id="L1555">					getAdjustedNetStaffingCube(traceCubesMap, nsCube, true); //we must recompute the net staffing given the updated Adjusted Staffing and Adjusted FTE</span>
 				}
 			}
 
-<span class="nc bnc" id="L1420" title="All 2 branches missed.">			if (nsCube == null) {</span>
-<span class="nc bnc" id="L1421" title="All 2 branches missed.">				m_cat.error(&quot;No Queues Found that match the skill set of EMP: CSR=&quot; + csr</span>
+<span class="nc bnc" id="L1559" title="All 2 branches missed.">			if (nsCube == null) {</span>
+<span class="nc bnc" id="L1560" title="All 2 branches missed.">				m_cat.error(&quot;No Queues Found that match the skill set of EMP: CSR=&quot; + csr</span>
 						+ &quot;\tnsCube=&quot; + nsCube + &quot;\ttraceCubesMap=&quot; +
-<span class="nc" id="L1423">						traceCubesMap != null ? &quot;&quot; + traceCubesMap.size() : &quot; null &quot;);</span>
+<span class="nc" id="L1562">						traceCubesMap != null ? &quot;&quot; + traceCubesMap.size() : &quot; null &quot;);</span>
 			}
-<span class="nc" id="L1425">			put(key, nsCube);</span>
+<span class="nc" id="L1564">			put(key, nsCube);</span>
 		}
-<span class="nc" id="L1427">		return (NetStaffingCube) get(key);</span>
+<span class="nc" id="L1566">		return (NetStaffingCube) get(key);</span>
+	}
+
+	private NetStaffingCube getNetStaffing(ID employeeID, Date start, Date end) throws Exception {
+<span class="nc" id="L1570">		String key = RequestUtil.makeCacheKey(&quot;CS_NET_STAFFING_CUBE_DB&quot;, employeeID, start, end);</span>
+<span class="nc bnc" id="L1571" title="All 2 branches missed.">		if (containsKey(key)) {</span>
+			//clone and return cube
+<span class="nc" id="L1573">			NetStaffingCube cube = (NetStaffingCube) get(key);</span>
+<span class="nc" id="L1574">			return cloneNetStaffingCube(cube);</span>
+		}
+
+<span class="nc" id="L1577">		NetStaffingCube nsCube = getTimeSeriesManager().getNetStaffing(employeeID, start, end);</span>
+<span class="nc" id="L1578">		put(key, nsCube);</span>
+<span class="nc" id="L1579">		return cloneNetStaffingCube(nsCube);</span>
+	}
+
+	private static NetStaffingCube cloneNetStaffingCube(NetStaffingCube cube) {
+<span class="nc bnc" id="L1583" title="All 2 branches missed.">		if (cube == null) {</span>
+<span class="nc" id="L1584">			return null;</span>
+		}
+
+<span class="nc" id="L1587">		Map&lt;ID, PredictTraceCube&gt; predictCubes = cube.getPredictTraceCubeMap();</span>
+<span class="nc" id="L1588">		Map&lt;ID, RequireTraceCube&gt; requiredCubes = cube.getRequireTraceCubeMap();</span>
+<span class="nc" id="L1589">		Map&lt;ID, SPQueue&gt; spQueues = cube.getSPQueueMap();</span>
+<span class="nc" id="L1590">		Map&lt;ID, Campaign&gt; campaigns = cube.getCampaignMap();</span>
+
+<span class="nc" id="L1592">		Set&lt;ID&gt; spqIDs = new HashSet&lt;ID&gt;();</span>
+<span class="nc" id="L1593">		spqIDs.addAll(predictCubes.keySet());</span>
+<span class="nc" id="L1594">		spqIDs.addAll(requiredCubes.keySet());</span>
+<span class="nc" id="L1595">		spqIDs.addAll(spQueues.keySet());</span>
+<span class="nc" id="L1596">		spqIDs.addAll(campaigns.keySet());</span>
+
+<span class="nc" id="L1598">		NetStaffingCube clone = new NetStaffingCube();</span>
+<span class="nc bnc" id="L1599" title="All 2 branches missed.">		for (ID spqID : spqIDs) {</span>
+<span class="nc" id="L1600">			PredictTraceCube predictClone = (PredictTraceCube) cloneTraceCube(predictCubes.get(spqID));</span>
+<span class="nc" id="L1601">			RequireTraceCube requireClone = (RequireTraceCube) cloneTraceCube(requiredCubes.get(spqID));</span>
+<span class="nc" id="L1602">			clone.addNetStaffing(campaigns.get(spqID), predictClone, requireClone, spQueues.get(spqID));</span>
+<span class="nc" id="L1603">		}</span>
+<span class="nc" id="L1604">		return clone;</span>
+	}
+
+
+
+	private static TraceCube cloneTraceCube(TraceCube cube) {
+<span class="nc bnc" id="L1610" title="All 2 branches missed.">		if (cube == null) {</span>
+<span class="nc" id="L1611">			return null;</span>
+		}
+<span class="nc" id="L1613">		TraceCube clone = (TraceCube) cube.clone();</span>
+<span class="nc" id="L1614">		clone.setQueueID(cube.getQueueID());</span>
+<span class="nc" id="L1615">		clone.setCampaignTimeZoneID(cube.getCampaignTimeZoneID());</span>
+<span class="nc" id="L1616">		clone.setSPQueueSID(cube.getSPQueueSID());</span>
+<span class="nc" id="L1617">		clone.setStartingBacklog((int) cube.getStartingBacklog());</span>
+<span class="nc" id="L1618">		clone.setInterimBacklog((int) cube.getInterimBacklog());</span>
+<span class="nc bnc" id="L1619" title="All 2 branches missed.">		if (cube.getInterimBacklogDate() != null) {</span>
+<span class="nc" id="L1620">			clone.setInterimBacklogDate(new Date(cube.getInterimBacklogDate().getTime()));</span>
+		}
+
+<span class="nc bnc" id="L1623" title="All 2 branches missed.">		for (short type : cube.getTraceTypes()) {</span>
+<span class="nc" id="L1624">			clone.setTypeDirty(type, cube.isDirty(type));</span>
+		}
+
+<span class="nc" id="L1627">		return clone;</span>
 	}
 
 	/** GQ:
@@ -1435,73 +1635,51 @@ public class CustShiftValidationCache extends ValidationCache {
 	 */
 	public NetStaffingCube getPreCSApprovalNetStaffingCube(CustShiftReq csr) throws Exception {
 
-<span class="nc" id="L1438">		return getPreCSApprovalNetStaffingCube(csr, true);</span>
+<span class="nc" id="L1638">		return getPreCSApprovalNetStaffingCube(csr, true);</span>
 	}
 
 	public int getPaidDurationForSegment(ShiftAssignment sa, Date startPeriod, Date endPeriod) {
-<span class="nc" id="L1442">		int paidDuration = 0;</span>
+<span class="nc" id="L1642">		int paidDuration = 0;</span>
 
-<span class="nc bnc" id="L1444" title="All 2 branches missed.">		if (TimePeriodUtil.inside(sa.getStartTime(), sa.getEndTime(),</span>
+<span class="nc bnc" id="L1644" title="All 2 branches missed.">		if (TimePeriodUtil.inside(sa.getStartTime(), sa.getEndTime(),</span>
 		        startPeriod, endPeriod)) {//event completely within period
-<span class="nc" id="L1446">			paidDuration = sa.getDuration();</span>
-<span class="nc bnc" id="L1447" title="All 2 branches missed.">		} else if (sa.getStartTime().before(startPeriod)</span>
-<span class="nc bnc" id="L1448" title="All 2 branches missed.">		        &amp;&amp; sa.getEndTime().after(endPeriod)) {</span>
-<span class="nc" id="L1449">			paidDuration = (int) (endPeriod.getTime() - startPeriod.getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1450" title="All 2 branches missed.">		} else if (sa.getStartTime().after(startPeriod)</span>
-<span class="nc bnc" id="L1451" title="All 4 branches missed.">		        &amp;&amp; sa.getStartTime().before(endPeriod) &amp;&amp; sa.getEndTime().after(endPeriod)) {</span>
-<span class="nc" id="L1452">			paidDuration = (int) (endPeriod.getTime() - sa.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1453" title="All 2 branches missed.">		} else if (sa.getEndTime().after(startPeriod)</span>
-<span class="nc bnc" id="L1454" title="All 4 branches missed.">		        &amp;&amp; sa.getEndTime().before(endPeriod) &amp;&amp; sa.getStartTime().before(startPeriod)) {</span>
-<span class="nc" id="L1455">			paidDuration = (int) (sa.getEndTime().getTime() - startPeriod.getTime()) / (1000 * 60);</span>
+<span class="nc" id="L1646">			paidDuration = sa.getDuration();</span>
+<span class="nc bnc" id="L1647" title="All 2 branches missed.">		} else if (sa.getStartTime().before(startPeriod)</span>
+<span class="nc bnc" id="L1648" title="All 2 branches missed.">		        &amp;&amp; sa.getEndTime().after(endPeriod)) {</span>
+<span class="nc" id="L1649">			paidDuration = (int) (endPeriod.getTime() - startPeriod.getTime()) / (1000 * 60);</span>
+<span class="nc bnc" id="L1650" title="All 2 branches missed.">		} else if (sa.getStartTime().after(startPeriod)</span>
+<span class="nc bnc" id="L1651" title="All 4 branches missed.">		        &amp;&amp; sa.getStartTime().before(endPeriod) &amp;&amp; sa.getEndTime().after(endPeriod)) {</span>
+<span class="nc" id="L1652">			paidDuration = (int) (endPeriod.getTime() - sa.getStartTime().getTime()) / (1000 * 60);</span>
+<span class="nc bnc" id="L1653" title="All 2 branches missed.">		} else if (sa.getEndTime().after(startPeriod)</span>
+<span class="nc bnc" id="L1654" title="All 4 branches missed.">		        &amp;&amp; sa.getEndTime().before(endPeriod) &amp;&amp; sa.getStartTime().before(startPeriod)) {</span>
+<span class="nc" id="L1655">			paidDuration = (int) (sa.getEndTime().getTime() - startPeriod.getTime()) / (1000 * 60);</span>
 		}
 
 		//iterate through all the shift events
-<span class="nc bnc" id="L1459" title="All 2 branches missed.">		for (Iterator itr = sa.getChildren().iterator(); itr.hasNext();) {</span>
-<span class="nc" id="L1460">			ShiftEventAssignment shiftEventAssn = (ShiftEventAssignment) itr.next();</span>
+<span class="nc bnc" id="L1659" title="All 2 branches missed.">		for (Iterator itr = sa.getChildren().iterator(); itr.hasNext();) {</span>
+<span class="nc" id="L1660">			ShiftEventAssignment shiftEventAssn = (ShiftEventAssignment) itr.next();</span>
 
 			//if overlaps with period, and paid: add to duration
-<span class="nc bnc" id="L1463" title="All 2 branches missed.">			if (TimePeriodUtil.overlap(startPeriod, endPeriod, shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime())) {</span>
-<span class="nc bnc" id="L1464" title="All 2 branches missed.">				if (!shiftEventAssn.getPaid()) {</span>
+<span class="nc bnc" id="L1663" title="All 2 branches missed.">			if (TimePeriodUtil.overlap(startPeriod, endPeriod, shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime())) {</span>
+<span class="nc bnc" id="L1664" title="All 2 branches missed.">				if (!shiftEventAssn.getPaid()) {</span>
 					//get exact period that overlaps
-<span class="nc bnc" id="L1466" title="All 2 branches missed.">					if (TimePeriodUtil.inside(shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime(),</span>
+<span class="nc bnc" id="L1666" title="All 2 branches missed.">					if (TimePeriodUtil.inside(shiftEventAssn.getStartTime(), shiftEventAssn.getEndTime(),</span>
 					        startPeriod, endPeriod)) {//event completely within period
-<span class="nc" id="L1468">						paidDuration -= shiftEventAssn.getDuration();</span>
-<span class="nc bnc" id="L1469" title="All 2 branches missed.">					} else if (shiftEventAssn.getStartTime().before(startPeriod)</span>
-<span class="nc bnc" id="L1470" title="All 2 branches missed.">					        &amp;&amp; shiftEventAssn.getEndTime().after(endPeriod)) {</span>
-<span class="nc" id="L1471">						paidDuration -= (int) (endPeriod.getTime() - startPeriod.getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1472" title="All 2 branches missed.">					} else if (shiftEventAssn.getStartTime().after(startPeriod)</span>
-<span class="nc bnc" id="L1473" title="All 4 branches missed.">					        &amp;&amp; shiftEventAssn.getStartTime().before(endPeriod) &amp;&amp; shiftEventAssn.getEndTime().after(endPeriod)) {</span>
-<span class="nc" id="L1474">						paidDuration -= (int) (endPeriod.getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
-<span class="nc bnc" id="L1475" title="All 2 branches missed.">					} else if (shiftEventAssn.getEndTime().after(startPeriod)</span>
-<span class="nc bnc" id="L1476" title="All 4 branches missed.">					        &amp;&amp; shiftEventAssn.getEndTime().before(endPeriod) &amp;&amp; shiftEventAssn.getStartTime().before(startPeriod)) {</span>
-<span class="nc" id="L1477">						paidDuration -= (int) (shiftEventAssn.getEndTime().getTime() - startPeriod.getTime()) / (1000 * 60);</span>
+<span class="nc" id="L1668">						paidDuration -= shiftEventAssn.getDuration();</span>
+<span class="nc bnc" id="L1669" title="All 2 branches missed.">					} else if (shiftEventAssn.getStartTime().before(startPeriod)</span>
+<span class="nc bnc" id="L1670" title="All 2 branches missed.">					        &amp;&amp; shiftEventAssn.getEndTime().after(endPeriod)) {</span>
+<span class="nc" id="L1671">						paidDuration -= (int) (endPeriod.getTime() - startPeriod.getTime()) / (1000 * 60);</span>
+<span class="nc bnc" id="L1672" title="All 2 branches missed.">					} else if (shiftEventAssn.getStartTime().after(startPeriod)</span>
+<span class="nc bnc" id="L1673" title="All 4 branches missed.">					        &amp;&amp; shiftEventAssn.getStartTime().before(endPeriod) &amp;&amp; shiftEventAssn.getEndTime().after(endPeriod)) {</span>
+<span class="nc" id="L1674">						paidDuration -= (int) (endPeriod.getTime() - shiftEventAssn.getStartTime().getTime()) / (1000 * 60);</span>
+<span class="nc bnc" id="L1675" title="All 2 branches missed.">					} else if (shiftEventAssn.getEndTime().after(startPeriod)</span>
+<span class="nc bnc" id="L1676" title="All 4 branches missed.">					        &amp;&amp; shiftEventAssn.getEndTime().before(endPeriod) &amp;&amp; shiftEventAssn.getStartTime().before(startPeriod)) {</span>
+<span class="nc" id="L1677">						paidDuration -= (int) (shiftEventAssn.getEndTime().getTime() - startPeriod.getTime()) / (1000 * 60);</span>
 					}
 				}
 			}
-<span class="nc" id="L1481">		}</span>
-<span class="nc" id="L1482">		return paidDuration;</span>
-	}
-
-	@Override
-	public TimeMap getHOOAssignmentsTimeMap() throws Exception {
-<span class="nc" id="L1487">		return getHOOAssignmentsTimeMap(getHOOTimeRange());</span>
-	}
-
-	private TimeRange getHOOTimeRange() {
-<span class="nc" id="L1491">		Date start = m_csr.getStartTime();</span>
-<span class="nc" id="L1492">		Date end = m_csr.getEndTime();</span>
-<span class="nc" id="L1493">		Date shiftStart = m_csr.getShiftStartTime();</span>
-<span class="nc" id="L1494">		Date shiftEnd = m_csr.getShiftEndTime();</span>
-		
-<span class="nc bnc" id="L1496" title="All 2 branches missed.">		if (start.getTime() &gt; shiftStart.getTime()) {</span>
-<span class="nc" id="L1497">			start = shiftStart;</span>
-		}
-
-<span class="nc bnc" id="L1500" title="All 2 branches missed.">		if (end.getTime() &lt; shiftEnd.getTime()) {</span>
-<span class="nc" id="L1501">			end = shiftEnd;</span>
-		}
-
-<span class="nc" id="L1504">		return new TimeRange(start, end);</span>
+<span class="nc" id="L1681">		}</span>
+<span class="nc" id="L1682">		return paidDuration;</span>
 	}
 }
 

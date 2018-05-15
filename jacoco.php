@@ -23,7 +23,7 @@
    <body>
       <section class="main-contents">
          <h1 class="text-center page-title"><b>Project Coyote</b></h1>
-          <h2 class="text-center"><b>(Jacoco Reports)</b></h2>
+          <h2 class="text-center"><b>(JaCoCo Reports)</b></h2>
       </section>
       <div class="logo">
          <a href="index.html"><img src="assets/images/ProjectCoyoteLogo.png" width="300" align="center"></a>
@@ -47,7 +47,7 @@
       <!-- Progress bars-->
       <?php
          echo'<section class="main-contents">';
-          echo'<h3 class="text-center sub-texts">Teams Progress Overview</h3>';
+          echo'<h3 class="text-center sub-texts">Team Progress Overview</h3>';
           echo'<div class="container">';
           echo'<hr>';
              echo'<div class="item-section col-md-12 col-sm-4 col-xs-12">';
@@ -147,11 +147,11 @@
          echo'</section>';
              ?>
       <section class="main-contents">
-         <h3 class="text-center sub-texts">View Code Coverage Reports</h3>
+         <h3 class="text-center sub-texts">Code Coverage Reports</h3>
          <div class="container">
             <hr>
             <div class="item-section col-md-12 col-sm-4 col-xs-12">
-               <p class="text-center"> <b>View Jacoco Report</b></p>
+               <p class="text-center"> <b>View JaCoCo Report</b></p>
                <br>
             </div>
          </div>

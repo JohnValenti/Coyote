@@ -5,7 +5,8 @@
  * Description:  Validate a time off bid request to make sure it does not overlap with any approved time of bid request choice.
  * 				 The overlapping here is when the new request choice covers or overlapped partially with approved TO request choice.
  * 				 The case of new request choice within approved choice does not count here because in this case, it violates the 
- * 				  hard validation rule &quot;WorkableTimeValidationRule&quot; 
+ * 				 hard validation rule &quot;WorkableTimeValidationRule&quot; 
+ * 				 For multi-mode: to make sure the considering choice does not overlap with approved choices
  * 				 This validation is invoked only if there is Advanced RM license
  * Copyright:    Copyright (c) 2016
  * Company:      Verint System, Inc
@@ -14,9 +15,9 @@
 **/
 import java.util.Collection;
 import java.util.Date;
-import java.util.Iterator;
 
 import com.bluepumpkin.common.datatypes.ID;
+import com.bluepumpkin.common.datatypes.Pair;
 import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.localization.Localizer;
 import com.bluepumpkin.ejb.bbm.localization.DefaultLocalizationManager;
@@ -24,84 +25,90 @@ import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
-import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidatorForMultiChoice;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
 import com.bluepumpkin.ejb.rm.setup.timeoffbid.ejb.TimeOffBidUtil;
 import com.bluepumpkin.ejb.rm.setup.timeoffbid.model.TimeOffBid;
 
-<span class="nc" id="L33">public class TimeOffBidRequestNotOverlapValidationRule implements Validator {</span>
-<span class="nc" id="L34">	private static final String clsName = TimeOffBidRequestNotOverlapValidationRule.class.getName();</span>
+<span class="nc" id="L34">public class TimeOffBidRequestNotOverlapValidationRule implements ValidatorForMultiChoice {</span>
+<span class="nc" id="L35">	private static final String clsName = TimeOffBidRequestNotOverlapValidationRule.class.getName();</span>
 
-	@SuppressWarnings(&quot;rawtypes&quot;)
+	@Override
+	public ValidationResult validateForMultiChoice(Validatable validatable) throws Exception {
+<span class="nc" id="L39">		return validate(validatable, true);</span>
+	}
+
+	private ValidationResult validate(Validatable validatable, boolean isForMultiChoice) throws Exception {
+<span class="nc" id="L43">		ValidationResult result = null;</span>
+<span class="nc" id="L44">		TORequest toReq = (TORequest) validatable;</span>
+		//The rule is not applicable for Anytime VTO requests
+<span class="nc bnc" id="L46" title="All 2 branches missed.">		if (toReq.isAdvancedVTORequest()) {</span>
+<span class="nc" id="L47">			return null;</span>
+		}
+<span class="nc" id="L49">		ID timeOffType = toReq.getTimeOffType();</span>
+<span class="nc" id="L50">		ID employeeId = toReq.getEmployeeID();</span>
+<span class="nc" id="L51">		Pair&lt;TimeOffBid, Pair&lt;Integer, Integer&gt;&gt; bidDetail = toReq.getTimeOffBidInfo();</span>
+<span class="nc bnc" id="L52" title="All 2 branches missed.">		if (bidDetail == null) {</span>
+<span class="nc" id="L53">			bidDetail = getOpenTimeOffBidForActivityIdAndEmployeId(timeOffType, employeeId, toReq.getSubmittedOn());</span>
+<span class="nc" id="L54">			toReq.setTimeOffBidInfo(bidDetail);</span>
+		}
+<span class="nc bnc" id="L56" title="All 2 branches missed.">		if (bidDetail == null) {</span>
+<span class="nc" id="L57">			return null;</span>
+		}
+<span class="nc" id="L59">		TimeOffBid bid = bidDetail.getFirst();</span>
+<span class="nc bnc" id="L60" title="All 2 branches missed.">		if (bid == null) {</span>
+<span class="nc" id="L61">			return null;</span>
+		}
+<span class="nc" id="L63">		long bidRequestStart = bid.getRequestStartTime().getTime();</span>
+<span class="nc" id="L64">		long bidRequestEnd = bid.getRequestEndTime().getTime();</span>
+<span class="nc" id="L65">		Collection&lt;ID&gt; activitiesIdInBid = getActivityIDsByBidId(bid.getId());</span>
+<span class="nc bnc" id="L66" title="All 2 branches missed.">		Collection&lt;TOChoice&gt; approvedChoices =isForMultiChoice? toReq.getTOChoicesWillBeApproved(): getApprovedTimeOffRequestChoiceDuringOpenBid(bid.getId(), employeeId, activitiesIdInBid);</span>
+		//Validate choice compared to approved Choices  =&gt; soft validation rule
+<span class="nc bnc" id="L68" title="All 2 branches missed.">		for (TOChoice choice : toReq.getTOChoicesAdjustedForValidation()) {</span>
+			//For multi-choice,if the choice violates any validation rule ran before , do not run the rule and continue with next choice
+<span class="nc bnc" id="L70" title="All 4 branches missed.">			if(toReq.isRunForGroupTOBApproval()&amp;&amp;!choice.getValidationResults(true).isEmpty()){</span>
+<span class="nc" id="L71">				continue;</span>
+			}
+<span class="nc" id="L73">			Date choiceStart = choice.getStartDate();</span>
+<span class="nc" id="L74">			Date choiceEnd = choice.getEndDate();</span>
+<span class="nc bnc" id="L75" title="All 4 branches missed.">			boolean choicePeriodInBidRequestPeriod = bidRequestStart &lt;= choiceStart.getTime() &amp;&amp; choiceEnd.getTime() &lt;= bidRequestEnd;</span>
+<span class="nc" id="L76">			TimeRange toChoiceRange = new TimeRange(choiceStart, choiceEnd);</span>
+<span class="nc" id="L77">			TimeRange choiceOverlapped = TimeOffBidUtil.getChoiceRangeOverlapWithGivenRange(toChoiceRange, approvedChoices,isForMultiChoice);</span>
+<span class="nc bnc" id="L78" title="All 4 branches missed.">			if (choicePeriodInBidRequestPeriod &amp;&amp; choiceOverlapped != null) {</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">				result = isForMultiChoice?</span>
+<span class="nc" id="L80">						 ValidationUtil.setSoftValidationResult(choice, RmEjbBundleKey.TIMEOFF_BID_VALIDATION_TOCHOICE_OVERLAP_ANOTHER_TOCHOICE, </span>
+<span class="nc" id="L81">									choiceStart, choiceEnd, choiceOverlapped.getStartDate(), choiceOverlapped.getEndDate(), clsName):</span>
+<span class="nc" id="L82">					ValidationUtil.setSoftValidationResult(choice, RmEjbBundleKey.TIMEOFF_BID_VALIDATION_TOCHOICE_OVERLAP_APPROVED_REQUESTS, </span>
+<span class="nc" id="L83">						getEmployeeName(toReq), choiceStart, choiceEnd, choiceOverlapped.getStartDate(), choiceOverlapped.getEndDate(), clsName);</span>
+				
+			}
+<span class="nc" id="L86">		}</span>
+
+<span class="nc" id="L88">		return result;</span>
+	}
 	@Override
 	public ValidationResult validate(Validatable validatable) throws Exception {
-<span class="nc" id="L39">		ValidationResult result = null;</span>
-<span class="nc" id="L40">		TORequest toReq = (TORequest) validatable;</span>
-<span class="nc" id="L41">		ID timeOffType = toReq.getTimeOffType();</span>
-<span class="nc" id="L42">		ID employeeId = toReq.getEmployeeID();</span>
-<span class="nc" id="L43">		TimeOffBid bid = getOpenTimeOffBidForActivityIdAndEmployeId(timeOffType, employeeId, toReq.getSubmittedOn());</span>
-<span class="nc bnc" id="L44" title="All 2 branches missed.">		if (bid != null) {</span>
-<span class="nc" id="L45">			long bidRequestStart = bid.getRequestStartTime().getTime();</span>
-<span class="nc" id="L46">			long bidRequestEnd = bid.getRequestEndTime().getTime();</span>
-<span class="nc" id="L47">			Collection&lt;ID&gt; activitiesIdInBid = getActivityIDsByBidId(bid.getId());</span>
-<span class="nc" id="L48">			Collection&lt;TOChoice&gt; approvedChoices = getApprovedTimeOffRequestChoiceDuringOpenBid(bid.getId(), employeeId, activitiesIdInBid);</span>
-<span class="nc bnc" id="L49" title="All 2 branches missed.">			for (Iterator it = toReq.getRequestChoiceList().iterator(); it.hasNext();) {</span>
-<span class="nc" id="L50">				TOChoice choice = (TOChoice) it.next();</span>
-<span class="nc" id="L51">				long choiceStart = choice.getStartDate().getTime();</span>
-<span class="nc" id="L52">				long choiceEnd = choice.getEndDate().getTime();</span>
-<span class="nc bnc" id="L53" title="All 4 branches missed.">				boolean choicePeriodInBidRequestPeriod = bidRequestStart &lt;= choiceStart &amp;&amp; choiceEnd &lt;= bidRequestEnd;</span>
-<span class="nc" id="L54">				TimeRange toChoiceRange = new TimeRange(choice.getStartDate(), choice.getEndDate());</span>
-<span class="nc" id="L55">				TimeRange approveChoiceRange = getApprovedChoiceRangeOverlapWithTOChoice(toChoiceRange, approvedChoices);</span>
-<span class="nc bnc" id="L56" title="All 4 branches missed.">				if (choicePeriodInBidRequestPeriod &amp;&amp; approveChoiceRange != null) {</span>
-<span class="nc" id="L57">					result = ValidationUtil.setSoftValidationResult(choice,</span>
-<span class="nc" id="L58">							RmEjbBundleKey.TIMEOFF_BID_VALIDATION_TOCHOICE_OVERLAP_APPROVED_REQUESTS, getEmployeeName(toReq),</span>
-<span class="nc" id="L59">							choice.getStartDate(), choice.getEndDate(), approveChoiceRange.getStartDate(),</span>
-<span class="nc" id="L60">							approveChoiceRange.getEndDate(), clsName);</span>
-				}
-<span class="nc" id="L62">			}</span>
-		}
-<span class="nc" id="L64">		return result;</span>
+<span class="nc" id="L92">		return validate(validatable,false);</span>
 	}
-
-	private TimeRange getApprovedChoiceRangeOverlapWithTOChoice(TimeRange toChoiceRange, Collection&lt;TOChoice&gt; approvedChoices) {
-<span class="nc" id="L68">		TimeRange resultRange = null;</span>
-<span class="nc" id="L69">		boolean isOverlapped = false;</span>
-<span class="nc bnc" id="L70" title="All 2 branches missed.">		for (Iterator&lt;TOChoice&gt; it = approvedChoices.iterator(); it.hasNext();) {</span>
-<span class="nc" id="L71">			TOChoice apprChoice = it.next();</span>
-<span class="nc" id="L72">			TimeRange approveChoiceRange = new TimeRange(apprChoice.getStartDate(), apprChoice.getEndDate());</span>
-<span class="nc" id="L73">			boolean isCover = approveChoiceRange.isInside(toChoiceRange);</span>
-			//We dont count toChoiceRange.isInside(approveChoiceRange) since in this case, 
-			//The given range is completely contained within a block of scheduled time off 
-<span class="nc bnc" id="L76" title="All 2 branches missed.">			boolean toChoiceOverlapStart= toChoiceRange.getStartDate().before(apprChoice.getStartDate())</span>
-<span class="nc bnc" id="L77" title="All 2 branches missed.">					&amp;&amp; apprChoice.getStartDate().before(toChoiceRange.getEndDate());</span>
-<span class="nc bnc" id="L78" title="All 2 branches missed.">			boolean toChoiceOverlapEnd= toChoiceRange.getStartDate().before(apprChoice.getEndDate())</span>
-<span class="nc bnc" id="L79" title="All 2 branches missed.">					&amp;&amp; apprChoice.getEndDate().before(toChoiceRange.getEndDate());</span>
-<span class="nc bnc" id="L80" title="All 6 branches missed.">			isOverlapped = isCover || toChoiceOverlapStart || toChoiceOverlapEnd;</span>
-<span class="nc bnc" id="L81" title="All 2 branches missed.">			if (isOverlapped) {</span>
-<span class="nc" id="L82">				resultRange = approveChoiceRange;</span>
-<span class="nc" id="L83">				break;</span>
-			}
-<span class="nc" id="L85">		}</span>
-<span class="nc" id="L86">		return resultRange;</span>
-	}
-
-	protected TimeOffBid getOpenTimeOffBidForActivityIdAndEmployeId(ID timeOffType, ID employeeId, Date submittedDate) throws Exception {
-<span class="nc" id="L90">		return TimeOffBidUtil.getOpenTimeOffBidForActivityIdAndEmployeId(timeOffType, employeeId, submittedDate);</span>
+	protected Pair&lt;TimeOffBid, Pair&lt;Integer, Integer&gt;&gt; getOpenTimeOffBidForActivityIdAndEmployeId(ID timeOffType, ID employeeId, Date submittedDate) throws Exception {
+<span class="nc" id="L95">		return TimeOffBidUtil.getOpenTimeOffBidDetailForActivityIdAndEmployeId(timeOffType, employeeId, submittedDate);</span>
 	}
 
 	protected Collection&lt;TOChoice&gt; getApprovedTimeOffRequestChoiceDuringOpenBid(ID bidId, ID employeeId, Collection&lt;ID&gt; activityIds) throws Exception {
-<span class="nc" id="L94">		return TimeOffBidUtil.getApprovedTimeOffRequestChoiceDuringOpenBid(bidId, employeeId, activityIds);</span>
+<span class="nc" id="L99">		return TimeOffBidUtil.getApprovedTimeOffRequestChoiceDuringOpenBid(bidId, employeeId, activityIds);</span>
 	}
-	public Collection&lt;ID&gt; getActivityIDsByBidId(ID bidId) throws Exception{
-<span class="nc" id="L97">		return TimeOffBidUtil.getActivityIDsByBidId(bidId);</span>
+
+	public Collection&lt;ID&gt; getActivityIDsByBidId(ID bidId) throws Exception {
+<span class="nc" id="L103">		return TimeOffBidUtil.getActivityIDsByBidId(bidId);</span>
 	}
+
 	protected String getEmployeeName(TORequest toReq) throws Exception {
-<span class="nc" id="L100">		return toReq.getCache().getEmployeeNameByID();</span>
+<span class="nc" id="L107">		return toReq.getCache().getEmployeeNameByID();</span>
 	}
 
 	protected Localizer getLocalizer() {
-<span class="nc" id="L104">		return DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
+<span class="nc" id="L111">		return DefaultLocalizationManager.getDefaultInstance().getLocalizer();</span>
 	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

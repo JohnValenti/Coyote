@@ -6,35 +6,29 @@
 
 package com.bluepumpkin.ejb.rm.requests.timeoff.validation;
 
-import java.util.ArrayList;
-import java.util.Calendar;
+import java.util.Collection;
 import java.util.Date;
-import java.util.List;
 import java.util.Map;
-import java.util.TimeZone;
 
 import com.bluepumpkin.common.datatypes.ID;
-import com.bluepumpkin.common.datatypes.LocalDate;
-import com.bluepumpkin.common.datatypes.TimeRange;
 import com.bluepumpkin.common.logging.Category;
-import com.bluepumpkin.ejb.bbm.timeoffcalculator.DailyHoursBuckets;
-import com.bluepumpkin.ejb.bbm.timeoffcalculator.TOCalcUtil;
 import com.bluepumpkin.ejb.rm.Log;
 import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
+import com.bluepumpkin.ejb.rm.requests.common.validation.Validatable;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResult;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationResultAggregator;
 import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
-import com.bluepumpkin.ejb.rm.requests.timeoff.hoursperday.ejb.TOHoursPerDayUtil;
+import com.bluepumpkin.ejb.rm.requests.common.validation.ValidatorForMultiChoice;
 import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.TimeOffIntervalAllocationUtil;
 import com.bluepumpkin.ejb.rm.requests.timeoff.intervalallocation.ejb.TimeOffRequestChoiceSegment;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
-import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoiceGroup;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
-import com.bluepumpkin.ejb.rm.setup.calendartimeoff.model.CalendarTimeOffDay;
 import com.bluepumpkin.ejb.rm.util.RmUtil;
 import com.bluepumpkin.ejb.rm.util.TOCalendarUtil;
 import com.bluepumpkin.ejb.rm.util.TORequestUtil;
 
 /**
- * Rule in UI: Organization has available time off hours.
+ * Rule in UI: Time Off Pool has available time off hours.
  * &lt;p/&gt;
  * Check if enough time off hours are available for each day of each TOChoce.
  * Available hours for each day is the difference between the allocated TO hours
@@ -55,327 +49,144 @@ import com.bluepumpkin.ejb.rm.util.TORequestUtil;
  * Applies equally for tentative and non tentative requests as only events from the published schedule
  * are used.
  * &lt;p/&gt;
- * TODO: Think Pavel mentioned that to determine TOHours availability, must consider
- * &quot;allocated&quot; hours and &quot;time off events&quot; for the org, where the allocation is defined, and all orgs under it.
  */
-<span class="nc" id="L61">public class AvaliableHoursValidationRule  extends TimeoffValidationRule {</span>
-<span class="nc" id="L62">	private static final String CLASSNAME = AvaliableHoursValidationRule.class.getName();</span>
+<span class="nc" id="L53">public class AvaliableHoursValidationRule implements ValidatorForMultiChoice {</span>
+<span class="nc" id="L54">	private static final String CLASSNAME = AvaliableHoursValidationRule.class.getName();</span>
 
-<span class="nc" id="L64">	private static final Category LOG = Log.initCategory(CLASSNAME);</span>
-	private static final long TEN_DAYS_DURATION = 1000 * 60 * 60 * 24 * 10L;
+<span class="nc" id="L56">	private static final Category LOG = Log.initCategory(CLASSNAME);</span>
 
+	DailyTimeOffPoolHasAvailableHoursValidation dailyPoolValidator;
 	
 	
 	@Override
-	protected void validateTimeOffChoiceGroup(TORequest request, TOChoiceGroup choiceGroup) throws Exception {
-		
-<span class="nc" id="L72">		String methodName = &quot;processTimeOffChoiceGroup&quot;;</span>
-<span class="nc" id="L73">		logEnter(methodName, request);</span>
-		
-<span class="nc bnc" id="L75" title="All 4 branches missed.">		if (request.isUnavailability() || choiceGroup == null){</span>
-<span class="nc" id="L76">			logExit(methodName, null);</span>
-<span class="nc" id="L77">			return;</span>
-		}
-	
-		
-		
-		
-<span class="nc" id="L83">		validateAvailableHours(request, choiceGroup);</span>
-		
-		
-<span class="nc" id="L86">		logExit(methodName, null);</span>
-<span class="nc" id="L87">	}</span>
-	
-	
-	// For QA53725 - Request management page takes time to load
-	/*The method splits the entire range ( range of all choices together) into reasonable
-	 * ranges and process them one after another. It is possible that choices range
-	 * can expand to or beyond an year and it puts performance burden on system to process the entire
-	 * range than every choice range.
-	 * 
-	 */
-	
-	
-	void validateAvailableHours(TORequest request, TOChoiceGroup choiceGroup) throws Exception { // NOSONAR
+	public ValidationResult validateForMultiChoice(Validatable validatable) throws Exception {
+<span class="nc" id="L63">		return validate(validatable);</span>
+	}
 
-<span class="nc" id="L101">		String methodName = &quot;validateAvailableHours&quot;;</span>
-<span class="nc" id="L102">		logEnter(methodName, request);</span>
+
+	@Override
+	public ValidationResult validate(Validatable request) throws Exception {
+<span class="nc" id="L69">		TORequest toRequest = (TORequest) request;</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">		if (toRequest.isUnavailability()) {</span>
+<span class="nc" id="L71">			return null;</span>
+		}
+<span class="nc" id="L73">		return validateAvailableHours(toRequest);</span>
+	}
+	
+	
+	
+	
+
+	ValidationResult validateAvailableHours(TORequest request) throws Exception { // NOSONAR
 
 		// RM License allows interval  and daily pools
+<span class="nc" id="L83">		boolean useIntervalPool = TORequestUtil.isUseIntervalTOPool(request);</span>
+<span class="nc" id="L84">		boolean useDailyPool = usesDailyPool(request);</span>
 
-		// Check interval pools in advance
-<span class="nc bnc" id="L107" title="All 2 branches missed.">		if (TORequestUtil.isUseIntervalTOPool(request)) {</span>
-			
-			// If there's no employee pool,  exit now
-<span class="nc bnc" id="L110" title="All 2 branches missed.">			if (request.getCache().getTOPool() == null) {</span>
-<span class="nc bnc" id="L111" title="All 2 branches missed.">				for (TOChoice choice : choiceGroup.getChoices()) {</span>
-<span class="nc" id="L112">					ValidationUtil.setSoftValidationResult(choice, RmEjbBundleKey.TO_POOL_NOT_ASSIGNED, request.getCache()</span>
-<span class="nc" id="L113">							.getEmployeeNameByID(), choice.getStartDate(), choice.getEndDate(), CLASSNAME);</span>
-<span class="nc" id="L114">				}</span>
+<span class="nc bnc" id="L86" title="All 4 branches missed.">		if (!useIntervalPool &amp;&amp; !useDailyPool) {</span>
+<span class="nc" id="L87">			return null;</span>
+		}
 
-<span class="nc" id="L116">				logExit(methodName, &quot;&quot;);</span>
-<span class="nc" id="L117">				return;</span>
-			}
-			
-<span class="nc" id="L120">			checkAvailableHoursForIntervalPool(request, choiceGroup);</span>
+<span class="nc" id="L90">		ValidationResultAggregator result = new ValidationResultAggregator();</span>
+<span class="nc" id="L91">		Date start = request.getCache().getDateRange().getStartDate();</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">		if (request.getCache().getTOPool(start) == null) {</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">			for (TOChoice choice : request.getTOChoicesAdjustedForValidation()) {</span>
+<span class="nc" id="L94">				result.add(ValidationUtil.setSoftValidationResult(choice, RmEjbBundleKey.TO_POOL_NOT_ASSIGNED, request.getCache()</span>
+<span class="nc" id="L95">						.getEmployeeNameByID(), choice.getStartDate(), choice.getEndDate(), CLASSNAME));</span>
+<span class="nc" id="L96">			}</span>
+
+<span class="nc" id="L98">			return result.get();</span>
+		}
+
+<span class="nc bnc" id="L101" title="All 2 branches missed.">		if (useIntervalPool) {</span>
+<span class="nc" id="L102">			result.add(checkAvailableHoursForIntervalPool(request));</span>
 		}
 
 		// Now test daily
-<span class="nc bnc" id="L124" title="All 2 branches missed.">		if (TORequestUtil.isUseDailyTOPool(request)) {</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">		if (useDailyPool) { // NOSONAR</span>
 			
-			
-			// If there's no employee pool,  exit now
-<span class="nc bnc" id="L128" title="All 2 branches missed.">			if (request.getCache().getTOPool() == null) {</span>
-<span class="nc bnc" id="L129" title="All 2 branches missed.">				for (TOChoice choice : choiceGroup.getChoices()) {</span>
-<span class="nc" id="L130">					ValidationUtil.setSoftValidationResult(choice, RmEjbBundleKey.TO_POOL_NOT_ASSIGNED, request.getCache()</span>
-<span class="nc" id="L131">							.getEmployeeNameByID(), choice.getStartDate(), choice.getEndDate(), CLASSNAME);</span>
-<span class="nc" id="L132">				}</span>
-
-<span class="nc" id="L134">				logExit(methodName, &quot;&quot;);</span>
-<span class="nc" id="L135">				return;</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">			if (dailyPoolValidator == null) {</span>
+<span class="nc" id="L109">				dailyPoolValidator = new DailyTimeOffPoolHasAvailableHoursValidation();</span>
 			}
-			
-			
-<span class="nc" id="L139">			List&lt;ID&gt; activityList = (List&lt;ID&gt;) TOCalendarUtil.getListOfDailyPoolAllotmentActivities();</span>
-
-<span class="nc bnc" id="L141" title="All 4 branches missed.">			if (activityList != null &amp;&amp; activityList.contains(request.getTimeOffType())) {</span>
-				//Iterate through the request choices and determine the processing range periods
-<span class="nc" id="L143">				ArrayList&lt;TimeRange&gt; processingRangeCollection = this.calculateProcessingRanges(request, choiceGroup);</span>
-
-<span class="nc bnc" id="L145" title="All 4 branches missed.">				if (processingRangeCollection != null &amp;&amp; !processingRangeCollection.isEmpty()) {</span>
-<span class="nc" id="L146">					checkAvailableHoursForPeriodDaily(request, choiceGroup, processingRangeCollection, activityList);</span>
-				}
-			}
-			
+<span class="nc" id="L111">			result.add(dailyPoolValidator.validate(request));</span>
 		}
 
-<span class="nc" id="L152">		logExit(methodName, request);</span>
-<span class="nc" id="L153">	}</span>
+<span class="nc" id="L114">		return result.get();</span>
+
+	}
 	
-
-
-	/*
-	 * For a choice group of choices that fall within a period, check available hours for each choice
-	 * Do this sequentially, each choice being &quot;approved&quot; will impact subsequent choices since
-	 * ultimately there must be enough available hours for all choices in a group when all are approved.
-	 */
-
-	void checkAvailableHoursForPeriodDaily(TORequest request, TOChoiceGroup choiceGroup,
-			ArrayList&lt;TimeRange&gt; processingRangeCollection, List&lt;ID&gt; activityList) throws Exception { // NOSONAR
-
-<span class="nc" id="L166">		String methodName = &quot;checkAvailableHoursForPeriodDaily&quot;;</span>
-<span class="nc" id="L167">		logEnter(methodName, request);</span>
-
-		// For each processing range
-		// Check that each &quot;day&quot; during request period has enough available
-		// hours for the pending request.
+	boolean usesDailyPool(TORequest request) throws Exception {
+<span class="nc" id="L119">		boolean useDailyPool = TORequestUtil.isUseDailyTOPool(request);</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">		if (!useDailyPool) {</span>
+<span class="nc" id="L121">			return false;</span>
+		}
 		
-<span class="nc bnc" id="L173" title="All 2 branches missed.">		for (TimeRange processingRange : processingRangeCollection) {</span>
+		//If we got here then the request uses a daily pool activity, but we need to check if it is an time off allotment activity
+<span class="nc bnc" id="L125" title="All 2 branches missed.">		if(!TOCalendarUtil.useOnlyAllotmentActivities()) {</span>
+<span class="nc" id="L126">			return useDailyPool;</span>
+		}
+		
+<span class="nc" id="L129">		ID activity = request.getTimeOffType();</span>
+<span class="nc" id="L130">		Collection&lt;ID&gt; allotmentActivities = TOCalendarUtil.getListOfDailyPoolAllotmentActivities(activity);</span>
+<span class="nc" id="L131">		return allotmentActivities.contains(request.getTimeOffType());</span>
+	}
 
-<span class="nc" id="L175">			Date processingStartDate = processingRange.getStartDate();</span>
-<span class="nc" id="L176">			Date processingEndDate = processingRange.getEndDate();</span>
 
-<span class="nc" id="L178">			DailyHoursBuckets dailyAllocatedHoursBuckets = getDailyHourBuckets(request, processingRange);</span>
-
-			//Subtract existing scheduled hours from the allocated
-<span class="nc" id="L181">			subtractScheduledHoursFromAllocatedHours(dailyAllocatedHoursBuckets, request, activityList);</span>
-
-			// Loop through the choices and check each one
-<span class="nc bnc" id="L184" title="All 2 branches missed.">			for (TOChoice choice : choiceGroup.getChoices()) {</span>
-
-				// Skipping the choices outside the processing range
-<span class="nc" id="L187">				Date choiceStartDate = choice.getStartDate();</span>
-<span class="nc" id="L188">				Date choiceEndDate = choice.getEndDate();</span>
-
-<span class="nc bnc" id="L190" title="All 4 branches missed.">				if (choiceStartDate.before(processingStartDate) || choiceEndDate.after(processingEndDate)) {</span>
-<span class="nc" id="L191">					continue;</span>
-				}
-
-				// Compute request choice bucket, pending hours per day for request
-				// Note: A TOReq with debit type DEBIT is processed as a DEBIT_ONLY_IF and not as DEBIT since
-				// the totalLength, need for DEBIT processing, is not available for a TORequest.
-
-				//need to add here any previous choices
-<span class="nc" id="L199">				DailyHoursBuckets dailyPendingHoursBuckets = TOHoursPerDayUtil.getDailyHoursBuckets(request.getCache().getOrg(),</span>
-<span class="nc" id="L200">						choice.getHoursPerDay());</span>
-
-<span class="nc" id="L202">				Date firstShortDay = dailyAllocatedHoursBuckets.checkAllocation(dailyPendingHoursBuckets);</span>
-
-<span class="nc bnc" id="L204" title="All 2 branches missed.">				if (firstShortDay != null) {</span>
-					// Build validation result, store in choice.
-<span class="nc" id="L206">					ValidationUtil.setSoftValidationResult(choice, RmEjbBundleKey.TO_NOT_ENOUGH_AVAILABLE_HOURS, request.getCache()</span>
-<span class="nc" id="L207">							.getEmployeeNameByID(), choiceStartDate, choiceEndDate, request.getCache().getTOPool().getName(),</span>
-							firstShortDay, CLASSNAME);
-				}
-
-				// Now subtract the pending from the allocated
-				// Since ChoiceGroups must be approved as a unit
-				// Therefore we have to take into consideration the previous choices when
-				// validating subsequent choices
-				
-			
-<span class="nc" id="L217">			}//each choice</span>
-
-<span class="nc" id="L219">		}//each processing range</span>
-
-<span class="nc" id="L221">		logExit(methodName, &quot;&quot;);</span>
-<span class="nc" id="L222">	}</span>
 	
 	// Interval pools have allocation by intervals
-	void checkAvailableHoursForIntervalPool(TORequest request, TOChoiceGroup choiceGroup) throws Exception { // NOSONAR
+	ValidationResult checkAvailableHoursForIntervalPool(TORequest request) throws Exception { // NOSONAR
 
-<span class="nc" id="L227">		String methodName = &quot;checkAvailableHoursForIntervalPool&quot;;</span>
-<span class="nc" id="L228">		logEnter(methodName, request);</span>
+<span class="nc" id="L139">		String methodName = &quot;checkAvailableHoursForIntervalPool&quot;;</span>
+<span class="nc" id="L140">		logEnter(methodName, request);</span>
 
-<span class="nc" id="L230">		Map&lt;Integer, TimeOffRequestChoiceSegment&gt; listOfIntervalFailures = TimeOffIntervalAllocationUtil.checkAllocation(request);</span>
+<span class="nc" id="L142">		Map&lt;Integer, TimeOffRequestChoiceSegment&gt; listOfIntervalFailures = TimeOffIntervalAllocationUtil.checkAllocation(request);</span>
 
 		
-<span class="nc bnc" id="L233" title="All 4 branches missed.">		if (listOfIntervalFailures == null || listOfIntervalFailures.isEmpty()) {</span>
-<span class="nc" id="L234">			logExit(methodName, &quot;&quot;);</span>
-<span class="nc" id="L235">			return;</span>
+<span class="nc bnc" id="L145" title="All 4 branches missed.">		if (listOfIntervalFailures == null || listOfIntervalFailures.isEmpty()) {</span>
+<span class="nc" id="L146">			logExit(methodName, &quot;&quot;);</span>
+<span class="nc" id="L147">			return null;</span>
 		}
 
-<span class="nc bnc" id="L238" title="All 2 branches missed.">		for (TOChoice choice : choiceGroup.getChoices()) {</span>
+<span class="nc" id="L150">		ValidationResult result = null;</span>
 
-<span class="nc" id="L240">			Date choiceStartDate = choice.getStartDate();</span>
-<span class="nc" id="L241">			Date choiceEndDate = choice.getEndDate();</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">		for (TOChoice choice : request.getTOChoicesAdjustedForValidation()) {</span>
 
-<span class="nc bnc" id="L243" title="All 2 branches missed.">			if (listOfIntervalFailures.containsKey(choice.getID().toInt())) {</span>
-<span class="nc" id="L244">				TimeOffRequestChoiceSegment failedSeg = listOfIntervalFailures.get(choice.getID().toInt());</span>
+<span class="nc" id="L154">			Date choiceStartDate = choice.getStartDate();</span>
+<span class="nc" id="L155">			Date choiceEndDate = choice.getEndDate();</span>
+
+<span class="nc bnc" id="L157" title="All 2 branches missed.">			if (listOfIntervalFailures.containsKey(choice.getID().toInt())) {</span>
+<span class="nc" id="L158">				TimeOffRequestChoiceSegment failedSeg = listOfIntervalFailures.get(choice.getID().toInt());</span>
 
 				// Build validation result, store in choice.
-<span class="nc" id="L247">				ValidationUtil.setSoftValidationResult(choice, RmEjbBundleKey.TIMEOFFINTERVALALLOCATION_NOT_ENOUGH_AVAILABLE_HOURS, request</span>
-<span class="nc" id="L248">						.getCache().getEmployeeNameByID(), choiceStartDate, choiceEndDate, request.getCache().getTOPool().getName(),</span>
-<span class="nc" id="L249">						failedSeg.getStart(), CLASSNAME);</span>
+<span class="nc" id="L161">				result = ValidationUtil.setSoftValidationResult(choice,</span>
+						RmEjbBundleKey.TIMEOFFINTERVALALLOCATION_NOT_ENOUGH_AVAILABLE_HOURS, request
+<span class="nc" id="L163">						.getCache().getEmployeeNameByID(), choiceStartDate, choiceEndDate, request.getCache().getTOPool(failedSeg.getStart()).getName(),</span>
+<span class="nc" id="L164">						failedSeg.getStart(), CLASSNAME);</span>
 			}
 
-<span class="nc" id="L252">		}</span>
+<span class="nc" id="L167">		}</span>
 		
-<span class="nc" id="L254">		logExit(methodName, &quot;&quot;);</span>
+<span class="nc" id="L169">		logExit(methodName, &quot;&quot;);</span>
+<span class="nc" id="L170">		return result;</span>
 
-<span class="nc" id="L256">	}</span>
-
-
-	DailyHoursBuckets getDailyHourBuckets(TORequest request, TimeRange processingRange) throws Exception { // NOSONAR
-		
-<span class="nc" id="L261">		String methodName = &quot;getDailyHourBuckets&quot;;</span>
-<span class="nc" id="L262">		logEnter(methodName, request);</span>
-		
-<span class="nc" id="L264">		int orgDayOffset = request.getCache().getOrgDayOffset();</span>
-<span class="nc" id="L265">		TimeZone orgTimezone = request.getCache().getTimeZoneForOrg();</span>
-		
-		// The buckets
-<span class="nc" id="L268">		DailyHoursBuckets dailyHourBuckets = new DailyHoursBuckets(orgDayOffset, orgTimezone, processingRange);</span>
-		// the buckets start date expanded to org day start.
-<span class="nc" id="L270">		Date availTOHoursBktsForOrgStartDate = dailyHourBuckets.getDHBRangeStartAsOrgDayStart();</span>
-		// the buckets end date expanded to org day end.
-<span class="nc" id="L272">		Date availTOHoursBktsForOrgEndDate = dailyHourBuckets.getDHBRangeEndAsOrgDayEnd();</span>
-		
-		// Access TO calendar and find allocated timeoff hours per day, initialize availableTOHours bucket
-		// array with these numbers
-		//get calender time off day collection
-		@SuppressWarnings(&quot;unchecked&quot;)
-<span class="nc" id="L278">		List&lt;CalendarTimeOffDay&gt; allocatedCalendarDays = (List&lt;CalendarTimeOffDay&gt;)request.getCache().getTOAllocationCalendarDays(processingRange);</span>
-<span class="nc bnc" id="L279" title="All 2 branches missed.">		for(CalendarTimeOffDay calendarDay : allocatedCalendarDays){</span>
-
-<span class="nc" id="L281">			LocalDate ctodLocalDate = calendarDay.getTimeOffLocalDate();</span>
-			// covert local date to java.util.Date by interpretting local date in 'availableBuckets' timezone.
-<span class="nc" id="L283">			Date timeOffCalDayDate = ctodLocalDate.getTime(orgTimezone);</span>
-			//QA 83439 - Auto-deny rule (Organization has available time off hours) doesn't work
-<span class="nc bnc" id="L285" title="All 2 branches missed.">			if (orgDayOffset &gt; 0) {</span>
-<span class="nc" id="L286">				Calendar cal = Calendar.getInstance(orgTimezone);</span>
-<span class="nc" id="L287">				cal.setTime(timeOffCalDayDate);</span>
-				//QC 41795 / QA 95083 Validation fails on DST transition.
-				// Fix: Always use TOCalcUtil.setCalMinsOffsetFromMidnight to adjust a Calendar to organization day start boundary
-<span class="nc" id="L290">				TOCalcUtil.setCalMinsOffsetFromMidnight(cal, orgDayOffset);</span>
-<span class="nc" id="L291">				timeOffCalDayDate = cal.getTime();</span>
-			}
-			//End #82439
-
-			// verify if 'ctodDate' is within the 'availBuckets' date range.  If not within the
-			// date range, skip this calendarTimeOffDay VO.
-<span class="nc bnc" id="L297" title="All 4 branches missed.">			if (timeOffCalDayDate.before(availTOHoursBktsForOrgStartDate) || timeOffCalDayDate.after(availTOHoursBktsForOrgEndDate))</span>
-<span class="nc" id="L298">				continue;</span>
-
-<span class="nc" id="L300">			dailyHourBuckets.addToBucket(timeOffCalDayDate, (float) calendarDay.getAllocatedHours());</span>
-<span class="nc" id="L301">		}</span>
-
-	
-<span class="nc" id="L304">		logExit(methodName, dailyHourBuckets);</span>
-<span class="nc" id="L305">		return dailyHourBuckets;</span>
 	}
-
-	
-	
-	private void subtractScheduledHoursFromAllocatedHours(DailyHoursBuckets dailyAllocatedBuckets, TORequest tor, List&lt;ID&gt; activityList) throws Exception {
-		// the buckets end date expanded to org day start and end
-<span class="nc" id="L312">		TimeRange range = new TimeRange(dailyAllocatedBuckets.getDHBRangeStartAsOrgDayStart(), dailyAllocatedBuckets.getDHBRangeEndAsOrgDayEnd());</span>
-<span class="nc" id="L313">		DailyHoursBuckets orgScheduled = TOCalendarUtil.getTOScheduledData(tor.getCache().getTOPool().getID(),</span>
-<span class="nc" id="L314">		        tor.getCache().getOrg(), range, activityList);</span>
-		//Subtract the scheduled hours  from the allocated for the available hours range // NOSONAR
-<span class="nc" id="L316">		dailyAllocatedBuckets.subFromBucket(orgScheduled, range.getStartDate(), range.getEndDate());</span>
-<span class="nc" id="L317">	}</span>
-
-	// calculateProcessingRangesFromList
-	// Split up the choices' ranges into processing ranges 
-	
-	 ArrayList&lt;TimeRange&gt; calculateProcessingRanges(TORequest request, TOChoiceGroup choiceGroup ) {
-<span class="nc" id="L323">		String methodName = &quot;calculateProcessingRanges&quot;;</span>
-<span class="nc" id="L324">		logEnter(methodName, request);</span>
-		
-<span class="nc" id="L326">		ArrayList &lt;TimeRange&gt; processingRangeCollection = new ArrayList&lt;TimeRange&gt;();</span>
-		
-<span class="nc bnc" id="L328" title="All 2 branches missed.">		for(TOChoice choice : choiceGroup.getChoices()){</span>
-<span class="nc" id="L329">			Date startDate = choice.getStartDate();</span>
-<span class="nc" id="L330">			Date endDate = choice.getEndDate();</span>
-<span class="nc bnc" id="L331" title="All 2 branches missed.">			if (TORequestUtil.isTimeOffChoiceForPastDate(request, choice)) {</span>
-<span class="nc" id="L332">				continue;</span>
-			}
-			
-<span class="nc" id="L335">			TimeRange currentChoiceRange = new TimeRange(startDate, endDate);</span>
-<span class="nc" id="L336">			TimeRange newRange = null;</span>
-			//Every choice is compared with previous TimeRange and they are grouped
-			// if they are adjacent within CHOICE_DIFF_DURATION duration
-<span class="nc bnc" id="L339" title="All 2 branches missed.">			for( TimeRange processingRange : processingRangeCollection){</span>
-<span class="nc bnc" id="L340" title="All 2 branches missed.">				if (processingRange == null){</span>
-<span class="nc" id="L341">					continue;</span>
-				}
-<span class="nc" id="L343">				long lengthOfProcessingRange = processingRange.getEndDate().getTime()</span>
-<span class="nc" id="L344">				        - processingRange.getStartDate().getTime();</span>
-<span class="nc bnc" id="L345" title="All 4 branches missed.">				if (processingRange.isInside(currentChoiceRange)</span>
-				        || (lengthOfProcessingRange &lt;= TEN_DAYS_DURATION)) {
-<span class="nc" id="L347">					newRange = processingRange.joinWithOverlap(currentChoiceRange, TEN_DAYS_DURATION);</span>
-<span class="nc bnc" id="L348" title="All 2 branches missed.">					if (newRange != null) {</span>
-<span class="nc" id="L349">						processingRangeCollection.remove(processingRange);</span>
-<span class="nc" id="L350">						break;</span>
-					}
-				}
-<span class="nc" id="L353">			}</span>
-			//if no range is captured, then this choice is not close to
-			// previous ones. So creating new processing Range
-<span class="nc bnc" id="L356" title="All 2 branches missed.">			if (newRange == null) {</span>
-<span class="nc" id="L357">				newRange = currentChoiceRange;</span>
-			}
-<span class="nc" id="L359">			processingRangeCollection.add(newRange);</span>
-<span class="nc" id="L360">		}</span>
-		
-<span class="nc" id="L362">		logExit(methodName, processingRangeCollection);</span>
-		
-<span class="nc" id="L364">		return processingRangeCollection;</span>
-	}
-
 
 	private void logEnter(String methodName,Object obj){
-<span class="nc bnc" id="L369" title="All 2 branches missed.">		if (LOG.isDebugEnabled()) {</span>
-<span class="nc" id="L370">			LOG.debug(RmUtil.dumpEnterMethod(methodName, obj));</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">		if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L176">			LOG.debug(RmUtil.dumpEnterMethod(methodName, obj));</span>
 		}
-<span class="nc" id="L372">	}</span>
+<span class="nc" id="L178">	}</span>
 	
 	private void logExit(String methodName, Object obj){
-<span class="nc bnc" id="L375" title="All 2 branches missed.">		if (LOG.isDebugEnabled()){</span>
-<span class="nc" id="L376">			LOG.debug(RmUtil.dumpExitMethod(methodName, obj));</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">		if (LOG.isDebugEnabled()){</span>
+<span class="nc" id="L182">			LOG.debug(RmUtil.dumpExitMethod(methodName, obj));</span>
 		}
-<span class="nc" id="L378">	}	</span>
+<span class="nc" id="L184">	}</span>
+
+
+
+
+
 }
 
 	

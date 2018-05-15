@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ComplyMaxVTOHoursRule.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QA Code Coverage</a> &gt; <a href="index.source.html" class="el_package">com.bluepumpkin.ejb.rm.requests.timeoff.validation</a> &gt; <span class="el_source">ComplyMaxVTOHoursRule.java</span></div><h1>ComplyMaxVTOHoursRule.java</h1><pre class="source lang-java linenums">/*
- * AvaliableHoursValidationRule.java
+ * ComplyMaxVTOHoursRule.java
  * Copyright (c) 2002, Blue Pumpkin Software, Inc.
  * All rights reserved.
  */
@@ -39,7 +39,7 @@ import com.bluepumpkin.ejb.rm.util.RmUtil;
 import com.bluepumpkin.ejb.rm.util.TOCalendarUtil;
 
 /**
- * Rule in UI: Requested Time Off is for the past date
+ * Rule in UI: Request complies with employee's maximum VTO per day/week 
  * &lt;p/&gt;
  * Check if request is for the past date.
  * this rule will raise alert for only those requests that are created for start time
@@ -62,119 +62,126 @@ import com.bluepumpkin.ejb.rm.util.TOCalendarUtil;
 <span class="nc bnc" id="L62" title="All 2 branches missed.">		if (LOG.isDebugEnabled()) {</span>
 <span class="nc" id="L63">			LOG.debug(RmUtil.dumpEnterMethod(methodName, tor));</span>
 		}
-
+		//Not apply for Advanced VTO options request
+<span class="nc bnc" id="L66" title="All 2 branches missed.">		if (tor.isAdvancedVTORequest()) {</span>
+<span class="nc" id="L67">			return null;</span>
+		} 
+		
 		// If Validation By Type, then all activities may use for this validator
-<span class="nc bnc" id="L67" title="All 4 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense() &amp;&amp; !tor.getTimeOffType().equals(Activity.ACTIVITY_VOLUNTARY_TIMEOFF)) {</span>
-<span class="nc" id="L68">			return null;</span>
+<span class="nc bnc" id="L71" title="All 4 branches missed.">		if (!LicenseUtil.isAdvancedRMLicense() &amp;&amp; !tor.getTimeOffType().equals(Activity.ACTIVITY_VOLUNTARY_TIMEOFF)) {</span>
+<span class="nc" id="L72">			return null;</span>
 		}
 
-<span class="nc" id="L71">		ValidationResult result = null;</span>
-<span class="nc" id="L72">		Iterator&lt;TOChoice&gt; choiceListIter = tor.getRequestChoiceList().iterator();</span>
-<span class="nc" id="L73">		Employee emp = tor.getCache().getEmployee(Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY);</span>
-<span class="nc" id="L74">		ID empID = tor.getEmployeeID();</span>
-<span class="nc" id="L75">		Organization org = tor.getCache().getOrg();</span>
-
-<span class="nc bnc" id="L77" title="All 2 branches missed.">		while (choiceListIter.hasNext()) {</span>
-<span class="nc" id="L78">			List&lt;ShiftsConflict&gt; llNewConflicts = new LinkedList&lt;ShiftsConflict&gt;();</span>
-<span class="nc" id="L79">			TOChoice choice = choiceListIter.next();</span>
-<span class="nc" id="L80">			Date startDate = choice.getStartDate();</span>
-<span class="nc" id="L81">			Date endDate = choice.getEndDate();</span>
-<span class="nc" id="L82">			TimeRange weekRange = new TimeRange(TOCalcUtil.getDateForOrgWeekStart(org, startDate), TOCalcUtil.getDateForOrgWeekEnd(org, endDate));</span>
+<span class="nc" id="L75">		ValidationResult result = null;</span>
+<span class="nc" id="L76">		Employee emp = tor.getCache().getEmployee(Employee.DETAIL_LEVEL_EMPLOYEE_TIMEBASEDPROPERTY);</span>
+<span class="nc" id="L77">		ID empID = tor.getEmployeeID();</span>
+<span class="nc" id="L78">		Organization org = tor.getCache().getOrg();</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">		for (TOChoice choice : tor.getRequestChoiceList()) {</span>
+			//For TOB groupApproval,if the choice violates any validation rule ran before , do not run the rule and continue with next choice
+<span class="nc bnc" id="L81" title="All 4 branches missed.">			if(tor.isRunForGroupTOBApproval()&amp;&amp; !choice.getValidationResults(true).isEmpty()){</span>
+<span class="nc" id="L82">				continue;</span>
+			}
+<span class="nc" id="L84">			List&lt;ShiftsConflict&gt; llNewConflicts = new LinkedList&lt;ShiftsConflict&gt;();</span>
+<span class="nc" id="L85">			Date startDate = choice.getStartDate();</span>
+<span class="nc" id="L86">			Date endDate = choice.getEndDate();</span>
+<span class="nc" id="L87">			TimeRange weekRange = new TimeRange(TOCalcUtil.getDateForOrgWeekStart(org, startDate), TOCalcUtil.getDateForOrgWeekEnd(org, endDate));</span>
 
 			//Get the max VTO per day and week for the employee's orgweek that includes the start of the current choice.
-<span class="nc" id="L85">			WorkResourceMinMaxHour wrMinMax = tor.getCache().getMinMaxHourAssignment(empID, weekRange.getStartDate()); //this returns minutes. We should refactor method name to say minutes.</span>
-<span class="nc" id="L86">			int maxVTOPerDay = wrMinMax.getMaxVTOHoursPerDay();</span>
-<span class="nc" id="L87">			int maxVTOPerWeek = wrMinMax.getMaxVTOHoursPerWeek();</span>
+<span class="nc" id="L90">			WorkResourceMinMaxHour wrMinMax = tor.getCache().getMinMaxHourAssignment(empID, weekRange.getStartDate()); //this returns minutes. We should refactor method name to say minutes.</span>
+<span class="nc" id="L91">			int maxVTOPerDay = wrMinMax.getMaxVTOHoursPerDay();</span>
+<span class="nc" id="L92">			int maxVTOPerWeek = wrMinMax.getMaxVTOHoursPerWeek();</span>
 
 			//Accumulator for the scheduled+requested VTO minutes for the entire weekRange
-<span class="nc" id="L90">			float weeklyVTOMinutes = 0.0f;</span>
+<span class="nc" id="L95">			float weeklyVTOMinutes = 0.0f;</span>
 
 			//Accumulator for the scheduled+requested VTO minutes for each day in the weekRange
-<span class="nc" id="L93">			HashMap&lt;Date, Float&gt; dailyVTOMap = new HashMap&lt;Date, Float&gt;();</span>
+<span class="nc" id="L98">			HashMap&lt;Date, Float&gt; dailyVTOMap = new HashMap&lt;Date, Float&gt;();</span>
 
 			//Get the VTO hours per day which are already scheduled for the employee
-<span class="nc" id="L96">			Collection hrsPerDayCol = TOCalendarUtil.getHoursPerDayForRange(Collections.singletonList(empID),</span>
-<span class="nc" id="L97">			        weekRange, Collections.singletonList(Activity.ACTIVITY_VOLUNTARY_TIMEOFF), true);</span>
+<span class="nc" id="L101">			Collection hrsPerDayCol = TOCalendarUtil.getHoursPerDayForRange(Collections.singletonList(empID),</span>
+<span class="nc" id="L102">			        weekRange, Collections.singletonList(Activity.ACTIVITY_VOLUNTARY_TIMEOFF), true);</span>
 
 			//Iterate though the already-scheduled VTO per day and store it in the daily/weekly accumulators
-<span class="nc bnc" id="L100" title="All 2 branches missed.">			if (hrsPerDayCol != null) {</span>
-<span class="nc bnc" id="L101" title="All 2 branches missed.">				for (Iterator&lt;TOHoursPerDay&gt; hrsPerDayIter = hrsPerDayCol.iterator(); hrsPerDayIter.hasNext();) {</span>
-<span class="nc" id="L102">					TOHoursPerDay hoursPerDay = hrsPerDayIter.next();</span>
-<span class="nc" id="L103">					weeklyVTOMinutes += getAccountedMinutes(hoursPerDay, weekRange); //GQ: Isn't this just accumulating all weeks if the choice spans more than one week?</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">			if (hrsPerDayCol != null) {</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">				for (Iterator&lt;TOHoursPerDay&gt; hrsPerDayIter = hrsPerDayCol.iterator(); hrsPerDayIter.hasNext();) {</span>
+<span class="nc" id="L107">					TOHoursPerDay hoursPerDay = hrsPerDayIter.next();</span>
+<span class="nc" id="L108">					weeklyVTOMinutes += getAccountedMinutes(hoursPerDay, weekRange); //GQ: Isn't this just accumulating all weeks if the choice spans more than one week?</span>
 
-<span class="nc" id="L105">					TimeRange dayRangeStart = new TimeRange(TOCalcUtil.getDateForOrgDayStart(org, hoursPerDay.getStartTime()), TOCalcUtil.getDateForOrgDayEnd(org, hoursPerDay.getStartTime()));</span>
-<span class="nc" id="L106">					float durationForDayStart = getAccountedMinutes(hoursPerDay, dayRangeStart);</span>
-<span class="nc" id="L107">					dailyVTOMap.put(dayRangeStart.getStartDate(), durationForDayStart);</span>
-<span class="nc" id="L108">				}</span>
+<span class="nc" id="L110">					TimeRange dayRangeStart = new TimeRange(TOCalcUtil.getDateForOrgDayStart(org, hoursPerDay.getStartTime()), TOCalcUtil.getDateForOrgDayEnd(org, hoursPerDay.getStartTime()));</span>
+<span class="nc" id="L111">					float durationForDayStart = getAccountedMinutes(hoursPerDay, dayRangeStart);</span>
+<span class="nc" id="L112">					dailyVTOMap.put(dayRangeStart.getStartDate(), durationForDayStart);</span>
+<span class="nc" id="L113">				}</span>
 			}
 
 			//Get the VTO hours per day for the request
-<span class="nc" id="L112">			TOHoursPerDay reqHrsPerDay = choice.getHoursPerDay();</span>
+<span class="nc" id="L117">			TOHoursPerDay reqHrsPerDay = choice.getHoursPerDay();</span>
 
 			//Iterate though the requested VTO per day and add it to the daily/weekly accumulators, and validate against the max
-<span class="nc bnc" id="L115" title="All 2 branches missed.">			if (reqHrsPerDay != null) {</span>
-<span class="nc" id="L116">				Calendar weekIterator = Calendar.getInstance(org.getTimeZone());</span>
-<span class="nc" id="L117">				weekIterator.setTime(weekRange.getStartDate());</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">			if (reqHrsPerDay != null) {</span>
+<span class="nc" id="L121">				Calendar weekIterator = Calendar.getInstance(org.getTimeZone());</span>
+<span class="nc" id="L122">				weekIterator.setTime(weekRange.getStartDate());</span>
 
-<span class="nc bnc" id="L119" title="All 2 branches missed.">				while (weekIterator.getTime().before(weekRange.getEndDate())) {</span>
-<span class="nc" id="L120">					Date curOrgDayStart = weekIterator.getTime();</span>
-<span class="nc" id="L121">					weekIterator.add(Calendar.DATE, 1);</span>
-<span class="nc" id="L122">					weekIterator.getTime();</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">				while (weekIterator.getTime().before(weekRange.getEndDate())) {</span>
+<span class="nc" id="L125">					Date curOrgDayStart = weekIterator.getTime();</span>
+<span class="nc" id="L126">					weekIterator.add(Calendar.DATE, 1);</span>
+<span class="nc" id="L127">					weekIterator.getTime();</span>
 
-<span class="nc" id="L124">					TimeRange dayRangeStart = new TimeRange(TOCalcUtil.getDateForOrgDayStart(org, curOrgDayStart), TOCalcUtil.getDateForOrgDayEnd(org, curOrgDayStart));</span>
-<span class="nc bnc" id="L125" title="All 2 branches missed.">					float scheduledDurationForDayStart = dailyVTOMap.get(dayRangeStart.getStartDate())==null?0.0f : dailyVTOMap.get(dayRangeStart.getStartDate());</span>
-<span class="nc" id="L126">					float totalDurationForDayStart = getAccountedMinutes(reqHrsPerDay, dayRangeStart) + scheduledDurationForDayStart;</span>
+<span class="nc" id="L129">					TimeRange dayRangeStart = new TimeRange(TOCalcUtil.getDateForOrgDayStart(org, curOrgDayStart), TOCalcUtil.getDateForOrgDayEnd(org, curOrgDayStart));</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">					float scheduledDurationForDayStart = dailyVTOMap.get(dayRangeStart.getStartDate())==null?0.0f : dailyVTOMap.get(dayRangeStart.getStartDate());</span>
+<span class="nc" id="L131">					float totalDurationForDayStart = getAccountedMinutes(reqHrsPerDay, dayRangeStart) + scheduledDurationForDayStart;</span>
 
 					//check daily vto
-<span class="nc bnc" id="L129" title="All 2 branches missed.">					if (maxVTOPerDay &lt; totalDurationForDayStart)</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">					if (maxVTOPerDay &lt; totalDurationForDayStart)</span>
 					{
-<span class="nc" id="L131">						ShiftsConflict cConflict = new ShiftsConflict(ShiftsConflict.SHIFT_VTO_DAILY, maxVTOPerDay, dayRangeStart.getStartDate());</span>
-<span class="nc" id="L132">						llNewConflicts.add(cConflict);</span>
+<span class="nc" id="L136">						ShiftsConflict cConflict = new ShiftsConflict(ShiftsConflict.SHIFT_VTO_DAILY, maxVTOPerDay, dayRangeStart.getStartDate());</span>
+<span class="nc" id="L137">						llNewConflicts.add(cConflict);</span>
 					}
-<span class="nc" id="L134">				}</span>
+<span class="nc" id="L139">				}</span>
 			}
 
-<span class="nc" id="L137">			weeklyVTOMinutes += getAccountedMinutes(reqHrsPerDay, weekRange);</span>
+<span class="nc" id="L142">			weeklyVTOMinutes += getAccountedMinutes(reqHrsPerDay, weekRange);</span>
 
 			//check weekly VTO
-<span class="nc bnc" id="L140" title="All 2 branches missed.">			if (weeklyVTOMinutes &gt; maxVTOPerWeek) {</span>
-<span class="nc" id="L141">				ShiftsConflict cConflict = new ShiftsConflict(ShiftsConflict.SHIFT_VTO_WEEKLY, maxVTOPerWeek, weekRange.getStartDate());</span>
-<span class="nc" id="L142">				llNewConflicts.add(cConflict);</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">			if (weeklyVTOMinutes &gt; maxVTOPerWeek) {</span>
+<span class="nc" id="L146">				ShiftsConflict cConflict = new ShiftsConflict(ShiftsConflict.SHIFT_VTO_WEEKLY, maxVTOPerWeek, weekRange.getStartDate());</span>
+<span class="nc" id="L147">				llNewConflicts.add(cConflict);</span>
 			}
 
-<span class="nc bnc" id="L145" title="All 4 branches missed.">			if (llNewConflicts != null &amp;&amp; !llNewConflicts.isEmpty()) {</span>
-<span class="nc" id="L146">				result= RequestUtil.setValidationResult(empID, tor.getCache().getEmployeeNameByID(empID),choice , llNewConflicts, CLASSNAME);</span>
+<span class="nc bnc" id="L150" title="All 4 branches missed.">			if (llNewConflicts != null &amp;&amp; !llNewConflicts.isEmpty()) {</span>
+<span class="nc" id="L151">				result= RequestUtil.setValidationResult(empID, tor.getCache().getEmployeeNameByID(empID),choice , llNewConflicts, CLASSNAME);</span>
 			}
-<span class="nc" id="L148">		}</span>
+<span class="nc" id="L153">		}</span>
 
-<span class="nc" id="L150">		return result;</span>
+<span class="nc" id="L155">		return result;</span>
 	}
 
 	public float getAccountedMinutes(TOHoursPerDay hoursPerDay, TimeRange range) {
-<span class="nc" id="L154">		float duration = 0.0f;</span>
-<span class="nc" id="L155">		Date hoursPerDayStart = hoursPerDay.getStartTime();</span>
-<span class="nc" id="L156">		Date hoursPerDayEnd = hoursPerDay.getEndTime();</span>
-<span class="nc" id="L157">		Date hoursPerDayEndNonInc = new Date(hoursPerDayEnd.getTime()-1); //subtract 1 millisecond since the end time may include the next instant.</span>
+<span class="nc" id="L159">		float duration = 0.0f;</span>
+<span class="nc" id="L160">		Date hoursPerDayStart = hoursPerDay.getStartTime();</span>
+<span class="nc" id="L161">		Date hoursPerDayEnd = hoursPerDay.getEndTime();</span>
+<span class="nc" id="L162">		Date hoursPerDayEndNonInc = new Date(hoursPerDayEnd.getTime()-1); //subtract 1 millisecond since the end time may include the next instant.</span>
 
-<span class="nc bnc" id="L159" title="All 4 branches missed.">		if (hoursPerDayStart.after(range.getEndDate()) || hoursPerDayEndNonInc.before(range.getStartDate())) {</span>
-<span class="nc" id="L160">			return duration; // this event is not relevant</span>
+<span class="nc bnc" id="L164" title="All 4 branches missed.">		if (hoursPerDayStart.after(range.getEndDate()) || hoursPerDayEndNonInc.before(range.getStartDate())) {</span>
+<span class="nc" id="L165">			return duration; // this event is not relevant</span>
 		}
-<span class="nc" id="L162">		boolean isToEvtStartBeforeStart = hoursPerDayStart.before(range.getStartDate());</span>
-<span class="nc" id="L163">		boolean isToEvtEndAfterEnd = hoursPerDayEndNonInc.after(range.getEndDate());</span>
-<span class="nc bnc" id="L164" title="All 4 branches missed.">		if (isToEvtStartBeforeStart || isToEvtEndAfterEnd) {</span>
-<span class="nc" id="L165">			DailyHoursBuckets dailyBuckets = null;</span>
+<span class="nc" id="L167">		boolean isToEvtStartBeforeStart = hoursPerDayStart.before(range.getStartDate());</span>
+<span class="nc" id="L168">		boolean isToEvtEndAfterEnd = hoursPerDayEndNonInc.after(range.getEndDate());</span>
+<span class="nc bnc" id="L169" title="All 4 branches missed.">		if (isToEvtStartBeforeStart || isToEvtEndAfterEnd) {</span>
+<span class="nc" id="L170">			DailyHoursBuckets dailyBuckets = null;</span>
 			try {
-<span class="nc bnc" id="L167" title="All 2 branches missed.">				dailyBuckets = TOHoursPerDayUtil.getDailyHoursBucketsForDateRange(null, hoursPerDay,</span>
-<span class="nc bnc" id="L168" title="All 2 branches missed.">				        isToEvtStartBeforeStart ? range.getStartDate() : hoursPerDayStart,</span>
-<span class="nc" id="L169">				        isToEvtEndAfterEnd ? range.getEndDate() : hoursPerDayEnd);</span>
-<span class="nc" id="L170">			} catch (Exception e) {</span>
-<span class="nc" id="L171">				LOG.error(e);</span>
-<span class="nc" id="L172">			}</span>
-<span class="nc" id="L173">			duration = dailyBuckets.getTotalHours() * 60;</span>
-<span class="nc" id="L174">		} else {</span>
-<span class="nc" id="L175">			duration = hoursPerDay.getTotalMinutes();</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">				dailyBuckets = TOHoursPerDayUtil.getDailyHoursBucketsForDateRange(null, hoursPerDay,</span>
+<span class="nc bnc" id="L173" title="All 2 branches missed.">				        isToEvtStartBeforeStart ? range.getStartDate() : hoursPerDayStart,</span>
+<span class="nc" id="L174">				        isToEvtEndAfterEnd ? range.getEndDate() : hoursPerDayEnd);</span>
+<span class="nc" id="L175">			} catch (Exception e) {</span>
+<span class="nc" id="L176">				LOG.error(e);</span>
+<span class="nc" id="L177">			}</span>
+<span class="nc" id="L178">			duration = dailyBuckets.getTotalHours() * 60;</span>
+<span class="nc" id="L179">		} else {</span>
+<span class="nc" id="L180">			duration = hoursPerDay.getTotalMinutes();</span>
 		}
-<span class="nc" id="L177">		return duration;</span>
+<span class="nc" id="L182">		return duration;</span>
 	}
+
+
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

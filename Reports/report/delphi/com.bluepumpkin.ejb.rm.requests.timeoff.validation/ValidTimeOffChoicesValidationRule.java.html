@@ -8,8 +8,10 @@ package com.bluepumpkin.ejb.rm.requests.timeoff.validation;
 
 import java.util.Collection;
 import java.util.Date;
-import java.util.Iterator;
 
+import com.bluepumpkin.ejb.bbm.activity.model.Event;
+import com.bluepumpkin.ejb.bbm.schedule.model.PublishingPeriod;
+import com.bluepumpkin.ejb.bbm.schedule.model.ShiftAssignment;
 import com.bluepumpkin.common.logging.Category;
 import com.bluepumpkin.ejb.rm.Log;
 import com.bluepumpkin.ejb.rm.l10n.RmEjbBundleKey;
@@ -19,6 +21,7 @@ import com.bluepumpkin.ejb.rm.requests.common.validation.ValidationUtil;
 import com.bluepumpkin.ejb.rm.requests.common.validation.Validator;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TOChoice;
 import com.bluepumpkin.ejb.rm.requests.timeoff.model.TORequest;
+import com.bluepumpkin.ejb.rm.requests.timeoff.validation.TOValidationCache;
 import com.bluepumpkin.ejb.rm.util.RmUtil;
 
 /**
@@ -36,11 +39,11 @@ import com.bluepumpkin.ejb.rm.util.RmUtil;
  * validation results are associated with the choices and/or reqeust.
  * 
  */
-<span class="nc" id="L39">public class ValidTimeOffChoicesValidationRule implements Validator {</span>
+<span class="nc" id="L42">public class ValidTimeOffChoicesValidationRule implements Validator {</span>
 
-<span class="nc" id="L41">	private static final String m_className = ValidTimeOffChoicesValidationRule.class.getName();</span>
+<span class="nc" id="L44">	private static final String m_className = ValidTimeOffChoicesValidationRule.class.getName();</span>
 	
-<span class="nc" id="L43">    private static final Category m_cat = Log.initCategory( m_className );</span>
+<span class="nc" id="L46">    private static final Category m_cat = Log.initCategory( m_className );</span>
     
    /**
     * Validate a time off request.  Ensure that the time off choices in
@@ -49,48 +52,80 @@ import com.bluepumpkin.ejb.rm.util.RmUtil;
     * - all in the future
     * - have start dates that are not after the end date
     */
-   public ValidationResult validate(Validatable validatable) throws Exception {
-<span class="nc" id="L53">        ValidationResult result = null;</span>
-<span class="nc" id="L54">        TORequest tor = (TORequest)validatable;</span>
-        
-<span class="nc" id="L56">		String methodName = &quot;validate&quot;;</span>
-<span class="nc bnc" id="L57" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
-        
-<span class="nc" id="L59">        Date dtNow = new Date();</span>
-        
-<span class="nc" id="L61">        Collection choices = tor.getRequestChoiceList();</span>
-        // if no choices.
-<span class="nc bnc" id="L63" title="All 2 branches missed.">        if (choices == null) {</span>
-<span class="nc" id="L64">			result = ValidationUtil.setHardValidationResult(validatable, RmEjbBundleKey.TO_REQUEST_MUST_HAVE_CHOICE,</span>
-<span class="nc" id="L65">					getEmployeeNameByID(tor), m_className);</span>
-        } else {        
-            // Verify dates on the choices are valid
-<span class="nc bnc" id="L68" title="All 2 branches missed.">            for (Iterator it=choices.iterator(); it.hasNext();) {</span>
-<span class="nc" id="L69">                TOChoice c = (TOChoice)it.next();</span>
-<span class="nc" id="L70">                Date start = c.getStartDate();</span>
-<span class="nc" id="L71">                Date end   = c.getEndDate();</span>
-<span class="nc bnc" id="L72" title="All 4 branches missed.">                if(tor.getTOChoiceForValidation()!=null &amp;&amp; !tor.getTOChoiceForValidation().equals(c)){</span>
-<span class="nc" id="L73">                    continue;</span>
-                    // if Validation Choice exists then Validator should validate that choice only and skip all other choices.
-                    //Done for 2nd or 3rd Waitlisted TOchoice
-                }
-<span class="nc bnc" id="L77" title="All 6 branches missed.">                if ( (start==null) || (end==null) || (end.before(start))/*||(dtNow.after(start)) Commented by Sameet Feb 2009*/ ) {</span>
-<span class="nc" id="L78">					result = ValidationUtil.setHardValidationResult(c, RmEjbBundleKey.TO_INVALID_TO_CHOICE_START_END,</span>
-<span class="nc" id="L79">							getEmployeeNameByID(tor), start, end, m_className);</span>
-<span class="nc" id="L80">					break;</span>
-                }
-<span class="nc" id="L82">            } // for(...)</span>
-            
-            // if code inserted here, use if (result == null).
-        }
-        
-<span class="nc bnc" id="L87" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) m_cat.debug(RmUtil.dumpExitMethod(methodName, result));</span>
-		        
-<span class="nc" id="L89">        return result;</span>
-   }
+   @Override
+	public ValidationResult validate(Validatable validatable) throws Exception {
+<span class="nc" id="L57">		ValidationResult result = null;</span>
+<span class="nc" id="L58">	    ValidationResult choiceResult = null;		</span>
+<span class="nc" id="L59">		TORequest toRequest = (TORequest) validatable;</span>
+
+<span class="nc" id="L61">		String methodName = &quot;validate&quot;;</span>
+
+<span class="nc" id="L63">		Collection&lt;TOChoice&gt; choices = toRequest.getTOChoicesAdjustedForValidation();</span>
+		// if no choices.
+<span class="nc bnc" id="L65" title="All 4 branches missed.">		if (choices == null || choices.isEmpty()) {</span>
+<span class="nc" id="L66">			return ValidationUtil.setHardValidationResult(validatable, RmEjbBundleKey.TO_REQUEST_MUST_HAVE_CHOICE,</span>
+<span class="nc" id="L67">					getEmployeeNameByID(toRequest), m_className);</span>
+		}
+
+<span class="nc bnc" id="L70" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L71">			m_cat.debug(RmUtil.dumpEnterMethod(methodName, validatable));</span>
+		}
+
+		// Verify dates on the choices are valid
+<span class="nc bnc" id="L75" title="All 2 branches missed.">		for (TOChoice choice : choices) {</span>
+<span class="nc" id="L76">			Date start = choice.getStartDate();</span>
+<span class="nc" id="L77">			Date end = choice.getEndDate();</span>
+
+<span class="nc bnc" id="L79" title="All 6 branches missed.">			if ((start == null) || (end == null) || (end.before(start))) {</span>
+<span class="nc" id="L80">				result = ValidationUtil.setHardValidationResult(choice, RmEjbBundleKey.TO_INVALID_TO_CHOICE_START_END,</span>
+<span class="nc" id="L81">						getEmployeeNameByID(toRequest), start, end, m_className);</span>
+<span class="nc" id="L82">				break;</span>
+			}
+
+<span class="nc" id="L85">			choiceResult = checkPublishedSchedule(toRequest, choice);</span>
+<span class="nc bnc" id="L86" title="All 4 branches missed.">			if (result == null &amp;&amp; choiceResult != null) {</span>
+<span class="nc" id="L87">				result = choiceResult;</span>
+			}
+<span class="nc" id="L89">		}</span>
+
+<span class="nc bnc" id="L91" title="All 2 branches missed.">		if (m_cat.isDebugEnabled()) {</span>
+<span class="nc" id="L92">			m_cat.debug(RmUtil.dumpExitMethod(methodName, result));</span>
+		}
+
+<span class="nc" id="L95">		return result;</span>
+	}
+
+	/**
+	 * Check the published schedule to ensure the choice does not occur when the employees is not scheduled (Published 'off').
+	 *
+	 * @param toRequest Request created by the employee
+	 * @param toChoice time off choice of the request
+	 * @return Validation result if the user is request time off when they are scheduled off.
+	 * @throws Exception Any exception generated during the method call.
+	 */
+	protected ValidationResult checkPublishedSchedule(TORequest toRequest, TOChoice toChoice) throws Exception {
+<span class="nc" id="L107">		ValidationResult result = null;</span>
+
+<span class="nc" id="L109">		TOValidationCache cache = getTOValidationCache(toRequest);</span>
+<span class="nc" id="L110">		Collection&lt;PublishingPeriod&gt; periods = cache.getPublishedPeriods();</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">		for (PublishingPeriod period : periods) {</span>
+<span class="nc bnc" id="L112" title="All 4 branches missed.">			if (toChoice.getStartDate().before(period.getEndTime()) &amp;&amp; toChoice.getEndDate().after(period.getStartTime())) {</span>
+<span class="nc" id="L113">				Collection&lt;ShiftAssignment&gt; assignments = cache.getPublishedShiftAssignments(toRequest, toChoice);</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">				if (assignments.isEmpty()) {</span>
+<span class="nc" id="L115">					result =  ValidationUtil.setHardValidationResult(toChoice, RmEjbBundleKey.TO_CHOICE_HAS_ZERO_LENGTH_SCHED,</span>
+<span class="nc" id="L116">						toChoice.getStartDate(), toChoice.getEndDate(), m_className);</span>
+				}
+			}
+<span class="nc" id="L119">		}</span>
+<span class="nc" id="L120">		return result;</span>
+	}
+
+	protected TOValidationCache getTOValidationCache(TORequest toRequest) {
+<span class="nc" id="L124">		return toRequest.getCache();</span>
+	}
 
 	protected String getEmployeeNameByID(TORequest tor) throws Exception {
-<span class="nc" id="L93">		return tor.getCache().getEmployeeNameByID();</span>
+<span class="nc" id="L128">		return tor.getCache().getEmployeeNameByID();</span>
 	}
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>
