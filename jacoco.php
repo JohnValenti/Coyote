@@ -62,6 +62,7 @@
          $x= new DOMXpath($alldoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          $allProgress = $node->textContent;
+         echo' <h5 class="text-left"><b>All Teams Combined</b></h5>';
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $allProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $allProgress .'">';
@@ -77,6 +78,7 @@
          $x= new DOMXpath($delphidoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          $delphiProgress = $node->textContent;
+         echo' <h5 class="text-left"><b>Delphi</b></h5>';
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $delphiProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $delphiProgress .'">';
@@ -106,8 +108,8 @@
          $mixtapedoc->loadHTMLFile('C:\Coyote\Reports\report\mixtape\index.html');
          $x= new DOMXpath($mixtapedoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
-         
          $mixtapeProgress = $node->textContent;
+         echo' <h5 class="text-left"><b>MixTape</b></h5>';
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $mixtapeProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $mixtapeProgress .'">';
@@ -123,6 +125,7 @@
          $x= new DOMXpath($fisdoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node) //echo $node->textContent;
          $fisProgress = $node->textContent;
+         echo' <h5 class="text-left"><b>FIS</b></h5>';
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $fisProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $fisProgress .'">';
@@ -138,6 +141,7 @@
          $x= new DOMXpath($susdoc);
          foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
          $susProgress = $node->textContent;
+         echo' <h5 class="text-left"><b>Sustaining</b></h5>';
          echo'<div class="progress">';
          echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $susProgress .'"
          aria-valuemin="0" aria-valuemax="100" style="width:'. $susProgress .'">';
