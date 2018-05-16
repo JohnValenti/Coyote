@@ -9,9 +9,11 @@
       <link rel="favicon" href="assets/images/favicon.png">
       <link rel="shortcut icon" href="assets/images/favicon.png">
       <link rel="stylesheet" media="screen" href="http://fonts.googleapis.com/css?family=Open+Sans:300,400,700">
-      <link rel="stylesheet" href="assets/css/bootstrap.min.css">
-      <link rel="stylesheet" href="assets/css/font-awesome.min.css">
-      <link rel="stylesheet" href="assets/css/bootstrap-theme.css" media="screen">
+      <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+      <link href="https://maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cerulean/bootstrap.min.css" rel="stylesheet" integrity="sha384-zF4BRsG/fLiTGfR9QL82DrilZxrwgY/+du4p/c7J72zZj+FLYq4zY00RylP9ZjiT" crossorigin="anonymous">
+      <!-- link rel="stylesheet" href="assets/css/bootstrap.min.css" -->
+      <!--link rel="stylesheet" href="assets/css/font-awesome.min.css"-->
+      <!--link rel="stylesheet" href="assets/css/bootstrap-theme.css" media="screen"-->
       <link rel="stylesheet" href="assets/css/style.css">
       <link rel='stylesheet' id='camera-css'  href='assets/css/camera.css' type='text/css' media='all'>
       <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
@@ -24,6 +26,10 @@
       <section class="main-contents">
          <h1 class="text-center page-title"><b>JaCoCo Coverage Reporting</b></h1>
       </section>
+      <div class="logo">
+         <a href="jacoco.php"><img src="assets/images/ProjectCoyoteLogo.png" width="150" align="center"></a>
+          <br><br> 
+      </div>
        <!-- Removed nav bar as now only one page, may add more later-->
       <!-- <div class="navbar navbar-inverse">
          <div class="container">
@@ -41,6 +47,8 @@
       <!--</div> 
       <!-- Progress bars-->
       <?php
+        include 'config.php';
+
          echo'<section class="main-contents">';
           echo'<h3 class="text-center sub-texts">Team Progress Overview</h3>';
           echo'<div class="container">';
@@ -49,100 +57,24 @@
                  echo'<p class="text-center"> <b>Teams Current Progress</b></p>';
                  echo'<br>';
          
-         //Combined progress bar
-         //Extract the most recent jacoco coverage value from the html report for All of the core teams
-         
-         $alldoc = new DOMDocument();
-         $alldoc->loadHTMLFile('C:\Coyote\Reports\report\coreteams\index.html');
-         $x= new DOMXpath($alldoc);
-         foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
-         $allProgress = $node->textContent;
-         echo' <h5 class="text-left"><b>All Teams Combined</b></h5>';
-         echo'<div class="progress">';
-         echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $allProgress .'"
-         aria-valuemin="0" aria-valuemax="100" style="width:'. $allProgress .'">';
-         echo' '. $allProgress .'   ALL TEAMS COMBINED';
-         echo'</div>';
-         echo'</div>';
-         
-         // Delphi progress
-         //Extract the most recent jacoco coverage value from the html report for Delphi
-         
-         $delphidoc = new DOMDocument();
-         $delphidoc->loadHTMLFile('C:\Coyote\Reports\report\delphi\index.html');
-         $x= new DOMXpath($delphidoc);
-         foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
-         $delphiProgress = $node->textContent;
-         echo' <h5 class="text-left"><b>Delphi</b></h5>';
-         echo'<div class="progress">';
-         echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $delphiProgress .'"
-         aria-valuemin="0" aria-valuemax="100" style="width:'. $delphiProgress .'">';
-         echo' '. $delphiProgress .'   DELPHI';
-         echo'</div>';
-         echo'</div>';
-         
-         // QueueX progress 
-         //Extract the most recent jacoco coverage value from the html report for QX
-         
-        // $qxdoc = new DOMDocument();
-       //  $qxdoc->loadHTMLFile('C:\Coyote\Reports\report\queuex\index.html');
-       //  $x= new DOMXpath($qxdoc);
-      //   foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
-      //   $qxProgress = $node->textContent;
-      //   echo'<div class="progress">';
-     //    echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $qxProgress .'"
-//aria-valuemin="0" aria-valuemax="100" style="width:'. $qxProgress .'">';
-    ///     echo' '. $qxProgress .'   QUEUEX';
-     //    echo'</div>';
-     //    echo'</div>';
-         
-         // Mixtape progress mixtape is now firebirds and queuex
-         //Extract the most recent jacoco coverage value from the html report for Mixtape
-         
-         $mixtapedoc = new DOMDocument();
-         $mixtapedoc->loadHTMLFile('C:\Coyote\Reports\report\mixtape\index.html');
-         $x= new DOMXpath($mixtapedoc);
-         foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
-         $mixtapeProgress = $node->textContent;
-         echo' <h5 class="text-left"><b>MixTape</b></h5>';
-         echo'<div class="progress">';
-         echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $mixtapeProgress .'"
-         aria-valuemin="0" aria-valuemax="100" style="width:'. $mixtapeProgress .'">';
-         echo' '. $mixtapeProgress .'   MIXTAPE';
-         echo'</div>';
-         echo'</div>';
-         
-          // FIS progress
-         //Extract the most recent jacoco coverage value from the html report for FIS
-         
-         $fisdoc = new DOMDocument();
-         $fisdoc->loadHTMLFile('C:\Coyote\Reports\report\fis\index.html');
-         $x= new DOMXpath($fisdoc);
-         foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node) //echo $node->textContent;
-         $fisProgress = $node->textContent;
-         echo' <h5 class="text-left"><b>FIS</b></h5>';
-         echo'<div class="progress">';
-         echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $fisProgress .'"
-         aria-valuemin="0" aria-valuemax="100" style="width:'. $fisProgress .'">';
-         echo' '. $fisProgress .'   FIS';
-         echo'</div>';
-         echo'</div>';
-         
-          // Sustaining progress
-         //Extract the most recent jacoco coverage value from the html report for sustaining
-         
-         $susdoc = new DOMDocument();
-         $susdoc->loadHTMLFile('C:\Coyote\Reports\report\sustaining\index.html');
-         $x= new DOMXpath($susdoc);
-         foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node)
-         $susProgress = $node->textContent;
-         echo' <h5 class="text-left"><b>Sustaining</b></h5>';
-         echo'<div class="progress">';
-         echo'<div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="'. $susProgress .'"
-         aria-valuemin="0" aria-valuemax="100" style="width:'. $susProgress .'">';
-         echo' '. $susProgress .'   SUSTAINING';
-         echo'</div>';
-         echo'</div>';
+        // Output the progress bars
+        foreach (TEAMS as $directory => $title){
+            $progress='0%';
+            $thedoc = new DOMDocument();
+            $thedoc->loadHTMLFile("C:/Coyote/Reports/report/{$directory}/index.html");
+            $x= new DOMXpath($thedoc);
+            foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node){
+                $progress = $node->textContent;
+            }
+            echo "<h5 class='text-left'><b>{$title}</b></h5>";
+            echo '<div class="progress">';
+            echo "<div class='progress-bar progress-bar-success' role='progressbar' aria-valuenow='{$progress}'
+            aria-valuemin='0' aria-valuemax='100' style='width:{$progress}'>";
+            echo "{$progress} {$title}";
+            echo '</div>';
+            echo '</div>';
+        }
+        
          echo'</section>';
              ?>
       <section class="main-contents">
@@ -158,11 +90,11 @@
             <form method="post" id =selectForm action="getJacoco.php">
                <fieldset>
                   <select name="teamName">
-                     <option value="AllTeams">ALL TEAMS</option>
-                     <option value="Delphi">DELPHI</option>
-                     <option value="Mixtape">MIXTAPE</option>
-                     <option value="Fis">FIS</option>
-                     <option value="Sustaining">SUSTAINING</option>
+                  <?php
+                      foreach (TEAMS as $directory => $title){
+                          echo "<option value='{$directory}'>{$title}</option>";
+                      }
+                  ?>
                   </select>
                   <br>
                   <button type="submit">Display Report</button>
@@ -174,8 +106,17 @@
          <div class="footer-bottom">
             <div class="container">
                <div class="item-section col-md-4 col-sm-4 col-xs-12">
-                  <p><i class="fa fa-envelope-o pull-left"> Contact Us</i><br></p>
-                  <a class="text-left" href='mailto:auton@verint.com'>Email</a>
+                  <p><i class="fa fa-envelope-o pull-left"> Contact</i><br></p>
+                  <p class="text-left">seamus.mackie@verint.com</p>
+                  <p class="text-left">john.valenti@verint.com</p>
+               </div>
+               <div class="item-section col-md-4 col-sm-4 col-xs-12">
+                  <p class="text-center"><br><br><br><br>Copyright © 2018 - Verint Inc. </p>
+               </div>
+               <div class="item-section col-md-4 col-sm-4 col-xs-12">
+                  <p class="text-right">A Team Auton Production by<br></p>
+                  <p class="text-right">Seamus Mackie</p>
+                  <p class="text-right">John Valenti</p>
                </div>
             </div>
          </div>
