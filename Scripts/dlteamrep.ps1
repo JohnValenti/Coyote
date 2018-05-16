@@ -11,7 +11,7 @@
 	)
 
 	$basepath = "C:\Coyote\TeamResources\"+$teamname
-	$teamurl = "http://atlartifactory:8081/artifactory/test-repo/jacocoReporting/"+$version+"/"+$teamname+"/"+$pipeline+".zip"
+	$teamurl = "http://atlartifactory:8081/artifactory/test-repo/jacocoReporting/WFMCommon/"+$buildno+"/"+$teamname+"/"+$pipeline+".zip"
 	$teamzip = $basepath+"\zipholder"
 	$zipfile = $teamzip+"\zipfile.zip"
 	$holderfolder = $basepath +"\holderfolder\"
