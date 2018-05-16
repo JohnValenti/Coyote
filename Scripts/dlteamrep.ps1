@@ -16,7 +16,7 @@
 	$zipfile = $teamzip+"\zipfile.zip"
 	$holderfolder = $basepath +"\holderfolder\"
 	
-	$filedest = $basepath+"\"+$buildno
+	$filedest = $basepath+"\"
 	
 	
 	$filename = $pipeline +".exec"
