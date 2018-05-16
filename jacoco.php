@@ -47,7 +47,11 @@
       <!--</div> 
       <!-- Progress bars-->
       <?php
-        include 'config.php';
+        $reportDirectories = glob('Reports/report' . '/*' , GLOB_ONLYDIR);
+        $dirNames = array();
+        foreach($reportDirectories as $dir){
+            $dirNames[] = basename($dir);
+        }
 
          echo'<section class="main-contents">';
           echo'<h3 class="text-center sub-texts">Team Progress Overview</h3>';
@@ -58,7 +62,7 @@
                  echo'<br>';
          
         // Output the progress bars
-        foreach (TEAMS as $directory => $title){
+        foreach ($dirNames as $directory){
             $progress='0%';
             $thedoc = new DOMDocument();
             $thedoc->loadHTMLFile("C:/Coyote/Reports/report/{$directory}/index.html");
@@ -66,11 +70,11 @@
             foreach($x->query("//table[@class='coverage']//tfoot/tr/td[3]/text()") as $node){
                 $progress = $node->textContent;
             }
-            echo "<h5 class='text-left'><b>{$title}</b></h5>";
+            echo "<h5 class='text-left'><b>{$directory}</b></h5>";
             echo '<div class="progress">';
             echo "<div class='progress-bar progress-bar-success' role='progressbar' aria-valuenow='{$progress}'
             aria-valuemin='0' aria-valuemax='100' style='width:{$progress}'>";
-            echo "{$progress} {$title}";
+            echo "{$progress} {$directory}";
             echo '</div>';
             echo '</div>';
         }
@@ -91,8 +95,8 @@
                <fieldset>
                   <select name="teamName">
                   <?php
-                      foreach (TEAMS as $directory => $title){
-                          echo "<option value='{$directory}'>{$title}</option>";
+                      foreach ($dirNames as $directory){
+                          echo "<option value='{$directory}'>{$directory}</option>";
                       }
                   ?>
                   </select>
