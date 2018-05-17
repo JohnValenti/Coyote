@@ -58,7 +58,7 @@
           echo'<div class="container">';
           echo'<hr>';
              echo'<div class="item-section col-md-12 col-sm-4 col-xs-12">';
-                 echo'<p class="text-center"> <b>Teams Current Progress</b></p>';
+                 echo "<p class='text-center'> <b>Teams' Current Progress</b></p>";
                  echo'<br>';
          
         // Output the progress bars
@@ -74,7 +74,7 @@
             echo '<div class="progress">';
             echo "<div class='progress-bar progress-bar-success' role='progressbar' aria-valuenow='{$progress}'
             aria-valuemin='0' aria-valuemax='100' style='width:{$progress}'>";
-            echo "{$progress} {$directory}";
+            echo "{$progress}";
             echo '</div>';
             echo '</div>';
         }
